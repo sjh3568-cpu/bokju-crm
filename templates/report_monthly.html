@@ -1,0 +1,306 @@
+{% extends "base.html" %}
+{% block title %}월간 보고서 {{ data.year }}-{{ '%02d'|format(data.month) }} — 복주 상담실{% endblock %}
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+{% endblock %}
+{% block content %}
+
+{% set m = data.month %}
+{% set y = data.year %}
+
+<div class="page-header report-header">
+    <div>
+        <h1>임원 월간 보고서 <span class="muted" style="font-size:0.65em">복주회복병원 상담실</span></h1>
+        <div class="period-line">
+            대상: <strong>{{ y }}년 {{ '%02d'|format(m) }}월</strong>
+            <span class="muted">({{ data['from'] }} ~ {{ data['to'] }}) · 전월 비교: {{ data.prev_from }} ~ {{ data.prev_to }}</span>
+        </div>
+    </div>
+    <form method="get" action="/report/monthly" class="month-picker no-print">
+        <input type="number" name="year" value="{{ y }}" min="2024" max="2030" style="width:80px">
+        <select name="month">
+            {% for mm in range(1, 13) %}
+            <option value="{{ mm }}" {% if mm == m %}selected{% endif %}>{{ mm }}월</option>
+            {% endfor %}
+        </select>
+        <button class="btn btn-secondary btn-sm" type="submit">조회</button>
+        <button class="btn btn-primary btn-sm" type="button" onclick="window.print()">인쇄</button>
+    </form>
+</div>
+
+<!-- 섹션 1: KPI 8장 한 줄 -->
+<div class="kpi-grid">
+    {% for k in data.kpis %}
+    <div class="kpi-card">
+        <div class="kpi-label">{{ k.label }}</div>
+        <div class="kpi-value">{{ k.value }}<span class="kpi-suffix">{{ k.suffix }}</span></div>
+        <div class="kpi-delta">
+            {% if k.delta_pct is none %}
+                <span class="muted">전월 0</span>
+            {% elif k.delta_pct > 0 %}
+                <span class="up">▲ {{ k.delta_pct }}%</span>
+            {% elif k.delta_pct < 0 %}
+                <span class="down">▼ {{ k.delta_pct|abs }}%</span>
+            {% else %}
+                <span class="muted">변화 없음</span>
+            {% endif %}
+            <span class="muted prev">전월 {{ k.prev }}{{ k.suffix }}</span>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- 섹션 2: AI 임원 요약 -->
+<div class="report-card insight-card">
+    <div class="insight-head">
+        <h3>AI 임원 요약</h3>
+        {% if insight_enabled %}
+        <button id="btn-insight" class="btn btn-accent btn-sm no-print" type="button">생성</button>
+        {% else %}
+        <span class="note">ANTHROPIC_API_KEY 미설정</span>
+        {% endif %}
+    </div>
+    <div id="insight-out" class="insight-body empty">상단 [생성] 버튼을 눌러 이번 달 인사이트를 받으세요. (5초 내외)</div>
+</div>
+
+<!-- 섹션 3+4: 채널 ROI + 모병원 Top (2열) -->
+<div class="report-grid">
+    <div class="report-card">
+        <h3>채널별 입원 전환 ROI</h3>
+        {% set rows = data.channel.groups + data.channel.details %}
+        {% if data.channel.groups or data.channel.details %}
+        <table class="report-tbl">
+            <thead><tr><th>채널</th><th>상담</th><th>입원완료</th><th>전환율</th></tr></thead>
+            <tbody>
+                {% if data.channel.groups %}
+                <tr class="group-head"><td colspan="4">[그룹]</td></tr>
+                {% for r in data.channel.groups %}
+                <tr>
+                    <td>{{ r.label }}</td>
+                    <td class="num">{{ r.total }}</td>
+                    <td class="num">{{ r.completed }}</td>
+                    <td class="num"><strong>{{ r.rate }}%</strong></td>
+                </tr>
+                {% endfor %}
+                {% endif %}
+                {% if data.channel.details %}
+                <tr class="group-head"><td colspan="4">[세부]</td></tr>
+                {% for r in data.channel.details %}
+                <tr>
+                    <td>{{ r.label }}</td>
+                    <td class="num">{{ r.total }}</td>
+                    <td class="num">{{ r.completed }}</td>
+                    <td class="num">{{ r.rate }}%</td>
+                </tr>
+                {% endfor %}
+                {% endif %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-mini">데이터 없음</div>
+        {% endif %}
+    </div>
+
+    <div class="report-card">
+        <h3>모병원 Top 10 <span class="muted" style="font-size:0.78em">(현재 입원중·입소중 환자 기준)</span></h3>
+        {% if data.by_source_hospital %}
+        <table class="report-tbl">
+            <thead><tr><th>모병원</th><th>의뢰</th></tr></thead>
+            <tbody>
+                {% for r in data.by_source_hospital %}
+                <tr><td>{{ r.label }}</td><td class="num">{{ r.count }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-mini">기록된 모병원 없음 — 폼 "현재 병원/요양원" 입력 시 자동 집계됩니다.</div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 섹션 5+6: 거절 사유 + 환자 포트폴리오 (2열) -->
+<div class="report-grid">
+    <div class="report-card">
+        <h3>입원취소 사유</h3>
+        {% set total_cancelled = data.this.summary.cancelled %}
+        {% if data.by_rejection_reason %}
+        <table class="report-tbl">
+            <thead><tr><th>사유</th><th>건수</th><th>비율</th></tr></thead>
+            <tbody>
+                {% for r in data.by_rejection_reason %}
+                <tr>
+                    <td>{{ r.label }}</td>
+                    <td class="num">{{ r.count }}</td>
+                    <td class="num">{{ ((r.count / total_cancelled * 100)|round(1)) if total_cancelled else 0 }}%</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-mini">{% if total_cancelled %}취소 사유 미입력 {{ total_cancelled }}건 — 상담 상세에서 라벨링 필요{% else %}이번 달 입원취소 없음{% endif %}</div>
+        {% endif %}
+    </div>
+
+    <div class="report-card">
+        <h3>환자 포트폴리오</h3>
+        <div class="mini-charts">
+            <div class="mini-chart"><div class="mini-title">병명 그룹</div><canvas id="mc-disease"></canvas></div>
+            <div class="mini-chart"><div class="mini-title">보험 유형</div><canvas id="mc-insurance"></canvas></div>
+            <div class="mini-chart"><div class="mini-title">연령대</div><canvas id="mc-age"></canvas></div>
+        </div>
+    </div>
+</div>
+
+<!-- 섹션 7: 데이터 부재 안내 -->
+<div class="data-gap-note no-print">
+    <strong>※ 차후 단계</strong>: 가동률·평균재원일·매출은 EMR/청구 시스템 연계 또는 월말 수기 입력 도입 시 추가됩니다.
+</div>
+
+<style>
+@media screen {
+    .report-header { align-items:flex-start; gap:8px; }
+    .period-line { font-size:0.88em; color:var(--text-light); margin-top:2px; }
+    .month-picker { display:flex; gap:6px; align-items:center; }
+    .month-picker input, .month-picker select { padding:4px 8px; border:1px solid var(--border); border-radius:6px; font-family:inherit; }
+
+    .kpi-grid { display:grid; grid-template-columns: repeat(8, 1fr); gap:6px; margin-bottom:10px; }
+    .kpi-card { background:#fff; border:1px solid var(--border); border-radius:7px; padding:7px 9px; }
+    .kpi-label { font-size:0.7em; color:var(--text-light); margin-bottom:2px; line-height:1.2; }
+    .kpi-value { font-size:1.25em; font-weight:700; color:var(--primary); line-height:1.1; }
+    .kpi-suffix { font-size:0.55em; font-weight:500; color:var(--text-light); margin-left:1px; }
+    .kpi-delta { font-size:0.7em; margin-top:3px; line-height:1.3; display:flex; flex-direction:column; gap:0; }
+    .kpi-delta .up { color:var(--success); font-weight:600; }
+    .kpi-delta .down { color:var(--danger); font-weight:600; }
+    .kpi-delta .prev { font-size:0.92em; }
+    @media (max-width: 1100px) { .kpi-grid { grid-template-columns: repeat(4, 1fr); } }
+    @media (max-width: 600px)  { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+
+    .report-grid { display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:8px; }
+    @media (max-width: 900px) { .report-grid { grid-template-columns: 1fr; } }
+
+    .report-card { background:#fff; border:1px solid var(--border); border-radius:7px; padding:10px 12px; }
+    .report-card h3 { font-size:0.92em; margin-bottom:6px; font-weight:600; }
+    .report-tbl { width:100%; border-collapse:collapse; font-size:0.85em; }
+    .report-tbl th, .report-tbl td { padding:4px 8px; border-bottom:1px solid var(--border); }
+    .report-tbl th { text-align:left; color:var(--text-light); font-weight:600; font-size:0.78em; text-transform:uppercase; background:#f8fafc; }
+    .report-tbl td.num { text-align:right; font-variant-numeric: tabular-nums; }
+    .report-tbl tr.group-head td { font-size:0.76em; font-weight:600; color:var(--text-light); padding:5px 8px 2px; background:#f8fafc; }
+    .empty-mini { padding:14px 6px; text-align:center; color:var(--text-light); font-size:0.88em; }
+
+    .insight-card { margin-top:8px; }
+    .insight-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+    .insight-head h3 { font-size:0.92em; }
+    .insight-body { white-space:pre-wrap; line-height:1.55; font-size:0.9em; padding:10px 12px; background:#f8fafc; border-radius:6px; min-height:50px; }
+    .insight-body.empty, .insight-body.loading { color:var(--text-light); }
+    .insight-body.loading { font-style:italic; }
+
+    .mini-charts { display:grid; grid-template-columns: repeat(3, 1fr); gap:6px; }
+    .mini-chart { display:flex; flex-direction:column; align-items:stretch; }
+    .mini-title { font-size:0.78em; color:var(--text-light); text-align:center; margin-bottom:2px; }
+    .mini-chart canvas { width:100% !important; height:120px !important; }
+
+    .data-gap-note { margin-top:10px; padding:8px 12px; background:#fefce8; border:1px solid #fde68a; border-radius:6px; font-size:0.82em; color:#92400e; }
+}
+
+/* 인쇄 — A4 1장 안에 들어가도록 */
+@media print {
+    .no-print, header, footer, .flash-list { display:none !important; }
+    body, main { background:#fff !important; }
+    .container { max-width:none; padding:0 8mm; }
+    .page-header { margin-bottom:6px; }
+    .page-header h1 { font-size:14pt; }
+    .period-line { font-size:9pt; }
+    .kpi-grid { grid-template-columns: repeat(8, 1fr) !important; gap:4px; margin-bottom:6px; }
+    .kpi-card { padding:4px 6px; box-shadow:none; }
+    .kpi-label { font-size:7pt; }
+    .kpi-value { font-size:11pt; }
+    .kpi-delta { font-size:7pt; }
+    .report-grid { grid-template-columns: 1fr 1fr !important; gap:5px; margin-top:5px; }
+    .report-card { padding:6px 8px; box-shadow:none; page-break-inside:avoid; }
+    .report-card h3 { font-size:9pt; margin-bottom:3px; }
+    .report-tbl { font-size:8pt; }
+    .report-tbl th, .report-tbl td { padding:2px 5px; }
+    .insight-body { font-size:8.5pt; padding:6px 8px; min-height:auto; }
+    .mini-chart canvas { height:90px !important; }
+    .data-gap-note { display:none; }
+    @page { size:A4; margin:8mm; }
+}
+</style>
+
+<script>
+(function() {
+    Chart.defaults.font.family = 'Pretendard, -apple-system, sans-serif';
+    Chart.defaults.font.size = 10;
+    Chart.defaults.plugins.legend.labels.boxWidth = 8;
+
+    const PALETTE = ['#14532d','#16a34a','#2563eb','#f59e0b','#dc2626','#9333ea','#0891b2','#65a30d','#db2777','#475569'];
+
+    function makeMini(canvasId, items) {
+        const ctx = document.getElementById(canvasId);
+        if (!ctx) return;
+        if (!items || !items.length) {
+            const c = ctx.getContext('2d');
+            c.fillStyle = '#94a3b8'; c.textAlign = 'center'; c.textBaseline = 'middle';
+            c.font = '11px Pretendard'; c.fillText('데이터 없음', ctx.width/2, ctx.height/2);
+            return;
+        }
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: items.map(x => x.label),
+                datasets: [{
+                    data: items.map(x => x.count),
+                    backgroundColor: items.map((_, i) => PALETTE[i % PALETTE.length]),
+                    borderWidth: 1, borderColor: '#fff',
+                }],
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                cutout: '55%',
+                plugins: {
+                    legend: { position: 'bottom', labels: { boxWidth: 8, padding: 3, font: { size: 9 } } },
+                    tooltip: { callbacks: { label: ctx => {
+                        const v = ctx.parsed;
+                        const total = ctx.dataset.data.reduce((a,b)=>a+b,0);
+                        const pct = total ? (100*v/total).toFixed(1) : '0';
+                        return `${ctx.label}: ${v} (${pct}%)`;
+                    }}}
+                },
+            },
+        });
+    }
+
+    makeMini('mc-disease', {{ data.by_disease_group|tojson }});
+    makeMini('mc-insurance', {{ data.by_insurance|tojson }});
+    makeMini('mc-age', {{ data.by_age|tojson }});
+
+    // AI 인사이트
+    const btnInsight = document.getElementById('btn-insight');
+    if (btnInsight) {
+        btnInsight.addEventListener('click', async () => {
+            const out = document.getElementById('insight-out');
+            out.classList.remove('empty');
+            out.classList.add('loading');
+            out.textContent = '인사이트 생성 중... (수 초 소요)';
+            btnInsight.disabled = true;
+            try {
+                const r = await fetch('/api/report/monthly/insight', {
+                    method: 'POST',
+                    headers: {'content-type': 'application/json'},
+                    body: JSON.stringify({year: {{ y }}, month: {{ m }}}),
+                });
+                const j = await r.json();
+                out.classList.remove('loading');
+                if (j.error) out.textContent = '오류: ' + j.error;
+                else out.textContent = j.insight || '응답이 비어 있습니다.';
+            } catch (e) {
+                out.classList.remove('loading');
+                out.textContent = '오류: ' + e.message;
+            }
+            btnInsight.disabled = false;
+        });
+    }
+})();
+</script>
+
+{% endblock %}

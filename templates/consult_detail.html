@@ -1,0 +1,270 @@
+{% extends "base.html" %}
+{% block title %}상담 #{{ c.id }} — {{ c.patient_name }}{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>{{ c.patient_name }}
+            <span class="muted" style="font-size:0.65em">상담 #{{ c.id }} · {{ c.consult_date|krdate }}{% if c.consult_time %} {{ c.consult_time }}{% endif %}</span>
+        </h1>
+    </div>
+    <div style="display:flex; gap:8px">
+        <a href="/consultations" class="btn btn-secondary btn-sm">← 목록</a>
+        <a href="/consult/{{ c.id }}/edit" class="btn btn-accent btn-sm">수정</a>
+    </div>
+</div>
+
+{% set _status = c.admission_status or '상담완료' %}
+<div class="card status-card" data-cid="{{ c.id }}">
+    <div class="status-head">
+        <h3>상담 결과</h3>
+        <span class="status-pill status-{{ _status }}">{{ _status }}</span>
+    </div>
+    <div class="status-options">
+        {% for s in ADMISSION_STATUSES %}
+        <label class="status-chip {% if _status == s %}on{% endif %}">
+            <input type="radio" name="admission_status" value="{{ s }}" {% if _status == s %}checked{% endif %}>
+            <span>{{ s }}</span>
+        </label>
+        {% endfor %}
+    </div>
+    <div class="status-extra status-completed-row {% if _status != '입원완료' %}hide{% endif %}">
+        <label>실제 입원일자
+            <input type="date" id="admission-date" value="{{ c.admission_date or '' }}">
+        </label>
+        <button type="button" class="btn btn-primary btn-sm status-save">저장</button>
+        <span class="status-msg muted"></span>
+    </div>
+    <div class="status-cancel-row {% if _status != '입원취소' %}hide{% endif %}">
+        <div class="reason-chips">
+            {% for r in REJECTION_REASONS %}
+            <label class="reason-chip {% if c.rejection_reason == r %}on{% endif %}">
+                <input type="radio" name="rejection_reason" value="{{ r }}" {% if c.rejection_reason == r %}checked{% endif %}>
+                <span>{{ r }}</span>
+            </label>
+            {% endfor %}
+        </div>
+        <div class="reason-bottom">
+            <input type="text" id="reason-detail" class="reason-detail" placeholder="추가 메모 (선택)" value="{{ c.rejection_reason_detail or '' }}">
+            <button type="button" class="btn btn-primary btn-sm status-save">저장</button>
+            <span class="status-msg muted"></span>
+        </div>
+    </div>
+    <div class="status-simple-row {% if _status == '입원완료' or _status == '입원취소' %}hide{% endif %}">
+        <button type="button" class="btn btn-primary btn-sm status-save">저장</button>
+        <span class="status-msg muted"></span>
+    </div>
+</div>
+
+<style>
+.status-card { background:#fafffa; border-color:#bbf7d0; }
+.status-head { display:flex; gap:10px; align-items:center; margin-bottom:10px; }
+.status-pill { padding:4px 12px; border-radius:999px; font-size:0.82em; font-weight:600; background:#f1f5f9; color:#475569; }
+.status-pill.status-상담완료 { background:#f1f5f9; color:#475569; }
+.status-pill.status-입원예정 { background:#fef3c7; color:#92400e; }
+.status-pill.status-입원확정 { background:#dbeafe; color:#1e40af; }
+.status-pill.status-입원완료 { background:#dcfce7; color:#166534; }
+.status-pill.status-입원취소 { background:#fee2e2; color:#991b1b; }
+.status-options { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
+.status-chip { display:inline-flex; align-items:center; padding:6px 14px; border:1px solid var(--border); border-radius:999px; cursor:pointer; font-size:0.88em; background:#fff; }
+.status-chip input { display:none; }
+.status-chip.on { background:var(--primary); color:#fff; border-color:var(--primary); }
+.status-extra, .status-simple-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.status-extra label { font-size:0.85em; color:var(--text-light); display:flex; gap:6px; align-items:center; }
+.status-extra input[type=date] { padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-family:inherit; }
+.status-cancel-row { display:flex; flex-direction:column; gap:8px; }
+.status-cancel-row.hide, .status-extra.hide, .status-simple-row.hide { display:none; }
+.reason-chips { display:flex; flex-wrap:wrap; gap:5px; }
+.reason-chip { display:inline-flex; align-items:center; padding:4px 11px; border:1px solid var(--border); border-radius:999px; cursor:pointer; font-size:0.84em; background:#fff; }
+.reason-chip input { display:none; }
+.reason-chip.on { background:var(--danger); color:#fff; border-color:var(--danger); }
+.reason-bottom { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.reason-detail { flex:1; min-width:200px; padding:5px 9px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:0.88em; }
+.status-msg.ok { color:var(--success); }
+.status-msg.err { color:var(--danger); }
+</style>
+
+<script>
+(function() {
+    const card = document.querySelector('.status-card');
+    if (!card) return;
+    const cid = card.dataset.cid;
+    const chips = card.querySelectorAll('.status-chip');
+    const radios = card.querySelectorAll('input[name="admission_status"]');
+    const completedRow = card.querySelector('.status-completed-row');
+    const cancelRow = card.querySelector('.status-cancel-row');
+    const simpleRow = card.querySelector('.status-simple-row');
+    const dateInput = card.querySelector('#admission-date');
+    const reasonRadios = card.querySelectorAll('input[name="rejection_reason"]');
+    const reasonChips = card.querySelectorAll('.reason-chip');
+    const reasonDetail = card.querySelector('#reason-detail');
+    const pill = card.querySelector('.status-pill');
+
+    function refreshChips(value) {
+        chips.forEach(c => c.classList.toggle('on', c.querySelector('input').value === value));
+        const isCompleted = value === '입원완료';
+        const isCancelled = value === '입원취소';
+        completedRow.classList.toggle('hide', !isCompleted);
+        cancelRow.classList.toggle('hide', !isCancelled);
+        simpleRow.classList.toggle('hide', isCompleted || isCancelled);
+    }
+
+    radios.forEach(r => r.addEventListener('change', () => refreshChips(r.value)));
+    reasonRadios.forEach(r => r.addEventListener('change', () => {
+        reasonChips.forEach(c => c.classList.toggle('on', c.querySelector('input').value === r.value));
+    }));
+
+    async function save(btn) {
+        const checked = card.querySelector('input[name="admission_status"]:checked');
+        if (!checked) return;
+        const status = checked.value;
+        const body = { admission_status: status };
+        if (status === '입원완료') {
+            body.admission_date = (dateInput && dateInput.value) || '';
+        } else if (status === '입원취소') {
+            const r = card.querySelector('input[name="rejection_reason"]:checked');
+            body.rejection_reason = r ? r.value : '';
+            body.rejection_reason_detail = (reasonDetail && reasonDetail.value.trim()) || '';
+        }
+        const msg = btn.parentElement.querySelector('.status-msg');
+        msg.className = 'status-msg muted';
+        msg.textContent = '저장 중...';
+        btn.disabled = true;
+        try {
+            const r = await fetch(`/api/consult/${cid}/status`, {
+                method: 'POST',
+                headers: {'content-type': 'application/json'},
+                body: JSON.stringify(body),
+            });
+            const j = await r.json();
+            if (!r.ok) {
+                msg.className = 'status-msg err';
+                msg.textContent = '실패: ' + (j.error || r.status);
+            } else {
+                msg.className = 'status-msg ok';
+                msg.textContent = '저장됨';
+                pill.className = 'status-pill status-' + status;
+                pill.textContent = status;
+                setTimeout(() => { msg.textContent = ''; }, 2500);
+            }
+        } catch (e) {
+            msg.className = 'status-msg err';
+            msg.textContent = '오류: ' + e.message;
+        }
+        btn.disabled = false;
+    }
+    card.querySelectorAll('.status-save').forEach(b => b.addEventListener('click', e => save(e.currentTarget)));
+})();
+</script>
+
+<div class="card">
+    <h3>입원 / 상담 정보</h3>
+    <dl class="kv">
+        <dt>입원예정</dt><dd>{{ c.planned_admission_date|krdate or '-' }}</dd>
+        <dt>주치의</dt><dd>{{ c.attending_doctor or '-' }}</dd>
+        <dt>호실</dt><dd>{{ c.room_number or '-' }}</dd>
+        <dt>상담일시</dt><dd>{{ c.consult_date|krdate }} {{ c.consult_time or '' }}</dd>
+        <dt>상담자</dt><dd>{{ c.counselor or '-' }}</dd>
+        <dt>상담방법</dt><dd>{{ c.consult_channel or '-' }}</dd>
+        <dt>입원경로</dt><dd>
+            {% if c.referral_source_type %}
+                {% for t in c.referral_source_type %}<span class="badge badge-facility">{{ t }}</span> {% endfor %}
+            {% endif %}
+            {{ (c.referral_source_detail or [])|join(', ') or '-' }}
+            {% if c.referrer_person or c.referrer_institution %}
+            <br><span class="muted" style="font-size:0.9em">
+                ({% if c.referrer_person %}추천인: {{ c.referrer_person }}{% endif %}{% if c.referrer_person and c.referrer_institution %} · {% endif %}{% if c.referrer_institution %}기관: {{ c.referrer_institution }}{% endif %})
+            </span>
+            {% endif %}
+        </dd>
+    </dl>
+</div>
+
+<div class="card">
+    <h3>환자 기본정보</h3>
+    <dl class="kv">
+        <dt>환자명</dt><dd>{{ c.patient_name }}</dd>
+        <dt>나이/성별</dt><dd>{% if c.patient_age is not none %}{{ c.patient_age }}세{% endif %} {% if c.gender == 'M' %}남{% elif c.gender == 'F' %}여{% endif %}</dd>
+        <dt>주소</dt><dd>
+            {% if c.residence_sido %}<span class="muted">{{ c.residence_sido }}</span> {% endif %}
+            {{ c.residence_sigungu or '-' }}
+        </dd>
+        <dt>가족사항</dt><dd>{{ c.family_info or '-' }}</dd>
+        <dt>보호자</dt><dd>{{ c.guardian_name or '-' }} {% if c.guardian_relation %}({{ c.guardian_relation }}){% endif %} {{ c.guardian_phone or '' }}</dd>
+        <dt>보험유형</dt><dd>{{ c.insurance_type or '-' }}</dd>
+        <dt>환자 ID</dt><dd><a href="/patients/{{ c.patient_id }}">P{{ c.patient_id }} 상세</a></dd>
+    </dl>
+</div>
+
+<div class="card">
+    <h3>환자 상태</h3>
+    <dl class="kv">
+        <dt>현재</dt><dd>{{ c.current_location_type or '-' }}{% if c.current_location_name %} ({{ c.current_location_name }}){% endif %}</dd>
+        <dt>의식</dt><dd>
+            {{ c.consciousness_main or '-' }}
+            {% if c.conversation_level %} · 대화 {{ c.conversation_level }}{% endif %}
+            {% if c.hearing_options %} · {{ c.hearing_options|join(', ') }}{% endif %}
+            {% if c.hearing_note %} · {{ c.hearing_note }}{% endif %}
+        </dd>
+        <dt>활동</dt><dd>
+            {% if c.activity_active %}능동: {{ c.activity_active|join(', ') }}{% endif %}
+            {% if c.activity_diaper %} · 기저귀 {{ c.activity_diaper }}{% endif %}
+            {% if c.activity_wheelchair %} · 휠체어 {{ c.activity_wheelchair }}{% endif %}
+            {% if c.activity_others %} · {{ c.activity_others|join(', ') }}{% endif %}
+            {% if not (c.activity_active or c.activity_diaper or c.activity_wheelchair or c.activity_others) %}-{% endif %}
+        </dd>
+        <dt>간병/침대</dt><dd>{{ c.caregiver_status or '-' }} / {{ c.bed_type or '-' }}</dd>
+        <dt>병명</dt><dd>{{ (c.diseases or [])|join(', ') or '-' }}</dd>
+        {% if c.insulin_use %}<dt>인슐린</dt><dd>{{ c.insulin_use }}</dd>{% endif %}
+        {% if c.parkinson_detail %}<dt>파킨슨 상세</dt><dd>{{ c.parkinson_detail }}</dd>{% endif %}
+        {% if c.rare_disease_name %}<dt>희귀성난치질환</dt><dd>{{ c.rare_disease_name }}</dd>{% endif %}
+        <dt>기타(ARRANGE)</dt><dd>{{ (c.arrange_items or [])|join(', ') or '-' }}</dd>
+        {% set cancer_parts = [] %}
+        {% if c.cancer_site %}{% set _ = cancer_parts.append('부위: ' ~ c.cancer_site) %}{% endif %}
+        {% if c.cancer_onset %}{% set _ = cancer_parts.append('발병일: ' ~ c.cancer_onset) %}{% endif %}
+        {% if c.cancer_metastasis %}{% set _ = cancer_parts.append('전이: ' ~ c.cancer_metastasis) %}{% endif %}
+        {% if c.cancer_pain %}{% set _ = cancer_parts.append('통증: ' ~ c.cancer_pain) %}{% endif %}
+        {% if c.cancer_patch %}{% set _ = cancer_parts.append('patch: ' ~ c.cancer_patch) %}{% endif %}
+        {% if cancer_parts %}<dt>암 상세</dt><dd>{{ cancer_parts|join(' · ') }}</dd>{% endif %}
+        {% if c.disease_onset %}<dt>발병일</dt><dd>{{ c.disease_onset }}</dd>{% endif %}
+        {% if c.hemorrhage_surgery %}<dt>뇌출혈 수술</dt><dd>{{ c.hemorrhage_surgery }}</dd>{% endif %}
+        {% if c.infarction_site %}<dt>뇌경색 부위</dt><dd>{{ c.infarction_site }}</dd>{% endif %}
+        {% if c.spinal_injury_level %}<dt>척수손상 부위/레벨</dt><dd>{{ c.spinal_injury_level }}</dd>{% endif %}
+        {% if c.paralysis_detail %}<dt>마비 상세</dt><dd>{{ c.paralysis_detail }}</dd>{% endif %}
+        {% if c.disease_detail %}<dt>기타 메모</dt><dd style="white-space:pre-wrap">{{ c.disease_detail }}</dd>{% endif %}
+        {% if c.admission_purpose %}<dt>입원목적</dt><dd style="white-space:pre-wrap">{{ c.admission_purpose }}</dd>{% endif %}
+        <dt>식사종류</dt><dd>{{ (c.diet_types or [])|join(', ') or '-' }}</dd>
+        <dt>상처소독</dt><dd>{{ (c.wound_care or [])|join(', ') or '-' }}{% if c.wound_site %} · 부위 {{ c.wound_site }}{% endif %}</dd>
+        <dt>특수처치</dt><dd>{{ (c.special_care or [])|join(', ') or '-' }}{% if c.oxygen_lpm %} · 산소 {{ c.oxygen_lpm }}L/min{% endif %}</dd>
+        <dt>연하검사</dt><dd>{{ c.swallow_test or '-' }}{% if c.swallow_test_dates %} · {{ c.swallow_test_dates }}{% endif %}</dd>
+        <dt>치료</dt><dd>{{ (c.therapy or [])|join(', ') or '-' }}</dd>
+    </dl>
+</div>
+
+<div class="card">
+    <h3>입원시 확인사항</h3>
+    <dl class="kv">
+        <dt>준비 서류</dt><dd>{{ (c.documents_checklist or [])|join(', ') or '-' }}</dd>
+        <dt>입원가능기간</dt><dd>{{ c.admission_period or '-' }}</dd>
+        <dt>이송수단</dt><dd>{{ (c.transport_method or [])|join(', ') or '-' }}</dd>
+        <dt>진료비 안내</dt><dd>{{ (c.cost_guidance or [])|join(', ') or '-' }}</dd>
+        <dt>안내사항</dt><dd>{{ (c.info_provided or [])|join(', ') or '-' }}</dd>
+    </dl>
+</div>
+
+{% if history|length > 1 %}
+<div class="card">
+    <h3>이 환자의 다른 상담 ({{ history|length }})</h3>
+    <ul style="list-style:none; padding-left:0">
+        {% for h in history %}
+        {% if h.id != c.id %}
+        <li style="padding:6px 0; border-bottom:1px solid var(--border); font-size:0.9em">
+            <a href="/consult/{{ h.id }}">{{ h.consult_date|krdate }}</a>
+            <span class="muted">— {{ (h.diseases or [])|join(', ') }}</span>
+        </li>
+        {% endif %}
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+{% endblock %}

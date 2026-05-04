@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-store, must-revalidate">
+    <title>{% block title %}복주 상담실{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    {% block head_extra %}{% endblock %}
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="header-inner">
+                <a href="/" class="logo">복주 상담실 CRM <small>인덕의료재단</small></a>
+                {% if current_user %}
+                <nav>
+                    <a href="/" {% if request.path == '/' %}class="active"{% endif %}>대시보드</a>
+                    <a href="/consult/new" {% if request.path == '/consult/new' %}class="active"{% endif %}>새 상담</a>
+                    <a href="/consultations" {% if request.path.startswith('/consultations') %}class="active"{% endif %}>상담 목록</a>
+                    <a href="/stats" {% if request.path.startswith('/stats') %}class="active"{% endif %}>통계</a>
+                    <a href="/report/monthly" {% if request.path.startswith('/report') %}class="active"{% endif %}>월간보고서</a>
+                </nav>
+                <span class="user-tag">
+                    {{ current_user.display_name }}
+                    <form action="/logout" method="post" style="display:inline">
+                        <button class="logout-btn" type="submit">로그아웃</button>
+                    </form>
+                </span>
+                {% endif %}
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            <div class="flash-list">
+                {% for cat, msg in messages %}
+                <div class="flash {{ cat }}">{{ msg }}</div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>본 시스템은 사내망에서만 동작합니다. 환자 정보는 외부로 전송되지 않습니다.</p>
+        </div>
+    </footer>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

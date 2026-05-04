@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}환자 P{{ p.id }} — {{ p.name }}{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>{{ p.name }} <span class="muted" style="font-size:0.65em">P{{ p.id }}</span></h1>
+    <a href="/consultations" class="btn-back">← 목록</a>
+</div>
+
+<div class="card">
+    <h3>기본 정보</h3>
+    <dl class="kv">
+        <dt>성별</dt><dd>{% if p.gender == 'M' %}남{% elif p.gender == 'F' %}여{% endif %}</dd>
+        <dt>주소</dt><dd>{{ p.address_full or '-' }}</dd>
+        <dt>가족사항</dt><dd>{{ p.family_info or '-' }}</dd>
+        <dt>보험유형</dt><dd>{{ p.insurance_type or '-' }}</dd>
+        <dt>보호자</dt><dd>{{ p.guardian_name or '-' }} {% if p.guardian_relation %}({{ p.guardian_relation }}){% endif %} {{ p.guardian_phone or '' }}</dd>
+    </dl>
+</div>
+
+<div class="card" style="margin-top:12px">
+    <h3>상담 이력 ({{ history|length }})</h3>
+    {% if history %}
+    <div class="tbl-wrap">
+        <table class="tbl">
+            <thead>
+                <tr>
+                    <th>상담일</th>
+                    <th>나이</th>
+                    <th>주치의</th>
+                    <th>호실</th>
+                    <th>입원예정</th>
+                    <th>상담자</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in history %}
+                <tr>
+                    <td><a href="/consult/{{ r.id }}">{{ r.consult_date|krdate }}{% if r.consult_time %} {{ r.consult_time }}{% endif %}</a></td>
+                    <td>{% if r.patient_age is not none %}{{ r.patient_age }}세{% endif %}</td>
+                    <td>{{ r.attending_doctor or '' }}</td>
+                    <td>{{ r.room_number or '' }}</td>
+                    <td>{{ r.planned_admission_date|krdate or '' }}</td>
+                    <td>{{ r.counselor or '' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty">상담 이력이 없습니다.</div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}오류 {{ code }}{% endblock %}
+{% block content %}
+<div class="card empty" style="margin-top:40px">
+    <h2 style="font-size:2em; color:var(--danger); margin-bottom:8px">{{ code }}</h2>
+    <p>{{ msg }}</p>
+    <p style="margin-top:16px"><a href="/" class="btn btn-secondary">대시보드로</a></p>
+</div>
+{% endblock %}

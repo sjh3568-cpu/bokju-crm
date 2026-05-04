@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}대시보드 — 복주 상담실{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>대시보드 <span class="muted" style="font-size:0.7em">({{ now().strftime('%Y년 %m월') }})</span></h1>
+    <a href="/consult/new" class="btn btn-primary">+ 새 상담일지</a>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-card">
+        <div class="label">이번 달 상담</div>
+        <div class="value">{{ summary.total or 0 }}</div>
+    </div>
+    <div class="stat-card accent">
+        <div class="label">입원예정 등록</div>
+        <div class="value">{{ summary.planned or 0 }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">입원예정 비율</div>
+        <div class="value">{{ summary.plan_rate or 0 }}<span style="font-size:0.5em">%</span></div>
+    </div>
+</div>
+
+<div class="card">
+    <h3>오늘 등록된 상담</h3>
+    {% if today %}
+    <div class="tbl-wrap">
+        <table class="tbl">
+            <thead>
+                <tr>
+                    <th>시각</th>
+                    <th>환자</th>
+                    <th>주치의</th>
+                    <th>호실</th>
+                    <th>입원예정</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in today %}
+                <tr>
+                    <td>{{ r.consult_time or '' }}</td>
+                    <td><a href="/consult/{{ r.id }}">{{ r.patient_name }}</a></td>
+                    <td>{{ r.attending_doctor or '-' }}</td>
+                    <td>{{ r.room_number or '-' }}</td>
+                    <td>{{ r.planned_admission_date|krdate or '-' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty">오늘 등록된 상담이 없습니다.</div>
+    {% endif %}
+</div>
+
+<div class="card" style="margin-top:16px">
+    <h3>최근 7일 상담 추이</h3>
+    {% if week_trend %}
+    <div style="display:flex; gap:6px; align-items:flex-end; height:80px; padding:8px 0">
+        {% set max_n = (week_trend|map(attribute='n')|list|max) or 1 %}
+        {% for d in week_trend %}
+        <div style="flex:1; text-align:center">
+            <div title="{{ d.d }}: {{ d.n }}건"
+                 style="background:var(--primary-light); border-radius:4px 4px 0 0;
+                        height:{{ (d.n / max_n * 100)|round }}%; min-height:4px"></div>
+            <div class="note" style="font-size:0.7em; margin-top:4px">{{ d.d[5:] }}</div>
+            <div style="font-weight:600; font-size:0.78em">{{ d.n }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty">최근 7일간 등록된 상담이 없습니다.</div>
+    {% endif %}
+</div>
+{% endblock %}

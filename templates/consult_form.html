@@ -1,0 +1,569 @@
+{% extends "base.html" %}
+{% block title %}{% if consultation %}상담일지 수정{% else %}새 상담일지{% endif %} — 복주 상담실{% endblock %}
+{% block content %}
+{% set is_edit = consultation is not none %}
+
+{# 다중선택(JSON) → 체크 상태 비교용 #}
+{% set diseases_set = (consultation.diseases if is_edit else []) %}
+{% set arrange_set = (consultation.arrange_items if is_edit else []) %}
+{% set diet_set = (consultation.diet_types if is_edit else []) %}
+{% set wound_set = (consultation.wound_care if is_edit else []) %}
+{% set special_set = (consultation.special_care if is_edit else []) %}
+{% set therapy_set = (consultation.therapy if is_edit else []) %}
+{% set docs_set = (consultation.documents_checklist if is_edit else []) %}
+{% set transport_set = (consultation.transport_method if is_edit else []) %}
+{% set cost_set = (consultation.cost_guidance if is_edit else []) %}
+{% set info_set = (consultation.info_provided if is_edit else []) %}
+{% set hearing_set = (consultation.hearing_options if is_edit else []) %}
+{% set activity_active_set = (consultation.activity_active if is_edit else []) %}
+{% set activity_others_set = (consultation.activity_others if is_edit else []) %}
+
+<div class="page-header">
+    <h1>{% if is_edit %}상담일지 수정 (#{{ consultation.id }}){% else %}새 상담일지{% endif %}</h1>
+    <a href="{% if is_edit %}/consult/{{ consultation.id }}{% else %}/{% endif %}" class="btn-back">← 돌아가기</a>
+</div>
+
+<form id="consult-form"
+      data-edit="{{ '1' if is_edit else '0' }}"
+      data-cid="{{ consultation.id if is_edit else '' }}">
+
+<!-- ───────── 헤더 (입원예정·주치의·호실·상담일시·상담자) ───────── -->
+<div class="form-section">
+    <div class="field-row cols-3">
+        <div class="field">
+            <label>입원예정 (월/일)</label>
+            <input type="date" name="consultation.planned_admission_date"
+                   value="{{ consultation.planned_admission_date if is_edit and consultation.planned_admission_date else '' }}">
+        </div>
+        <div class="field">
+            <label>주치의</label>
+            <input type="text" name="consultation.attending_doctor"
+                   value="{{ consultation.attending_doctor if is_edit and consultation.attending_doctor else '' }}">
+        </div>
+        <div class="field">
+            <label>호실</label>
+            <input type="text" name="consultation.room_number"
+                   value="{{ consultation.room_number if is_edit and consultation.room_number else '' }}"
+                   placeholder="예: 305호">
+        </div>
+    </div>
+    <div class="field-row cols-3">
+        <div class="field">
+            <label>상담일자 <span class="req">*</span></label>
+            <input type="date" name="consultation.consult_date"
+                   value="{{ (consultation.consult_date if is_edit else now().strftime('%Y-%m-%d')) }}" required>
+        </div>
+        <div class="field">
+            <label>시각</label>
+            <input type="time" name="consultation.consult_time"
+                   value="{{ consultation.consult_time if is_edit and consultation.consult_time else now().strftime('%H:%M') }}">
+        </div>
+        <div class="field">
+            <label>상담자</label>
+            <div class="combobox">
+                <input type="text" name="consultation.counselor"
+                       value="{{ consultation.counselor if is_edit and consultation.counselor else (current_user.display_name if current_user else '') }}"
+                       placeholder="선택 또는 직접 입력">
+                <button type="button" class="combobox-arrow" tabindex="-1" aria-label="목록 열기">▾</button>
+                <ul class="combobox-list" hidden>
+                    {% for c in COUNSELORS %}
+                    <li>{{ c }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ───────── 환자 기본정보 ───────── -->
+<div class="form-section">
+    <div class="field-row cols-3">
+        <div class="field ac-wrap">
+            <label>환자명 <span class="req">*</span></label>
+            <input type="text" name="patient.name"
+                   value="{{ (patient.name if patient else '') or '' }}"
+                   autocomplete="off" data-ac="patient" required>
+            <div class="ac-list" id="ac-patient" hidden></div>
+        </div>
+        <div class="field">
+            <label>나이</label>
+            <input type="number" name="consultation.patient_age" min="0" max="120"
+                   value="{{ consultation.patient_age if is_edit and consultation.patient_age is not none else '' }}">
+        </div>
+        <div class="field">
+            <label>성별</label>
+            <div class="field-radio">
+                <label><input type="radio" name="patient.gender" value="M" {% if patient and patient.gender == 'M' %}checked{% endif %}> 남</label>
+                <label><input type="radio" name="patient.gender" value="F" {% if patient and patient.gender == 'F' %}checked{% endif %}> 여</label>
+            </div>
+        </div>
+    </div>
+
+    <div class="field-row cols-3">
+        <div class="field">
+            <label>주소</label>
+            <input type="text" id="patient-sigungu" list="sigungu-list"
+                   name="patient.residence_sigungu"
+                   value="{{ patient.residence_sigungu if patient and patient.residence_sigungu else '' }}"
+                   placeholder="시/군/구 (예: 안동시, 강남구)">
+            <datalist id="sigungu-list">
+                {% for sg in SIGUNGU_LIST %}<option value="{{ sg }}">{% endfor %}
+            </datalist>
+        </div>
+        <div class="field">
+            <label>도/광역/특별시 <span class="muted" style="font-size:0.85em">— 자동</span></label>
+            <select id="patient-sido" name="patient.residence_sido">
+                <option value="">선택</option>
+                {% for s in SIDO_LIST %}
+                <option value="{{ s }}" {% if patient and patient.residence_sido == s %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="field">
+            <label>가족사항</label>
+            <input type="text" name="patient.family_info"
+                   value="{{ patient.family_info if patient and patient.family_info else '' }}">
+        </div>
+    </div>
+
+    <div class="field-row cols-3">
+        <div class="field">
+            <label>상담자 (보호자)</label>
+            <input type="text" name="patient.guardian_name"
+                   value="{{ patient.guardian_name if patient and patient.guardian_name else '' }}">
+        </div>
+        <div class="field">
+            <label>관계</label>
+            <input type="text" name="patient.guardian_relation"
+                   list="rel-suggestions"
+                   value="{{ patient.guardian_relation if patient and patient.guardian_relation else '' }}">
+            <datalist id="rel-suggestions">
+                {% for r in GUARDIAN_RELATION_SUGGESTIONS %}<option value="{{ r }}">{% endfor %}
+            </datalist>
+        </div>
+        <div class="field">
+            <label>연락처</label>
+            <input type="tel" name="patient.guardian_phone"
+                   value="{{ patient.guardian_phone if patient and patient.guardian_phone else '' }}"
+                   placeholder="010-">
+        </div>
+    </div>
+
+    {% set referral_set = (consultation.referral_source_detail if is_edit else []) %}
+    <div class="field">
+        <label>상담방법</label>
+        <div class="field-radio">
+            {% for ch in CONSULT_CHANNELS %}
+            <label><input type="radio" name="consultation.consult_channel" value="{{ ch }}"
+                          {% if is_edit and consultation.consult_channel == ch %}checked{% endif %}> {{ ch }}</label>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="field">
+        <label>입원경로 <span class="muted" style="font-size:0.85em">— 해당하는 항목 모두 선택 (복수 가능)</span></label>
+        <div class="option-group">
+            {% for group_name, options in REFERRAL_SOURCE_GROUPS.items() %}
+            <fieldset class="opt-box">
+                <legend>{{ group_name }}</legend>
+                <div class="field-radio">
+                    {% for opt in options %}
+                    <label><input type="checkbox" name="consultation.referral_source_detail[]" value="{{ opt }}"
+                                  {% if opt in referral_set %}checked{% endif %}> {{ opt }}</label>
+                    {% endfor %}
+                </div>
+                {% if group_name == '소개' %}
+                <div class="referrer-row">
+                    <input type="text" name="consultation.referrer_person" placeholder="추천인"
+                           value="{{ consultation.referrer_person if is_edit and consultation.referrer_person else '' }}">
+                    <input type="text" name="consultation.referrer_institution" placeholder="추천 기관"
+                           value="{{ consultation.referrer_institution if is_edit and consultation.referrer_institution else '' }}">
+                </div>
+                {% endif %}
+            </fieldset>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="field">
+        <label>보험유형</label>
+        <div class="field-radio">
+            {% for t in INSURANCE_TYPES %}
+            <label><input type="radio" name="patient.insurance_type" value="{{ t }}"
+                          {% if patient and patient.insurance_type == t %}checked{% endif %}> {{ t }}</label>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- ───────── 환자 상태 ───────── -->
+<div class="form-section">
+    <h3>환자 상태</h3>
+
+    <div class="inline-pair">
+        <div class="field shrink">
+            <label>현재</label>
+            <div class="field-radio">
+                {% for t in CURRENT_LOCATION_TYPES %}
+                <label><input type="radio" name="consultation.current_location_type" value="{{ t }}"
+                              {% if is_edit and consultation.current_location_type == t %}checked{% endif %}> {{ t }}</label>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="field grow" style="position:relative">
+            <label>병원/요양원 이름 <span class="muted" style="font-size:0.78em">(모병원 — 입원중·입소중일 때 통계 반영)</span></label>
+            <input type="text" class="boxed-input" name="consultation.current_location_name"
+                   data-ac="hospital" autocomplete="off"
+                   value="{{ consultation.current_location_name if is_edit and consultation.current_location_name else '' }}">
+            <div class="ac-list" id="ac-hospital" hidden></div>
+        </div>
+    </div>
+
+    <div class="field">
+        <label>의식</label>
+        <div class="option-group">
+            <fieldset class="opt-box" style="flex: 0 0 auto">
+                <legend>의식 상태</legend>
+                <div class="field-radio">
+                    {% for opt in CONSCIOUSNESS_MAIN_OPTIONS %}
+                    <label><input type="radio" name="consultation.consciousness_main" value="{{ opt }}"
+                                  {% if is_edit and consultation.consciousness_main == opt %}checked{% endif %}> {{ opt }}</label>
+                    {% endfor %}
+                </div>
+            </fieldset>
+            <fieldset class="opt-box" style="flex: 1 1 360px">
+                <legend>대화</legend>
+                <div class="compact-row">
+                    {% for opt in CONVERSATION_LEVEL_OPTIONS %}
+                    <label><input type="radio" name="consultation.conversation_level" value="{{ opt }}"
+                                  {% if is_edit and consultation.conversation_level == opt %}checked{% endif %}> {{ opt }}</label>
+                    {% endfor %}
+                    <span class="sub-row-label">기타:</span>
+                    {% for opt in HEARING_OPTIONS %}
+                    <label><input type="checkbox" name="consultation.hearing_options[]" value="{{ opt }}"
+                                  {% if opt in hearing_set %}checked{% endif %}> {{ opt }}</label>
+                    {% endfor %}
+                    <input type="text" name="consultation.hearing_note" placeholder="기타 메모"
+                           value="{{ consultation.hearing_note if is_edit and consultation.hearing_note else '' }}">
+                </div>
+            </fieldset>
+        </div>
+    </div>
+
+    <div class="field">
+        <label>활동</label>
+        <div class="option-group">
+            <fieldset class="opt-box">
+                <legend>능동 (화장실 가능)</legend>
+                <div class="field-radio">
+                    {% for opt in ACTIVITY_ACTIVE_OPTIONS %}
+                    <label><input type="checkbox" name="consultation.activity_active[]" value="{{ opt }}"
+                                  {% if opt in activity_active_set %}checked{% endif %}> {{ opt }}</label>
+                    {% endfor %}
+                </div>
+            </fieldset>
+            <fieldset class="opt-box">
+                <legend>수동</legend>
+                <div class="compact-row">
+                    <span class="sub-row-label">기저귀:</span>
+                    {% for opt in ACTIVITY_DIAPER_OPTIONS %}
+                    <label><input type="radio" name="consultation.activity_diaper" value="{{ opt }}"
+                                  {% if is_edit and consultation.activity_diaper == opt %}checked{% endif %}> {{ opt }}</label>
+                    {% endfor %}
+                    <span class="sub-row-label">휠체어:</span>
+                    {% for opt in ACTIVITY_WHEELCHAIR_OPTIONS %}
+                    <label><input type="radio" name="consultation.activity_wheelchair" value="{{ opt }}"
+                                  {% if is_edit and consultation.activity_wheelchair == opt %}checked{% endif %}> {{ opt }}</label>
+                    {% endfor %}
+                    {% for opt in ACTIVITY_OTHERS_OPTIONS %}
+                    <label><input type="checkbox" name="consultation.activity_others[]" value="{{ opt }}"
+                                  {% if opt in activity_others_set %}checked{% endif %}> {{ opt }}</label>
+                    {% endfor %}
+                </div>
+            </fieldset>
+        </div>
+    </div>
+
+    <div class="field-row">
+        <div class="field">
+            <label>간병여부</label>
+            <div class="field-radio">
+                {% for opt in CAREGIVER_OPTIONS %}
+                <label><input type="radio" name="consultation.caregiver_status" value="{{ opt }}"
+                              {% if is_edit and consultation.caregiver_status == opt %}checked{% endif %}> {{ opt }}</label>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="field">
+            <label>침대유무</label>
+            <div class="field-radio">
+                {% for opt in BED_OPTIONS %}
+                <label><input type="radio" name="consultation.bed_type" value="{{ opt }}"
+                              {% if is_edit and consultation.bed_type == opt %}checked{% endif %}> {{ opt }}</label>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="field">
+        <label>병명</label>
+        <div class="onset-row">
+            <span class="onset-label">발병일</span>
+            <input type="text" class="onset-input" name="consultation.disease_onset"
+                   placeholder="YYYY-MM-DD 또는 자유 텍스트 (1차 진단 기준)"
+                   value="{{ consultation.disease_onset if is_edit and consultation.disease_onset else '' }}">
+        </div>
+        <div class="option-group">
+            {% for group_name, items in DISEASES_LAYOUT.items() %}
+            <fieldset class="opt-box {% if group_name in ['기저질환', '중추신경계'] %}box-full{% else %}box-half{% endif %}">
+                <legend>{{ group_name }}</legend>
+                <div class="diseases-row">
+                    {% for it in items %}
+                    {% if it.kind == 'checkbox' %}
+                    <span class="dx-item">
+                        <label><input type="checkbox" name="consultation.diseases[]" value="{{ it.value }}"
+                                      {% if it.value in diseases_set %}checked{% endif %}> {{ it.value }}</label>
+                    </span>
+                    {% elif it.kind == 'checkbox+radio' %}
+                    <span class="dx-item">
+                        <label><input type="checkbox" name="consultation.diseases[]" value="{{ it.value }}"
+                                      {% if it.value in diseases_set %}checked{% endif %}> {{ it.value }}</label>
+                        <span class="dx-addon">
+                            <span class="dx-addon-paren">({{ it.addon_label }}:</span>
+                            {% for o in it.addon_options %}
+                            <label><input type="radio" name="consultation.{{ it.addon_field }}" value="{{ o }}"
+                                          {% if is_edit and consultation[it.addon_field] == o %}checked{% endif %}> {{ o }}</label>
+                            {% endfor %}
+                            <span class="dx-addon-paren">)</span>
+                        </span>
+                    </span>
+                    {% elif it.kind == 'checkbox+text' %}
+                    <span class="dx-item{% if it.stretch %} dx-stretch{% endif %}">
+                        <label><input type="checkbox" name="consultation.diseases[]" value="{{ it.value }}"
+                                      {% if it.value in diseases_set %}checked{% endif %}> {{ it.value }}</label>
+                        <input type="text" class="dx-addon-input" name="consultation.{{ it.addon_field }}" placeholder="{{ it.placeholder }}"
+                               value="{{ consultation[it.addon_field] if is_edit and consultation[it.addon_field] else '' }}">
+                    </span>
+                    {% elif it.kind == 'group' %}
+                    <span class="dx-item{% if it.stretch %} dx-stretch{% endif %}">
+                        <span class="dx-group-label">{{ it.label }}</span>
+                        <span class="dx-addon">
+                            <span class="dx-addon-paren">(</span>
+                            {% for sub in it['items'] %}
+                            <label><input type="checkbox" name="consultation.diseases[]" value="{{ sub.value }}"
+                                          {% if sub.value in diseases_set %}checked{% endif %}> {{ sub.label }}</label>
+                            {% endfor %}
+                            <span class="dx-addon-paren">)</span>
+                        </span>
+                        {% if it.addon_field %}
+                        <input type="text" class="dx-addon-input" name="consultation.{{ it.addon_field }}"
+                               placeholder="{{ it.addon_placeholder or '상세' }}"
+                               value="{{ consultation[it.addon_field] if is_edit and consultation[it.addon_field] else '' }}">
+                        {% endif %}
+                    </span>
+                    {% elif it.kind == 'checkbox+group' %}
+                    <span class="dx-item">
+                        <label><input type="checkbox" name="consultation.diseases[]" value="{{ it.value }}"
+                                      {% if it.value in diseases_set %}checked{% endif %}> {{ it.value }}</label>
+                        <span class="dx-addon">
+                            <span class="dx-addon-paren">(</span>
+                            {% for sub in it['items'] %}
+                            <label><input type="checkbox" name="consultation.diseases[]" value="{{ sub.value }}"
+                                          {% if sub.value in diseases_set %}checked{% endif %}> {{ sub.label }}</label>
+                            {% endfor %}
+                            <span class="dx-addon-paren">)</span>
+                        </span>
+                    </span>
+                    {% elif it.kind == 'rowbreak' %}
+                    <div class="dx-rowbreak"></div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+                {% if group_name == '기저질환' %}
+                <div class="sub-fields">
+                    <div class="sub-fields-title">암 상세 (해당시 입력)</div>
+                    <div class="sub-fields-row">
+                        <input type="text" name="consultation.cancer_site" placeholder="부위"
+                               value="{{ consultation.cancer_site if is_edit and consultation.cancer_site else '' }}">
+                        <input type="text" name="consultation.cancer_onset" placeholder="발병일"
+                               value="{{ consultation.cancer_onset if is_edit and consultation.cancer_onset else '' }}">
+                        <input type="text" name="consultation.cancer_metastasis" placeholder="전이"
+                               value="{{ consultation.cancer_metastasis if is_edit and consultation.cancer_metastasis else '' }}">
+                        <input type="text" name="consultation.cancer_pain" placeholder="통증"
+                               value="{{ consultation.cancer_pain if is_edit and consultation.cancer_pain else '' }}">
+                        <input type="text" name="consultation.cancer_patch" placeholder="patch 사용"
+                               value="{{ consultation.cancer_patch if is_edit and consultation.cancer_patch else '' }}">
+                    </div>
+                </div>
+                {% endif %}
+            </fieldset>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="field">
+        <label>기타 <span class="muted" style="font-size:0.85em">— ARRANGE (케어 방향 결정)</span></label>
+        <div class="field-radio">
+            {% for it in OTHERS_LAYOUT %}
+            {% if it.kind == 'checkbox' %}
+            <label><input type="checkbox" name="consultation.arrange_items[]" value="{{ it.value }}"
+                          {% if it.value in arrange_set %}checked{% endif %}> {{ it.value }}</label>
+            {% elif it.kind == 'group' %}
+            <span class="dx-item">
+                <span class="dx-group-label">{{ it.label }}</span>
+                <span class="dx-addon">
+                    <span class="dx-addon-paren">(</span>
+                    {% for sub in it['items'] %}
+                    <label><input type="checkbox" name="consultation.arrange_items[]" value="{{ sub.value }}"
+                                  {% if sub.value in arrange_set %}checked{% endif %}> {{ sub.label }}</label>
+                    {% endfor %}
+                    <span class="dx-addon-paren">)</span>
+                </span>
+            </span>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="field">
+        <label>기타 메모 (-PO / -OP 등)</label>
+        <textarea name="consultation.disease_detail" rows="3"
+                  placeholder="-PO: / -OP: / 기타 자유 메모">{{ consultation.disease_detail if is_edit and consultation.disease_detail else '' }}</textarea>
+    </div>
+
+    <div class="field">
+        <label>입원목적</label>
+        <textarea name="consultation.admission_purpose" rows="2">{{ consultation.admission_purpose if is_edit and consultation.admission_purpose else '' }}</textarea>
+    </div>
+
+    <div class="field">
+        <label>식사종류</label>
+        <div class="checkbox-grid">
+            {% for opt in DIET_TYPES %}
+            <label><input type="checkbox" name="consultation.diet_types[]" value="{{ opt }}"
+                          {% if opt in diet_set %}checked{% endif %}> {{ opt }}</label>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="field-row">
+        <div class="field">
+            <label>상처소독</label>
+            <div class="checkbox-grid">
+                {% for opt in WOUND_CARE_OPTIONS %}
+                <label><input type="checkbox" name="consultation.wound_care[]" value="{{ opt }}"
+                              {% if opt in wound_set %}checked{% endif %}> {{ opt }}</label>
+                {% endfor %}
+            </div>
+            <input type="text" name="consultation.wound_site" style="margin-top:6px"
+                   value="{{ consultation.wound_site if is_edit and consultation.wound_site else '' }}"
+                   placeholder="욕창 부위">
+        </div>
+        <div class="field">
+            <label>특수처치</label>
+            <div class="checkbox-grid">
+                {% for opt in SPECIAL_CARE_OPTIONS %}
+                <label><input type="checkbox" name="consultation.special_care[]" value="{{ opt }}"
+                              {% if opt in special_set %}checked{% endif %}> {{ opt }}</label>
+                {% endfor %}
+            </div>
+            <input type="text" name="consultation.oxygen_lpm" style="margin-top:6px"
+                   value="{{ consultation.oxygen_lpm if is_edit and consultation.oxygen_lpm else '' }}"
+                   placeholder="산소요법 L/min">
+        </div>
+    </div>
+
+    <div class="field-row">
+        <div class="field">
+            <label>연하검사</label>
+            <div class="field-radio">
+                <label><input type="radio" name="consultation.swallow_test" value="유"
+                              {% if is_edit and consultation.swallow_test == '유' %}checked{% endif %}> 유</label>
+                <label><input type="radio" name="consultation.swallow_test" value="무"
+                              {% if is_edit and consultation.swallow_test == '무' %}checked{% endif %}> 무</label>
+            </div>
+            <input type="text" name="consultation.swallow_test_dates" style="margin-top:6px"
+                   value="{{ consultation.swallow_test_dates if is_edit and consultation.swallow_test_dates else '' }}"
+                   placeholder="검사일 (예: 2026-04-12, 2026-04-19)">
+        </div>
+        <div class="field">
+            <label>치료</label>
+            <div class="checkbox-grid">
+                {% for opt in THERAPY_OPTIONS %}
+                <label><input type="checkbox" name="consultation.therapy[]" value="{{ opt }}"
+                              {% if opt in therapy_set %}checked{% endif %}> {{ opt }}</label>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ───────── 입원시 확인사항 ───────── -->
+<div class="form-section">
+    <h3>입원시 확인사항</h3>
+
+    <div class="field">
+        <label>준비 서류</label>
+        <div class="checkbox-grid">
+            {% for opt in ADMISSION_DOCS %}
+            <label><input type="checkbox" name="consultation.documents_checklist[]" value="{{ opt }}"
+                          {% if opt in docs_set %}checked{% endif %}> {{ opt }}</label>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="field-row">
+        <div class="field">
+            <label>입원가능기간</label>
+            <input type="text" name="consultation.admission_period"
+                   value="{{ consultation.admission_period if is_edit and consultation.admission_period else '' }}">
+        </div>
+        <div class="field">
+            <label>이송수단</label>
+            <div class="checkbox-grid">
+                {% for opt in TRANSPORT_OPTIONS %}
+                <label><input type="checkbox" name="consultation.transport_method[]" value="{{ opt }}"
+                              {% if opt in transport_set %}checked{% endif %}> {{ opt }}</label>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ───────── 진료비 입원수속 / 안내사항 ───────── -->
+<div class="form-section">
+    <div class="field-row">
+        <div class="field">
+            <label>진료비 입원수속</label>
+            <div class="checkbox-grid">
+                {% for opt in COST_GUIDANCE_OPTIONS %}
+                <label><input type="checkbox" name="consultation.cost_guidance[]" value="{{ opt }}"
+                              {% if opt in cost_set %}checked{% endif %}> {{ opt }}</label>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="field">
+            <label>안내사항</label>
+            <div class="checkbox-grid">
+                {% for opt in INFO_PROVIDED_OPTIONS %}
+                <label><input type="checkbox" name="consultation.info_provided[]" value="{{ opt }}"
+                              {% if opt in info_set %}checked{% endif %}> {{ opt }}</label>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="form-actions">
+    <a href="{% if is_edit %}/consult/{{ consultation.id }}{% else %}/{% endif %}" class="btn btn-secondary">취소</a>
+    <button type="submit" class="btn btn-primary" id="save-btn">
+        {% if is_edit %}저장{% else %}등록{% endif %}
+    </button>
+</div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>window.SIGUNGU_INDEX = {{ SIGUNGU_INDEX|tojson }};</script>
+<script src="/static/js/common.js"></script>
+<script src="/static/js/form.js"></script>
+{% endblock %}
