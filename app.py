@@ -9,6 +9,7 @@ import logging
 import os
 import secrets
 from datetime import datetime, timedelta
+from urllib.parse import urlencode
 
 from dotenv import load_dotenv
 from flask import (
@@ -76,6 +77,20 @@ def _no_store(resp):
     return resp
 
 
+def _url_with(**overrides):
+    """현재 요청의 쿼리스트링을 유지하면서 일부 파라미터만 덮어쓴 URL 반환.
+    값이 None이거나 빈 문자열이면 해당 파라미터를 제거한다 (정렬·페이지 링크용).
+    """
+    args = request.args.to_dict()
+    for k, v in overrides.items():
+        if v is None or v == "":
+            args.pop(k, None)
+        else:
+            args[k] = str(v)
+    qs = urlencode(args)
+    return request.path + (("?" + qs) if qs else "")
+
+
 @app.context_processor
 def _inject_globals():
     return {
@@ -115,6 +130,7 @@ def _inject_globals():
         "SIGUNGU_LIST": SIGUNGU_LIST,
         "SIGUNGU_INDEX": SIGUNGU_INDEX,
         "now": datetime.now,
+        "url_with": _url_with,
     }
 
 
@@ -128,6 +144,310 @@ def _krdate(value):
         except ValueError:
             return value
     return value.strftime("%Y-%m-%d")
+
+
+@app.template_filter("krdate_wd")
+def _krdate_wd(value):
+    """'2026-05-04' → '5/4(월)' (요일 포함)."""
+    if not value:
+        return ""
+    if isinstance(value, str):
+        try:
+            value = datetime.strptime(value[:10], "%Y-%m-%d")
+        except ValueError:
+            return value
+    wd = "월화수목금토일"[value.weekday()]
+    return f"{value.month}/{value.day}({wd})"
+
+
+@app.template_filter("krdate_wd_full")
+def _krdate_wd_full(value):
+    """'2026-05-04' → '2026-05-04(월)' (연-월-일 + 요일)."""
+    if not value:
+        return ""
+    if isinstance(value, str):
+        try:
+            value = datetime.strptime(value[:10], "%Y-%m-%d")
+        except ValueError:
+            return value
+    wd = "월화수목금토일"[value.weekday()]
+    return f"{value.strftime('%Y-%m-%d')}({wd})"
+
+
+_SIDO_SHORT = {
+    "서울특별시": "서울", "부산광역시": "부산", "대구광역시": "대구",
+    "인천광역시": "인천", "광주광역시": "광주", "대전광역시": "대전",
+    "울산광역시": "울산", "세종특별자치시": "세종",
+    "경기도": "경기", "강원특별자치도": "강원", "강원도": "강원",
+    "충청북도": "충북", "충청남도": "충남",
+    "전북특별자치도": "전북", "전라북도": "전북", "전라남도": "전남",
+    "경상북도": "경북", "경상남도": "경남",
+    "제주특별자치도": "제주", "제주도": "제주",
+}
+
+
+@app.template_filter("sido_short")
+def _sido_short(value):
+    if not value:
+        return ""
+    return _SIDO_SHORT.get(value, value)
+
+
+# 기저질환 그룹의 부모 라벨 prefix — 병명 셀에서 제외용
+_CHRONIC_PREFIXES = ("당뇨", "고혈압", "파킨슨", "희귀성난치질환",
+                     "치매", "인지기능저하", "이상행동", "탈출", "암")
+
+
+@app.template_filter("hide_chronic")
+def _hide_chronic(diseases_list):
+    """diseases JSON 리스트에서 기저질환·만성질환 라벨 제거."""
+    if not diseases_list:
+        return []
+    out = []
+    for d in diseases_list:
+        if d == "기저질환":
+            continue
+        if any(d == p or d.startswith(p + "-") for p in _CHRONIC_PREFIXES):
+            continue
+        out.append(d)
+    return out
+
+
+@app.template_filter("simplify_label")
+def _simplify_label(label):
+    """'마비-편마비 좌' → '마비', '골반-단일 골절' → '골반'. 세부값 제거."""
+    if not label:
+        return ""
+    return label.split("-", 1)[0]
+
+
+# 회복기 자동 판정 — 의료법(재활의료기관 본지정 고시) 기준
+# 진단군별 회복기 인정 기간(일). 가장 긴 매칭값을 채택.
+_RECOVERY_RULES = [
+    # (키워드 리스트, 인정 기간 일수)
+    # 여러 병명이 매칭되면 가장 긴 인정 기간을 적용한다.
+    (["뇌출혈", "뇌경색", "뇌손상", "척수손상", "뇌성마비",
+      "마비", "편마비", "사지마비", "중추신경계"], 90),
+    # 골유합 지연 — 근골격계 골절 중 골유합이 지연되는 경우 인정 기간 연장
+    (["골유합 지연", "골유합지연"], 60),
+    (["고관절", "대퇴", "대퇴부", "골반", "절단", "하지 부위 절단",
+      "슬관절", "근골격계"], 30),
+    # 비사용증후군 — 2026-05-20 사용자 확인: 회복기 인정 기간 60일.
+    # 파킨슨(신규)·길랑바레증후군도 비사용증후군 기준 동일 적용.
+    (["호흡질환", "폐질환", "심장질환", "신생물", "폐렴", "폐수종",
+      "패혈증", "농양", "다제내성", "CRE", "VRE",
+      "신부전", "동정맥루", "복부대동맥류", "급성복막염", "장폐색",
+      "파킨슨(신규)", "길랑바레증후군", "비사용증후군"], 60),
+]
+
+
+def compute_recovery_detail(reference_date, disease_onset, diseases):
+    """입원(예정)일/상담일 - 발병일 → 회복기 판정 상세.
+    Returns: dict(label, days, period, days_left) 또는 None(판정 불가).
+      days      = 경과일 (reference - onset)
+      period    = 인정 기간 (중추신경계 90일 / 비사용증후군·골유합 지연 60일 / 근골격계 30일)
+      days_left = period - days (회복기 잔여일; 양수면 임박, 음수면 초과일)
+    """
+    if not reference_date or not disease_onset:
+        return None
+    try:
+        rd = datetime.strptime(str(reference_date)[:10], "%Y-%m-%d").date()
+        od = datetime.strptime(str(disease_onset)[:10], "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
+    days = (rd - od).days
+    if days < 0:
+        return None
+    matched = 0
+    for d in diseases or []:
+        if not d:
+            continue
+        d_str = str(d)
+        for kws, period in _RECOVERY_RULES:
+            if any(kw in d_str for kw in kws):
+                if period > matched:
+                    matched = period
+                break
+    if matched == 0:
+        return None
+    return {
+        "label": "회복기" if days <= matched else "비회복기",
+        "days": days,
+        "period": matched,
+        "days_left": matched - days,
+    }
+
+
+def compute_recovery(reference_date, disease_onset, diseases):
+    """입원(예정)일 또는 상담일 - 발병일 → 회복기 여부.
+    Returns: '회복기' | '비회복기' | None(판정 불가).
+    """
+    detail = compute_recovery_detail(reference_date, disease_onset, diseases)
+    return detail["label"] if detail else None
+
+
+@app.template_filter("recovery_status")
+def _recovery_status(consultation):
+    """저장된 admission_purpose 우선, 없으면 발병일 기반 자동 판정.
+    Returns: dict(label, source, days_left) — source='manual'|'auto'|None.
+      days_left: 회복기 인정기간 잔여일(자동 계산 가능 시). 임박 경고용.
+    """
+    if not consultation:
+        return {"label": None, "source": None, "days_left": None}
+    purpose = (consultation.get("admission_purpose") or "").strip()
+    # 저장값 매핑 — 자동 기입값이 '회복기재활 및 간호간병 통합서비스' 형태일 수 있어 접두 판정.
+    def _purpose_label(p):
+        if p.startswith("비회복기재활") or p == "비회복기":
+            return "비회복기"
+        if p.startswith("회복기재활") or p == "회복기":
+            return "회복기"
+        if p.startswith("요양"):
+            return "요양"
+        return None
+    manual_label = _purpose_label(purpose)
+    # 자동 계산 (입원일 우선, 없으면 상담일) — 저장값과 무관하게 잔여일 산출
+    ref = (consultation.get("actual_admission_date")
+           or consultation.get("admission_date")
+           or consultation.get("planned_admission_date")
+           or consultation.get("consult_date"))
+    detail = compute_recovery_detail(
+        ref, consultation.get("disease_onset"), consultation.get("diseases"),
+    )
+    days_left = detail["days_left"] if detail else None
+    if manual_label:
+        return {"label": manual_label, "source": "manual", "days_left": days_left}
+    if detail:
+        return {"label": detail["label"], "source": "auto", "days_left": days_left}
+    if purpose:
+        return {"label": "기타", "source": "manual", "days_left": None}
+    return {"label": None, "source": None, "days_left": None}
+
+
+# ── 입원 기간(입원 후 재원 가능 일수) ──
+# 중추신경계: 회복기 360일(s005 180 + s006 180) / 비회복기 180일(s006)
+# 비사용증후군·하지 부위 절단·골유합 지연: 60일
+# 근골격계 골절: 단일부위 30일 / 내고정술·전치환술·다발부위 60일
+_ADM_CNS_KW = ("뇌출혈", "뇌경색", "뇌손상", "척수손상", "뇌성마비",
+               "마비", "편마비", "사지마비", "중추신경계")
+_ADM_DISUSE_KW = ("호흡질환", "폐질환", "심장질환", "신생물", "폐렴", "폐수종",
+                  "패혈증", "농양", "다제내성", "CRE", "VRE", "신부전",
+                  "동정맥루", "복부대동맥류", "급성복막염", "장폐색",
+                  "파킨슨(신규)", "길랑바레증후군", "비사용증후군")
+_ADM_MSK_KW = ("고관절", "대퇴", "골반", "근골격계", "슬관절",
+               "내고정술", "치환술", "다발")
+_ADM_MSK_LONG_KW = ("내고정술", "치환술", "다발")  # 근골격계 단일부위 → 60일 가산
+
+
+def compute_admission_period(diseases, recovery_label):
+    """질환군 + 회복기/비회복기 → 입원 기간(입원 후 재원 가능 일수).
+    Returns: dict(total, billing) 또는 None(산정 불가).
+      total   = 전체 입원 가능 일수
+      billing = 회복기 수가(s005) 인정 기간 — 중추신경계 회복기만 180, 그 외 None
+    여러 질환군 중복 시 가장 긴 입원 기간을 적용한다.
+    """
+    ds = [str(d) for d in (diseases or []) if d]
+    if not ds:
+        return None
+
+    def has(kws):
+        return any(any(kw in d for kw in kws) for d in ds)
+
+    total = 0
+    billing = None
+    if has(_ADM_CNS_KW):
+        if recovery_label == "회복기":
+            total = max(total, 360)
+            billing = 180
+        elif recovery_label == "비회복기":
+            total = max(total, 180)
+        # 회복기/비회복기 미상이면 중추신경계 입원 기간 산정 불가 → 기여 안 함
+    if has(_ADM_DISUSE_KW):
+        total = max(total, 60)
+    if has(("하지 부위 절단",)):
+        total = max(total, 60)
+    if has(("골유합 지연", "골유합지연")):
+        total = max(total, 60)
+    if has(_ADM_MSK_KW):
+        total = max(total, 60 if has(_ADM_MSK_LONG_KW) else 30)
+    if total == 0:
+        return None
+    return {"total": total, "billing": billing}
+
+
+@app.template_filter("admission_expiry")
+def _admission_expiry(consultation):
+    """입원일 + 입원 기간 → 입원 만료일(퇴원 예정일) 계산.
+    Returns: dict 또는 None.
+      basis        = 'actual'(실제 입원일) | 'planned'(입원예정일 기준 추정)
+      total_days   = 전체 입원 가능 일수, total_date/total_left = 만료일/잔여일
+      billing_days = 회복기 수가(s005) 기간, billing_date/billing_left
+                     (중추신경계 회복기만, 그 외 None)
+    """
+    if not consultation:
+        return None
+    rec = _recovery_status(consultation)
+    period = compute_admission_period(
+        consultation.get("diseases"), rec.get("label"),
+    )
+    if not period:
+        return None
+    actual = (consultation.get("actual_admission_date")
+              or consultation.get("admission_date"))
+    planned = consultation.get("planned_admission_date")
+    adm = actual or planned
+    if not adm:
+        return None
+    try:
+        ad = datetime.strptime(str(adm)[:10], "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
+    today = datetime.now().date()
+    total_d = ad + timedelta(days=period["total"])
+    out = {
+        "basis": "actual" if actual else "planned",
+        "total_days": period["total"],
+        "total_date": total_d.isoformat(),
+        "total_left": (total_d - today).days,
+        "billing_days": period["billing"],
+        "billing_date": None,
+        "billing_left": None,
+    }
+    if period["billing"]:
+        bd = ad + timedelta(days=period["billing"])
+        out["billing_date"] = bd.isoformat()
+        out["billing_left"] = (bd - today).days
+    return out
+
+
+@app.template_filter("discharge_watch")
+def _discharge_watch(consultation):
+    """입원완료 상담의 퇴원 임박 여부 — 상담목록 '퇴원예정' 표기/액션용.
+    Returns: dict(state, due_date, days_left) 또는 None.
+      state     = '퇴원예정'(유효 퇴원예정일 30일 이내·초과) | None
+      due_date  = 유효 퇴원예정일 — 수동 입원연장값(discharge_due_date) 우선,
+                  없으면 입원만료일(_admission_expiry total_date) 자동 계산
+      days_left = due_date - 오늘 (음수면 초과)
+    """
+    if not consultation:
+        return None
+    if (consultation.get("admission_status") or "").strip() != "입원완료":
+        return None
+    due = (consultation.get("discharge_due_date") or "").strip() or None
+    if not due:
+        ax = _admission_expiry(consultation)
+        due = ax["total_date"] if ax else None
+    if not due:
+        return None
+    try:
+        dd = datetime.strptime(str(due)[:10], "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
+    days_left = (dd - datetime.now().date()).days
+    return {
+        "state": "퇴원예정" if days_left <= 30 else None,
+        "due_date": dd.isoformat(),
+        "days_left": days_left,
+    }
 
 
 @app.template_filter("agefrom")
@@ -175,6 +495,10 @@ def logout_view():
 @login_required
 def dashboard():
     data = models.dashboard_summary()
+    # 퇴원예정 — 입원완료 상담 중 입원기간 만료 30일 이내(또는 초과). 병상 회전 계획용.
+    admitted = models.list_consultations(admission_status="입원완료", limit=10000)
+    data["summary"]["discharge_pending"] = sum(
+        1 for con in admitted if (_discharge_watch(con) or {}).get("state"))
     return render_template("dashboard.html", **data)
 
 
@@ -310,12 +634,40 @@ def consult_edit(cid):
     return render_template("consult_form.html", consultation=c, patient=patient)
 
 
+CONSULT_PAGE_SIZE = 100  # 상담 목록 페이지당 행 수
+
+
 @app.route("/consultations")
 @login_required
 def consult_list():
     filters = _list_filters_from_request()
-    rows = models.list_consultations(**filters, limit=200)
-    return render_template("consult_list.html", rows=rows, filters=filters)
+    sort = request.args.get("sort") or "date"
+    sort_dir = "asc" if (request.args.get("dir") or "").lower() == "asc" else "desc"
+    try:
+        page = max(1, int(request.args.get("page") or 1))
+    except (ValueError, TypeError):
+        page = 1
+    total = models.count_consultations(**filters)
+    total_pages = max(1, (total + CONSULT_PAGE_SIZE - 1) // CONSULT_PAGE_SIZE)
+    page = min(page, total_pages)
+    offset = (page - 1) * CONSULT_PAGE_SIZE
+    rows = models.list_consultations(
+        **filters, sort=sort, sort_dir=sort_dir,
+        limit=CONSULT_PAGE_SIZE, offset=offset,
+    )
+    return render_template(
+        "consult_list.html", rows=rows, filters=filters,
+        sort=sort, sort_dir=sort_dir,
+        page=page, total_pages=total_pages, total=total,
+        page_size=CONSULT_PAGE_SIZE, page_start=offset,
+        COUNSELORS=COUNSELORS,
+        ADMISSION_STATUSES=ADMISSION_STATUSES,
+        DISEASE_GROUPS=list(DISEASES_GROUPS.keys()),
+        SIDO_LIST=SIDO_LIST,
+        REFERRAL_TYPES=REFERRAL_TYPES,
+        CONSULT_CHANNELS=CONSULT_CHANNELS,
+        RECOVERY_OPTIONS=["회복기", "비회복기", "요양"],
+    )
 
 
 @app.route("/consultations.csv")
@@ -326,18 +678,26 @@ def consult_csv():
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow([
-        "상담일", "상담시각", "환자명", "성별", "나이", "주소",
-        "보험유형", "보호자", "관계", "연락처",
-        "상담방법", "유입경로(상위)", "세부 경로",
-        "주치의", "호실", "입원예정일", "상담자",
+        "상담일", "상담시각", "환자명", "성별", "나이",
+        "거주시도", "거주시군구", "주소", "보험유형",
+        "보호자", "관계", "연락처",
+        "상담방법", "유입경로(상위)", "세부경로",
+        "모병원", "병명", "발병일", "회복기", "상담상태",
+        "주치의", "호실", "입원예정일", "입원완료일", "상담자",
     ])
     for r in rows:
+        rec = _recovery_status(r)
+        recovery_label = rec["label"] or ""
+        if recovery_label and rec["source"] == "auto":
+            recovery_label += "(자동)"
         writer.writerow([
             r.get("consult_date") or "",
             r.get("consult_time") or "",
             r.get("patient_name") or "",
             r.get("gender") or "",
             r.get("patient_age") if r.get("patient_age") is not None else "",
+            r.get("residence_sido") or "",
+            r.get("residence_sigungu") or "",
             r.get("address_full") or "",
             r.get("insurance_type") or "",
             r.get("guardian_name") or "",
@@ -346,9 +706,15 @@ def consult_csv():
             r.get("consult_channel") or "",
             _csv_list(r.get("referral_source_type")),
             _csv_list(r.get("referral_source_detail")),
+            r.get("source_hospital") or "",
+            _csv_list(r.get("diseases")),
+            r.get("disease_onset") or "",
+            recovery_label,
+            r.get("admission_status") or "상담완료",
             r.get("attending_doctor") or "",
             r.get("room_number") or "",
             r.get("planned_admission_date") or "",
+            r.get("actual_admission_date") or "",
             r.get("counselor") or "",
         ])
     models.log_audit(
@@ -423,6 +789,9 @@ def api_consult_update(cid):
     if not existing:
         return jsonify({"error": "not found"}), 404
     payload = request.get_json(silent=True) or {}
+    err = _validate_consult_payload(payload, require_patient=False)
+    if err:
+        return jsonify({"error": err}), 400
 
     p = payload.get("patient") or {}
     if p:
@@ -471,12 +840,21 @@ def api_consult_status(cid):
         except ValueError:
             return jsonify({"error": "입원일자 형식 오류"}), 400
 
-    # 입원취소 시 사유(라벨) + 자유메모 함께 저장. 라벨은 화이트리스트 검증.
+    # 입원보류 시 사유 필수.
+    if status == "입원보류":
+        hold_reason = (payload.get("hold_reason") or "").strip()
+        if not hold_reason:
+            return jsonify({"error": "입원보류 사유를 입력하세요."}), 400
+        fields["hold_reason"] = hold_reason
+
+    # 입원취소 시 사유(라벨) + 자유메모 함께 저장. 라벨은 화이트리스트 검증, 사유 필수.
     if status == "입원취소":
         reason = (payload.get("rejection_reason") or "").strip()
         reason_detail = (payload.get("rejection_reason_detail") or "").strip()
         if reason and reason not in REJECTION_REASONS:
             return jsonify({"error": "허용되지 않은 취소 사유"}), 400
+        if not reason and not reason_detail:
+            return jsonify({"error": "입원취소 사유를 입력하세요."}), 400
         if reason:
             fields["rejection_reason"] = reason
         if reason_detail:
@@ -490,6 +868,69 @@ def api_consult_status(cid):
     )
     return jsonify({"ok": True, "admission_status": status,
                     "admission_date": fields.get("admission_date")})
+
+
+# ───────────────────── API: 퇴원 워크플로 (상담목록) ─────────────────────
+
+@app.route("/api/consult/<int:cid>/discharge", methods=["POST"])
+@login_required
+def api_consult_discharge(cid):
+    """입원완료 상담의 퇴원 처리 — action=complete(퇴원완료) | extend(입원연장).
+    complete: admission_status='퇴원완료' + discharge_date 저장.
+    extend:   discharge_due_date(새 퇴원예정일) 저장. 상태는 입원완료 유지.
+    """
+    existing = models.get_consultation(cid)
+    if not existing:
+        return jsonify({"error": "not found"}), 404
+    payload = request.get_json(silent=True) or {}
+    action = (payload.get("action") or "").strip()
+    fields = {}
+    if action == "complete":
+        ddate = (payload.get("discharge_date") or "").strip()
+        if not ddate:
+            return jsonify({"error": "퇴원일자를 입력하세요."}), 400
+        try:
+            datetime.strptime(ddate, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"error": "퇴원일자 형식 오류 (YYYY-MM-DD)"}), 400
+        fields["admission_status"] = "퇴원완료"
+        fields["discharge_date"] = ddate
+    elif action == "extend":
+        due = (payload.get("discharge_due_date") or "").strip()
+        if not due:
+            return jsonify({"error": "새 퇴원예정일을 입력하세요."}), 400
+        try:
+            datetime.strptime(due, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"error": "퇴원예정일 형식 오류 (YYYY-MM-DD)"}), 400
+        fields["discharge_due_date"] = due
+    else:
+        return jsonify({"error": "허용되지 않은 동작"}), 400
+
+    models.update_consultation_meta(cid, **fields)
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="update_discharge", target_type="consultation", target_id=cid,
+        detail=action, ip=request.remote_addr,
+    )
+    return jsonify({"ok": True, **fields})
+
+
+@app.route("/api/consult/<int:cid>", methods=["DELETE"])
+@login_required
+def api_consult_delete(cid):
+    """상담 1건 삭제. 감사 로그에 환자명·날짜 기록."""
+    existing = models.get_consultation(cid)
+    if not existing:
+        return jsonify({"error": "not found"}), 404
+    detail = f"{existing.get('patient_name', '')} / {existing.get('consult_date', '')}"
+    models.delete_consultation(cid)
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="delete_consult", target_type="consultation", target_id=cid,
+        detail=detail, ip=request.remote_addr,
+    )
+    return jsonify({"ok": True})
 
 
 # ───────────────────── API: 자동완성 ─────────────────────
@@ -528,6 +969,13 @@ def _list_filters_from_request():
         "date_from": request.args.get("from") or None,
         "date_to": request.args.get("to") or None,
         "insurance": request.args.get("insurance") or None,
+        "counselor": request.args.get("counselor") or None,
+        "admission_status": request.args.get("admission_status") or None,
+        "disease_group": request.args.get("disease_group") or None,
+        "residence_sido": request.args.get("residence_sido") or None,
+        "recovery": request.args.get("recovery") or None,
+        "consult_channel": request.args.get("consult_channel") or None,
+        "referral_type": request.args.get("referral_type") or None,
         "q": request.args.get("q") or None,
     }
 
@@ -624,13 +1072,13 @@ def _consult_fields_from_payload(c: dict) -> dict:
             out[key] = v.strip() or None
         else:
             out[key] = v
-    # 모병원 자동 매핑: '현재' 라디오가 입원중/입소중인 경우에 한해
-    # current_location_name을 source_hospital 컬럼에도 함께 기록.
-    # 자택 거주는 모병원 없음(통계 분석에서 제외).
+    # 모병원 자동 매핑: '현재' 라디오가 입원중이면 병원명, 입소중이면 요양원명을
+    # source_hospital 컬럼에 함께 기록. 자택 거주는 모병원 없음(통계 분석에서 제외).
     loc_type = out.get("current_location_type")
-    loc_name = out.get("current_location_name")
-    if loc_type in ("입원중", "입소중") and loc_name:
-        out["source_hospital"] = loc_name
+    if loc_type == "입원중" and out.get("current_location_name"):
+        out["source_hospital"] = out["current_location_name"]
+    elif loc_type == "입소중" and out.get("current_nursing_name"):
+        out["source_hospital"] = out["current_nursing_name"]
     # 입원경로(다중) — 선택된 항목들로부터 상위 그룹(온라인/소개/기타)을 중복없이 도출
     detail = out.get("referral_source_detail")
     if isinstance(detail, list) and detail:
@@ -664,6 +1112,19 @@ def _validate_consult_payload(payload, *, require_patient):
             datetime.strptime(cd, "%Y-%m-%d")
         except ValueError:
             return "상담일자 형식이 올바르지 않습니다 (YYYY-MM-DD)."
+    # 상담 결과(입원 진행 상태) — 화이트리스트 + 보류/취소 사유 필수
+    status = (c.get("admission_status") or "").strip()
+    if status and status not in ADMISSION_STATUSES:
+        return "허용되지 않은 상담 상태값입니다."
+    if status == "입원보류" and not (c.get("hold_reason") or "").strip():
+        return "입원보류 사유를 입력하세요."
+    if status == "입원취소":
+        reason = (c.get("rejection_reason") or "").strip()
+        detail = (c.get("rejection_reason_detail") or "").strip()
+        if reason and reason not in REJECTION_REASONS:
+            return "허용되지 않은 입원취소 사유입니다."
+        if not reason and not detail:
+            return "입원취소 사유를 입력하세요."
     return None
 
 

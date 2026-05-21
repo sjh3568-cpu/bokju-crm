@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block title %}통계 — 복주 상담실{% endblock %}
 {% block head_extra %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="{{ url_for('static', filename='js/chart.umd.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/chartjs-plugin-datalabels.min.js') }}"></script>
 {% endblock %}
 {% block content %}
 <div class="page-header">
@@ -42,9 +43,10 @@
     <div class="stat-card"><div class="label">총 상담건수</div><div class="value" data-kpi="total">-</div><div class="sub" data-kpi="total-sub"></div></div>
     <div class="stat-card accent"><div class="label">입원 완료</div><div class="value" data-kpi="completed">-</div><div class="sub" data-kpi="completed-sub">실제 입원</div></div>
     <div class="stat-card"><div class="label">입원 전환율</div><div class="value" data-kpi="conv-rate">-</div><div class="sub">입원완료 ÷ 총 상담</div></div>
-    <div class="stat-card warn"><div class="label">입원 보류</div><div class="value" data-kpi="pending">-</div><div class="sub">상담완료+입원예정+입원확정</div></div>
+    <div class="stat-card warn"><div class="label">입원 보류</div><div class="value" data-kpi="pending">-</div><div class="sub">상담완료+입원보류</div></div>
     <div class="stat-card danger"><div class="label">입원 취소</div><div class="value" data-kpi="cancelled">-</div><div class="sub" data-kpi="cancelled-sub"></div></div>
     <div class="stat-card"><div class="label">일평균 상담</div><div class="value" data-kpi="daily-avg">-</div><div class="sub">기간 내 평균</div></div>
+    <div class="stat-card"><div class="label">비사용증후군 발굴</div><div class="value" data-kpi="disuse">-</div><div class="sub">발굴 대상 기재 건수</div></div>
 </div>
 
 <!-- 시계열(2/3) + 진행 단계(1/3) -->
@@ -197,6 +199,12 @@
     Chart.defaults.plugins.legend.labels.boxWidth = 10;
     Chart.defaults.plugins.legend.labels.padding = 5;
     Chart.defaults.layout = { padding: 0 };
+    // datalabels 플러그인 전역 등록 (차트별로 plugins.datalabels에서 세부 설정)
+    if (typeof ChartDataLabels !== 'undefined') {
+        Chart.register(ChartDataLabels);
+    } else {
+        console.warn('ChartDataLabels 플러그인 로드 실패');
+    }
 
     const PRIMARY = '#14532d';
     const PALETTE = [
@@ -205,6 +213,48 @@
         '#ea580c', '#0d9488', '#7c3aed', '#be123c', '#365314',
     ];
     const charts = {};
+
+    // 도넛/파이용 datalabels — 건수+비율 (작은 조각은 숨김)
+    const doughnutDatalabels = {
+        display: ctx => {
+            const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+            const v = ctx.dataset.data[ctx.dataIndex];
+            return total && (v / total) >= 0.04;  // 4% 미만은 숨김
+        },
+        color: '#fff',
+        font: { weight: 'bold', size: 10 },
+        textAlign: 'center',
+        formatter: (v, ctx) => {
+            const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+            const pct = total ? (100 * v / total).toFixed(1) : '0.0';
+            return `${v}\n(${pct}%)`;
+        },
+    };
+
+    // 막대용 datalabels — 막대 끝에 건수 표시
+    const barDatalabels = {
+        display: true,
+        anchor: 'end',
+        align: 'end',
+        color: '#334155',
+        font: { weight: '600', size: 10 },
+        formatter: v => v,
+        clamp: true,
+        clip: false,
+    };
+
+    // 라인용 datalabels — 점 위 건수 (라벨이 너무 겹치면 숨김)
+    const lineDatalabels = {
+        display: ctx => {
+            if (ctx.dataset.data.length > 35) return false;
+            return ctx.dataset.data[ctx.dataIndex] > 0;
+        },
+        anchor: 'end',
+        align: 'top',
+        color: '#14532d',
+        font: { weight: '600', size: 9 },
+        formatter: v => v,
+    };
 
     function destroyChart(id) {
         if (charts[id]) { charts[id].destroy(); delete charts[id]; }
@@ -232,6 +282,7 @@
                 plugins: {
                     legend: { position: 'bottom', labels: { boxWidth: 10, padding: 5, font: { size: 10 } } },
                     tooltip: { callbacks: { label: ctx => formatPctLabel(ctx) } },
+                    datalabels: doughnutDatalabels,
                 },
             },
         });
@@ -259,6 +310,7 @@
                 plugins: {
                     legend: { position: 'bottom', labels: { boxWidth: 10, padding: 5, font: { size: 10 } } },
                     tooltip: { callbacks: { label: ctx => formatPctLabel(ctx) } },
+                    datalabels: doughnutDatalabels,
                 },
             },
         });
@@ -269,6 +321,7 @@
         const ctx = document.getElementById(canvasId);
         if (!ctx) return;
         if (!items || !items.length) { drawEmpty(ctx); return; }
+        const total = items.reduce((s, x) => s + x.count, 0);
         charts[canvasId] = new Chart(ctx, {
             type: 'bar',
             data: {
@@ -282,7 +335,15 @@
             options: {
                 indexAxis: 'y',
                 responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { display: false }, tooltip: { displayColors: false } },
+                layout: { padding: { right: 40 } },  // datalabels용 여백
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { displayColors: false, callbacks: { label: ctx => formatPctLabel(ctx) } },
+                    datalabels: {
+                        ...barDatalabels,
+                        formatter: v => total ? `${v} (${(100 * v / total).toFixed(1)}%)` : `${v}`,
+                    },
+                },
                 scales: {
                     x: { beginAtZero: true, ticks: { precision: 0, font: { size: 10 } } },
                     y: { ticks: { autoSkip: false, font: { size: 10 } } },
@@ -296,6 +357,7 @@
         const ctx = document.getElementById(canvasId);
         if (!ctx) return;
         if (!items || !items.length) { drawEmpty(ctx); return; }
+        const total = items.reduce((s, x) => s + x.count, 0);
         charts[canvasId] = new Chart(ctx, {
             type: 'bar',
             data: {
@@ -308,7 +370,15 @@
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { display: false }, tooltip: { displayColors: false } },
+                layout: { padding: { top: 18 } },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { displayColors: false, callbacks: { label: ctx => formatPctLabel(ctx) } },
+                    datalabels: {
+                        ...barDatalabels,
+                        formatter: v => total ? `${v}\n(${(100 * v / total).toFixed(1)}%)` : `${v}`,
+                    },
+                },
                 scales: {
                     x: { ticks: { font: { size: 10 } } },
                     y: { beginAtZero: true, ticks: { precision: 0, font: { size: 10 } } },
@@ -340,7 +410,11 @@
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
+                layout: { padding: { top: 16 } },
+                plugins: {
+                    legend: { display: false },
+                    datalabels: lineDatalabels,
+                },
                 scales: {
                     x: { ticks: { font: { size: 10 }, maxRotation: 0 } },
                     y: { beginAtZero: true, ticks: { precision: 0, font: { size: 10 } } },
@@ -395,6 +469,7 @@
             dailyAvg = (total / days).toFixed(1);
         }
         setKpi('daily-avg', dailyAvg);
+        setKpi('disuse', `${s.disuse_screening || 0}`);
     }
 
     // ─── 데이터 로드 + 렌더 ───
@@ -411,10 +486,10 @@
         // 진행 단계는 상태별 고정 색상으로 (UX 일관성)
         const STATUS_COLORS = {
             '상담완료': '#94a3b8',
-            '입원예정': '#f59e0b',
-            '입원확정': '#2563eb',
-            '입원완료': '#16a34a',
+            '입원보류': '#f59e0b',
             '입원취소': '#dc2626',
+            '입원완료': '#16a34a',
+            '퇴원완료': '#0891b2',
         };
         const statusItems = (d.by_status || []).filter(x => x.count > 0);
         makeStatusDoughnut('chart-status', statusItems, STATUS_COLORS);

@@ -4,7 +4,7 @@
 <div class="page-header">
     <div>
         <h1>{{ c.patient_name }}
-            <span class="muted" style="font-size:0.65em">상담 #{{ c.id }} · {{ c.consult_date|krdate }}{% if c.consult_time %} {{ c.consult_time }}{% endif %}</span>
+            <span class="muted" style="font-size:0.65em">상담 #{{ c.id }} · {{ c.consult_date|krdate_wd_full}}{% if c.consult_time %} {{ c.consult_time }}{% endif %}</span>
         </h1>
     </div>
     <div style="display:flex; gap:8px">
@@ -34,6 +34,12 @@
         <button type="button" class="btn btn-primary btn-sm status-save">저장</button>
         <span class="status-msg muted"></span>
     </div>
+    <div class="status-hold-row {% if _status != '입원보류' %}hide{% endif %}">
+        <input type="text" id="hold-reason" class="reason-detail" placeholder="입원보류 사유 (필수)"
+               value="{{ c.hold_reason or '' }}">
+        <button type="button" class="btn btn-primary btn-sm status-save">저장</button>
+        <span class="status-msg muted"></span>
+    </div>
     <div class="status-cancel-row {% if _status != '입원취소' %}hide{% endif %}">
         <div class="reason-chips">
             {% for r in REJECTION_REASONS %}
@@ -49,7 +55,7 @@
             <span class="status-msg muted"></span>
         </div>
     </div>
-    <div class="status-simple-row {% if _status == '입원완료' or _status == '입원취소' %}hide{% endif %}">
+    <div class="status-simple-row {% if _status in ['입원완료','입원취소','입원보류'] %}hide{% endif %}">
         <button type="button" class="btn btn-primary btn-sm status-save">저장</button>
         <span class="status-msg muted"></span>
     </div>
@@ -60,10 +66,13 @@
 .status-head { display:flex; gap:10px; align-items:center; margin-bottom:10px; }
 .status-pill { padding:4px 12px; border-radius:999px; font-size:0.82em; font-weight:600; background:#f1f5f9; color:#475569; }
 .status-pill.status-상담완료 { background:#f1f5f9; color:#475569; }
-.status-pill.status-입원예정 { background:#fef3c7; color:#92400e; }
-.status-pill.status-입원확정 { background:#dbeafe; color:#1e40af; }
-.status-pill.status-입원완료 { background:#dcfce7; color:#166534; }
+.status-pill.status-입원보류 { background:#fef3c7; color:#92400e; }
 .status-pill.status-입원취소 { background:#fee2e2; color:#991b1b; }
+.status-pill.status-입원완료 { background:#dcfce7; color:#166534; }
+.status-pill.status-퇴원예정 { background:#fed7aa; color:#9a3412; }
+.status-pill.status-퇴원완료 { background:#cffafe; color:#155e75; }
+.status-hold-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.status-hold-row.hide { display:none; }
 .status-options { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
 .status-chip { display:inline-flex; align-items:center; padding:6px 14px; border:1px solid var(--border); border-radius:999px; cursor:pointer; font-size:0.88em; background:#fff; }
 .status-chip input { display:none; }
@@ -92,8 +101,10 @@
     const radios = card.querySelectorAll('input[name="admission_status"]');
     const completedRow = card.querySelector('.status-completed-row');
     const cancelRow = card.querySelector('.status-cancel-row');
+    const holdRow = card.querySelector('.status-hold-row');
     const simpleRow = card.querySelector('.status-simple-row');
     const dateInput = card.querySelector('#admission-date');
+    const holdReason = card.querySelector('#hold-reason');
     const reasonRadios = card.querySelectorAll('input[name="rejection_reason"]');
     const reasonChips = card.querySelectorAll('.reason-chip');
     const reasonDetail = card.querySelector('#reason-detail');
@@ -103,9 +114,11 @@
         chips.forEach(c => c.classList.toggle('on', c.querySelector('input').value === value));
         const isCompleted = value === '입원완료';
         const isCancelled = value === '입원취소';
+        const isHold = value === '입원보류';
         completedRow.classList.toggle('hide', !isCompleted);
         cancelRow.classList.toggle('hide', !isCancelled);
-        simpleRow.classList.toggle('hide', isCompleted || isCancelled);
+        if (holdRow) holdRow.classList.toggle('hide', !isHold);
+        simpleRow.classList.toggle('hide', isCompleted || isCancelled || isHold);
     }
 
     radios.forEach(r => r.addEventListener('change', () => refreshChips(r.value)));
@@ -124,6 +137,16 @@
             const r = card.querySelector('input[name="rejection_reason"]:checked');
             body.rejection_reason = r ? r.value : '';
             body.rejection_reason_detail = (reasonDetail && reasonDetail.value.trim()) || '';
+            if (!body.rejection_reason && !body.rejection_reason_detail) {
+                alert('입원취소 사유를 선택하거나 입력하세요.');
+                return;
+            }
+        } else if (status === '입원보류') {
+            body.hold_reason = (holdReason && holdReason.value.trim()) || '';
+            if (!body.hold_reason) {
+                alert('입원보류 사유를 입력하세요.');
+                return;
+            }
         }
         const msg = btn.parentElement.querySelector('.status-msg');
         msg.className = 'status-msg muted';
@@ -159,10 +182,18 @@
 <div class="card">
     <h3>입원 / 상담 정보</h3>
     <dl class="kv">
-        <dt>입원예정</dt><dd>{{ c.planned_admission_date|krdate or '-' }}</dd>
+        <dt>입원예정</dt><dd>{{ c.planned_admission_date|krdate_wd_full or '-' }}</dd>
+        {% set ax = c|admission_expiry %}
+        {% if ax %}
+        <dt>입원 만료일</dt><dd>
+            {% if ax.billing_date %}<span class="muted">회복기 수가(s005)</span> {{ ax.billing_date|krdate_wd_full}}{% if ax.billing_left is not none %} ({% if ax.billing_left < 0 %}{{ -ax.billing_left }}일 초과{% else %}D-{{ ax.billing_left }}{% endif %}){% endif %}<br>{% endif %}
+            <strong>전체 입원</strong> {{ ax.total_date|krdate_wd_full}}{% if ax.total_left is not none %} ({% if ax.total_left < 0 %}{{ -ax.total_left }}일 초과{% else %}D-{{ ax.total_left }}{% endif %}){% endif %}
+            <span class="muted" style="font-size:0.88em">— 입원 후 {{ ax.total_days }}일{% if ax.basis == 'planned' %} · 입원예정일 기준 추정{% endif %}</span>
+        </dd>
+        {% endif %}
         <dt>주치의</dt><dd>{{ c.attending_doctor or '-' }}</dd>
         <dt>호실</dt><dd>{{ c.room_number or '-' }}</dd>
-        <dt>상담일시</dt><dd>{{ c.consult_date|krdate }} {{ c.consult_time or '' }}</dd>
+        <dt>상담일시</dt><dd>{{ c.consult_date|krdate_wd_full}} {{ c.consult_time or '' }}</dd>
         <dt>상담자</dt><dd>{{ c.counselor or '-' }}</dd>
         <dt>상담방법</dt><dd>{{ c.consult_channel or '-' }}</dd>
         <dt>입원경로</dt><dd>
@@ -175,7 +206,14 @@
                 ({% if c.referrer_person %}추천인: {{ c.referrer_person }}{% endif %}{% if c.referrer_person and c.referrer_institution %} · {% endif %}{% if c.referrer_institution %}기관: {{ c.referrer_institution }}{% endif %})
             </span>
             {% endif %}
+            {% if c.admission_route %}<br><span class="muted" style="font-size:0.9em">기타: {{ c.admission_route }}</span>{% endif %}
         </dd>
+        {% if c.discharge_due_date or c.discharge_date %}
+        <dt>퇴원</dt><dd>
+            {% if c.discharge_date %}퇴원일 {{ c.discharge_date|krdate_wd_full }}{% endif %}
+            {% if c.discharge_due_date %}{% if c.discharge_date %} · {% endif %}<span class="muted">퇴원예정 {{ c.discharge_due_date|krdate_wd_full }}</span>{% endif %}
+        </dd>
+        {% endif %}
     </dl>
 </div>
 
@@ -198,7 +236,7 @@
 <div class="card">
     <h3>환자 상태</h3>
     <dl class="kv">
-        <dt>현재</dt><dd>{{ c.current_location_type or '-' }}{% if c.current_location_name %} ({{ c.current_location_name }}){% endif %}</dd>
+        <dt>현재</dt><dd>{{ c.current_location_type or '-' }}{% if c.current_location_name %} · 병원 {{ c.current_location_name }}{% endif %}{% if c.current_nursing_name %} · 요양원 {{ c.current_nursing_name }}{% endif %}</dd>
         <dt>의식</dt><dd>
             {{ c.consciousness_main or '-' }}
             {% if c.conversation_level %} · 대화 {{ c.conversation_level }}{% endif %}
@@ -230,10 +268,13 @@
         {% if c.infarction_site %}<dt>뇌경색 부위</dt><dd>{{ c.infarction_site }}</dd>{% endif %}
         {% if c.spinal_injury_level %}<dt>척수손상 부위/레벨</dt><dd>{{ c.spinal_injury_level }}</dd>{% endif %}
         {% if c.paralysis_detail %}<dt>마비 상세</dt><dd>{{ c.paralysis_detail }}</dd>{% endif %}
+        {% if c.memo_po %}<dt>PO (복용약)</dt><dd style="white-space:pre-wrap">{{ c.memo_po }}</dd>{% endif %}
+        {% if c.memo_op %}<dt>OP (수술이력)</dt><dd style="white-space:pre-wrap">{{ c.memo_op }}</dd>{% endif %}
         {% if c.disease_detail %}<dt>기타 메모</dt><dd style="white-space:pre-wrap">{{ c.disease_detail }}</dd>{% endif %}
         {% if c.admission_purpose %}<dt>입원목적</dt><dd style="white-space:pre-wrap">{{ c.admission_purpose }}</dd>{% endif %}
+        {% if c.disuse_screening_note %}<dt>비사용증후군 발굴 대상</dt><dd>{{ c.disuse_screening_note }}</dd>{% endif %}
         <dt>식사종류</dt><dd>{{ (c.diet_types or [])|join(', ') or '-' }}</dd>
-        <dt>상처소독</dt><dd>{{ (c.wound_care or [])|join(', ') or '-' }}{% if c.wound_site %} · 부위 {{ c.wound_site }}{% endif %}</dd>
+        <dt>상처소독</dt><dd>{{ (c.wound_care or [])|join(', ') or '-' }}{% if c.wound_site %} · 욕창부위 {{ c.wound_site }}{% endif %}{% if c.tracheostomy_detail %} · 기관절개 {{ c.tracheostomy_detail }}{% endif %}</dd>
         <dt>특수처치</dt><dd>{{ (c.special_care or [])|join(', ') or '-' }}{% if c.oxygen_lpm %} · 산소 {{ c.oxygen_lpm }}L/min{% endif %}</dd>
         <dt>연하검사</dt><dd>{{ c.swallow_test or '-' }}{% if c.swallow_test_dates %} · {{ c.swallow_test_dates }}{% endif %}</dd>
         <dt>치료</dt><dd>{{ (c.therapy or [])|join(', ') or '-' }}</dd>
@@ -258,7 +299,7 @@
         {% for h in history %}
         {% if h.id != c.id %}
         <li style="padding:6px 0; border-bottom:1px solid var(--border); font-size:0.9em">
-            <a href="/consult/{{ h.id }}">{{ h.consult_date|krdate }}</a>
+            <a href="/consult/{{ h.id }}">{{ h.consult_date|krdate_wd_full}}</a>
             <span class="muted">— {{ (h.diseases or [])|join(', ') }}</span>
         </li>
         {% endif %}

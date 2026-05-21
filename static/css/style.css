@@ -114,6 +114,17 @@ footer p { color: var(--text-light); font-size: 0.82em; text-align: center; }
 .field { margin-bottom: 12px; }
 .field label { display: block; font-size: 0.83em; color: var(--text-light); margin-bottom: 4px; font-weight: 500; }
 .field label .req { color: var(--danger); margin-left: 2px; }
+.weekday-tag {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 0 7px;
+    border-radius: 8px;
+    background: #e0e7ff;
+    color: #3730a3;
+    font-size: 0.95em;
+    font-weight: 700;
+}
+.weekday-tag:empty { display: none; }
 .field input[type="text"], .field input[type="date"], .field input[type="tel"], .field input[type="number"], .field select, .field textarea {
     width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius);
     font-size: 0.92em; background: var(--card-bg); color: var(--text);
@@ -147,6 +158,18 @@ footer p { color: var(--text-light); font-size: 0.82em; text-align: center; }
     padding: 2px 0;
 }
 .checkbox-grid input[type="checkbox"] { margin: 0; }
+
+/* 입원시 확인사항 — 항목별 한 줄 (라벨 줄바꿈 없음, 항목 간 줄바꿈 허용) */
+.checkbox-grid.checkbox-flow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+}
+.checkbox-grid.checkbox-flow label { white-space: nowrap; }
+
+/* 체크박스 그리드 안의 인라인 수기칸 (욕창 부위·기관절개·산소요법) */
+.checkbox-grid .dx-item { padding: 2px 0; }
+.checkbox-grid .dx-item .dx-addon-input { min-width: 60px; }
 
 /* 그룹 박스 안의 옵션 박스는 중첩 테두리 제거 (예: 입원경로 온라인/소개/기타 fieldset 안의 .field-radio) */
 .option-group fieldset .field-radio,
@@ -326,6 +349,36 @@ fieldset.opt-box.box-half { flex: 1 1 calc(50% - 12px); min-width: 200px; }
     margin: 0;
 }
 
+/* 근골격계 보조 항목 — 네모가 아닌 둥근 체크 모양으로 구분 */
+.dx-round input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    border: 1.5px solid #94a3b8;
+    border-radius: 50%;
+    background: #fff;
+    cursor: pointer;
+    position: relative;
+    flex-shrink: 0;
+}
+.dx-round input[type="checkbox"]:checked {
+    background: var(--primary);
+    border-color: var(--primary);
+}
+.dx-round input[type="checkbox"]:checked::after {
+    content: "";
+    position: absolute;
+    left: 4.5px;
+    top: 1px;
+    width: 4px;
+    height: 8px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+
 /* 발병일 — 병명 섹션 헤더 아래, 한 줄 */
 .onset-row {
     display: flex;
@@ -351,6 +404,16 @@ fieldset.opt-box.box-half { flex: 1 1 calc(50% - 12px); min-width: 200px; }
     border-radius: 4px;
     background: white;
 }
+.onset-unknown-label {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 0.8em;
+    color: var(--text-light);
+    white-space: nowrap;
+    cursor: pointer;
+}
+.onset-unknown-label input { cursor: pointer; }
 
 /* 상자 제목 — 항상 한 줄 */
 fieldset.opt-box legend { white-space: nowrap; }
@@ -480,3 +543,12 @@ fieldset.opt-box legend { white-space: nowrap; }
 
 /* Conditional show */
 [hidden] { display: none !important; }
+
+/* 회복기 자동 판정 힌트 (입원목적 라벨 옆) */
+.recovery-hint { display: inline-block; padding: 1px 8px; margin-left: 6px; border-radius: 8px; font-size: 0.8em; font-weight: 600; vertical-align: middle; }
+.recovery-hint:empty { display: none; }
+.recovery-hint.rh-yes { background: #dcfce7; color: #166534; }
+.recovery-hint.rh-no  { background: #fee2e2; color: #991b1b; }
+.recovery-hint.rh-warn { background: #fef3c7; color: #92400e; }
+.recovery-meta { font-size: 0.78em; color: var(--text-light); margin-top: 2px; }
+.recovery-meta:empty { display: none; }

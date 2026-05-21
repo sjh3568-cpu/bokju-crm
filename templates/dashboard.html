@@ -19,6 +19,11 @@
         <div class="label">입원예정 비율</div>
         <div class="value">{{ summary.plan_rate or 0 }}<span style="font-size:0.5em">%</span></div>
     </div>
+    <a class="stat-card warn" href="/consultations?admission_status=입원완료"
+       style="text-decoration:none; display:block" title="입원완료 환자 목록에서 퇴원예정 확인">
+        <div class="label">퇴원예정 <span style="font-size:0.85em; color:var(--text-light)">— 입원만료 30일 이내</span></div>
+        <div class="value">{{ summary.discharge_pending or 0 }}<span style="font-size:0.5em">명</span></div>
+    </a>
 </div>
 
 <div class="card">

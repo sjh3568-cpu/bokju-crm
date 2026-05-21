@@ -172,6 +172,23 @@
         e.preventDefault();
         const btn = document.getElementById('save-btn');
         btn.disabled = true;
+        // 상담 결과 — 입원보류/입원취소 사유 필수
+        const stChecked = form.querySelector('input[name="consultation.admission_status"]:checked');
+        const st = stChecked ? stChecked.value : '';
+        if (st === '입원보류') {
+            const hr = form.querySelector('input[name="consultation.hold_reason"]');
+            if (!hr || !hr.value.trim()) {
+                toast('입원보류 사유를 입력하세요.', 'error');
+                btn.disabled = false; return;
+            }
+        } else if (st === '입원취소') {
+            const rr = form.querySelector('select[name="consultation.rejection_reason"]');
+            const rd = form.querySelector('input[name="consultation.rejection_reason_detail"]');
+            if ((!rr || !rr.value.trim()) && (!rd || !rd.value.trim())) {
+                toast('입원취소 사유를 선택하거나 입력하세요.', 'error');
+                btn.disabled = false; return;
+            }
+        }
         const payload = collectPayload();
         try {
             const url = isEdit ? `/api/consult/${cid}` : '/api/consult';
@@ -216,4 +233,184 @@
         });
         return out;
     }
+
+    // ─── 회복기 자동 판정 (의료법 재활의료기관 본지정 기준) ───
+    // 발병일 + 진단군(병명 체크) → 입원(예정)일 또는 상담일과의 차이로 회복기/비회복기 판정
+    const RECOVERY_RULES = [
+        // [키워드, 인정 기간(일)] — 여러 병명 매칭 시 가장 긴 기간 적용
+        [['뇌출혈','뇌경색','뇌손상','척수손상','뇌성마비','마비','편마비','사지마비','중추신경계'], 90],
+        [['골유합 지연','골유합지연'], 60],
+        [['고관절','대퇴','대퇴부','골반','절단','하지 부위 절단','슬관절','근골격계'], 30],
+        [['호흡질환','폐질환','심장질환','신생물','폐렴','폐수종','패혈증','농양','다제내성','CRE','VRE',
+          '신부전','동정맥루','복부대동맥류','급성복막염','장폐색',
+          '파킨슨(신규)','길랑바레증후군','비사용증후군'], 60],
+    ];
+
+    function parseDateStr(s) {
+        if (!s) return null;
+        const m = String(s).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+        if (!m) return null;
+        const d = new Date(`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}T00:00:00`);
+        return isNaN(d) ? null : d;
+    }
+
+    function computeRecovery(refDate, onsetDate, diseases) {
+        const rd = parseDateStr(refDate);
+        const od = parseDateStr(onsetDate);
+        if (!rd || !od) return null;
+        const days = Math.floor((rd - od) / 86400000);
+        if (days < 0) return null;
+        let matched = 0;
+        for (const d of diseases) {
+            if (!d) continue;
+            for (const [kws, period] of RECOVERY_RULES) {
+                if (kws.some(kw => d.includes(kw))) {
+                    if (period > matched) matched = period;
+                    break;
+                }
+            }
+        }
+        if (matched === 0) return null;
+        return { label: days <= matched ? '회복기' : '비회복기', days, period: matched };
+    }
+
+    // 하이브리드 발병일: 날짜 선택기(onset-date) ↔ 자유 텍스트(onset-text, "정확한 날짜 모름"),
+    // 실제 제출값은 hidden(onset-hidden, name=consultation.disease_onset)에 동기화
+    const onsetDateEl = document.getElementById('onset-date');
+    const onsetTextEl = document.getElementById('onset-text');
+    const onsetUnknownEl = document.getElementById('onset-unknown');
+    const onsetEl = document.getElementById('onset-hidden');
+    const consultDateEl = form.querySelector('[name="consultation.consult_date"]');
+    const plannedEl = form.querySelector('[name="consultation.planned_admission_date"]');
+    const purposeEl = document.getElementById('admission-purpose-input');
+    const hintEl = document.getElementById('recovery-hint');
+    const metaEl = document.getElementById('recovery-meta');
+    const onsetHintEl = document.getElementById('onset-recovery');  // 발병일/수술일 옆 회복기 즉시 표시
+
+    const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+    // admission_purpose가 자동 판정값인지 추적 (사용자 수동 입력 보존)
+    const AUTO_VALUES = new Set([
+        '회복기재활', '비회복기재활', '회복기', '비회복기', '',
+        '회복기재활 및 간호간병 통합서비스', '비회복기재활 및 간호간병 통합서비스',
+    ]);
+    let lastAutoValue = '';
+
+    function applyOnsetMode() {
+        if (!onsetDateEl || !onsetTextEl || !onsetUnknownEl) return;
+        const unknown = onsetUnknownEl.checked;
+        onsetDateEl.style.display = unknown ? 'none' : '';
+        onsetTextEl.style.display = unknown ? '' : 'none';
+    }
+    function syncOnset() {
+        if (!onsetEl) return;
+        const unknown = onsetUnknownEl && onsetUnknownEl.checked;
+        onsetEl.value = unknown
+            ? (onsetTextEl ? onsetTextEl.value.trim() : '')
+            : (onsetDateEl ? onsetDateEl.value : '');
+        recomputeRecovery();
+    }
+    // 수정 모드: 저장값이 YYYY-MM-DD면 날짜 선택기, 아니면 자유 텍스트 모드로 복원
+    if (onsetEl && onsetEl.value.trim()) {
+        const saved = onsetEl.value.trim();
+        if (ISO_DATE.test(saved)) {
+            if (onsetDateEl) onsetDateEl.value = saved;
+        } else {
+            if (onsetTextEl) onsetTextEl.value = saved;
+            if (onsetUnknownEl) onsetUnknownEl.checked = true;
+        }
+    }
+    applyOnsetMode();
+
+    function recomputeRecovery() {
+        if (!purposeEl) return;
+        const setHint = (txt, cls) => {
+            const full = 'recovery-hint' + (cls ? ' ' + cls : '');
+            if (hintEl) { hintEl.textContent = txt || ''; hintEl.className = full; }
+            if (onsetHintEl) { onsetHintEl.textContent = txt || ''; onsetHintEl.className = full; }
+        };
+        const setMeta = (txt) => { if (metaEl) metaEl.textContent = txt || ''; };
+
+        const onset = onsetEl ? onsetEl.value.trim() : '';
+        const ref = (plannedEl ? plannedEl.value : '') || (consultDateEl ? consultDateEl.value : '');
+        const diseases = Array.from(form.querySelectorAll('[name="consultation.diseases[]"]:checked')).map(c => c.value);
+
+        if (!onset) {
+            setHint('발병일을 입력하면 회복기 여부가 자동 판정됩니다.', ''); setMeta(''); return;
+        }
+        if (!ISO_DATE.test(onset)) {
+            setHint('※ 발병일이 정확한 날짜가 아니어서 자동 판정 불가 — 입원목적을 직접 선택하세요.', 'rh-warn');
+            setMeta(''); return;
+        }
+        if (!ref) {
+            setHint('상담일 또는 입원예정일이 있어야 자동 판정됩니다.', ''); setMeta(''); return;
+        }
+        if (diseases.length === 0) {
+            setHint('병명을 선택하면 회복기 여부가 자동 판정됩니다.', ''); setMeta(''); return;
+        }
+        const result = computeRecovery(ref, onset, diseases);
+        if (!result) {
+            setHint('선택한 병명은 회복기 판정 기준이 없습니다 — 입원목적을 직접 선택하세요.', '');
+            setMeta(''); return;
+        }
+        const autoVal = result.label + '재활 및 간호간병 통합서비스';
+        setHint(`※ 자동 판정: ${result.label}`, result.label === '회복기' ? 'rh-yes' : 'rh-no');
+        setMeta(`발병 후 ${result.days}일 / 인정 기간 ${result.period}일 (입원시점 기준)`);
+        // 사용자가 별도 메모를 적은 게 아니면 자동 입력값으로 채움
+        const cur = purposeEl.value.trim();
+        if (cur === '' || cur === lastAutoValue || AUTO_VALUES.has(cur)) {
+            purposeEl.value = autoVal;
+            lastAutoValue = autoVal;
+        }
+    }
+
+    // 발병일 모드 전환 + 발병일·상담일·입원예정일·병명 변경 → 재계산
+    if (onsetUnknownEl) {
+        onsetUnknownEl.addEventListener('change', () => { applyOnsetMode(); syncOnset(); });
+    }
+    [onsetDateEl, onsetTextEl].forEach(el => {
+        if (el) ['change', 'blur', 'input'].forEach(ev => el.addEventListener(ev, syncOnset));
+    });
+    [consultDateEl, plannedEl].forEach(el => {
+        if (el) ['change', 'blur', 'input'].forEach(ev => el.addEventListener(ev, recomputeRecovery));
+    });
+    form.querySelectorAll('[name="consultation.diseases[]"]').forEach(cb => {
+        cb.addEventListener('change', recomputeRecovery);
+    });
+    // 페이지 로드 시 한 번 (수정 모드에서)
+    setTimeout(recomputeRecovery, 100);
+
+    // ─── 상담일자 → 요일 자동 표시 ───
+    (function() {
+        const dateEl = form.querySelector('[name="consultation.consult_date"]');
+        const wdEl = document.getElementById('consult-weekday');
+        if (!dateEl || !wdEl) return;
+        const WD = ['일', '월', '화', '수', '목', '금', '토'];
+        function showWeekday() {
+            const m = String(dateEl.value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (!m) { wdEl.textContent = ''; return; }
+            const d = new Date(+m[1], +m[2] - 1, +m[3]);
+            wdEl.textContent = isNaN(d.getTime()) ? '' : WD[d.getDay()] + '요일';
+        }
+        ['change', 'input'].forEach(ev => dateEl.addEventListener(ev, showWeekday));
+        showWeekday();
+    })();
+
+    // ─── 상담 결과: 입원보류/취소 사유칸·입원완료 입원일칸 토글 ───
+    (function() {
+        const statusRadios = form.querySelectorAll('input[name="consultation.admission_status"]');
+        if (!statusRadios.length) return;
+        const holdRow = document.getElementById('status-reason-hold');
+        const cancelRow = document.getElementById('status-reason-cancel');
+        const completedRow = document.getElementById('status-extra-completed');
+        function refresh() {
+            const c = form.querySelector('input[name="consultation.admission_status"]:checked');
+            const s = c ? c.value : '';
+            if (holdRow) holdRow.hidden = (s !== '입원보류');
+            if (cancelRow) cancelRow.hidden = (s !== '입원취소');
+            if (completedRow) completedRow.hidden = (s !== '입원완료');
+        }
+        statusRadios.forEach(r => r.addEventListener('change', refresh));
+        refresh();
+    })();
 })();

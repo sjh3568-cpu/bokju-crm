@@ -208,9 +208,11 @@ def init_db():
         # 발병일 — 중앙 집중 (병명 섹션 상단, 1차 진단 발병일)
         "disease_onset": "TEXT",
         # 비사용증후군 인라인 상세
-        "lung_detail": "TEXT",
+        "lung_detail": "TEXT",            # 호흡질환(구 폐질환) 상세
         "heart_detail": "TEXT",
         "neoplasm_detail": "TEXT",
+        "parkinson_new_detail": "TEXT",   # 비사용증후군 파킨슨(신규) 상세
+        "gbs_detail": "TEXT",             # 길랑바레증후군 상세
         # 마비 그룹 상세
         "paralysis_detail": "TEXT",
         # 처치/치료
@@ -239,7 +241,26 @@ def init_db():
         "referral_source_detail": "TEXT", # 카페/유튜브/지인추천 등 (다중 JSON)
         "referrer_person": "TEXT",        # 소개 — 추천한 사람
         "referrer_institution": "TEXT",   # 소개 — 추천 기관
+        # 엑셀 마이그레이션 (Phase 2)
+        "actual_admission_date": "TEXT",  # 실제 입원일 (엑셀 27번 입원일/비고)
+        "recontact_memo": "TEXT",         # 재접촉 관리 자유 메모 (엑셀 28번)
+        "import_source": "TEXT",          # NULL=웹폼, 'excel'=신식(B/C), 'excel_legacy'=구식(A)
+        # ── 상담일지 폼 11개 항목 개선 (2026-05) ──
+        "current_nursing_name": "TEXT",   # 3번 — 현재 거주 요양원명 (병원명과 분리)
+        "memo_po": "TEXT",                # 5번 — 기타 메모 PO
+        "memo_op": "TEXT",                # 5번 — 기타 메모 OP
+        "tracheostomy_detail": "TEXT",    # 7번 — 기관절개 인라인 수기
+        "disuse_screening_note": "TEXT",  # 11번 — 비사용증후군 발굴 대상 수기
+        "hold_reason": "TEXT",            # 10번 — 입원보류 사유 (필수)
+        "discharge_due_date": "DATE",     # 10번 — 입원연장 시 새 퇴원예정일
+        "discharge_date": "DATE",         # 10번 — 실제 퇴원일 (퇴원완료)
     })
+    # 입원 진행 상태 4종 개편 (2026-05): 구 5종의 '입원예정'·'입원확정'과
+    # 엑셀 구식 '방문예정'을 '입원보류'(진행중)로 통합. 멱등.
+    conn.execute(
+        "UPDATE consultations SET admission_status = '입원보류' "
+        "WHERE admission_status IN ('입원예정', '입원확정', '방문예정')"
+    )
 
     for name, icd10, category in DIAGNOSIS_SEED:
         conn.execute(
@@ -393,7 +414,7 @@ CONSULT_FIELDS = (
     "referrer_person", "referrer_institution",
     # 환자 현재 상태
     "patient_age",
-    "current_location_type", "current_location_name",
+    "current_location_type", "current_location_name", "current_nursing_name",
     # 모병원 — current_location_name이 입원중/입소중일 때 자동 채움 (app.py에서)
     "source_hospital",
     "consciousness_main", "conversation_level", "hearing_options", "hearing_note",
@@ -401,21 +422,30 @@ CONSULT_FIELDS = (
     "caregiver_status", "bed_type",
     # 병명·기타(ARRANGE)
     "diseases", "arrange_items", "disease_detail",
+    "memo_po", "memo_op",
     "insulin_use", "parkinson_detail", "rare_disease_name",
     "cancer_site", "cancer_onset", "cancer_metastasis", "cancer_pain", "cancer_patch",
     "hemorrhage_surgery", "infarction_site", "spinal_injury_level",
     "disease_onset",
     "lung_detail", "heart_detail", "neoplasm_detail",
+    "parkinson_new_detail", "gbs_detail",
     "paralysis_detail",
     # 처치/치료
     "admission_purpose", "diet_types",
-    "wound_care", "wound_site",
+    "wound_care", "wound_site", "tracheostomy_detail",
     "special_care", "oxygen_lpm",
     "swallow_test", "swallow_test_dates",
     "therapy",
     # 입원시 확인
     "documents_checklist", "admission_period",
     "transport_method", "cost_guidance", "info_provided",
+    # 입원 진행 상태 — 폼 '상담 결과' 섹션에서 입력 (사후 변경은 status/discharge API)
+    "admission_status", "admission_date",
+    "rejection_reason", "rejection_reason_detail", "hold_reason",
+    "discharge_due_date", "discharge_date",
+    "disuse_screening_note",
+    # 엑셀 마이그레이션
+    "actual_admission_date", "recontact_memo", "import_source",
 )
 
 
@@ -478,7 +508,17 @@ def update_consultation(cid: int, **fields):
 
 
 # 결과(입원 진행 단계) 변경 전용 — 폼 필드와 분리해서 실수 방지
-_META_FIELDS = ("admission_status", "admission_date", "rejection_reason", "rejection_reason_detail")
+_META_FIELDS = ("admission_status", "admission_date", "rejection_reason",
+                "rejection_reason_detail", "hold_reason",
+                "discharge_due_date", "discharge_date")
+
+
+def delete_consultation(cid: int):
+    """상담 1건 삭제. 첨부파일은 ON DELETE CASCADE로 함께 삭제됨."""
+    conn = get_db()
+    conn.execute("DELETE FROM consultations WHERE id = ?", (cid,))
+    conn.commit()
+    conn.close()
 
 
 def update_consultation_meta(cid: int, **fields):
@@ -513,8 +553,23 @@ def get_consultation(cid: int):
     return _deserialize_consultation(dict(row))
 
 
-def list_consultations(*, date_from=None, date_to=None,
-                       insurance=None, q=None, limit=200, offset=0):
+# 정렬 가능 컬럼 화이트리스트 (SQL 인젝션 방지 — 키만 외부 입력 허용)
+_SORT_COLUMNS = {
+    "date": "c.consult_date",
+    "patient": "p.name",
+    "residence": "p.residence_sido",
+    "hospital": "c.source_hospital",
+    "channel": "c.consult_channel",
+    "status": "c.admission_status",
+    "counselor": "c.counselor",
+}
+
+
+def _build_consult_where(*, date_from=None, date_to=None, insurance=None, q=None,
+                         counselor=None, admission_status=None, disease_group=None,
+                         residence_sido=None, recovery=None,
+                         consult_channel=None, referral_type=None):
+    """list_consultations / count_consultations 공용 WHERE 절 빌더 → (where_sql, vals)."""
     where, vals = [], []
     if date_from:
         where.append("c.consult_date >= ?"); vals.append(date_from)
@@ -522,29 +577,147 @@ def list_consultations(*, date_from=None, date_to=None,
         where.append("c.consult_date <= ?"); vals.append(date_to)
     if insurance:
         where.append("p.insurance_type = ?"); vals.append(insurance)
+    if counselor:
+        where.append("c.counselor = ?"); vals.append(counselor)
+    if admission_status:
+        # NULL/빈값은 '상담완료'로 간주
+        if admission_status == "상담완료":
+            where.append("(c.admission_status IS NULL OR c.admission_status = '' OR c.admission_status = ?)")
+            vals.append("상담완료")
+        else:
+            where.append("c.admission_status = ?")
+            vals.append(admission_status)
+    if disease_group:
+        # diseases JSON에 그룹명 또는 그룹 멤버가 포함된 행
+        from config import DISEASES_GROUPS
+        members = DISEASES_GROUPS.get(disease_group, [])
+        like_clauses = ["c.diseases LIKE ?"]  # 그룹명 자체 (마이그레이션 폴백)
+        like_vals = [f'%"{disease_group}"%']
+        for m in members:
+            like_clauses.append("c.diseases LIKE ?")
+            like_vals.append(f'%"{m}"%')
+        where.append("(" + " OR ".join(like_clauses) + ")")
+        vals.extend(like_vals)
+    if residence_sido:
+        where.append("p.residence_sido = ?"); vals.append(residence_sido)
+    if recovery:
+        # 저장값 매핑 (자동 계산값은 SQL로 못 잡으므로 저장값 기준).
+        # 자동 기입값이 '회복기재활 및 간호간병 통합서비스' 형태일 수 있어 접두 LIKE 사용.
+        if recovery == "회복기":
+            where.append("(c.admission_purpose LIKE '회복기재활%' OR c.admission_purpose = '회복기')")
+        elif recovery == "비회복기":
+            where.append("(c.admission_purpose LIKE '비회복기재활%' OR c.admission_purpose = '비회복기')")
+        elif recovery == "요양":
+            where.append("c.admission_purpose IN ('요양', '요양병원')")
+    if consult_channel:
+        where.append("c.consult_channel = ?"); vals.append(consult_channel)
+    if referral_type:
+        # JSON 배열에 그룹명 포함 검색
+        where.append("c.referral_source_type LIKE ?")
+        vals.append(f'%"{referral_type}"%')
     if q:
-        where.append("(p.name LIKE ? OR c.attending_doctor LIKE ? OR c.admission_route LIKE ?)")
+        where.append("(p.name LIKE ? OR c.source_hospital LIKE ?)")
         like = f"%{q}%"
-        vals.extend([like, like, like])
+        vals.extend([like, like])
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+    return where_sql, vals
+
+
+def count_consultations(**filters):
+    """필터 조건에 맞는 상담 총 건수 (페이지네이션 total용)."""
+    where_sql, vals = _build_consult_where(**filters)
+    conn = get_db()
+    n = conn.execute(
+        "SELECT COUNT(*) FROM consultations c "
+        f"JOIN patients p ON p.id = c.patient_id {where_sql}",
+        vals,
+    ).fetchone()[0]
+    conn.close()
+    return n
+
+
+def list_consultations(*, date_from=None, date_to=None,
+                       insurance=None, q=None,
+                       counselor=None, admission_status=None, disease_group=None,
+                       residence_sido=None, recovery=None,
+                       consult_channel=None, referral_type=None,
+                       sort=None, sort_dir=None,
+                       limit=200, offset=0):
+    """상담 목록.
+    검색·필터: 기간, 보험, 상담자, 입원여부, 병명그룹, 검색어(환자명·모병원).
+    정렬: sort(date/patient/residence/hospital/channel/status/counselor) + sort_dir(asc/desc).
+    추가 반환: residence_sido/sigungu, source_hospital, diseases, admission_purpose,
+              admission_status, prior_consult_count(같은 환자의 다른 상담 수),
+              homonym_count(같은 이름·다른 환자 수).
+    """
+    where_sql, vals = _build_consult_where(
+        date_from=date_from, date_to=date_to, insurance=insurance, q=q,
+        counselor=counselor, admission_status=admission_status,
+        disease_group=disease_group, residence_sido=residence_sido,
+        recovery=recovery, consult_channel=consult_channel,
+        referral_type=referral_type,
+    )
+    sort_col = _SORT_COLUMNS.get(sort or "date", "c.consult_date")
+    direction = "ASC" if str(sort_dir or "").lower() == "asc" else "DESC"
+    # NULL·빈값은 항상 뒤로, 동률은 최신(id 큰 순)
+    order_sql = (f"({sort_col} IS NULL OR {sort_col} = '') ASC, "
+                 f"{sort_col} {direction}, c.id DESC")
     sql = f"""
         SELECT c.id, c.consult_date, c.consult_time, c.consult_channel,
                c.attending_doctor, c.room_number,
-               c.planned_admission_date, c.admission_route, c.counselor, c.patient_age,
+               c.planned_admission_date, c.actual_admission_date,
+               c.admission_route, c.counselor, c.patient_age,
                c.referral_source_type, c.referral_source_detail,
+               c.source_hospital, c.diseases, c.disease_detail, c.disease_onset,
+               c.admission_purpose, c.admission_status, c.admission_date,
+               c.discharge_due_date, c.discharge_date,
+               c.import_source,
                p.id AS patient_id, p.name AS patient_name, p.gender,
-               p.address_full, p.insurance_type,
+               p.address_full, p.residence_sido, p.residence_sigungu,
+               p.insurance_type,
                p.guardian_name, p.guardian_relation, p.guardian_phone
         FROM consultations c JOIN patients p ON p.id = c.patient_id
         {where_sql}
-        ORDER BY c.consult_date DESC, c.id DESC
+        ORDER BY {order_sql}
         LIMIT ? OFFSET ?
     """
     vals.extend([limit, offset])
     conn = get_db()
     rows = conn.execute(sql, vals).fetchall()
+    if not rows:
+        conn.close()
+        return []
+
+    # 환자별 총 상담 수, 동명이인(이름 같고 patient_id 다름) 카운트
+    patient_ids = list({r["patient_id"] for r in rows})
+    names = list({r["patient_name"] for r in rows if r["patient_name"]})
+
+    consult_counts = {}
+    if patient_ids:
+        placeholders = ",".join("?" * len(patient_ids))
+        for pid, n in conn.execute(
+            f"SELECT patient_id, COUNT(*) FROM consultations WHERE patient_id IN ({placeholders}) GROUP BY patient_id",
+            patient_ids,
+        ).fetchall():
+            consult_counts[pid] = n
+
+    homonym_counts = {}  # name -> distinct patient_id 수
+    if names:
+        placeholders = ",".join("?" * len(names))
+        for name, n in conn.execute(
+            f"SELECT name, COUNT(DISTINCT id) FROM patients WHERE name IN ({placeholders}) GROUP BY name",
+            names,
+        ).fetchall():
+            homonym_counts[name] = n
     conn.close()
-    return [_deserialize_consultation(dict(r)) for r in rows]
+
+    out = []
+    for r in rows:
+        d = _deserialize_consultation(dict(r))
+        d["prior_consult_count"] = consult_counts.get(r["patient_id"], 1) - 1  # 자신 제외
+        d["homonym_count"] = homonym_counts.get(r["patient_name"], 1)  # 본인 포함
+        out.append(d)
+    return out
 
 
 def patient_consultations(patient_id: int):
@@ -754,7 +927,7 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
           c.consult_date, c.consult_channel, c.counselor, c.patient_age,
           c.referral_source_type, c.referral_source_detail, c.diseases,
           c.planned_admission_date, c.admission_status, c.admission_date,
-          c.source_hospital, c.rejection_reason,
+          c.source_hospital, c.rejection_reason, c.disuse_screening_note,
           p.gender, p.insurance_type,
           p.residence_sido, p.residence_sigungu
         FROM consultations c JOIN patients p ON p.id = c.patient_id
@@ -764,32 +937,45 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
     rows = conn.execute(sql, vals).fetchall()
     conn.close()
 
-    from config import ADMISSION_STATUSES, ADMISSION_STATUS_PENDING
+    from config import ADMISSION_STATUS_ALL, ADMISSION_STATUS_PENDING
 
     total = len(rows)
     planned = sum(1 for r in rows if (r["planned_admission_date"] or "").strip())
 
-    # 5분류 outcome — NULL/빈값은 '상담완료'로 간주
-    status_counts = {s: 0 for s in ADMISSION_STATUSES}
+    # 입원 진행 단계 outcome — NULL/빈값은 '상담완료'로 간주. 퇴원완료 포함.
+    status_counts = {s: 0 for s in ADMISSION_STATUS_ALL}
     for r in rows:
         s = (r["admission_status"] or "").strip() or "상담완료"
         if s not in status_counts:
             s = "상담완료"
         status_counts[s] += 1
-    completed = status_counts["입원완료"]
+    # 입원완료 + 퇴원완료 = 입원 성사
+    completed = status_counts["입원완료"] + status_counts["퇴원완료"]
     cancelled = status_counts["입원취소"]
     pending = sum(status_counts[s] for s in ADMISSION_STATUS_PENDING)
     conversion_rate = round(100.0 * completed / total, 1) if total else 0.0
+    # 비사용증후군 발굴 대상 — disuse_screening_note 기재 건수
+    disuse_screening = sum(
+        1 for r in rows if (r["disuse_screening_note"] or "").strip())
 
     by_disease = _count_json_multi(rows, "diseases")
     # 그룹별 합계 (config DISEASES_GROUPS 매핑)
     from config import DISEASES_GROUPS
+    group_names = set(DISEASES_GROUPS.keys())
     by_group = {g: 0 for g in DISEASES_GROUPS.keys()}
     for label, n in by_disease.items():
+        # 1순위: specific 라벨이 그룹 멤버에 속하면 그 그룹에 가산
+        matched = False
         for group, members in DISEASES_GROUPS.items():
             if label in members:
                 by_group[group] += n
+                matched = True
                 break
+        # 2순위: 라벨 자체가 그룹명이면 그 그룹에 가산 (엑셀 마이그레이션 fallback)
+        if not matched and label in group_names:
+            by_group[label] += n
+    # by_disease(개별 Top)에는 group 이름은 노출 안 함 (의미 혼동 방지)
+    by_disease_individual = {k: v for k, v in by_disease.items() if k not in group_names}
 
     by_age_raw = {}
     for r in rows:
@@ -826,18 +1012,19 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
             "cancelled": cancelled,
             "pending": pending,
             "conversion_rate": conversion_rate,
+            "disuse_screening": disuse_screening,
             "from": date_from,
             "to": date_to,
         },
-        # 5분류는 정해진 순서 그대로 유지 (도넛/막대 안정 표기)
-        "by_status": [{"label": s, "count": status_counts[s]} for s in ADMISSION_STATUSES],
+        # 진행 단계는 정해진 순서 그대로 유지 (도넛/막대 안정 표기). 퇴원완료 포함.
+        "by_status": [{"label": s, "count": status_counts[s]} for s in ADMISSION_STATUS_ALL],
         "by_source_hospital": by_hospital,
         "by_rejection_reason": by_reason,
         "by_referral_type": _sort_desc(_count_json_multi(rows, "referral_source_type")),
         "by_referral_detail": _sort_desc(_count_json_multi(rows, "referral_source_detail")),
         "by_sido": _sort_desc(_count_simple(rows, "residence_sido")),
         "by_sigungu_top": sigungu_top,
-        "by_disease": _sort_desc(by_disease)[:15],
+        "by_disease": _sort_desc(by_disease_individual)[:15],
         "by_disease_group": [{"label": k, "count": v} for k, v in by_group.items() if v],
         "by_insurance": _sort_desc(_count_simple(rows, "insurance_type")),
         "by_channel": _sort_desc(_count_simple(rows, "consult_channel")),
@@ -874,7 +1061,7 @@ def _channel_conversion_table(rows):
     by_group_total, by_group_completed = {}, {}
     by_detail_total, by_detail_completed = {}, {}
     for r in rows:
-        is_completed = (r["admission_status"] or "").strip() == "입원완료"
+        is_completed = (r["admission_status"] or "").strip() in ("입원완료", "퇴원완료")
         # group
         try:
             groups = json.loads(r["referral_source_type"] or "[]")

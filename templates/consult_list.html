@@ -1,8 +1,18 @@
 {% extends "base.html" %}
 {% block title %}상담 목록 — 복주 상담실{% endblock %}
+
+{# 정렬 가능 헤더 — 클릭 시 정렬 기준·방향 토글, 페이지는 1로 리셋 #}
+{% macro sort_th(key, label) %}
+    {% set active = (sort == key) %}
+    {% set next_dir = 'asc' if (active and sort_dir == 'desc') else ('desc' if active else 'asc') %}
+    <th class="sortable{% if active %} sorted{% endif %}">
+        <a href="{{ url_with(sort=key, dir=next_dir, page=None) }}" title="{{ label }} 기준 정렬">{{ label }}<span class="sort-ind">{% if active %}{{ '▲' if sort_dir == 'asc' else '▼' }}{% else %}⇅{% endif %}</span></a>
+    </th>
+{% endmacro %}
+
 {% block content %}
 <div class="page-header">
-    <h1>상담 목록 <span class="muted" style="font-size:0.7em">({{ rows|length }}건)</span></h1>
+    <h1>상담 목록 <span class="muted" style="font-size:0.7em">(총 {{ total }}건{% if total_pages > 1 %} · {{ page }}/{{ total_pages }}p{% endif %})</span></h1>
     <div style="display:flex; gap:8px">
         {% if current_user and current_user.role == 'admin' %}
         <a class="btn btn-secondary btn-sm" href="/consultations.csv?{{ request.query_string.decode() }}">CSV</a>
@@ -12,22 +22,79 @@
 </div>
 
 <form class="filter-bar" method="get" action="/consultations">
+    {# 필터 변경 시 현재 정렬 기준 유지 (페이지는 자동으로 1로 리셋) #}
+    <input type="hidden" name="sort" value="{{ sort }}">
+    <input type="hidden" name="dir" value="{{ sort_dir }}">
     <div class="field">
         <label>기간</label>
         <input type="date" name="from" value="{{ filters.date_from or '' }}">
         <input type="date" name="to" value="{{ filters.date_to or '' }}">
     </div>
     <div class="field">
-        <label>보험유형</label>
-        <select name="insurance">
+        <label>상담자</label>
+        <select name="counselor">
             <option value="">전체</option>
-            {% for t in INSURANCE_TYPES %}
-            <option value="{{ t }}" {% if filters.insurance == t %}selected{% endif %}>{{ t }}</option>
+            {% for c in COUNSELORS %}
+            <option value="{{ c }}" {% if filters.counselor == c %}selected{% endif %}>{{ c }}</option>
             {% endfor %}
         </select>
     </div>
-    <div class="field" style="flex:1; min-width:200px">
-        <label>검색 (환자/주치의/입원경로)</label>
+    <div class="field">
+        <label>거주 시도</label>
+        <select name="residence_sido">
+            <option value="">전체</option>
+            {% for s in SIDO_LIST %}
+            <option value="{{ s }}" {% if filters.residence_sido == s %}selected{% endif %}>{{ s|sido_short }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label>병명 그룹</label>
+        <select name="disease_group">
+            <option value="">전체</option>
+            {% for g in DISEASE_GROUPS %}
+            <option value="{{ g }}" {% if filters.disease_group == g %}selected{% endif %}>{{ g }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label>유입경로</label>
+        <select name="referral_type">
+            <option value="">전체</option>
+            {% for t in REFERRAL_TYPES %}
+            <option value="{{ t }}" {% if filters.referral_type == t %}selected{% endif %}>{{ t }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label>상담방법</label>
+        <select name="consult_channel">
+            <option value="">전체</option>
+            {% for c in CONSULT_CHANNELS %}
+            <option value="{{ c }}" {% if filters.consult_channel == c %}selected{% endif %}>{{ c }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label>회복기</label>
+        <select name="recovery">
+            <option value="">전체</option>
+            {% for r in RECOVERY_OPTIONS %}
+            <option value="{{ r }}" {% if filters.recovery == r %}selected{% endif %}>{{ r }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label>상담상태</label>
+        <select name="admission_status">
+            <option value="">전체</option>
+            {% for s in ADMISSION_STATUSES %}
+            <option value="{{ s }}" {% if filters.admission_status == s %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field" style="flex:1; min-width:140px">
+        <label>검색 (환자명·모병원)</label>
         <input type="text" name="q" value="{{ filters.q or '' }}" placeholder="키워드">
     </div>
     <div style="display:flex; gap:6px; align-self:flex-end">
@@ -36,41 +103,147 @@
     </div>
 </form>
 
+<!-- 일괄 작업 툴바 (선택된 행이 있을 때 활성) -->
+<div id="bulk-toolbar" class="bulk-toolbar hide">
+    <span><strong id="bulk-count">0</strong>건 선택</span>
+    <select id="bulk-status">
+        <option value="">상담상태 일괄변경...</option>
+        {% for s in ADMISSION_STATUSES %}
+        <option value="{{ s }}">{{ s }}</option>
+        {% endfor %}
+    </select>
+    <button id="bulk-status-apply" class="btn btn-secondary btn-sm" type="button">상태 적용</button>
+    <span class="bulk-divider">|</span>
+    <button id="bulk-edit" class="btn btn-secondary btn-sm" type="button" disabled title="1건 선택 시 활성">수정</button>
+    <button id="bulk-delete" class="btn btn-danger btn-sm" type="button">삭제</button>
+    <button id="bulk-clear" class="btn btn-secondary btn-sm" type="button">선택 해제</button>
+</div>
+
 {% if rows %}
 <div class="tbl-wrap">
-    <table class="tbl">
+    <table class="tbl tbl-compact">
         <thead>
             <tr>
-                <th>상담일</th>
-                <th>시각</th>
-                <th>환자</th>
-                <th>나이/성</th>
-                <th>주소</th>
-                <th>보험</th>
-                <th>입원경로</th>
-                <th>주치의</th>
-                <th>호실</th>
-                <th>입원예정</th>
-                <th>상담자</th>
+                <th class="check-col"><input type="checkbox" id="check-all" title="전체 선택"></th>
+                {{ sort_th('date', '상담일') }}
+                {{ sort_th('patient', '환자') }}
+                {{ sort_th('residence', '거주지') }}
+                <th>보호자</th>
+                {{ sort_th('hospital', '모병원') }}
+                <th>병명</th>
+                <th>유입경로</th>
+                {{ sort_th('channel', '상담방법') }}
+                <th>회복기대상</th>
+                {{ sort_th('status', '상담상태') }}
+                <th>입원만료</th>
+                {{ sort_th('counselor', '상담자') }}
+                <th class="edit-col"></th>
             </tr>
         </thead>
         <tbody>
             {% for r in rows %}
-            <tr>
-                <td>{{ r.consult_date|krdate }}</td>
-                <td>{{ r.consult_time or '' }}</td>
-                <td><a href="/consult/{{ r.id }}">{{ r.patient_name }}</a></td>
-                <td>{% if r.patient_age is not none %}{{ r.patient_age }}세{% endif %} {% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% endif %}</td>
-                <td>{{ r.address_full or '' }}</td>
-                <td>{{ r.insurance_type or '' }}</td>
-                <td>
-                    {% if r.referral_source_type %}<span class="muted" style="font-size:0.85em">{{ r.referral_source_type|join('/') }}</span> {% endif %}
-                    {{ (r.referral_source_detail or [])|join(', ') }}
+            {% set status = r.admission_status or '상담완료' %}
+            {% set purpose = (r.admission_purpose or '').strip() %}
+            <tr data-cid="{{ r.id }}">
+                <td class="check-col"><input type="checkbox" class="row-check" value="{{ r.id }}"></td>
+                <td class="nowrap">{{ r.consult_date|krdate_wd }}</td>
+                <td class="patient-cell">
+                    <a href="/consult/{{ r.id }}" class="patient-link"
+                       title="{% if r.prior_consult_count > 0 %}이전 상담 {{ r.prior_consult_count }}회{% else %}첫 상담{% endif %}{% if r.homonym_count > 1 %} · 동명이인 {{ r.homonym_count }}명{% endif %}">{{ r.patient_name }}</a>{% if r.homonym_count > 1 %}<span class="warn-mark" title="동명이인 {{ r.homonym_count }}명 — 보호자 전화로 구분">⚠</span>{% endif %}
+                    <span class="meta">{% if r.patient_age is not none %}{{ r.patient_age }}{% endif %}{% if r.gender == 'M' %}·M{% elif r.gender == 'F' %}·F{% endif %}</span>
+                    {% if r.prior_consult_count > 0 %}<span class="repeat-mark" title="이전 상담 {{ r.prior_consult_count }}회">↻{{ r.prior_consult_count }}</span>{% endif %}
                 </td>
-                <td>{{ r.attending_doctor or '' }}</td>
-                <td>{{ r.room_number or '' }}</td>
-                <td>{{ r.planned_admission_date|krdate or '' }}</td>
-                <td>{{ r.counselor or '' }}</td>
+                <td class="muted-sm">
+                    {% if r.residence_sido %}{{ r.residence_sido|sido_short }}{% endif %}
+                    {% if r.residence_sigungu %} {{ r.residence_sigungu }}{% endif %}
+                </td>
+                <td class="guardian-cell">
+                    {% if r.guardian_name or r.guardian_relation or r.guardian_phone %}
+                        {% if r.guardian_name %}{{ r.guardian_name }}{% endif %}{% if r.guardian_relation %} <span class="muted-sm">({{ r.guardian_relation }})</span>{% endif %}{% if r.guardian_phone %} <span class="phone">{{ r.guardian_phone }}</span>{% endif %}
+                    {% endif %}
+                </td>
+                <td class="muted-sm">{{ r.source_hospital or '' }}</td>
+                <td class="disease-cell">
+                    {% set dx_raw = (r.diseases or [])|hide_chronic %}
+                    {% set dx = [] %}
+                    {% for raw in dx_raw %}
+                        {% set lbl = raw|simplify_label %}
+                        {% if lbl and lbl not in dx %}{% if dx.append(lbl) %}{% endif %}{% endif %}
+                    {% endfor %}
+                    {% macro group_class(label) -%}
+                        {% if label == '중추신경계' or label in ['뇌경색','뇌출혈','척수손상','뇌성마비','마비'] %}cns
+                        {%- elif label == '근골격계' or label in ['고관절','대퇴부','골반','하지 부위 절단','골유합 지연','내고정술','전치환술','양측슬관절치환술'] %}msk
+                        {%- elif label == '비사용증후군' or label in ['호흡질환','폐질환','심장질환','신생물','신생물(암)','파킨슨(신규)','길랑바레증후군'] %}dis
+                        {%- else %}other{%- endif %}
+                    {%- endmacro %}
+                    {% if dx %}
+                        {% set first = dx[0] %}
+                        <span class="dx-summary {% if dx|length > 1 %}dx-clickable{% endif %}">
+                            <span class="dx-chip dx-{{ group_class(first)|trim }}">{{ first }}{% if dx|length > 1 %} <span class="dx-more">+{{ dx|length - 1 }}</span>{% endif %}</span>
+                        </span>
+                        {% if dx|length > 1 %}
+                        <span class="dx-expanded hide">
+                            {% for label in dx %}
+                                <span class="dx-chip dx-{{ group_class(label)|trim }}">{{ label }}</span>
+                            {% endfor %}
+                            <span class="dx-collapse" title="접기">×</span>
+                        </span>
+                        {% endif %}
+                    {% endif %}
+                </td>
+                <td class="referral-cell" title="{% if r.referral_source_type %}{{ r.referral_source_type|join('/') }}{% endif %}{% if r.referral_source_detail %} · {{ r.referral_source_detail|join(', ') }}{% endif %}">
+                    {% if r.referral_source_type %}<span class="muted-sm">{{ r.referral_source_type|join('/') }}</span>{% endif %}{% if r.referral_source_detail %} {{ r.referral_source_detail|join(',') }}{% endif %}
+                </td>
+                <td class="nowrap">
+                    {% if r.consult_channel == '전화상담' %}전화{% elif r.consult_channel == '내원상담' %}내원{% else %}{{ r.consult_channel or '' }}{% endif %}
+                </td>
+                <td class="nowrap">
+                    {% set rec = r|recovery_status %}
+                    {% if rec.label == '회복기' %}<span class="badge rh-yes {% if rec.source == 'auto' %}rh-auto{% endif %}" title="{% if rec.source == 'auto' %}발병일 기준 자동 판정{% else %}입력값: {{ purpose }}{% endif %}">회복기{% if rec.source == 'auto' %}*{% endif %}</span>
+                    {% elif rec.label == '비회복기' %}<span class="badge rh-no {% if rec.source == 'auto' %}rh-auto{% endif %}" title="{% if rec.source == 'auto' %}발병일 기준 자동 판정 (인정 기간 초과){% else %}입력값: {{ purpose }}{% endif %}">비회복기{% if rec.source == 'auto' %}*{% endif %}</span>
+                    {% elif rec.label == '요양' %}<span class="badge rh-care">요양</span>
+                    {% elif rec.label == '기타' %}<span class="badge rh-other" title="입력값: {{ purpose }}">기타</span>
+                    {% endif %}
+                    {% if rec.label == '회복기' and rec.days_left is not none and rec.days_left >= 0 and rec.days_left <= 14 %}
+                    <span class="rh-dday{% if rec.days_left <= 7 %} rh-dday-urgent{% endif %}" title="회복기 인정기간 잔여 {{ rec.days_left }}일 — 이 기간 안에 입원해야 회복기로 인정됩니다">{% if rec.days_left == 0 %}D-day{% else %}↓{{ rec.days_left }}일{% endif %}</span>
+                    {% endif %}
+                </td>
+                <td class="status-cell">
+                    {% if status == '퇴원완료' %}
+                        <span class="badge st-discharge-done">퇴원완료</span>
+                        {% if r.discharge_date %}<span class="muted-sm">{{ r.discharge_date|krdate_wd }}</span>{% endif %}
+                    {% else %}
+                        <select class="status-select badge-select st-{{ {'상담완료':'pending','입원보류':'hold','입원취소':'cancelled','입원완료':'completed'}.get(status,'pending') }}"
+                                data-cid="{{ r.id }}" data-current="{{ status }}" title="상담상태 인라인 변경">
+                            {% for s in ADMISSION_STATUSES %}
+                            <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s }}</option>
+                            {% endfor %}
+                        </select>
+                        {% if status == '입원완료' %}
+                            {% set actual = r.actual_admission_date or r.admission_date %}
+                            {% if actual %}<span class="muted-sm">{{ actual|krdate_wd }}</span>{% endif %}
+                            {% set dw = r|discharge_watch %}
+                            {% if dw and dw.state %}
+                            <div class="discharge-watch">
+                                <span class="badge st-discharge-due{% if dw.days_left <= 7 %} dc-urgent{% endif %}" title="유효 퇴원예정일 {{ dw.due_date }}{% if dw.days_left <= 7 %} · 임박 — 퇴원 계획 확인 필요{% endif %}">{{ dw.state }}{% if dw.days_left < 0 %} {{ -dw.days_left }}일초과{% else %} D-{{ dw.days_left }}{% endif %}</span>
+                                <button type="button" class="dc-btn" data-act="complete" data-cid="{{ r.id }}">퇴원완료</button>
+                                <button type="button" class="dc-btn" data-act="extend" data-cid="{{ r.id }}" data-due="{{ dw.due_date }}">입원연장</button>
+                            </div>
+                            {% endif %}
+                        {% endif %}
+                    {% endif %}
+                </td>
+                <td class="nowrap admexp-cell">
+                    {% set ax = r|admission_expiry %}
+                    {% if ax %}
+                        {% if ax.billing_date %}
+                        <span class="admexp-sub" title="회복기 수가(s005) 만료 · 입원 후 {{ ax.billing_days }}일">수가 {{ ax.billing_date|krdate }}{% if ax.billing_left is not none and ax.billing_left >= 0 and ax.billing_left <= 30 %} <span class="admexp-dday urgent">D-{{ ax.billing_left }}</span>{% endif %}</span>
+                        {% endif %}
+                        <span class="admexp-main" title="전체 입원 만료 · 입원 후 {{ ax.total_days }}일{% if ax.basis == 'planned' %} · 입원예정일 기준 추정{% endif %}">{% if ax.billing_date %}만료 {% endif %}{{ ax.total_date|krdate }}{% if ax.basis == 'planned' %} <span class="admexp-est">예정</span>{% endif %}{% if ax.total_left is not none %}{% if ax.total_left < 0 %} <span class="admexp-dday over">{{ -ax.total_left }}일초과</span>{% elif ax.total_left <= 30 %} <span class="admexp-dday urgent">D-{{ ax.total_left }}</span>{% endif %}{% endif %}</span>
+                    {% endif %}
+                </td>
+                <td class="nowrap">{{ r.counselor or '' }}</td>
+                <td class="edit-col"><a href="/consult/{{ r.id }}/edit" class="edit-link" title="수정">✏</a></td>
             </tr>
             {% endfor %}
         </tbody>
@@ -81,4 +254,382 @@
     조건에 맞는 상담이 없습니다.
 </div>
 {% endif %}
+
+{% if total_pages > 1 %}
+<nav class="pagination" aria-label="페이지 이동">
+    {% if page > 1 %}
+        <a class="pg" href="{{ url_with(page=1) }}" title="첫 페이지">«</a>
+        <a class="pg" href="{{ url_with(page=page-1) }}">‹ 이전</a>
+    {% else %}
+        <span class="pg pg-off">«</span>
+        <span class="pg pg-off">‹ 이전</span>
+    {% endif %}
+    {% set lo = [page - 2, 1]|max %}
+    {% set hi = [page + 2, total_pages]|min %}
+    {% if lo > 1 %}<span class="pg-gap">…</span>{% endif %}
+    {% for p in range(lo, hi + 1) %}
+        {% if p == page %}<span class="pg pg-cur">{{ p }}</span>
+        {% else %}<a class="pg" href="{{ url_with(page=p) }}">{{ p }}</a>{% endif %}
+    {% endfor %}
+    {% if hi < total_pages %}<span class="pg-gap">…</span>{% endif %}
+    {% if page < total_pages %}
+        <a class="pg" href="{{ url_with(page=page+1) }}">다음 ›</a>
+        <a class="pg" href="{{ url_with(page=total_pages) }}" title="마지막 페이지">»</a>
+    {% else %}
+        <span class="pg pg-off">다음 ›</span>
+        <span class="pg pg-off">»</span>
+    {% endif %}
+    {% if rows %}<span class="pg-summary">{{ page_start + 1 }}–{{ page_start + rows|length }} / 총 {{ total }}건</span>{% endif %}
+</nav>
+{% endif %}
+
+<style>
+/* 한 줄 표기 + 시인성 */
+.tbl-compact { table-layout: auto; }
+.tbl-compact th, .tbl-compact td {
+    padding: 5px 7px; font-size: 0.84em; vertical-align: middle;
+    white-space: nowrap;  /* 기본 한 줄 */
+}
+.tbl-compact th { font-weight: 600; background: #f8fafc; border-bottom: 2px solid #e2e8f0; }
+.tbl-compact tbody tr { border-bottom: 1px solid #f1f5f9; }
+.tbl-compact tbody tr:hover { background: #fafbfc; }
+.tbl-compact tr.selected, .tbl-compact tr.selected:hover { background: #fef9c3; }
+.tbl-compact .muted-sm { color: var(--text-light); font-size: 0.92em; }
+
+/* 너비 제한 + 말줄임 — 모병원·보호자처럼 길어질 수 있는 셀 */
+.tbl-compact td.guardian-cell { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.tbl-compact td.muted-sm { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+.tbl-compact td.referral-cell { max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+.tbl-compact td.disease-cell { max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
+
+.check-col { width: 26px; text-align: center; padding: 2px !important; }
+.check-col input { cursor: pointer; }
+.edit-col { width: 28px; text-align: center; padding: 2px !important; }
+.edit-link { display: inline-block; padding: 4px 6px; color: var(--text-light); text-decoration: none; border-radius: 4px; font-size: 1em; }
+.edit-link:hover { background: #e2e8f0; color: var(--primary); }
+
+.patient-cell .patient-link { font-weight: 600; color: var(--primary); }
+.patient-cell .meta { color: var(--text-light); font-size: 0.85em; margin-left: 4px; }
+.patient-cell .warn-mark { color: #dc2626; margin-left: 2px; cursor: help; font-size: 0.9em; }
+.patient-cell .repeat-mark { display: inline-block; margin-left: 4px; padding: 0 5px; background: #fef3c7; color: #92400e; border-radius: 8px; font-size: 0.7em; vertical-align: middle; cursor: help; }
+
+.guardian-cell .phone { font-size: 0.92em; color: var(--text); font-feature-settings: "tnum"; }
+
+/* 병명 칩 (한 줄 요약 + 클릭 시 펼침) */
+.disease-cell { line-height: 1.4; position: relative; }
+.dx-chip { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 0.78em; font-weight: 500; vertical-align: middle; margin: 1px 2px 1px 0; }
+.dx-summary { display: inline-block; }
+.dx-summary.dx-clickable { cursor: pointer; }
+.dx-summary.dx-clickable:hover .dx-chip { box-shadow: 0 0 0 1px currentColor; }
+.dx-more { display: inline-block; padding: 0 4px; margin-left: 3px; background: rgba(0,0,0,0.12); border-radius: 6px; font-size: 0.85em; }
+.dx-expanded { display: inline-block; padding: 2px 4px; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.08); white-space: normal; max-width: 320px; line-height: 1.6; }
+.dx-collapse { display: inline-block; cursor: pointer; padding: 0 5px; color: #94a3b8; font-weight: bold; }
+.dx-collapse:hover { color: #dc2626; }
+.dx-expanded.hide, .dx-summary.hide { display: none; }
+/* 펼친 상태일 때 셀 자체 nowrap 해제 */
+.disease-cell:has(.dx-expanded:not(.hide)) { white-space: normal; }
+.dx-cns  { background: #dbeafe; color: #1e40af; }
+.dx-msk  { background: #fef3c7; color: #92400e; }
+.dx-dis  { background: #fee2e2; color: #991b1b; }
+.dx-other{ background: #f1f5f9; color: #475569; }
+
+/* 회복기대상 배지 */
+.badge { display: inline-block; padding: 2px 9px; border-radius: 10px; font-size: 0.78em; font-weight: 600; line-height: 1.4; }
+.rh-yes   { background: #dcfce7; color: #166534; }
+.rh-no    { background: #f1f5f9; color: #475569; }
+.rh-care  { background: #ffedd5; color: #9a3412; }
+.rh-other { background: #fee2e2; color: #991b1b; }
+/* 자동 판정값 — 별표(*) 표기 + 외곽선으로 구분 */
+.rh-auto  { box-shadow: inset 0 0 0 1px rgba(100,116,139,0.4); font-style: italic; }
+
+/* 상담상태 select-as-badge */
+.status-cell { white-space: nowrap; }
+.badge-select { padding: 2px 22px 2px 9px; border-radius: 10px; font-size: 0.78em; font-weight: 600; line-height: 1.4; border: 1px solid transparent; cursor: pointer; appearance: none; background-position: right 4px center; background-repeat: no-repeat; background-size: 12px; }
+.badge-select.st-pending   { background-color: #f1f5f9; color: #475569; }
+.badge-select.st-hold      { background-color: #fef3c7; color: #92400e; }
+.badge-select.st-completed { background-color: #dcfce7; color: #166534; }
+.badge-select.st-cancelled { background-color: #fee2e2; color: #991b1b; }
+.badge-select.flash-ok { box-shadow: 0 0 0 2px #16a34a; }
+.badge-select.flash-err { box-shadow: 0 0 0 2px #dc2626; }
+.status-cell .muted-sm { display: block; margin-top: 2px; font-size: 0.78em; }
+
+/* 퇴원 워크플로 — 퇴원완료 배지 / 퇴원예정 알림 + 액션 버튼 */
+.badge.st-discharge-done { background: #cffafe; color: #155e75; }
+.badge.st-discharge-due  { background: #fed7aa; color: #9a3412; }
+/* 퇴원예정 D-7 임박 — 빨간 펄스 강조 */
+.badge.st-discharge-due.dc-urgent { background: #fee2e2; color: #b91c1c;
+    animation: rh-pulse 1.6s ease-in-out infinite; }
+.discharge-watch { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; margin-top: 3px; }
+.dc-btn { padding: 1px 7px; font-size: 0.74em; border: 1px solid var(--border);
+          border-radius: 6px; background: #fff; cursor: pointer; white-space: nowrap; }
+.dc-btn:hover { background: #eef2f7; border-color: #94a3b8; }
+
+.filter-bar { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: flex-end; padding: 8px 12px; }
+.filter-bar .field { display: flex; flex-direction: column; gap: 2px; min-width: 100px; }
+.filter-bar .field label { font-size: 0.72em; color: var(--text-light); }
+.filter-bar .field input, .filter-bar .field select { padding: 3px 6px; font-size: 0.85em; border: 1px solid var(--border); border-radius: 4px; font-family: inherit; }
+
+/* 일괄 작업 툴바 */
+.bulk-toolbar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; background: #fef9c3; border: 1px solid #fde047; border-radius: 6px; margin: 8px 0; font-size: 0.88em; }
+.bulk-toolbar.hide { display: none; }
+.bulk-toolbar select { padding: 3px 6px; font-size: 0.88em; border: 1px solid var(--border); border-radius: 4px; }
+.bulk-toolbar .bulk-divider { color: var(--text-light); padding: 0 4px; }
+.btn-danger { background: #dc2626; color: #fff; border-color: #dc2626; }
+.btn-danger:hover { background: #b91c1c; }
+.btn-danger:disabled { background: #fca5a5; border-color: #fca5a5; cursor: not-allowed; }
+
+/* 정렬 가능 헤더 */
+.tbl-compact th.sortable { padding: 0; }
+.tbl-compact th.sortable a { display: block; padding: 5px 7px; color: inherit; text-decoration: none; }
+.tbl-compact th.sortable a:hover { background: #eef2f7; }
+.tbl-compact th.sorted { background: #e0e7ff; }
+.tbl-compact th.sorted a { color: #1e40af; }
+.sort-ind { margin-left: 3px; font-size: 0.82em; opacity: 0.4; }
+.tbl-compact th.sorted .sort-ind { opacity: 1; }
+
+/* 회복기 임박 D-day 마크 */
+.rh-dday { display: inline-block; margin-left: 3px; padding: 1px 6px; border-radius: 8px;
+           background: #fef3c7; color: #92400e; font-size: 0.72em; font-weight: 700;
+           vertical-align: middle; cursor: help; }
+.rh-dday-urgent { background: #fee2e2; color: #b91c1c; animation: rh-pulse 1.6s ease-in-out infinite; }
+@keyframes rh-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+/* 입원 만료 컬럼 */
+.admexp-cell { font-size: 0.82em; line-height: 1.45; }
+.admexp-sub { display: block; color: var(--text-light); }
+.admexp-main { display: block; }
+.admexp-est { color: #92400e; font-weight: 600; font-size: 0.92em; }
+.admexp-dday { display: inline-block; padding: 0 5px; border-radius: 7px; font-size: 0.92em; font-weight: 700; }
+.admexp-dday.urgent { background: #fef3c7; color: #92400e; }
+.admexp-dday.over { background: #fee2e2; color: #b91c1c; }
+
+/* 페이지네이션 */
+.pagination { display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+              justify-content: center; margin: 14px 0 4px; }
+.pagination .pg { display: inline-block; min-width: 30px; padding: 4px 9px; text-align: center;
+                  border: 1px solid var(--border); border-radius: 5px; color: var(--text);
+                  text-decoration: none; font-size: 0.85em; background: #fff; }
+.pagination a.pg:hover { background: #eef2f7; border-color: #94a3b8; }
+.pagination .pg-cur { background: var(--primary); color: #fff; border-color: var(--primary); font-weight: 700; }
+.pagination .pg-off { color: #cbd5e1; cursor: default; }
+.pagination .pg-gap { padding: 0 4px; color: var(--text-light); }
+.pagination .pg-summary { margin-left: 10px; color: var(--text-light); font-size: 0.8em; }
+</style>
+
+<script>
+(function() {
+    const STATUS_CLASS = {
+        '상담완료': 'st-pending', '입원보류': 'st-hold',
+        '입원취소': 'st-cancelled', '입원완료': 'st-completed',
+    };
+
+    // ─── 병명 +N 클릭 시 펼침 ───
+    document.querySelectorAll('.dx-summary.dx-clickable').forEach(s => {
+        s.addEventListener('click', () => {
+            s.classList.add('hide');
+            const exp = s.nextElementSibling;
+            if (exp && exp.classList.contains('dx-expanded')) exp.classList.remove('hide');
+        });
+    });
+    document.querySelectorAll('.dx-collapse').forEach(c => {
+        c.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const exp = c.parentElement;
+            exp.classList.add('hide');
+            const sum = exp.previousElementSibling;
+            if (sum && sum.classList.contains('dx-summary')) sum.classList.remove('hide');
+        });
+    });
+
+    // ─── 인라인 상담상태 변경 ───
+    document.querySelectorAll('.status-select').forEach(sel => {
+        sel.addEventListener('change', async () => {
+            const cid = sel.dataset.cid;
+            const newStatus = sel.value;
+            const old = sel.dataset.current;
+            if (newStatus === old) return;
+            const body = { admission_status: newStatus };
+            if (newStatus === '입원보류') {
+                const hr = prompt('입원보류 사유를 입력하세요 (필수)');
+                if (!hr || !hr.trim()) { sel.value = old; return; }
+                body.hold_reason = hr.trim();
+            } else if (newStatus === '입원취소') {
+                const rr = prompt('입원취소 사유를 입력하세요 (필수)');
+                if (!rr || !rr.trim()) { sel.value = old; return; }
+                body.rejection_reason_detail = rr.trim();
+            } else if (newStatus === '입원완료') {
+                if (!confirm("'입원완료'로 변경합니다. 실제 입원일 등 세부정보는 상담 상세 페이지에서 추가 입력하세요. 계속할까요?")) {
+                    sel.value = old;
+                    return;
+                }
+            }
+            try {
+                const r = await fetch(`/api/consult/${cid}/status`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body),
+                });
+                if (!r.ok) throw new Error(await r.text());
+                sel.dataset.current = newStatus;
+                Object.values(STATUS_CLASS).forEach(c => sel.classList.remove(c));
+                sel.classList.add(STATUS_CLASS[newStatus] || 'st-pending');
+                sel.classList.add('flash-ok');
+                setTimeout(() => sel.classList.remove('flash-ok'), 1200);
+            } catch (e) {
+                alert('상태 변경 실패: ' + e.message);
+                sel.value = old;
+                sel.classList.add('flash-err');
+                setTimeout(() => sel.classList.remove('flash-err'), 1200);
+            }
+        });
+    });
+
+    // ─── 퇴원 워크플로 (퇴원완료 / 입원연장) ───
+    document.querySelectorAll('.dc-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const cid = btn.dataset.cid;
+            const act = btn.dataset.act;
+            const today = new Date().toISOString().slice(0, 10);
+            let body;
+            if (act === 'complete') {
+                const d = prompt('실제 퇴원일자를 입력하세요 (YYYY-MM-DD)', today);
+                if (!d || !d.trim()) return;
+                body = { action: 'complete', discharge_date: d.trim() };
+            } else {
+                const cur = btn.dataset.due || today;
+                const d = prompt('새 퇴원예정일을 입력하세요 (YYYY-MM-DD)', cur);
+                if (!d || !d.trim()) return;
+                body = { action: 'extend', discharge_due_date: d.trim() };
+            }
+            btn.disabled = true;
+            try {
+                const r = await fetch(`/api/consult/${cid}/discharge`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body),
+                });
+                const j = await r.json();
+                if (!r.ok) throw new Error(j.error || r.status);
+                location.reload();
+            } catch (e) {
+                alert('처리 실패: ' + e.message);
+                btn.disabled = false;
+            }
+        });
+    });
+
+    // ─── 행 선택 ───
+    const checkAll = document.getElementById('check-all');
+    const rowChecks = document.querySelectorAll('.row-check');
+    const toolbar = document.getElementById('bulk-toolbar');
+    const countEl = document.getElementById('bulk-count');
+    const editBtn = document.getElementById('bulk-edit');
+
+    function selected() {
+        return Array.from(rowChecks).filter(c => c.checked);
+    }
+    function refreshToolbar() {
+        const sel = selected();
+        const n = sel.length;
+        if (n > 0) toolbar.classList.remove('hide');
+        else toolbar.classList.add('hide');
+        countEl.textContent = n;
+        editBtn.disabled = (n !== 1);
+        editBtn.title = (n === 1 ? '선택한 1건 수정' : '1건 선택 시 활성');
+        rowChecks.forEach(c => {
+            const tr = c.closest('tr');
+            if (tr) tr.classList.toggle('selected', c.checked);
+        });
+    }
+
+    if (checkAll) {
+        checkAll.addEventListener('change', () => {
+            rowChecks.forEach(c => c.checked = checkAll.checked);
+            refreshToolbar();
+        });
+    }
+    rowChecks.forEach(c => c.addEventListener('change', refreshToolbar));
+
+    // 수정 — 1건 선택 시 해당 상담 수정 페이지로 이동
+    if (editBtn) {
+        editBtn.addEventListener('click', () => {
+            const sel = selected();
+            if (sel.length !== 1) return;
+            location.href = `/consult/${sel[0].value}/edit`;
+        });
+    }
+
+    // 삭제 — N건 일괄 삭제
+    const delBtn = document.getElementById('bulk-delete');
+    if (delBtn) {
+        delBtn.addEventListener('click', async () => {
+            const sel = selected();
+            if (!sel.length) return;
+            if (!confirm(`선택한 ${sel.length}건을 삭제합니다.\n※ 삭제된 상담은 복구할 수 없습니다 (감사 로그에는 기록됨).\n계속할까요?`)) return;
+            delBtn.disabled = true;
+            let ok = 0, fail = 0;
+            for (const c of sel) {
+                try {
+                    const r = await fetch(`/api/consult/${c.value}`, {method: 'DELETE'});
+                    if (r.ok) ok++; else fail++;
+                } catch (e) { fail++; }
+            }
+            delBtn.disabled = false;
+            alert(`삭제 완료: 성공 ${ok}건${fail ? ', 실패 ' + fail + '건' : ''}\n페이지를 새로고침합니다.`);
+            location.reload();
+        });
+    }
+
+    // 일괄 상태 변경
+    const bulkStatusApply = document.getElementById('bulk-status-apply');
+    const bulkStatus = document.getElementById('bulk-status');
+    const bulkClear = document.getElementById('bulk-clear');
+
+    if (bulkClear) {
+        bulkClear.addEventListener('click', () => {
+            rowChecks.forEach(c => c.checked = false);
+            if (checkAll) checkAll.checked = false;
+            refreshToolbar();
+        });
+    }
+
+    if (bulkStatusApply) {
+        bulkStatusApply.addEventListener('click', async () => {
+            const sel = selected();
+            const status = bulkStatus.value;
+            if (!sel.length) return;
+            if (!status) { alert('변경할 상담상태를 선택하세요.'); return; }
+            const body = { admission_status: status };
+            if (status === '입원보류') {
+                const hr = prompt(`${sel.length}건을 '입원보류'로 변경합니다. 보류 사유를 입력하세요 (필수 · 전체 공통 적용)`);
+                if (!hr || !hr.trim()) return;
+                body.hold_reason = hr.trim();
+            } else if (status === '입원취소') {
+                const rr = prompt(`${sel.length}건을 '입원취소'로 변경합니다. 취소 사유를 입력하세요 (필수 · 전체 공통 적용)`);
+                if (!rr || !rr.trim()) return;
+                body.rejection_reason_detail = rr.trim();
+            } else if (status === '입원완료') {
+                if (!confirm(`${sel.length}건을 '입원완료'로 일괄 변경합니다. 실제 입원일 등 세부정보는 각 상담 상세에서 추가 입력해야 합니다. 계속할까요?`)) return;
+            } else if (!confirm(`${sel.length}건을 '${status}'로 변경합니다.`)) {
+                return;
+            }
+            bulkStatusApply.disabled = true;
+            let ok = 0, fail = 0;
+            for (const c of sel) {
+                try {
+                    const r = await fetch(`/api/consult/${c.value}/status`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(body),
+                    });
+                    if (r.ok) ok++; else fail++;
+                } catch (e) { fail++; }
+            }
+            bulkStatusApply.disabled = false;
+            alert(`완료: 성공 ${ok}건${fail ? ', 실패 ' + fail + '건' : ''}\n페이지를 새로고침합니다.`);
+            location.reload();
+        });
+    }
+})();
+</script>
 {% endblock %}

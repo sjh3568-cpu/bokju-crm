@@ -20,17 +20,22 @@ INSURANCE_TYPES = [
 # 상담방법 — 양식의 2종
 CONSULT_CHANNELS = ["전화상담", "내원상담"]
 
-# 상담 결과(입원 진행 단계) — 5분류. 기본값=상담완료. 통계 KPI/전환율 산출용.
+# 상담 결과(입원 진행 단계) — 4분류. 기본값=상담완료. 통계 KPI/전환율 산출용.
 # 사용자 요청으로 결정 워크플로 추가 (CLAUDE.md 절대금지에서 해제됨).
+# 입원보류·입원취소는 사유 기재 필수 (폼·API에서 검증).
 ADMISSION_STATUSES = [
     "상담완료",  # 기본 — 결과 미확정/단순 상담
-    "입원예정",  # 입원 방향, 날짜 미확정
-    "입원확정",  # 입원일 확정
+    "입원보류",  # 진행중 — 결과 미확정 (사유 필수)
+    "입원취소",  # 어느 단계서든 취소 (사유 필수)
     "입원완료",  # 실제 입원
-    "입원취소",  # 어느 단계서든 취소
 ]
+# 입원 후 단계 — 폼 선택지는 아니며 상담목록 퇴원 워크플로에서만 설정.
+DISCHARGE_COMPLETE = "퇴원완료"   # 실제 퇴원
+DISCHARGE_PENDING = "퇴원예정"    # 파생 표시값 (DB에 저장하지 않음)
+# admission_status 컬럼에 저장될 수 있는 전체 값 (통계 집계·검증용)
+ADMISSION_STATUS_ALL = ADMISSION_STATUSES + [DISCHARGE_COMPLETE]
 # 보류(진행중·결과 미확정)로 묶이는 상태 — KPI 전환율 분모 계산에 사용
-ADMISSION_STATUS_PENDING = ("상담완료", "입원예정", "입원확정")
+ADMISSION_STATUS_PENDING = ("상담완료", "입원보류")
 
 # 입원취소 사유 라벨 — 단일 풀, 환자측·병원측 사유 모두 포함.
 # 사후 분석에서 "병원 거절(의료적 부적합)"·"환자 사정"으로 구분 가능.
@@ -131,16 +136,28 @@ DISEASES_LAYOUT = {
             {"value": "골반-다발 부위", "label": "다발 부위"},
         ]},
         {"kind": "rowbreak"},
+        # 보조 항목 — 둥근 체크 모양으로 구분 (입원 기간 60일 가산 요인)
+        {"kind": "checkbox", "value": "골유합 지연", "shape": "round"},
+        {"kind": "checkbox", "value": "내고정술", "shape": "round"},
+        {"kind": "checkbox", "value": "전치환술", "shape": "round"},
+        {"kind": "rowbreak"},
         {"kind": "checkbox", "value": "하지 부위 절단"},
+        {"kind": "checkbox", "value": "양측슬관절치환술"},
     ],
     "비사용증후군": [
-        {"kind": "checkbox+text", "value": "폐질환", "stretch": True,
-         "addon_field": "lung_detail", "placeholder": "상세"},
+        # 한 줄에 2개씩 — stretch 항목이라 절반 너비로 나뉘고 상세칸도 그만큼 줄어듦.
+        # 파킨슨(신규) — 최근 진단. 기저질환의 '파킨슨'(올드, 60일 초과)과 구분되는 별도 값.
+        {"kind": "checkbox+text", "value": "파킨슨(신규)", "label": "파킨슨", "stretch": True,
+         "addon_field": "parkinson_new_detail", "placeholder": "상세"},
+        {"kind": "checkbox+text", "value": "길랑바레증후군", "stretch": True,
+         "addon_field": "gbs_detail", "placeholder": "상세"},
         {"kind": "rowbreak"},
+        {"kind": "checkbox+text", "value": "호흡질환", "stretch": True,
+         "addon_field": "lung_detail", "placeholder": "상세"},
         {"kind": "checkbox+text", "value": "심장질환", "stretch": True,
          "addon_field": "heart_detail", "placeholder": "상세"},
         {"kind": "rowbreak"},
-        {"kind": "checkbox+text", "value": "신생물", "stretch": True,
+        {"kind": "checkbox+text", "value": "신생물", "label": "신생물(암)", "stretch": True,
          "addon_field": "neoplasm_detail", "placeholder": "상세"},
     ],
 }
