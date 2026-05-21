@@ -216,6 +216,20 @@ DIET_TYPES = [
     "위루술(PEG)",
 ]
 
+# 식사종류 레이아웃 — 미음은 네모체크 부모 + 둥근체크 4종(도움/스스로/틀니/다지기)
+DIET_LAYOUT = [
+    {"kind": "checkbox", "value": "밥"},
+    {"kind": "checkbox", "value": "죽"},
+    {"kind": "checkbox+group", "value": "미음", "items": [
+        {"value": "미음-도움", "label": "도움"},
+        {"value": "미음-스스로", "label": "스스로"},
+        {"value": "미음-틀니", "label": "틀니"},
+        {"value": "미음-다지기", "label": "다지기"},
+    ]},
+    {"kind": "checkbox", "value": "비강영양(L-tube)"},
+    {"kind": "checkbox", "value": "위루술(PEG)"},
+]
+
 # ─── 상처/소독 ───
 WOUND_CARE_OPTIONS = [
     "욕창",
@@ -228,6 +242,19 @@ WOUND_CARE_OPTIONS = [
     "요루(ureterostomy)",
     "장루(colostomy)",
 ]
+
+# 상처소독 항목별 인라인 수기 메모 — (옵션 → DB 컬럼). 폼은 이 순서로 렌더.
+WOUND_CARE_NOTE_FIELDS = {
+    "욕창": "wound_site",                    # 기존 컬럼 재사용
+    "수술절상": "wound_op_note",
+    "기관절개": "tracheostomy_detail",       # 기존 컬럼 재사용
+    "Foley cath(유치도뇨)": "wound_foley_note",
+    "당뇨발": "wound_dmfoot_note",
+    "화상": "wound_burn_note",
+    "단순상처": "wound_simple_note",
+    "요루(ureterostomy)": "wound_urostomy_note",
+    "장루(colostomy)": "wound_colostomy_note",
+}
 
 # ─── 특수처치 ───
 SPECIAL_CARE_OPTIONS = [
@@ -244,6 +271,22 @@ SPECIAL_CARE_OPTIONS = [
     "VRE",
     "CRE",
 ]
+
+# 특수처치 항목별 인라인 수기 메모 — (옵션 → DB 컬럼). 폼은 이 순서로 렌더.
+SPECIAL_CARE_NOTE_FIELDS = {
+    "중심정맥영양": "special_tpn_note",
+    "인공호흡기": "special_vent_note",
+    "산소요법": "oxygen_lpm",                # 기존 컬럼 재사용
+    "흡인": "special_suction_note",
+    "수혈": "special_transfusion_note",
+    "PICC": "special_picc_note",
+    "수액요법": "special_fluid_note",
+    "네블라이저": "special_nebulizer_note",
+    "기관내삽관": "special_intubation_note",
+    "MRSA": "special_mrsa_note",
+    "VRE": "special_vre_note",
+    "CRE": "special_cre_note",
+}
 
 # ─── 치료 ───
 THERAPY_OPTIONS = [

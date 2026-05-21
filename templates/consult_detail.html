@@ -206,7 +206,8 @@
                 ({% if c.referrer_person %}추천인: {{ c.referrer_person }}{% endif %}{% if c.referrer_person and c.referrer_institution %} · {% endif %}{% if c.referrer_institution %}기관: {{ c.referrer_institution }}{% endif %})
             </span>
             {% endif %}
-            {% if c.admission_route %}<br><span class="muted" style="font-size:0.9em">기타: {{ c.admission_route }}</span>{% endif %}
+            {% if c.referral_online_note %}<br><span class="muted" style="font-size:0.9em">온라인 기타: {{ c.referral_online_note }}</span>{% endif %}
+            {% if c.referral_etc_note %}<br><span class="muted" style="font-size:0.9em">기타 경로: {{ c.referral_etc_note }}</span>{% endif %}
         </dd>
         {% if c.discharge_due_date or c.discharge_date %}
         <dt>퇴원</dt><dd>
@@ -274,8 +275,18 @@
         {% if c.admission_purpose %}<dt>입원목적</dt><dd style="white-space:pre-wrap">{{ c.admission_purpose }}</dd>{% endif %}
         {% if c.disuse_screening_note %}<dt>비사용증후군 발굴 대상</dt><dd>{{ c.disuse_screening_note }}</dd>{% endif %}
         <dt>식사종류</dt><dd>{{ (c.diet_types or [])|join(', ') or '-' }}</dd>
-        <dt>상처소독</dt><dd>{{ (c.wound_care or [])|join(', ') or '-' }}{% if c.wound_site %} · 욕창부위 {{ c.wound_site }}{% endif %}{% if c.tracheostomy_detail %} · 기관절개 {{ c.tracheostomy_detail }}{% endif %}</dd>
-        <dt>특수처치</dt><dd>{{ (c.special_care or [])|join(', ') or '-' }}{% if c.oxygen_lpm %} · 산소 {{ c.oxygen_lpm }}L/min{% endif %}</dd>
+        <dt>상처소독</dt><dd>
+        {%- set wparts = [] -%}
+        {%- for opt, fld in WOUND_CARE_NOTE_FIELDS.items() if opt in (c.wound_care or []) -%}
+          {%- set _ = wparts.append(opt ~ ('(' ~ c[fld] ~ ')' if c[fld] else '')) -%}
+        {%- endfor -%}
+        {{ wparts|join(', ') or '-' }}</dd>
+        <dt>특수처치</dt><dd>
+        {%- set sparts = [] -%}
+        {%- for opt, fld in SPECIAL_CARE_NOTE_FIELDS.items() if opt in (c.special_care or []) -%}
+          {%- set _ = sparts.append(opt ~ ('(' ~ c[fld] ~ ')' if c[fld] else '')) -%}
+        {%- endfor -%}
+        {{ sparts|join(', ') or '-' }}</dd>
         <dt>연하검사</dt><dd>{{ c.swallow_test or '-' }}{% if c.swallow_test_dates %} · {{ c.swallow_test_dates }}{% endif %}</dd>
         <dt>치료</dt><dd>{{ (c.therapy or [])|join(', ') or '-' }}</dd>
     </dl>

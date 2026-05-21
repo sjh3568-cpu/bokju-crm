@@ -354,7 +354,9 @@
             setMeta(''); return;
         }
         const autoVal = result.label + '재활 및 간호간병 통합서비스';
-        setHint(`※ 자동 판정: ${result.label}`, result.label === '회복기' ? 'rh-yes' : 'rh-no');
+        // 회복기 → 회복기(S005), 비회복기 → 비회복기(S006)
+        const recCode = result.label === '회복기' ? '회복기(S005)' : '비회복기(S006)';
+        setHint(`※ 자동 판정: ${recCode}`, result.label === '회복기' ? 'rh-yes' : 'rh-no');
         setMeta(`발병 후 ${result.days}일 / 인정 기간 ${result.period}일 (입원시점 기준)`);
         // 사용자가 별도 메모를 적은 게 아니면 자동 입력값으로 채움
         const cur = purposeEl.value.trim();
@@ -390,7 +392,8 @@
             const m = String(dateEl.value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
             if (!m) { wdEl.textContent = ''; return; }
             const d = new Date(+m[1], +m[2] - 1, +m[3]);
-            wdEl.textContent = isNaN(d.getTime()) ? '' : WD[d.getDay()] + '요일';
+            // 예: 2026.05.11(수)
+            wdEl.textContent = isNaN(d.getTime()) ? '' : `${m[1]}.${m[2]}.${m[3]}(${WD[d.getDay()]})`;
         }
         ['change', 'input'].forEach(ev => dateEl.addEventListener(ev, showWeekday));
         showWeekday();

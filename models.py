@@ -254,6 +254,29 @@ def init_db():
         "hold_reason": "TEXT",            # 10번 — 입원보류 사유 (필수)
         "discharge_due_date": "DATE",     # 10번 — 입원연장 시 새 퇴원예정일
         "discharge_date": "DATE",         # 10번 — 실제 퇴원일 (퇴원완료)
+        # ── 폼 추가 개선 2차 (2026-05) ──
+        "referral_online_note": "TEXT",   # 입원경로 온라인 박스 수기 입력
+        "referral_etc_note": "TEXT",      # 입원경로 기타 박스 수기 입력
+        # 상처소독 항목별 인라인 메모 (욕창=wound_site, 기관절개=tracheostomy_detail 재사용)
+        "wound_op_note": "TEXT",          # 수술절상
+        "wound_foley_note": "TEXT",       # Foley cath
+        "wound_dmfoot_note": "TEXT",      # 당뇨발
+        "wound_burn_note": "TEXT",        # 화상
+        "wound_simple_note": "TEXT",      # 단순상처
+        "wound_urostomy_note": "TEXT",    # 요루
+        "wound_colostomy_note": "TEXT",   # 장루
+        # 특수처치 항목별 인라인 메모 (산소요법=oxygen_lpm 재사용)
+        "special_tpn_note": "TEXT",       # 중심정맥영양
+        "special_vent_note": "TEXT",      # 인공호흡기
+        "special_suction_note": "TEXT",   # 흡인
+        "special_transfusion_note": "TEXT",  # 수혈
+        "special_picc_note": "TEXT",      # PICC
+        "special_fluid_note": "TEXT",     # 수액요법
+        "special_nebulizer_note": "TEXT",  # 네블라이저
+        "special_intubation_note": "TEXT",  # 기관내삽관
+        "special_mrsa_note": "TEXT",      # MRSA
+        "special_vre_note": "TEXT",       # VRE
+        "special_cre_note": "TEXT",       # CRE
     })
     # 입원 진행 상태 4종 개편 (2026-05): 구 5종의 '입원예정'·'입원확정'과
     # 엑셀 구식 '방문예정'을 '입원보류'(진행중)로 통합. 멱등.
@@ -409,9 +432,10 @@ CONSULT_FIELDS = (
     "consult_date", "consult_time", "counselor",
     "planned_admission_date", "attending_doctor", "room_number",
     "consult_channel", "admission_route",
-    # 상담유입경로 + 소개 추천인/기관
+    # 상담유입경로 + 소개 추천인/기관 + 온라인·기타 박스 수기 입력
     "referral_source_type", "referral_source_detail",
     "referrer_person", "referrer_institution",
+    "referral_online_note", "referral_etc_note",
     # 환자 현재 상태
     "patient_age",
     "current_location_type", "current_location_name", "current_nursing_name",
@@ -433,7 +457,13 @@ CONSULT_FIELDS = (
     # 처치/치료
     "admission_purpose", "diet_types",
     "wound_care", "wound_site", "tracheostomy_detail",
+    "wound_op_note", "wound_foley_note", "wound_dmfoot_note", "wound_burn_note",
+    "wound_simple_note", "wound_urostomy_note", "wound_colostomy_note",
     "special_care", "oxygen_lpm",
+    "special_tpn_note", "special_vent_note", "special_suction_note",
+    "special_transfusion_note", "special_picc_note", "special_fluid_note",
+    "special_nebulizer_note", "special_intubation_note",
+    "special_mrsa_note", "special_vre_note", "special_cre_note",
     "swallow_test", "swallow_test_dates",
     "therapy",
     # 입원시 확인

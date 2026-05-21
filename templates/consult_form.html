@@ -175,20 +175,27 @@
                                   {% if opt in referral_set %}checked{% endif %}> {{ opt }}</label>
                     {% endfor %}
                 </div>
-                {% if group_name == '소개' %}
+                {% if group_name == '온라인' %}
+                <div class="referrer-row">
+                    <input type="text" name="consultation.referral_online_note" placeholder="온라인 경로 직접 입력"
+                           value="{{ consultation.referral_online_note if is_edit and consultation.referral_online_note else '' }}">
+                </div>
+                {% elif group_name == '소개' %}
                 <div class="referrer-row">
                     <input type="text" name="consultation.referrer_person" placeholder="추천인"
                            value="{{ consultation.referrer_person if is_edit and consultation.referrer_person else '' }}">
                     <input type="text" name="consultation.referrer_institution" placeholder="추천 기관"
                            value="{{ consultation.referrer_institution if is_edit and consultation.referrer_institution else '' }}">
                 </div>
+                {% elif group_name == '기타' %}
+                <div class="referrer-row">
+                    <input type="text" name="consultation.referral_etc_note" placeholder="기타 경로 직접 입력"
+                           value="{{ consultation.referral_etc_note if is_edit and consultation.referral_etc_note else '' }}">
+                </div>
                 {% endif %}
             </fieldset>
             {% endfor %}
         </div>
-        <input type="text" class="boxed-input" name="consultation.admission_route" style="margin-top:6px"
-               value="{{ consultation.admission_route if is_edit and consultation.admission_route else '' }}"
-               placeholder="기타 입원경로 — 직접 입력">
     </div>
 
     <div class="field">
@@ -318,19 +325,6 @@
 
     <div class="field">
         <label>병명</label>
-        <div class="onset-row">
-            <span class="onset-label">발병일/수술일</span>
-            <input type="date" class="onset-input" id="onset-date"
-                   max="{{ now().strftime('%Y-%m-%d') }}">
-            <input type="text" class="onset-input" id="onset-text" style="display:none"
-                   placeholder="예: 2025년 12월경, 작년 겨울 — 회복기 자동 판정은 안 됩니다">
-            <label class="onset-unknown-label" title="정확한 발병일/수술일을 모를 때 체크하면 자유 텍스트로 입력할 수 있습니다">
-                <input type="checkbox" id="onset-unknown"> 정확한 날짜 모름
-            </label>
-            <input type="hidden" name="consultation.disease_onset" id="onset-hidden"
-                   value="{{ consultation.disease_onset if is_edit and consultation.disease_onset else '' }}">
-            <span class="recovery-hint" id="onset-recovery"></span>
-        </div>
         <div class="option-group">
             {% for group_name, items in DISEASES_LAYOUT.items() %}
             <fieldset class="opt-box {% if group_name in ['기저질환', '중추신경계'] %}box-full{% else %}box-half{% endif %}">
@@ -415,6 +409,22 @@
                 </div>
                 {% endif %}
             </fieldset>
+            {% if group_name == '기저질환' %}
+            {# 발병일/수술일 — 기저질환 박스 아래 배치 #}
+            <div class="onset-row" style="flex:1 1 100%">
+                <span class="onset-label">발병일/수술일</span>
+                <input type="date" class="onset-input" id="onset-date"
+                       max="{{ now().strftime('%Y-%m-%d') }}">
+                <input type="text" class="onset-input" id="onset-text" style="display:none"
+                       placeholder="예: 2025년 12월경, 작년 겨울 — 회복기 자동 판정은 안 됩니다">
+                <label class="onset-unknown-label" title="정확한 발병일/수술일을 모를 때 체크하면 자유 텍스트로 입력할 수 있습니다">
+                    <input type="checkbox" id="onset-unknown"> 정확한 날짜 모름
+                </label>
+                <input type="hidden" name="consultation.disease_onset" id="onset-hidden"
+                       value="{{ consultation.disease_onset if is_edit and consultation.disease_onset else '' }}">
+                <span class="recovery-hint" id="onset-recovery"></span>
+            </div>
+            {% endif %}
             {% endfor %}
         </div>
     </div>
@@ -471,80 +481,73 @@
     <div class="field">
         <label>식사종류</label>
         <div class="checkbox-grid">
-            {% for opt in DIET_TYPES %}
-            <label{% if opt in ['미음-도움','미음-스스로','미음-틀니','미음-다지기'] %} class="dx-round"{% endif %}><input type="checkbox" name="consultation.diet_types[]" value="{{ opt }}"
-                          {% if opt in diet_set %}checked{% endif %}> {{ opt }}</label>
+            {% for it in DIET_LAYOUT %}
+            {% if it.kind == 'checkbox' %}
+            <label><input type="checkbox" name="consultation.diet_types[]" value="{{ it.value }}"
+                          {% if it.value in diet_set %}checked{% endif %}> {{ it.value }}</label>
+            {% elif it.kind == 'checkbox+group' %}
+            <span class="dx-item">
+                <label><input type="checkbox" name="consultation.diet_types[]" value="{{ it.value }}"
+                              {% if it.value in diet_set %}checked{% endif %}> {{ it.value }}</label>
+                <span class="dx-addon">
+                    <span class="dx-addon-paren">(</span>
+                    {% for sub in it['items'] %}
+                    <label class="dx-round"><input type="checkbox" name="consultation.diet_types[]" value="{{ sub.value }}"
+                                  {% if sub.value in diet_set %}checked{% endif %}> {{ sub.label }}</label>
+                    {% endfor %}
+                    <span class="dx-addon-paren">)</span>
+                </span>
+            </span>
+            {% endif %}
             {% endfor %}
         </div>
     </div>
 
     <div class="field-row">
         <div class="field">
-            <label>상처소독</label>
+            <label>상처소독 <span class="muted" style="font-size:0.85em">— 항목별 메모 입력</span></label>
             <div class="checkbox-grid">
-                {% for opt in WOUND_CARE_OPTIONS %}
-                {% if opt == '욕창' %}
+                {% for opt, fld in WOUND_CARE_NOTE_FIELDS.items() %}
                 <span class="dx-item dx-stretch">
                     <label><input type="checkbox" name="consultation.wound_care[]" value="{{ opt }}"
                                   {% if opt in wound_set %}checked{% endif %}> {{ opt }}</label>
-                    <input type="text" class="dx-addon-input" name="consultation.wound_site" placeholder="부위"
-                           value="{{ consultation.wound_site if is_edit and consultation.wound_site else '' }}">
+                    <input type="text" class="dx-addon-input" name="consultation.{{ fld }}" placeholder="메모"
+                           value="{{ consultation[fld] if is_edit and consultation[fld] else '' }}">
                 </span>
-                {% elif opt == '기관절개' %}
-                <span class="dx-item dx-stretch">
-                    <label><input type="checkbox" name="consultation.wound_care[]" value="{{ opt }}"
-                                  {% if opt in wound_set %}checked{% endif %}> {{ opt }}</label>
-                    <input type="text" class="dx-addon-input" name="consultation.tracheostomy_detail" placeholder="상세"
-                           value="{{ consultation.tracheostomy_detail if is_edit and consultation.tracheostomy_detail else '' }}">
-                </span>
-                {% else %}
-                <label><input type="checkbox" name="consultation.wound_care[]" value="{{ opt }}"
-                              {% if opt in wound_set %}checked{% endif %}> {{ opt }}</label>
-                {% endif %}
                 {% endfor %}
             </div>
         </div>
         <div class="field">
-            <label>특수처치</label>
+            <label>특수처치 <span class="muted" style="font-size:0.85em">— 항목별 메모 입력</span></label>
             <div class="checkbox-grid">
-                {% for opt in SPECIAL_CARE_OPTIONS %}
-                {% if opt == '산소요법' %}
+                {% for opt, fld in SPECIAL_CARE_NOTE_FIELDS.items() %}
                 <span class="dx-item dx-stretch">
                     <label><input type="checkbox" name="consultation.special_care[]" value="{{ opt }}"
                                   {% if opt in special_set %}checked{% endif %}> {{ opt }}</label>
-                    <input type="text" class="dx-addon-input" name="consultation.oxygen_lpm" placeholder="L/min"
-                           value="{{ consultation.oxygen_lpm if is_edit and consultation.oxygen_lpm else '' }}">
+                    <input type="text" class="dx-addon-input" name="consultation.{{ fld }}" placeholder="메모"
+                           value="{{ consultation[fld] if is_edit and consultation[fld] else '' }}">
                 </span>
-                {% else %}
-                <label><input type="checkbox" name="consultation.special_care[]" value="{{ opt }}"
-                              {% if opt in special_set %}checked{% endif %}> {{ opt }}</label>
-                {% endif %}
                 {% endfor %}
             </div>
         </div>
     </div>
 
-    <div class="field-row">
-        <div class="field">
-            <label>연하검사</label>
-            <div class="field-radio">
+    <div class="field">
+        <label>기타 <span class="muted" style="font-size:0.85em">— 검사 · 치료</span></label>
+        <div class="checkbox-grid checkbox-flow">
+            <span class="dx-item">
+                <span class="dx-group-label">연하검사</span>
                 <label><input type="radio" name="consultation.swallow_test" value="유"
                               {% if is_edit and consultation.swallow_test == '유' %}checked{% endif %}> 유</label>
                 <label><input type="radio" name="consultation.swallow_test" value="무"
                               {% if is_edit and consultation.swallow_test == '무' %}checked{% endif %}> 무</label>
-            </div>
-            <input type="text" name="consultation.swallow_test_dates" style="margin-top:6px"
-                   value="{{ consultation.swallow_test_dates if is_edit and consultation.swallow_test_dates else '' }}"
-                   placeholder="검사일 (예: 2026-04-12, 2026-04-19)">
-        </div>
-        <div class="field">
-            <label>치료</label>
-            <div class="checkbox-grid">
-                {% for opt in THERAPY_OPTIONS %}
-                <label><input type="checkbox" name="consultation.therapy[]" value="{{ opt }}"
-                              {% if opt in therapy_set %}checked{% endif %}> {{ opt }}</label>
-                {% endfor %}
-            </div>
+                <input type="date" class="dx-addon-input" name="consultation.swallow_test_dates" title="연하검사일"
+                       value="{{ consultation.swallow_test_dates if is_edit and consultation.swallow_test_dates else '' }}">
+            </span>
+            {% for opt in THERAPY_OPTIONS %}
+            <label><input type="checkbox" name="consultation.therapy[]" value="{{ opt }}"
+                          {% if opt in therapy_set %}checked{% endif %}> {{ opt }}</label>
+            {% endfor %}
         </div>
     </div>
 </div>
