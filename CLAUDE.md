@@ -162,7 +162,8 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
 
 ## 2026-05-22 7개 기능 확장 (사용자 명시 요청)
 
-1. **내원 유형** — `consultations.admission_type` (일반/응급이송/전원). 헤더 입력, 목록 필터·배지.
+1. ~~**내원 유형** — `consultations.admission_type`~~ → 2026-05-23 폐지. UI 제거,
+   **입원 중 이벤트**로 일원화 (아래 참조). `admission_type` 컬럼·과거값은 보존.
 2. **상담목록 칼럼** — 성별·나이·보험유형 개별 컬럼 분리.
 3. **환자 생애주기** — `/lifecycle` 단계 보드 + `patients.lifecycle_stage` + `lifecycle_events` 테이블
    (상담/입원/응급치료/복귀/회복기·비회복기 전환/보호자·환자 요구사항/퇴원/기타). 환자 상세에 타임라인.
@@ -193,6 +194,22 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
 - **카카오 webhook** — `/api/webhook/kakao` (구조만, `.env` KAKAO_WEBHOOK_TOKEN으로 검증).
   비즈채널 연동 시 보호자 메시지가 인박스에 자동 등록. 실제 페이로드 형식은 연동 시 확정.
 - 인프라 의존 미구현: STT 자동 상담일지(NAS·음성캡처 확정 필요), 팩스 OCR, 웹문의 폼.
+
+## 2026-05-23 상담일지 폼 개선 5종 (사용자 명시 요청)
+
+1. **날짜 요일 표시** — 폼의 모든 `type=date` 입력칸에 'YYYY-MM-DD(요일)' 태그 자동
+   표시 (`form.js` 제너릭 핸들러, `.weekday-tag`). 방치 위젯 `date-combo` 정리.
+2. **내원유형 → 입원 중 이벤트** — 헤더 `admission_type` 필드 폐지. 입원완료 환자가
+   입원 기간 중 응급전원·모병원 외래치료 등으로 외부 의료기관을 다녀온 내역을
+   상담 상세 페이지 **'입원 중 이벤트'** 섹션에서 기록·관리.
+   - `admission_events` 테이블 (consultation_id FK), `config.ADMISSION_EVENT_TYPES`
+     (응급전원/모병원 외래치료/복귀/기타)
+   - `POST /api/consult/<id>/admission-event`, `DELETE /api/admission-event/<id>`
+   - `admission_type` 컬럼·과거값은 보존, UI(폼·목록·상세·CSV·통계)에서만 제거
+3. **환자 상태 정렬** — `.inline-pair` flex-end→flex-start. 부가 요소(모병원
+   빠른선택)가 붙은 칸이 옆 칸 정렬을 깨지 않도록.
+4. **회복기 미니가이드** — 재활의료기관 환자구성의 기준 공식 표(가/나/다/라/마)로 교체.
+5. **식사종류 배치** — `checkbox-grid`→`checkbox-flow`. '미음' 그룹 격침 해소.
 
 ## 운영 메모
 
