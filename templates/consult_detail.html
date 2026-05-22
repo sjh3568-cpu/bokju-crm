@@ -9,85 +9,131 @@
     </div>
     <div style="display:flex; gap:8px">
         <a href="/consultations" class="btn btn-secondary btn-sm">← 목록</a>
+        <a href="/sms?cid={{ c.id }}" class="btn btn-secondary btn-sm">📩 문자 전송</a>
+        <a href="/patients/{{ c.patient_id }}" class="btn btn-secondary btn-sm">생애주기</a>
         <a href="/consult/{{ c.id }}/edit" class="btn btn-accent btn-sm">수정</a>
     </div>
 </div>
 
-{% set _status = c.admission_status or '상담완료' %}
-<div class="card status-card" data-cid="{{ c.id }}">
+{% if c.blacklist %}
+<div class="card bl-banner">
+    ⚠ <strong>블랙리스트 환자</strong>
+    {% if c.blacklist_reason %}<span class="muted"> — {{ c.blacklist_reason }}</span>{% endif %}
+</div>
+{% endif %}
+
+{% set _cr = c.consult_result or '상담완료' %}
+{% set _status = c.admission_status or '미정' %}
+<div class="card status-card" data-cid="{{ c.id }}" data-pid="{{ c.patient_id }}">
     <div class="status-head">
         <h3>상담 결과</h3>
-        <span class="status-pill status-{{ _status }}">{{ _status }}</span>
+        <span class="status-pill cr-pill cr-{{ {'상담완료':'done','재입원 상담':'readm','상담요청':'req','상담보류':'hold','상담취소':'cancel'}.get(_cr,'done') }}">{{ _cr }}</span>
+        {% if _status != '미정' %}<span class="status-pill status-{{ _status }}">{{ _status }}</span>{% endif %}
     </div>
-    <div class="status-options">
-        {% for s in ADMISSION_STATUSES %}
-        <label class="status-chip {% if _status == s %}on{% endif %}">
-            <input type="radio" name="admission_status" value="{{ s }}" {% if _status == s %}checked{% endif %}>
-            <span>{{ s }}</span>
-        </label>
-        {% endfor %}
-    </div>
-    <div class="status-extra status-completed-row {% if _status != '입원완료' %}hide{% endif %}">
-        <label>실제 입원일자
-            <input type="date" id="admission-date" value="{{ c.admission_date or '' }}">
-        </label>
-        <button type="button" class="btn btn-primary btn-sm status-save">저장</button>
-        <span class="status-msg muted"></span>
-    </div>
-    <div class="status-hold-row {% if _status != '입원보류' %}hide{% endif %}">
-        <input type="text" id="hold-reason" class="reason-detail" placeholder="입원보류 사유 (필수)"
-               value="{{ c.hold_reason or '' }}">
-        <button type="button" class="btn btn-primary btn-sm status-save">저장</button>
-        <span class="status-msg muted"></span>
-    </div>
-    <div class="status-cancel-row {% if _status != '입원취소' %}hide{% endif %}">
-        <div class="reason-chips">
-            {% for r in REJECTION_REASONS %}
-            <label class="reason-chip {% if c.rejection_reason == r %}on{% endif %}">
-                <input type="radio" name="rejection_reason" value="{{ r }}" {% if c.rejection_reason == r %}checked{% endif %}>
+
+    {# ① 상담 진행 단계 (7번 요청) #}
+    <div class="status-tier">
+        <div class="tier-label">① 상담 결과</div>
+        <div class="status-options">
+            {% for r in CONSULT_RESULTS %}
+            <label class="status-chip {% if _cr == r %}on{% endif %}">
+                <input type="radio" name="consult_result" value="{{ r }}" {% if _cr == r %}checked{% endif %}>
                 <span>{{ r }}</span>
             </label>
             {% endfor %}
         </div>
-        <div class="reason-bottom">
-            <input type="text" id="reason-detail" class="reason-detail" placeholder="추가 메모 (선택)" value="{{ c.rejection_reason_detail or '' }}">
-            <button type="button" class="btn btn-primary btn-sm status-save">저장</button>
-            <span class="status-msg muted"></span>
+        <div class="cr-reason-row {% if _cr not in CONSULT_RESULT_REASON_LABELS %}hide{% endif %}">
+            <input type="text" id="cr-reason" class="reason-detail" placeholder="사유 (필수)"
+                   value="{{ c.consult_result_reason or '' }}">
         </div>
     </div>
-    <div class="status-simple-row {% if _status in ['입원완료','입원취소','입원보류'] %}hide{% endif %}">
-        <button type="button" class="btn btn-primary btn-sm status-save">저장</button>
+
+    {# ② 입원 진행 단계 #}
+    <div class="status-tier">
+        <div class="tier-label">② 입원 진행</div>
+        <div class="status-options">
+            <label class="status-chip {% if _status == '미정' %}on{% endif %}">
+                <input type="radio" name="admission_status" value="" {% if _status == '미정' %}checked{% endif %}>
+                <span>미정</span>
+            </label>
+            {% for s in ADMISSION_STATUSES %}
+            <label class="status-chip {% if _status == s %}on{% endif %}">
+                <input type="radio" name="admission_status" value="{{ s }}" {% if _status == s %}checked{% endif %}>
+                <span>{{ s }}</span>
+            </label>
+            {% endfor %}
+            {% if _status == '퇴원완료' %}
+            <label class="status-chip on">
+                <input type="radio" name="admission_status" value="퇴원완료" checked>
+                <span>퇴원완료</span>
+            </label>
+            {% endif %}
+        </div>
+        {% if _status == '퇴원완료' %}
+        <p class="muted" style="font-size:0.84em; margin:4px 0">입원 후 단계(퇴원)는 상담목록에서 관리합니다. 여기서는 상담 결과만 저장됩니다.</p>
+        {% endif %}
+        <div class="status-completed-row {% if _status != '입원완료' %}hide{% endif %}">
+            <label>실제 입원일자
+                <input type="date" id="admission-date" value="{{ c.admission_date or '' }}">
+            </label>
+        </div>
+        <div class="status-hold-row {% if _status != '입원보류' %}hide{% endif %}">
+            <input type="text" id="hold-reason" class="reason-detail" placeholder="입원보류 사유 (필수)"
+                   value="{{ c.hold_reason or '' }}">
+        </div>
+        <div class="status-cancel-row {% if _status != '입원취소' %}hide{% endif %}">
+            <div class="reason-chips">
+                {% for r in REJECTION_REASONS %}
+                <label class="reason-chip {% if c.rejection_reason == r %}on{% endif %}">
+                    <input type="radio" name="rejection_reason" value="{{ r }}" {% if c.rejection_reason == r %}checked{% endif %}>
+                    <span>{{ r }}</span>
+                </label>
+                {% endfor %}
+            </div>
+            <input type="text" id="reason-detail" class="reason-detail" placeholder="추가 메모 (선택)" value="{{ c.rejection_reason_detail or '' }}">
+        </div>
+    </div>
+
+    <div class="status-savebar">
+        <button type="button" class="btn btn-primary btn-sm status-save">상담 결과 저장</button>
         <span class="status-msg muted"></span>
     </div>
 </div>
 
 <style>
+.bl-banner { background:#1f2937; color:#fecaca; border-color:#1f2937; padding:10px 14px; }
+.bl-banner .muted { color:#fca5a5; }
 .status-card { background:#fafffa; border-color:#bbf7d0; }
-.status-head { display:flex; gap:10px; align-items:center; margin-bottom:10px; }
+.status-head { display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
 .status-pill { padding:4px 12px; border-radius:999px; font-size:0.82em; font-weight:600; background:#f1f5f9; color:#475569; }
-.status-pill.status-상담완료 { background:#f1f5f9; color:#475569; }
 .status-pill.status-입원보류 { background:#fef3c7; color:#92400e; }
 .status-pill.status-입원취소 { background:#fee2e2; color:#991b1b; }
 .status-pill.status-입원완료 { background:#dcfce7; color:#166534; }
 .status-pill.status-퇴원예정 { background:#fed7aa; color:#9a3412; }
 .status-pill.status-퇴원완료 { background:#cffafe; color:#155e75; }
-.status-hold-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-.status-hold-row.hide { display:none; }
+.status-pill.cr-done { background:#f1f5f9; color:#475569; }
+.status-pill.cr-readm { background:#e0e7ff; color:#3730a3; }
+.status-pill.cr-req { background:#cffafe; color:#155e75; }
+.status-pill.cr-hold { background:#fef3c7; color:#92400e; }
+.status-pill.cr-cancel { background:#fee2e2; color:#991b1b; }
+.status-tier { margin-bottom:12px; }
+.tier-label { font-size:0.82em; font-weight:700; color:var(--text-light); margin-bottom:5px; }
 .status-options { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
 .status-chip { display:inline-flex; align-items:center; padding:6px 14px; border:1px solid var(--border); border-radius:999px; cursor:pointer; font-size:0.88em; background:#fff; }
 .status-chip input { display:none; }
 .status-chip.on { background:var(--primary); color:#fff; border-color:var(--primary); }
-.status-extra, .status-simple-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-.status-extra label { font-size:0.85em; color:var(--text-light); display:flex; gap:6px; align-items:center; }
-.status-extra input[type=date] { padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-family:inherit; }
+.status-completed-row, .status-hold-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.status-completed-row label { font-size:0.85em; color:var(--text-light); display:flex; gap:6px; align-items:center; }
+.status-completed-row input[type=date] { padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-family:inherit; }
 .status-cancel-row { display:flex; flex-direction:column; gap:8px; }
-.status-cancel-row.hide, .status-extra.hide, .status-simple-row.hide { display:none; }
+.cr-reason-row { display:flex; }
+.hide { display:none !important; }
 .reason-chips { display:flex; flex-wrap:wrap; gap:5px; }
 .reason-chip { display:inline-flex; align-items:center; padding:4px 11px; border:1px solid var(--border); border-radius:999px; cursor:pointer; font-size:0.84em; background:#fff; }
 .reason-chip input { display:none; }
 .reason-chip.on { background:var(--danger); color:#fff; border-color:var(--danger); }
-.reason-bottom { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 .reason-detail { flex:1; min-width:200px; padding:5px 9px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:0.88em; }
+.status-savebar { display:flex; gap:10px; align-items:center; border-top:1px solid #d1fae5; padding-top:10px; }
 .status-msg.ok { color:var(--success); }
 .status-msg.err { color:var(--danger); }
 </style>
@@ -97,65 +143,83 @@
     const card = document.querySelector('.status-card');
     if (!card) return;
     const cid = card.dataset.cid;
-    const chips = card.querySelectorAll('.status-chip');
-    const radios = card.querySelectorAll('input[name="admission_status"]');
+    // 사유 입력이 필수인 상담 결과 (7번 요청)
+    const REASON_REQUIRED = {
+        '재입원 상담': '재입원 사유 / 이전 입원 정보',
+        '상담요청': '재연락 시기',
+        '상담보류': '보류 사유',
+        '상담취소': '취소 사유',
+    };
+    const crRadios = card.querySelectorAll('input[name="consult_result"]');
+    const crReasonRow = card.querySelector('.cr-reason-row');
+    const crReason = card.querySelector('#cr-reason');
+    const stRadios = card.querySelectorAll('input[name="admission_status"]');
     const completedRow = card.querySelector('.status-completed-row');
-    const cancelRow = card.querySelector('.status-cancel-row');
     const holdRow = card.querySelector('.status-hold-row');
-    const simpleRow = card.querySelector('.status-simple-row');
+    const cancelRow = card.querySelector('.status-cancel-row');
     const dateInput = card.querySelector('#admission-date');
     const holdReason = card.querySelector('#hold-reason');
     const reasonRadios = card.querySelectorAll('input[name="rejection_reason"]');
     const reasonChips = card.querySelectorAll('.reason-chip');
     const reasonDetail = card.querySelector('#reason-detail');
-    const pill = card.querySelector('.status-pill');
 
-    function refreshChips(value) {
-        chips.forEach(c => c.classList.toggle('on', c.querySelector('input').value === value));
-        const isCompleted = value === '입원완료';
-        const isCancelled = value === '입원취소';
-        const isHold = value === '입원보류';
-        completedRow.classList.toggle('hide', !isCompleted);
-        cancelRow.classList.toggle('hide', !isCancelled);
-        if (holdRow) holdRow.classList.toggle('hide', !isHold);
-        simpleRow.classList.toggle('hide', isCompleted || isCancelled || isHold);
+    function checkedVal(radios) {
+        for (const r of radios) if (r.checked) return r.value;
+        return '';
     }
-
-    radios.forEach(r => r.addEventListener('change', () => refreshChips(r.value)));
+    function refreshChips() {
+        const cr = checkedVal(crRadios);
+        crRadios.forEach(r => r.closest('.status-chip').classList.toggle('on', r.checked));
+        const need = !!REASON_REQUIRED[cr];
+        crReasonRow.classList.toggle('hide', !need);
+        if (need && crReason) crReason.placeholder = REASON_REQUIRED[cr] + ' (필수)';
+        const st = checkedVal(stRadios);
+        stRadios.forEach(r => r.closest('.status-chip').classList.toggle('on', r.checked));
+        completedRow.classList.toggle('hide', st !== '입원완료');
+        holdRow.classList.toggle('hide', st !== '입원보류');
+        cancelRow.classList.toggle('hide', st !== '입원취소');
+    }
+    crRadios.forEach(r => r.addEventListener('change', refreshChips));
+    stRadios.forEach(r => r.addEventListener('change', refreshChips));
     reasonRadios.forEach(r => r.addEventListener('change', () => {
-        reasonChips.forEach(c => c.classList.toggle('on', c.querySelector('input').value === r.value));
+        reasonChips.forEach(c => c.classList.toggle('on', c.querySelector('input').checked));
     }));
+    refreshChips();
 
     async function save(btn) {
-        const checked = card.querySelector('input[name="admission_status"]:checked');
-        if (!checked) return;
-        const status = checked.value;
-        const body = { admission_status: status };
-        if (status === '입원완료') {
-            body.admission_date = (dateInput && dateInput.value) || '';
-        } else if (status === '입원취소') {
-            const r = card.querySelector('input[name="rejection_reason"]:checked');
-            body.rejection_reason = r ? r.value : '';
-            body.rejection_reason_detail = (reasonDetail && reasonDetail.value.trim()) || '';
-            if (!body.rejection_reason && !body.rejection_reason_detail) {
-                alert('입원취소 사유를 선택하거나 입력하세요.');
-                return;
-            }
-        } else if (status === '입원보류') {
-            body.hold_reason = (holdReason && holdReason.value.trim()) || '';
-            if (!body.hold_reason) {
-                alert('입원보류 사유를 입력하세요.');
-                return;
+        const cr = checkedVal(crRadios);
+        const st = checkedVal(stRadios);
+        const body = { consult_result: cr };
+        if (REASON_REQUIRED[cr]) {
+            const v = (crReason && crReason.value.trim()) || '';
+            if (!v) { alert(REASON_REQUIRED[cr] + '을(를) 입력하세요.'); return; }
+            body.consult_result_reason = v;
+        } else if (crReason) {
+            body.consult_result_reason = crReason.value.trim();
+        }
+        // 퇴원완료는 입원 후 단계 — /status API 대상 아님. admission_status 전송 생략(값 보존).
+        if (st !== '퇴원완료') {
+            body.admission_status = st;
+            if (st === '입원완료') {
+                body.admission_date = (dateInput && dateInput.value) || '';
+            } else if (st === '입원보류') {
+                body.hold_reason = (holdReason && holdReason.value.trim()) || '';
+                if (!body.hold_reason) { alert('입원보류 사유를 입력하세요.'); return; }
+            } else if (st === '입원취소') {
+                const rr = card.querySelector('input[name="rejection_reason"]:checked');
+                body.rejection_reason = rr ? rr.value : '';
+                body.rejection_reason_detail = (reasonDetail && reasonDetail.value.trim()) || '';
+                if (!body.rejection_reason && !body.rejection_reason_detail) {
+                    alert('입원취소 사유를 선택하거나 입력하세요.'); return;
+                }
             }
         }
-        const msg = btn.parentElement.querySelector('.status-msg');
-        msg.className = 'status-msg muted';
-        msg.textContent = '저장 중...';
+        const msg = card.querySelector('.status-msg');
+        msg.className = 'status-msg muted'; msg.textContent = '저장 중...';
         btn.disabled = true;
         try {
             const r = await fetch(`/api/consult/${cid}/status`, {
-                method: 'POST',
-                headers: {'content-type': 'application/json'},
+                method: 'POST', headers: {'content-type': 'application/json'},
                 body: JSON.stringify(body),
             });
             const j = await r.json();
@@ -164,10 +228,8 @@
                 msg.textContent = '실패: ' + (j.error || r.status);
             } else {
                 msg.className = 'status-msg ok';
-                msg.textContent = '저장됨';
-                pill.className = 'status-pill status-' + status;
-                pill.textContent = status;
-                setTimeout(() => { msg.textContent = ''; }, 2500);
+                msg.textContent = '저장됨 — 새로고침합니다';
+                setTimeout(() => location.reload(), 600);
             }
         } catch (e) {
             msg.className = 'status-msg err';
@@ -175,7 +237,7 @@
         }
         btn.disabled = false;
     }
-    card.querySelectorAll('.status-save').forEach(b => b.addEventListener('click', e => save(e.currentTarget)));
+    card.querySelector('.status-save').addEventListener('click', e => save(e.currentTarget));
 })();
 </script>
 
@@ -196,6 +258,12 @@
         <dt>상담일시</dt><dd>{{ c.consult_date|krdate_wd_full}} {{ c.consult_time or '' }}</dd>
         <dt>상담자</dt><dd>{{ c.counselor or '-' }}</dd>
         <dt>상담방법</dt><dd>{{ c.consult_channel or '-' }}</dd>
+        <dt>내원 유형</dt><dd>
+            {% set _at = c.admission_type or '일반' %}
+            {% if _at == '응급이송' %}<span class="badge" style="background:#fee2e2;color:#b91c1c">응급이송</span>
+            {% elif _at == '전원' %}<span class="badge" style="background:#e0e7ff;color:#3730a3">전원</span>
+            {% else %}일반{% endif %}
+        </dd>
         <dt>입원경로</dt><dd>
             {% if c.referral_source_type %}
                 {% for t in c.referral_source_type %}<span class="badge badge-facility">{{ t }}</span> {% endfor %}

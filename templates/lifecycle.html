@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}생애주기 보드 — 복주 상담실{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>환자 생애주기 보드 <span class="muted" style="font-size:0.68em">({{ total }}명)</span></h1>
+    <a class="btn btn-primary btn-sm" href="/consult/new">+ 새 상담일지</a>
+</div>
+
+<form class="lc-search" method="get" action="/lifecycle">
+    <input type="text" name="q" value="{{ q }}" placeholder="환자명·연락처 검색">
+    <button class="btn btn-primary btn-sm" type="submit">검색</button>
+    {% if q %}<a class="btn btn-secondary btn-sm" href="/lifecycle">초기화</a>{% endif %}
+</form>
+
+<p class="lc-hint muted">상담 → 입원 → 응급치료 → 회복기/비회복기 → 퇴원까지 환자 단계를 관리합니다.
+   환자 상세에서 <strong>생애주기 단계</strong>를 지정하면 이 보드에 표시되고,
+   카드의 단계 선택으로 옮길 수 있습니다. 카드를 클릭하면 타임라인·요구사항을 기록할 수 있습니다.</p>
+
+{% if total %}
+<div class="lc-board">
+    {% for stage, cards in board.items() %}
+    <div class="lc-col">
+        <div class="lc-col-head">{{ stage }} <span class="lc-col-n">{{ cards|length }}</span></div>
+        <div class="lc-col-body">
+            {% for pt in cards %}
+            <div class="lc-pcard{% if pt.blacklist %} bl{% endif %}">
+                <div class="lc-pcard-top">
+                    <a href="/patients/{{ pt.id }}" class="lc-pname">
+                        {% if pt.blacklist %}<span class="bl-mark" title="블랙리스트{% if pt.blacklist_reason %} — {{ pt.blacklist_reason }}{% endif %}">⚠블랙</span> {% endif %}{{ pt.name }}</a>
+                    <span class="muted">{% if pt.patient_age is not none %}{{ pt.patient_age }}{% endif %}{% if pt.gender == 'M' %}·남{% elif pt.gender == 'F' %}·여{% endif %}</span>
+                </div>
+                {% if pt.last_diseases %}
+                <div class="lc-pdx">{{ pt.last_diseases[:3]|join(', ') }}{% if pt.last_diseases|length > 3 %} 외{% endif %}</div>
+                {% endif %}
+                <div class="lc-pmeta muted">
+                    {% if pt.last_consult_date %}최근상담 {{ pt.last_consult_date|krdate }} · {% endif %}상담 {{ pt.consult_count }} · 이벤트 {{ pt.event_count }}
+                </div>
+                <div class="lc-pcard-act">
+                    <select class="lc-stage-move" data-pid="{{ pt.id }}" title="단계 이동">
+                        {% for s in LIFECYCLE_STAGES %}
+                        <option value="{{ s }}" {% if pt.lifecycle_stage == s %}selected{% endif %}>{{ s }}</option>
+                        {% endfor %}
+                        <option value="__off">미설정 (보드 제외)</option>
+                    </select>
+                    <a href="/patients/{{ pt.id }}" class="lc-pcard-link">기록 ›</a>
+                </div>
+            </div>
+            {% endfor %}
+            {% if not cards %}<div class="lc-col-empty">—</div>{% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card empty">
+    {% if q %}검색 결과가 없습니다.{% else %}생애주기 단계가 지정된 환자가 없습니다.
+    환자 상세 페이지에서 단계를 지정하면 이 보드에 나타납니다.{% endif %}
+</div>
+{% endif %}
+
+<style>
+.lc-search { display:flex; gap:6px; align-items:center; padding:8px 0; }
+.lc-search input { padding:5px 10px; border:1px solid var(--border); border-radius:6px;
+    font-family:inherit; min-width:240px; }
+.lc-hint { font-size:0.85em; margin:4px 0 12px; }
+.lc-board { display:flex; gap:10px; overflow-x:auto; padding-bottom:10px; align-items:flex-start; }
+.lc-col { flex:0 0 240px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; }
+.lc-col-head { padding:8px 12px; font-weight:700; font-size:0.9em;
+    border-bottom:2px solid #e2e8f0; display:flex; justify-content:space-between; }
+.lc-col-n { background:#e2e8f0; border-radius:9px; padding:0 8px; font-size:0.86em; }
+.lc-col-body { padding:8px; display:flex; flex-direction:column; gap:7px;
+    min-height:60px; max-height:70vh; overflow-y:auto; }
+.lc-col-empty { color:#cbd5e1; text-align:center; padding:12px 0; }
+.lc-pcard { background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:8px 10px; }
+.lc-pcard.bl { border-color:#1f2937; background:#fff7ed; }
+.lc-pcard-top { display:flex; justify-content:space-between; align-items:baseline; gap:6px; }
+.lc-pname { font-weight:700; color:var(--primary); text-decoration:none; font-size:0.95em; }
+.bl-mark { display:inline-block; padding:0 4px; background:#1f2937; color:#fecaca;
+    border-radius:5px; font-size:0.68em; font-weight:700; }
+.lc-pdx { font-size:0.8em; color:#475569; margin:3px 0; }
+.lc-pmeta { font-size:0.76em; margin-bottom:5px; }
+.lc-pcard-act { display:flex; gap:6px; align-items:center; }
+.lc-stage-move { flex:1; padding:3px 5px; border:1px solid var(--border); border-radius:5px;
+    font-family:inherit; font-size:0.8em; }
+.lc-pcard-link { font-size:0.8em; color:var(--text-light); text-decoration:none; white-space:nowrap; }
+.lc-pcard-link:hover { color:var(--primary); }
+</style>
+
+<script src="/static/js/common.js"></script>
+<script>
+document.querySelectorAll('.lc-stage-move').forEach(sel => {
+    sel.addEventListener('change', async () => {
+        const pid = sel.dataset.pid;
+        const stage = sel.value === '__off' ? '' : sel.value;
+        try {
+            await api.post(`/api/patient/${pid}/stage`, { stage: stage });
+            location.reload();
+        } catch (e) {
+            alert('단계 변경 실패: ' + e.message);
+        }
+    });
+});
+</script>
+{% endblock %}

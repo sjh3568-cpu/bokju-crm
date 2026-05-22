@@ -37,8 +37,17 @@
         </div>
         <div class="field">
             <label>주치의</label>
-            <input type="text" name="consultation.attending_doctor"
-                   value="{{ consultation.attending_doctor if is_edit and consultation.attending_doctor else '' }}">
+            <div class="combobox">
+                <input type="text" name="consultation.attending_doctor"
+                       value="{{ consultation.attending_doctor if is_edit and consultation.attending_doctor else '' }}"
+                       placeholder="선택 또는 직접 입력">
+                <button type="button" class="combobox-arrow" tabindex="-1" aria-label="목록 열기">▾</button>
+                <ul class="combobox-list" hidden>
+                    {% for d in ATTENDING_DOCTORS %}
+                    <li>{{ d }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
         </div>
         <div class="field">
             <label>호실</label>
@@ -50,10 +59,11 @@
     <div class="field-row cols-3">
         <div class="field">
             <label>상담일자 <span class="req">*</span></label>
-            <div class="date-with-wd">
-                <input type="date" name="consultation.consult_date"
+            <div class="date-combo">
+                <input type="text" id="consult-date-display" class="date-combo-display" readonly
+                       placeholder="날짜 선택">
+                <input type="date" name="consultation.consult_date" id="consult-date-real"
                        value="{{ (consultation.consult_date if is_edit else now().strftime('%Y-%m-%d')) }}" required>
-                <span class="weekday-paren" id="consult-weekday"></span>
             </div>
         </div>
         <div class="field">
@@ -152,14 +162,39 @@
         </div>
     </div>
 
+    {# 블랙리스트 (4번 요청) — 환자 단위 표기·관리 #}
+    <div class="field blacklist-field">
+        <label class="blacklist-toggle">
+            <input type="checkbox" name="patient.blacklist" id="blacklist-check"
+                   {% if patient and patient.blacklist %}checked{% endif %}>
+            <span class="blacklist-label">⚠ 블랙리스트 환자</span>
+        </label>
+        <input type="text" class="boxed-input" name="patient.blacklist_reason" id="blacklist-reason"
+               value="{{ patient.blacklist_reason if patient and patient.blacklist_reason else '' }}"
+               placeholder="블랙리스트 지정 사유 (체크 시 필수)"
+               {% if not (patient and patient.blacklist) %}hidden{% endif %}>
+    </div>
+
     {% set referral_set = (consultation.referral_source_detail if is_edit else []) %}
-    <div class="field">
-        <label>상담방법</label>
-        <div class="field-radio">
-            {% for ch in CONSULT_CHANNELS %}
-            <label><input type="radio" name="consultation.consult_channel" value="{{ ch }}"
-                          {% if is_edit and consultation.consult_channel == ch %}checked{% endif %}> {{ ch }}</label>
-            {% endfor %}
+    <div class="field-row">
+        <div class="field">
+            <label>상담방법</label>
+            <div class="field-radio">
+                {% for ch in CONSULT_CHANNELS %}
+                <label><input type="radio" name="consultation.consult_channel" value="{{ ch }}"
+                              {% if is_edit and consultation.consult_channel == ch %}checked{% endif %}> {{ ch }}</label>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="field">
+            <label>내원 유형 <span class="muted" style="font-size:0.85em">— 응급이송·전원 환자 구분</span></label>
+            <div class="field-radio">
+                {% set _atype = (consultation.admission_type if is_edit and consultation.admission_type else '일반') %}
+                {% for t in ADMISSION_TYPES %}
+                <label><input type="radio" name="consultation.admission_type" value="{{ t }}"
+                              {% if _atype == t %}checked{% endif %}> {{ t }}</label>
+                {% endfor %}
+            </div>
         </div>
     </div>
 
@@ -611,22 +646,44 @@
 <!-- ───────── 상담 결과 (입원 진행 상태) ───────── -->
 <div class="form-section">
     <h3>상담 결과</h3>
-    {% set _st = (consultation.admission_status if is_edit and consultation.admission_status else '상담완료') %}
-    {% if is_edit and _st not in ADMISSION_STATUSES %}
-    <p class="muted" style="font-size:0.86em; margin:0 0 8px">
-        현재 상태: <strong>{{ _st }}</strong> — 입원 후 단계는 상담목록에서 관리합니다.
-        아래에서 상태를 다시 선택하면 새 값으로 덮어씁니다.
-    </p>
-    {% endif %}
+
+    {# ① 상담 진행 단계 — 상담 자체의 결과 (7번 요청) #}
+    {% set _cr = (consultation.consult_result if is_edit and consultation.consult_result else '상담완료') %}
     <div class="field">
-        <label>입원 진행 상태</label>
+        <label>① 상담 결과 <span class="muted" style="font-size:0.85em">— 상담 진행 단계</span></label>
+        <div class="field-radio" id="consult-result-radio">
+            {% for r in CONSULT_RESULTS %}
+            <label><input type="radio" name="consultation.consult_result" value="{{ r }}"
+                          {% if _cr == r %}checked{% endif %}> {{ r }}</label>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="field" id="consult-result-reason-row" hidden>
+        <label id="consult-result-reason-label">사유 <span class="req">*</span></label>
+        <input type="text" class="boxed-input" name="consultation.consult_result_reason"
+               value="{{ consultation.consult_result_reason if is_edit and consultation.consult_result_reason else '' }}"
+               placeholder="사유를 입력하세요 (필수)">
+    </div>
+
+    {# ② 입원 진행 단계 — 입원으로 이어질 때만 #}
+    {% set _st = (consultation.admission_status if is_edit and consultation.admission_status else '') %}
+    <div class="field">
+        <label>② 입원 진행 <span class="muted" style="font-size:0.85em">— 입원으로 이어질 때만 선택</span></label>
         <div class="field-radio" id="adm-status-radio">
+            <label><input type="radio" name="consultation.admission_status" value=""
+                          {% if not _st %}checked{% endif %}> 미정</label>
             {% for s in ADMISSION_STATUSES %}
             <label><input type="radio" name="consultation.admission_status" value="{{ s }}"
                           {% if _st == s %}checked{% endif %}> {{ s }}</label>
             {% endfor %}
         </div>
     </div>
+    {% if is_edit and _st and _st not in ADMISSION_STATUSES %}
+    <p class="muted" style="font-size:0.86em; margin:0 0 8px">
+        현재 입원 단계: <strong>{{ _st }}</strong> — 입원 후 단계(퇴원 등)는 상담목록에서 관리합니다.
+        아래 라디오를 선택하지 않으면 현재 값이 유지됩니다.
+    </p>
+    {% endif %}
     <div class="field" id="status-reason-hold" hidden>
         <label>입원보류 사유 <span class="req">*</span></label>
         <input type="text" class="boxed-input" name="consultation.hold_reason"

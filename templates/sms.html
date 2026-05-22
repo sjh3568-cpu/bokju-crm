@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}문자 전송 — 복주 상담실{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>문자 전송 <span class="muted" style="font-size:0.66em">상담 후 보호자 안내</span></h1>
+    <a class="btn btn-secondary btn-sm" href="/sms/templates">⚙ 템플릿 관리</a>
+</div>
+
+{% if not gateway_ready %}
+<div class="card sms-notice">
+    ℹ <strong>문자 발송사 미설정</strong> — <strong>전송</strong>을 누르면 발송 이력이 기록되고
+    직원 휴대폰 문자 앱이 내용이 채워진 채 열립니다(전송 버튼만 누르면 됨).
+    발송사 연동(.env <code>SMS_API_KEY</code>) 후에는 클릭 한 번으로 자동 전송됩니다.
+</div>
+{% endif %}
+
+<div class="sms-layout">
+    <div class="sms-side">
+        <div class="card">
+            <h3>1. 수신자 선택</h3>
+            <select id="sms-consult">
+                <option value="">— 최근 상담에서 보호자 선택 —</option>
+                {% for r in recent %}{% if r.guardian_phone %}
+                <option value="{{ r.id }}" {% if preselect and preselect.id == r.id %}selected{% endif %}>{{ r.consult_date|krdate }} · {{ r.patient_name }} · {{ r.guardian_name or '보호자' }} {{ r.guardian_phone }}</option>
+                {% endif %}{% endfor %}
+            </select>
+            <div class="sms-recipient">
+                <label>수신 번호<input type="tel" id="sms-phone" placeholder="010-"></label>
+                <label>받는 분<input type="text" id="sms-name" placeholder="보호자명"></label>
+            </div>
+        </div>
+        <div class="card">
+            <h3>2. 환자군 템플릿</h3>
+            <div class="sms-tpl-list">
+                {% for t in templates %}
+                <button type="button" class="sms-tpl" data-tid="{{ t.id }}"
+                        data-body="{{ t.body }}">
+                    <span class="sms-tpl-grp">{{ t.template_group }}</span>
+                    <span class="sms-tpl-name">{{ t.name }}</span>
+                </button>
+                {% endfor %}
+                {% if not templates %}<div class="empty">등록된 템플릿이 없습니다. <a href="/sms/templates">템플릿 관리</a>에서 추가하세요.</div>{% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="sms-main">
+        <div class="card">
+            <h3>3. 문자 내용</h3>
+            <textarea id="sms-body" rows="9" placeholder="템플릿을 선택하거나 직접 입력하세요."></textarea>
+            <div class="sms-foot">
+                <span class="muted" id="sms-count">0자</span>
+                <div style="display:flex; gap:8px">
+                    <button type="button" class="btn btn-secondary btn-sm" id="sms-copy">복사</button>
+                    <button type="button" class="btn btn-primary" id="sms-send">전송</button>
+                </div>
+            </div>
+            <p class="muted sms-ph-help">치환 토큰:
+                {% for k in placeholders %}<code>{{ k }}</code> {% endfor %}— 수신자 선택 시 자동 치환됩니다.</p>
+            <span class="sms-msg muted"></span>
+        </div>
+    </div>
+</div>
+
+<div class="card" style="margin-top:12px">
+    <h3>최근 발송 이력 ({{ log|length }})</h3>
+    {% if log %}
+    <div class="tbl-wrap">
+        <table class="tbl tbl-compact">
+            <thead><tr><th>일시</th><th>받는 분</th><th>번호</th><th>내용</th><th>상태</th><th>발송자</th></tr></thead>
+            <tbody>
+                {% for s in log %}
+                <tr>
+                    <td class="nowrap">{{ s.created_at[:16] if s.created_at else '' }}</td>
+                    <td class="nowrap">{{ s.to_name or '' }}</td>
+                    <td class="nowrap">{{ s.to_phone or '' }}</td>
+                    <td class="sms-log-body" title="{{ s.body }}">{{ s.body }}</td>
+                    <td class="nowrap">
+                        {% if s.status == 'sent' %}<span class="badge" style="background:#dcfce7;color:#166534">발송</span>
+                        {% elif s.status == 'failed' %}<span class="badge" style="background:#fee2e2;color:#991b1b">실패</span>
+                        {% else %}<span class="badge" style="background:#f1f5f9;color:#475569">수동</span>{% endif %}
+                    </td>
+                    <td class="nowrap">{{ s.sent_by or '' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}<div class="empty">발송 이력이 없습니다.</div>{% endif %}
+</div>
+
+<style>
+.sms-notice { background:#eff6ff; border-color:#bfdbfe; font-size:0.9em; }
+.sms-layout { display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap; }
+.sms-side { flex:1 1 320px; display:flex; flex-direction:column; gap:12px; }
+.sms-main { flex:2 1 380px; }
+.sms-layout .card { margin:0; }
+#sms-consult { width:100%; padding:6px 9px; border:1px solid var(--border);
+    border-radius:6px; font-family:inherit; font-size:0.88em; }
+.sms-recipient { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
+.sms-recipient label { flex:1; display:flex; flex-direction:column; gap:3px;
+    font-size:0.78em; color:var(--text-light); }
+.sms-recipient input { padding:5px 8px; border:1px solid var(--border);
+    border-radius:6px; font-family:inherit; font-size:0.92em; }
+.sms-tpl-list { display:flex; flex-direction:column; gap:5px; max-height:340px; overflow-y:auto; }
+.sms-tpl { display:flex; align-items:center; gap:8px; text-align:left;
+    padding:7px 10px; border:1px solid var(--border); border-radius:7px;
+    background:#fff; cursor:pointer; font-family:inherit; }
+.sms-tpl:hover { background:#eef2f7; border-color:#94a3b8; }
+.sms-tpl-grp { flex:0 0 auto; padding:1px 7px; background:#e0e7ff; color:#3730a3;
+    border-radius:8px; font-size:0.72em; font-weight:700; }
+.sms-tpl-name { font-size:0.86em; }
+#sms-body { width:100%; padding:9px; border:1px solid var(--border); border-radius:8px;
+    font-family:inherit; font-size:0.95em; box-sizing:border-box; resize:vertical;
+    line-height:1.55; }
+.sms-foot { display:flex; justify-content:space-between; align-items:center; margin-top:8px; }
+.sms-ph-help { font-size:0.78em; margin:8px 0 0; }
+.sms-ph-help code { background:#f1f5f9; padding:0 4px; border-radius:4px; }
+.sms-msg { display:block; margin-top:6px; }
+.sms-msg.ok { color:var(--success); }
+.sms-msg.err { color:var(--danger); }
+.sms-log-body { max-width:280px; overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap; font-size:0.84em; }
+</style>
+
+<script>
+window.SMS_CONSULTS = {
+{% for r in recent %}{% if r.guardian_phone %}"{{ r.id }}": {name: {{ (r.patient_name or '')|tojson }}, guardian: {{ (r.guardian_name or '')|tojson }}, phone: {{ (r.guardian_phone or '')|tojson }}, planned: {{ (r.planned_admission_date or '')|tojson }}, doctor: {{ (r.attending_doctor or '')|tojson }}, pid: {{ r.patient_id }}},
+{% endif %}{% endfor %}};
+</script>
+<script src="/static/js/common.js"></script>
+<script src="/static/js/sms.js"></script>
+{% endblock %}

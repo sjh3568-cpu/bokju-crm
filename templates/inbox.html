@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}인박스 — 복주 상담실{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>통합 인박스 <span class="muted" style="font-size:0.66em">상담사의 오늘 처리할 일</span></h1>
+    <a href="/consult/new" class="btn btn-primary btn-sm">+ 새 상담일지</a>
+</div>
+
+<p class="ib-hint muted">채널(전화·문자·카카오·웹문의)과 무관하게 후속 처리가 필요한 일을 한곳에 모았습니다.</p>
+
+<!-- 1. 재연락 대기 -->
+<div class="card ib-sec">
+    <h3>📞 재연락 대기 <span class="ib-n">{{ callbacks|length }}</span></h3>
+    {% if callbacks %}
+    <div class="tbl-wrap"><table class="tbl tbl-compact">
+        <thead><tr><th>상담일</th><th>환자</th><th>재연락 시기</th><th>보호자 연락처</th><th>상담자</th><th></th></tr></thead>
+        <tbody>
+            {% for r in callbacks %}
+            <tr>
+                <td class="nowrap">{{ r.consult_date|krdate }}</td>
+                <td class="nowrap">{% if r.blacklist %}<span class="bl-mark" title="블랙리스트">⚠</span> {% endif %}<a href="/patients/{{ r.patient_id }}">{{ r.patient_name }}</a></td>
+                <td>{{ r.consult_result_reason or '(미기재)' }}</td>
+                <td class="nowrap">{{ r.guardian_name or '' }} {{ r.guardian_phone or '' }}</td>
+                <td class="nowrap">{{ r.counselor or '' }}</td>
+                <td class="nowrap"><a class="btn btn-secondary btn-xs" href="/sms?cid={{ r.id }}">문자</a> <a class="btn btn-secondary btn-xs" href="/consult/{{ r.id }}">상담</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table></div>
+    {% else %}<div class="empty">재연락 대기 건이 없습니다.</div>{% endif %}
+</div>
+
+<!-- 2. 미처리 인바운드 -->
+<div class="card ib-sec">
+    <h3>📨 미처리 인바운드 <span class="ib-n">{{ open_comms|length }}</span></h3>
+    {% if open_comms %}
+    <div class="tbl-wrap"><table class="tbl tbl-compact">
+        <thead><tr><th>일시</th><th>채널</th><th>환자/연락처</th><th>내용</th><th></th></tr></thead>
+        <tbody>
+            {% for m in open_comms %}
+            <tr data-comm="{{ m.id }}">
+                <td class="nowrap">{{ (m.occurred_at or m.created_at or '')[:16] }}</td>
+                <td class="nowrap"><span class="ib-ch">{{ m.channel }}</span> {{ '↘' if m.direction == 'in' else '↗' }}</td>
+                <td class="nowrap">{% if m.patient_id %}<a href="/patients/{{ m.patient_id }}">{{ m.patient_name }}</a>{% else %}<span class="muted">미연결</span>{% endif %}{% if m.contact %} <span class="muted-sm">{{ m.contact }}</span>{% endif %}</td>
+                <td class="ib-body" title="{{ m.body or m.summary }}">{{ m.summary or '' }}{% if m.summary and m.body %} — {% endif %}{{ m.body or '' }}</td>
+                <td class="nowrap">
+                    <button class="btn btn-secondary btn-xs ib-done" data-comm="{{ m.id }}">처리완료</button>
+                    <button class="btn btn-secondary btn-xs ib-del" data-comm="{{ m.id }}">삭제</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table></div>
+    {% else %}<div class="empty">미처리 인바운드가 없습니다.</div>{% endif %}
+</div>
+
+<!-- 3. 입원 안내 예정 (D-3 이내) -->
+<div class="card ib-sec">
+    <h3>🏥 입원 안내 예정 <span class="ib-n">{{ upcoming|length }}</span> <span class="muted" style="font-size:0.7em">— 입원예정 3일 이내</span></h3>
+    {% if upcoming %}
+    <div class="tbl-wrap"><table class="tbl tbl-compact">
+        <thead><tr><th>입원예정일</th><th>환자</th><th>주치의</th><th>보호자 연락처</th><th></th></tr></thead>
+        <tbody>
+            {% for r in upcoming %}
+            <tr>
+                <td class="nowrap"><strong>{{ r.planned_admission_date|krdate_wd }}</strong></td>
+                <td class="nowrap">{% if r.blacklist %}<span class="bl-mark" title="블랙리스트">⚠</span> {% endif %}<a href="/patients/{{ r.patient_id }}">{{ r.patient_name }}</a></td>
+                <td class="nowrap">{{ r.attending_doctor or '' }}</td>
+                <td class="nowrap">{{ r.guardian_name or '' }} {{ r.guardian_phone or '' }}</td>
+                <td class="nowrap"><a class="btn btn-secondary btn-xs" href="/sms?cid={{ r.id }}">입원안내 문자</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table></div>
+    {% else %}<div class="empty">3일 이내 입원예정 건이 없습니다.</div>{% endif %}
+</div>
+
+<!-- 4. 퇴원 예정 -->
+<div class="card ib-sec">
+    <h3>🚪 퇴원 예정 <span class="ib-n">{{ discharge_due|length }}</span></h3>
+    {% if discharge_due %}
+    <div class="tbl-wrap"><table class="tbl tbl-compact">
+        <thead><tr><th>퇴원예정일</th><th>D-day</th><th>환자</th><th>보호자 연락처</th><th></th></tr></thead>
+        <tbody>
+            {% for d in discharge_due %}
+            <tr>
+                <td class="nowrap">{{ d.watch.due_date|krdate_wd }}</td>
+                <td class="nowrap">{% if d.watch.days_left < 0 %}<span class="ib-over">{{ -d.watch.days_left }}일 초과</span>{% else %}D-{{ d.watch.days_left }}{% endif %}</td>
+                <td class="nowrap">{% if d.con.blacklist %}<span class="bl-mark" title="블랙리스트">⚠</span> {% endif %}<a href="/patients/{{ d.con.patient_id }}">{{ d.con.patient_name }}</a></td>
+                <td class="nowrap">{{ d.con.guardian_name or '' }} {{ d.con.guardian_phone or '' }}</td>
+                <td class="nowrap"><a class="btn btn-secondary btn-xs" href="/sms?cid={{ d.con.id }}">문자</a> <a class="btn btn-secondary btn-xs" href="/consult/{{ d.con.id }}">상담</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table></div>
+    {% else %}<div class="empty">퇴원 임박 건이 없습니다.</div>{% endif %}
+</div>
+
+<style>
+.ib-hint { font-size:0.86em; margin:2px 0 10px; }
+.ib-sec { margin-bottom:12px; }
+.ib-sec h3 { font-size:0.98em; margin-bottom:8px; }
+.ib-n { display:inline-block; min-width:20px; padding:0 7px; background:var(--primary);
+    color:#fff; border-radius:10px; font-size:0.82em; text-align:center; }
+.ib-ch { padding:1px 7px; background:#fef3c7; color:#92400e; border-radius:8px;
+    font-size:0.92em; font-weight:600; }
+.ib-body { max-width:360px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:0.86em; }
+.ib-over { color:#b91c1c; font-weight:700; }
+.bl-mark { display:inline-block; padding:0 4px; background:#1f2937; color:#fecaca;
+    border-radius:5px; font-size:0.7em; font-weight:700; }
+.btn-xs { padding:2px 8px; font-size:0.76em; }
+.tbl-compact th, .tbl-compact td { padding:5px 8px; font-size:0.85em; }
+</style>
+
+<script src="/static/js/common.js"></script>
+<script>
+document.querySelectorAll('.ib-done').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        try {
+            await api.post(`/api/communication/${btn.dataset.comm}/done`, {});
+            const tr = btn.closest('tr'); if (tr) tr.remove();
+        } catch (e) { alert('처리 실패: ' + e.message); }
+    });
+});
+document.querySelectorAll('.ib-del').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        if (!confirm('이 인바운드 기록을 삭제할까요?')) return;
+        try {
+            const r = await fetch(`/api/communication/${btn.dataset.comm}`, { method: 'DELETE' });
+            if (!r.ok) throw new Error((await r.json()).error || r.status);
+            const tr = btn.closest('tr'); if (tr) tr.remove();
+        } catch (e) { alert('삭제 실패: ' + e.message); }
+    });
+});
+</script>
+{% endblock %}

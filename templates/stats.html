@@ -43,7 +43,7 @@
     <div class="stat-card"><div class="label">총 상담건수</div><div class="value" data-kpi="total">-</div><div class="sub" data-kpi="total-sub"></div></div>
     <div class="stat-card accent"><div class="label">입원 완료</div><div class="value" data-kpi="completed">-</div><div class="sub" data-kpi="completed-sub">실제 입원</div></div>
     <div class="stat-card"><div class="label">입원 전환율</div><div class="value" data-kpi="conv-rate">-</div><div class="sub">입원완료 ÷ 총 상담</div></div>
-    <div class="stat-card warn"><div class="label">입원 보류</div><div class="value" data-kpi="pending">-</div><div class="sub">상담완료+입원보류</div></div>
+    <div class="stat-card warn"><div class="label">입원 보류</div><div class="value" data-kpi="pending">-</div><div class="sub">미정+입원보류</div></div>
     <div class="stat-card danger"><div class="label">입원 취소</div><div class="value" data-kpi="cancelled">-</div><div class="sub" data-kpi="cancelled-sub"></div></div>
     <div class="stat-card"><div class="label">일평균 상담</div><div class="value" data-kpi="daily-avg">-</div><div class="sub">기간 내 평균</div></div>
     <div class="stat-card"><div class="label">비사용증후군 발굴</div><div class="value" data-kpi="disuse">-</div><div class="sub">발굴 대상 기재 건수</div></div>
@@ -118,6 +118,18 @@
     <div class="card chart-card">
         <h3>성별</h3>
         <div class="chart-box sm"><canvas id="chart-gender"></canvas></div>
+    </div>
+</div>
+
+<!-- 문자 발송 현황 -->
+<div class="chart-grid">
+    <div class="card chart-card">
+        <h3>문자 발송 상태별 <span class="muted" id="sms-total" style="font-weight:400"></span></h3>
+        <div class="chart-box sm"><canvas id="chart-sms-status"></canvas></div>
+    </div>
+    <div class="card chart-card">
+        <h3>문자 발송 환자군별</h3>
+        <div class="chart-box sm"><canvas id="chart-sms-group"></canvas></div>
     </div>
 </div>
 
@@ -485,7 +497,7 @@
         makeLine('chart-daily', d.daily_trend);
         // 진행 단계는 상태별 고정 색상으로 (UX 일관성)
         const STATUS_COLORS = {
-            '상담완료': '#94a3b8',
+            '미정': '#94a3b8',
             '입원보류': '#f59e0b',
             '입원취소': '#dc2626',
             '입원완료': '#16a34a',
@@ -504,6 +516,12 @@
         makeDoughnut('chart-channel', d.by_channel);
         makeVBar('chart-counselor', d.by_counselor, '#14532d');
         makeDoughnut('chart-gender', d.by_gender);
+        // 문자 발송 현황 (제안 3)
+        const sms = d.sms || { total: 0, by_status: [], by_group: [] };
+        const smsTotalEl = document.getElementById('sms-total');
+        if (smsTotalEl) smsTotalEl.textContent = '· 총 ' + (sms.total || 0) + '건';
+        makeDoughnut('chart-sms-status', sms.by_status);
+        makeDoughnut('chart-sms-group', sms.by_group);
     }
 
     // ─── 인사이트 ───

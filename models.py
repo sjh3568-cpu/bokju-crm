@@ -154,12 +154,97 @@ def init_db():
             size_bytes INTEGER,
             uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
+
+        -- 환자 생애주기 이벤트 (3번 요청) — 1환자 N이벤트, 타임라인 구성
+        CREATE TABLE IF NOT EXISTS lifecycle_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+            consultation_id INTEGER REFERENCES consultations(id) ON DELETE SET NULL,
+            event_type TEXT NOT NULL,
+            event_date DATE,
+            title TEXT,
+            detail TEXT,
+            created_by TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_lc_patient ON lifecycle_events(patient_id);
+        CREATE INDEX IF NOT EXISTS idx_lc_date ON lifecycle_events(event_date);
+
+        -- 문자 템플릿 (5번 요청) — 환자군별 정형 안내문
+        CREATE TABLE IF NOT EXISTS sms_templates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            template_group TEXT DEFAULT '공통',
+            body TEXT NOT NULL,
+            active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- 문자 발송 이력 (5번 요청)
+        CREATE TABLE IF NOT EXISTS sms_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            consultation_id INTEGER REFERENCES consultations(id) ON DELETE SET NULL,
+            patient_id INTEGER,
+            template_id INTEGER,
+            to_name TEXT,
+            to_phone TEXT,
+            body TEXT,
+            status TEXT,
+            sent_by TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_sms_created ON sms_log(created_at);
+
+        -- 옴니채널 통합 커뮤니케이션 로그 — 인바운드/기타 접점 (전화/문자/카카오/웹문의/팩스).
+        -- 발신 문자는 sms_log, 통화 상담은 consultations에 — 타임라인이 4개 소스를 병합.
+        CREATE TABLE IF NOT EXISTS communications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id INTEGER REFERENCES patients(id) ON DELETE CASCADE,
+            consultation_id INTEGER REFERENCES consultations(id) ON DELETE SET NULL,
+            channel TEXT,
+            direction TEXT,
+            contact TEXT,
+            summary TEXT,
+            body TEXT,
+            status TEXT DEFAULT 'open',
+            follow_up_at DATE,
+            created_by TEXT,
+            occurred_at DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_comm_patient ON communications(patient_id);
+        CREATE INDEX IF NOT EXISTS idx_comm_status ON communications(status);
+
+        -- 환자 문서 (팩스/스캔/업로드) — OCR 텍스트 + Claude 환자상태 분석.
+        CREATE TABLE IF NOT EXISTS patient_documents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id INTEGER REFERENCES patients(id) ON DELETE SET NULL,
+            consultation_id INTEGER REFERENCES consultations(id) ON DELETE SET NULL,
+            filename TEXT,
+            stored_path TEXT,
+            mime TEXT,
+            source TEXT,
+            ocr_text TEXT,
+            ai_summary TEXT,
+            status TEXT DEFAULT 'pending',
+            created_by TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_doc_patient ON patient_documents(patient_id);
+        CREATE INDEX IF NOT EXISTS idx_doc_status ON patient_documents(status);
     """)
 
     # ─── 마이그레이션: 종이 상담일지 항목 매핑 ───
     _ensure_columns(conn, "patients", {
         "address_full": "TEXT",
         "family_info": "TEXT",
+        # 생애주기 (3번) — 현재 단계
+        "lifecycle_stage": "TEXT",
+        # 블랙리스트 (4번)
+        "blacklist": "INTEGER DEFAULT 0",
+        "blacklist_reason": "TEXT",
+        "blacklist_at": "DATETIME",
     })
     _ensure_columns(conn, "consultations", {
         # 헤더
@@ -277,12 +362,32 @@ def init_db():
         "special_mrsa_note": "TEXT",      # MRSA
         "special_vre_note": "TEXT",       # VRE
         "special_cre_note": "TEXT",       # CRE
+        # ── 7개 신규 기능 (2026-05-22) ──
+        "admission_type": "TEXT",         # 1번 — 내원 유형 (일반/응급이송/전원)
+        "consult_result": "TEXT",         # 7번 — 상담 진행 단계 (2단계 중 ①)
+        "consult_result_reason": "TEXT",  # 7번 — 상담 결과 사유 (재입원/요청/보류/취소 시 필수)
     })
     # 입원 진행 상태 4종 개편 (2026-05): 구 5종의 '입원예정'·'입원확정'과
     # 엑셀 구식 '방문예정'을 '입원보류'(진행중)로 통합. 멱등.
     conn.execute(
         "UPDATE consultations SET admission_status = '입원보류' "
         "WHERE admission_status IN ('입원예정', '입원확정', '방문예정')"
+    )
+    # 상담 결과 2단계 분리 (2026-05-22): consult_result(상담 진행) /
+    # admission_status(입원 진행)로 분리. 기존 admission_status '상담완료'는
+    # 입원 단계 값이 아니므로 비우고, consult_result 기본값을 '상담완료'로. 멱등.
+    conn.execute(
+        "UPDATE consultations SET consult_result = '상담완료' "
+        "WHERE consult_result IS NULL OR consult_result = ''"
+    )
+    conn.execute(
+        "UPDATE consultations SET admission_status = NULL "
+        "WHERE admission_status = '상담완료'"
+    )
+    # 내원 유형 기본값 — 미입력분은 '일반'. 멱등.
+    conn.execute(
+        "UPDATE consultations SET admission_type = '일반' "
+        "WHERE admission_type IS NULL OR admission_type = ''"
     )
 
     for name, icd10, category in DIAGNOSIS_SEED:
@@ -296,8 +401,33 @@ def init_db():
             (name, region),
         )
 
+    # 문자 템플릿 — 비어있을 때만 예시 시드 (실제 문구는 화면에서 수정).
+    if conn.execute("SELECT COUNT(*) FROM sms_templates").fetchone()[0] == 0:
+        for name, grp, body in _SMS_TEMPLATE_SEED:
+            conn.execute(
+                "INSERT INTO sms_templates (name, template_group, body) VALUES (?, ?, ?)",
+                (name, grp, body),
+            )
+
     conn.commit()
     conn.close()
+
+
+# 문자 템플릿 예시 시드 — 환자군별 정형 안내문. {토큰}은 발송 시 자동 치환.
+_SMS_TEMPLATE_SEED = [
+    ("상담 감사 안내", "공통",
+     "[복주회복병원] {보호자명}님, {환자명} 환자분 상담해 주셔서 감사합니다. "
+     "입원 관련 추가 문의는 상담실로 연락 주시기 바랍니다."),
+    ("입원 예정 안내", "공통",
+     "[복주회복병원] {환자명} 환자분 입원 예정일은 {입원예정일}입니다. "
+     "입원 시 필요 서류는 안내드린 목록을 준비해 주세요. 문의: 상담실"),
+    ("회복기 재활 입원 안내", "중추신경계",
+     "[복주회복병원] {환자명} 환자분 회복기 재활 입원 상담 안내드립니다. "
+     "주치의 {주치의} · 입원 예정 {입원예정일}. 자세한 사항은 상담실로 문의 주세요."),
+    ("골절 재활 입원 안내", "근골격계",
+     "[복주회복병원] {환자명} 환자분 재활 입원 상담 안내드립니다. "
+     "입원 예정 {입원예정일}. 준비 서류 문의는 상담실로 연락 주세요."),
+]
 
 
 # ─── 사용자 / 감사 로그 ───
@@ -431,7 +561,7 @@ CONSULT_FIELDS = (
     # 헤더
     "consult_date", "consult_time", "counselor",
     "planned_admission_date", "attending_doctor", "room_number",
-    "consult_channel", "admission_route",
+    "consult_channel", "admission_route", "admission_type",
     # 상담유입경로 + 소개 추천인/기관 + 온라인·기타 박스 수기 입력
     "referral_source_type", "referral_source_detail",
     "referrer_person", "referrer_institution",
@@ -469,7 +599,8 @@ CONSULT_FIELDS = (
     # 입원시 확인
     "documents_checklist", "admission_period",
     "transport_method", "cost_guidance", "info_provided",
-    # 입원 진행 상태 — 폼 '상담 결과' 섹션에서 입력 (사후 변경은 status/discharge API)
+    # 상담 결과 2단계 — ① 상담 진행 (consult_result) ② 입원 진행 (admission_status)
+    "consult_result", "consult_result_reason",
     "admission_status", "admission_date",
     "rejection_reason", "rejection_reason_detail", "hold_reason",
     "discharge_due_date", "discharge_date",
@@ -537,8 +668,9 @@ def update_consultation(cid: int, **fields):
     _ensure_master_entry(valid.get("source_hospital"), valid.get("primary_diagnosis"))
 
 
-# 결과(입원 진행 단계) 변경 전용 — 폼 필드와 분리해서 실수 방지
-_META_FIELDS = ("admission_status", "admission_date", "rejection_reason",
+# 결과(상담·입원 진행 단계) 변경 전용 — 폼 필드와 분리해서 실수 방지
+_META_FIELDS = ("consult_result", "consult_result_reason",
+                "admission_status", "admission_date", "rejection_reason",
                 "rejection_reason_detail", "hold_reason",
                 "discharge_due_date", "discharge_date")
 
@@ -552,7 +684,8 @@ def delete_consultation(cid: int):
 
 
 def update_consultation_meta(cid: int, **fields):
-    valid = {k: v for k, v in fields.items() if k in _META_FIELDS and v is not None}
+    # None 허용 — admission_status를 '미정'(NULL)으로 되돌리는 등 명시적 비우기 가능.
+    valid = {k: v for k, v in fields.items() if k in _META_FIELDS}
     if not valid:
         return
     sets = [f"{k} = ?" for k in valid.keys()]
@@ -571,7 +704,8 @@ def get_consultation(cid: int):
         SELECT c.*, p.name AS patient_name, p.gender, p.address_full,
                p.residence_sido, p.residence_sigungu,
                p.insurance_type, p.guardian_name, p.guardian_relation,
-               p.guardian_phone, p.family_info
+               p.guardian_phone, p.family_info,
+               p.blacklist, p.blacklist_reason, p.lifecycle_stage
         FROM consultations c JOIN patients p ON p.id = c.patient_id
         WHERE c.id = ?
         """,
@@ -598,7 +732,8 @@ _SORT_COLUMNS = {
 def _build_consult_where(*, date_from=None, date_to=None, insurance=None, q=None,
                          counselor=None, admission_status=None, disease_group=None,
                          residence_sido=None, recovery=None,
-                         consult_channel=None, referral_type=None):
+                         consult_channel=None, referral_type=None,
+                         admission_type=None, consult_result=None, blacklist=None):
     """list_consultations / count_consultations 공용 WHERE 절 빌더 → (where_sql, vals)."""
     where, vals = [], []
     if date_from:
@@ -610,13 +745,30 @@ def _build_consult_where(*, date_from=None, date_to=None, insurance=None, q=None
     if counselor:
         where.append("c.counselor = ?"); vals.append(counselor)
     if admission_status:
-        # NULL/빈값은 '상담완료'로 간주
-        if admission_status == "상담완료":
-            where.append("(c.admission_status IS NULL OR c.admission_status = '' OR c.admission_status = ?)")
-            vals.append("상담완료")
+        # '미정' = 입원 단계 미진입 (NULL/빈값)
+        if admission_status == "미정":
+            where.append("(c.admission_status IS NULL OR c.admission_status = '')")
         else:
             where.append("c.admission_status = ?")
             vals.append(admission_status)
+    if consult_result:
+        # NULL/빈값은 '상담완료'로 간주
+        if consult_result == "상담완료":
+            where.append("(c.consult_result IS NULL OR c.consult_result = '' OR c.consult_result = ?)")
+            vals.append("상담완료")
+        else:
+            where.append("c.consult_result = ?")
+            vals.append(consult_result)
+    if admission_type:
+        # NULL/빈값은 '일반'으로 간주
+        if admission_type == "일반":
+            where.append("(c.admission_type IS NULL OR c.admission_type = '' OR c.admission_type = ?)")
+            vals.append("일반")
+        else:
+            where.append("c.admission_type = ?")
+            vals.append(admission_type)
+    if blacklist:
+        where.append("p.blacklist = 1")
     if disease_group:
         # diseases JSON에 그룹명 또는 그룹 멤버가 포함된 행
         from config import DISEASES_GROUPS
@@ -671,6 +823,7 @@ def list_consultations(*, date_from=None, date_to=None,
                        counselor=None, admission_status=None, disease_group=None,
                        residence_sido=None, recovery=None,
                        consult_channel=None, referral_type=None,
+                       admission_type=None, consult_result=None, blacklist=None,
                        sort=None, sort_dir=None,
                        limit=200, offset=0):
     """상담 목록.
@@ -685,7 +838,8 @@ def list_consultations(*, date_from=None, date_to=None,
         counselor=counselor, admission_status=admission_status,
         disease_group=disease_group, residence_sido=residence_sido,
         recovery=recovery, consult_channel=consult_channel,
-        referral_type=referral_type,
+        referral_type=referral_type, admission_type=admission_type,
+        consult_result=consult_result, blacklist=blacklist,
     )
     sort_col = _SORT_COLUMNS.get(sort or "date", "c.consult_date")
     direction = "ASC" if str(sort_dir or "").lower() == "asc" else "DESC"
@@ -696,15 +850,16 @@ def list_consultations(*, date_from=None, date_to=None,
         SELECT c.id, c.consult_date, c.consult_time, c.consult_channel,
                c.attending_doctor, c.room_number,
                c.planned_admission_date, c.actual_admission_date,
-               c.admission_route, c.counselor, c.patient_age,
+               c.admission_route, c.admission_type, c.counselor, c.patient_age,
                c.referral_source_type, c.referral_source_detail,
                c.source_hospital, c.diseases, c.disease_detail, c.disease_onset,
-               c.admission_purpose, c.admission_status, c.admission_date,
+               c.admission_purpose, c.consult_result, c.consult_result_reason,
+               c.admission_status, c.admission_date,
                c.discharge_due_date, c.discharge_date,
                c.import_source,
                p.id AS patient_id, p.name AS patient_name, p.gender,
                p.address_full, p.residence_sido, p.residence_sigungu,
-               p.insurance_type,
+               p.insurance_type, p.blacklist, p.blacklist_reason, p.lifecycle_stage,
                p.guardian_name, p.guardian_relation, p.guardian_phone
         FROM consultations c JOIN patients p ON p.id = c.patient_id
         {where_sql}
@@ -787,13 +942,51 @@ def autocomplete_patients(q: str, limit: int = 10):
     rows = conn.execute(
         """
         SELECT id, name, gender, guardian_phone, guardian_name, guardian_relation,
-               address_full, insurance_type, family_info
+               address_full, insurance_type, family_info,
+               blacklist, blacklist_reason
         FROM patients WHERE name LIKE ? ORDER BY updated_at DESC LIMIT ?
         """,
         (f"%{q}%", limit),
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def match_patient_by_phone(phone: str | None):
+    """보호자 연락처로 환자 1명 매칭 (옴니채널 인바운드 자동 연결용). 없으면 None."""
+    if not phone:
+        return None
+    conn = get_db()
+    row = conn.execute(
+        "SELECT id FROM patients WHERE guardian_phone = ? AND guardian_phone != '' "
+        "ORDER BY updated_at DESC LIMIT 1",
+        (phone,),
+    ).fetchone()
+    conn.close()
+    return row["id"] if row else None
+
+
+def find_blacklisted(*, name: str | None = None, phone: str | None = None):
+    """이름 또는 보호자 연락처가 일치하는 블랙리스트 환자 1명 반환 (없으면 None).
+    신규 상담 등록 시 임상 안전 경고용 (제안 2)."""
+    if not name and not phone:
+        return None
+    conn = get_db()
+    row = None
+    if phone:
+        row = conn.execute(
+            "SELECT id, name, blacklist_reason FROM patients "
+            "WHERE blacklist = 1 AND guardian_phone = ? AND guardian_phone != '' LIMIT 1",
+            (phone,),
+        ).fetchone()
+    if not row and name:
+        row = conn.execute(
+            "SELECT id, name, blacklist_reason FROM patients "
+            "WHERE blacklist = 1 AND name = ? LIMIT 1",
+            (name,),
+        ).fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 
 def _ensure_master_entry(hospital: str | None, diagnosis: str | None):
@@ -957,6 +1150,7 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
           c.consult_date, c.consult_channel, c.counselor, c.patient_age,
           c.referral_source_type, c.referral_source_detail, c.diseases,
           c.planned_admission_date, c.admission_status, c.admission_date,
+          c.consult_result, c.admission_type,
           c.source_hospital, c.rejection_reason, c.disuse_screening_note,
           p.gender, p.insurance_type,
           p.residence_sido, p.residence_sigungu
@@ -967,23 +1161,29 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
     rows = conn.execute(sql, vals).fetchall()
     conn.close()
 
-    from config import ADMISSION_STATUS_ALL, ADMISSION_STATUS_PENDING
+    from config import ADMISSION_STATUS_ALL, CONSULT_RESULTS
 
     total = len(rows)
     planned = sum(1 for r in rows if (r["planned_admission_date"] or "").strip())
 
-    # 입원 진행 단계 outcome — NULL/빈값은 '상담완료'로 간주. 퇴원완료 포함.
+    # 입원 진행 단계 — NULL/빈값('미정')은 입원 단계 미진입. 퇴원완료 포함.
     status_counts = {s: 0 for s in ADMISSION_STATUS_ALL}
+    status_counts["미정"] = 0
     for r in rows:
-        s = (r["admission_status"] or "").strip() or "상담완료"
-        if s not in status_counts:
-            s = "상담완료"
-        status_counts[s] += 1
+        s = (r["admission_status"] or "").strip()
+        status_counts[s if s in ADMISSION_STATUS_ALL else "미정"] += 1
     # 입원완료 + 퇴원완료 = 입원 성사
     completed = status_counts["입원완료"] + status_counts["퇴원완료"]
     cancelled = status_counts["입원취소"]
-    pending = sum(status_counts[s] for s in ADMISSION_STATUS_PENDING)
+    # 진행중 = 미정 + 입원보류 (입원/취소로 미확정)
+    pending = status_counts["미정"] + status_counts["입원보류"]
     conversion_rate = round(100.0 * completed / total, 1) if total else 0.0
+
+    # 상담 진행 단계 (Tier 1) — NULL/빈값은 '상담완료'.
+    result_counts = {s: 0 for s in CONSULT_RESULTS}
+    for r in rows:
+        cr = (r["consult_result"] or "").strip() or "상담완료"
+        result_counts[cr if cr in result_counts else "상담완료"] += 1
     # 비사용증후군 발굴 대상 — disuse_screening_note 기재 건수
     disuse_screening = sum(
         1 for r in rows if (r["disuse_screening_note"] or "").strip())
@@ -1033,6 +1233,28 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
             reason_counts[v] = reason_counts.get(v, 0) + 1
     by_reason = _sort_desc(reason_counts)
 
+    # 문자 발송 현황 (제안 3) — sms_log를 기간(created_at)으로 집계
+    sms_where, sms_vals = [], []
+    if date_from:
+        sms_where.append("date(s.created_at) >= ?"); sms_vals.append(date_from)
+    if date_to:
+        sms_where.append("date(s.created_at) <= ?"); sms_vals.append(date_to)
+    sms_where_sql = ("WHERE " + " AND ".join(sms_where)) if sms_where else ""
+    conn2 = get_db()
+    sms_rows = conn2.execute(
+        f"SELECT s.status, t.template_group FROM sms_log s "
+        f"LEFT JOIN sms_templates t ON t.id = s.template_id {sms_where_sql}",
+        sms_vals,
+    ).fetchall()
+    conn2.close()
+    _SMS_STATUS_LABEL = {"sent": "발송", "manual": "수동(문자앱)", "failed": "실패"}
+    sms_status, sms_group = {}, {}
+    for r in sms_rows:
+        sl = _SMS_STATUS_LABEL.get(r["status"] or "manual", "수동(문자앱)")
+        sms_status[sl] = sms_status.get(sl, 0) + 1
+        gl = r["template_group"] or "기타"
+        sms_group[gl] = sms_group.get(gl, 0) + 1
+
     return {
         "summary": {
             "total": total,
@@ -1047,7 +1269,11 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
             "to": date_to,
         },
         # 진행 단계는 정해진 순서 그대로 유지 (도넛/막대 안정 표기). 퇴원완료 포함.
-        "by_status": [{"label": s, "count": status_counts[s]} for s in ADMISSION_STATUS_ALL],
+        "by_status": [{"label": s, "count": status_counts[s]}
+                      for s in (["미정"] + ADMISSION_STATUS_ALL)],
+        # 상담 진행 단계 (Tier 1) + 내원 유형
+        "by_consult_result": [{"label": s, "count": result_counts[s]} for s in CONSULT_RESULTS],
+        "by_admission_type": _sort_desc(_count_simple(rows, "admission_type")),
         "by_source_hospital": by_hospital,
         "by_rejection_reason": by_reason,
         "by_referral_type": _sort_desc(_count_json_multi(rows, "referral_source_type")),
@@ -1062,6 +1288,11 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
         "by_age": by_age,
         "by_gender": _sort_desc(_count_simple(rows, "gender")),
         "daily_trend": _daily_trend(rows),
+        "sms": {
+            "total": len(sms_rows),
+            "by_status": _sort_desc(sms_status),
+            "by_group": _sort_desc(sms_group),
+        },
     }
 
 
@@ -1230,3 +1461,423 @@ def aggregate_monthly(year: int, month: int) -> dict:
         "by_insurance": this_data["by_insurance"],
         "by_age": this_data["by_age"],
     }
+
+
+# ─── 환자 생애주기 (3번 요청) ───
+
+def list_lifecycle_events(patient_id: int):
+    """환자 1명의 생애주기 이벤트 — 이벤트일 내림차순."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM lifecycle_events WHERE patient_id = ? "
+        "ORDER BY COALESCE(event_date, date(created_at)) DESC, id DESC",
+        (patient_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def add_lifecycle_event(*, patient_id, event_type, event_date=None,
+                        title=None, detail=None, consultation_id=None,
+                        created_by=None) -> int:
+    conn = get_db()
+    cur = conn.execute(
+        """INSERT INTO lifecycle_events
+           (patient_id, consultation_id, event_type, event_date, title, detail, created_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (patient_id, consultation_id, event_type, event_date, title, detail, created_by),
+    )
+    eid = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return eid
+
+
+def get_lifecycle_event(event_id: int):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM lifecycle_events WHERE id = ?", (event_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def delete_lifecycle_event(event_id: int):
+    conn = get_db()
+    conn.execute("DELETE FROM lifecycle_events WHERE id = ?", (event_id,))
+    conn.commit()
+    conn.close()
+
+
+def set_patient_stage(patient_id: int, stage: str | None):
+    """환자 생애주기 단계 변경. 빈값이면 보드에서 제외(미설정)."""
+    conn = get_db()
+    conn.execute(
+        "UPDATE patients SET lifecycle_stage = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (stage or None, patient_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def set_patient_blacklist(patient_id: int, on: bool, reason: str | None = None):
+    """블랙리스트 지정/해제 (4번 요청)."""
+    conn = get_db()
+    conn.execute(
+        """UPDATE patients SET blacklist = ?, blacklist_reason = ?,
+           blacklist_at = CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE NULL END,
+           updated_at = CURRENT_TIMESTAMP WHERE id = ?""",
+        (1 if on else 0, reason if on else None, 1 if on else 0, patient_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def lifecycle_board(*, q=None):
+    """생애주기 보드 — 단계(lifecycle_stage)가 지정된 환자만. 단계별 그룹핑은 라우트에서.
+    각 dict: 환자 기본 + 최근 상담 요약 + 이벤트 수.
+    """
+    conn = get_db()
+    where = ["p.lifecycle_stage IS NOT NULL", "p.lifecycle_stage != ''"]
+    vals = []
+    if q:
+        where.append("(p.name LIKE ? OR p.guardian_phone LIKE ?)")
+        vals += [f"%{q}%", f"%{q}%"]
+    where_sql = "WHERE " + " AND ".join(where)
+    rows = conn.execute(f"""
+        SELECT p.id, p.name, p.gender, p.guardian_name, p.guardian_phone,
+               p.lifecycle_stage, p.blacklist, p.blacklist_reason,
+               (SELECT COUNT(*) FROM lifecycle_events e WHERE e.patient_id = p.id) AS event_count,
+               (SELECT COUNT(*) FROM consultations c WHERE c.patient_id = p.id) AS consult_count,
+               (SELECT c.consult_date FROM consultations c WHERE c.patient_id = p.id
+                ORDER BY c.consult_date DESC, c.id DESC LIMIT 1) AS last_consult_date,
+               (SELECT c.id FROM consultations c WHERE c.patient_id = p.id
+                ORDER BY c.consult_date DESC, c.id DESC LIMIT 1) AS last_consult_id,
+               (SELECT c.diseases FROM consultations c WHERE c.patient_id = p.id
+                ORDER BY c.consult_date DESC, c.id DESC LIMIT 1) AS last_diseases,
+               (SELECT c.patient_age FROM consultations c WHERE c.patient_id = p.id
+                ORDER BY c.consult_date DESC, c.id DESC LIMIT 1) AS patient_age
+        FROM patients p
+        {where_sql}
+        ORDER BY last_consult_date DESC, p.id DESC
+        LIMIT 2000
+    """, vals).fetchall()
+    conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["last_diseases"] = json.loads(d["last_diseases"]) if d.get("last_diseases") else []
+        except (json.JSONDecodeError, TypeError):
+            d["last_diseases"] = []
+        out.append(d)
+    return out
+
+
+# ─── 문자 발송 (5번 요청) ───
+
+def list_sms_templates(*, group=None, active_only=True):
+    conn = get_db()
+    where, vals = [], []
+    if active_only:
+        where.append("active = 1")
+    if group:
+        where.append("template_group = ?"); vals.append(group)
+    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+    rows = conn.execute(
+        f"SELECT * FROM sms_templates {where_sql} ORDER BY template_group, name",
+        vals,
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_sms_template(tid: int):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM sms_templates WHERE id = ?", (tid,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def create_sms_template(*, name, body, template_group="공통") -> int:
+    conn = get_db()
+    cur = conn.execute(
+        "INSERT INTO sms_templates (name, template_group, body) VALUES (?, ?, ?)",
+        (name, template_group, body),
+    )
+    tid = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return tid
+
+
+def update_sms_template(tid: int, **fields):
+    valid = {k: v for k, v in fields.items()
+             if k in ("name", "template_group", "body", "active")}
+    if not valid:
+        return
+    sets = [f"{k} = ?" for k in valid] + ["updated_at = CURRENT_TIMESTAMP"]
+    conn = get_db()
+    conn.execute(f"UPDATE sms_templates SET {', '.join(sets)} WHERE id = ?",
+                 list(valid.values()) + [tid])
+    conn.commit()
+    conn.close()
+
+
+def delete_sms_template(tid: int):
+    conn = get_db()
+    conn.execute("DELETE FROM sms_templates WHERE id = ?", (tid,))
+    conn.commit()
+    conn.close()
+
+
+def log_sms(*, consultation_id=None, patient_id=None, template_id=None,
+            to_name=None, to_phone=None, body=None, status="manual",
+            sent_by=None) -> int:
+    """문자 발송 이력 1건 기록. status='manual'(휴대폰 문자앱)|'sent'(게이트웨이)|'failed'."""
+    conn = get_db()
+    cur = conn.execute(
+        """INSERT INTO sms_log
+           (consultation_id, patient_id, template_id, to_name, to_phone, body, status, sent_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (consultation_id, patient_id, template_id, to_name, to_phone, body, status, sent_by),
+    )
+    sid = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return sid
+
+
+def list_sms_log(limit: int = 100):
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM sms_log ORDER BY created_at DESC, id DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+# ─── 옴니채널 — 통합 커뮤니케이션 (인바운드/기타 접점) ───
+
+def create_communication(*, patient_id=None, consultation_id=None, channel=None,
+                         direction="in", contact=None, summary=None, body=None,
+                         follow_up_at=None, occurred_at=None, created_by=None,
+                         status="open") -> int:
+    conn = get_db()
+    cur = conn.execute(
+        """INSERT INTO communications
+           (patient_id, consultation_id, channel, direction, contact, summary, body,
+            status, follow_up_at, occurred_at, created_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (patient_id, consultation_id, channel, direction, contact, summary, body,
+         status, follow_up_at, occurred_at, created_by),
+    )
+    cid = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return cid
+
+
+def get_communication(comm_id):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM communications WHERE id = ?", (comm_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def update_communication(comm_id, **fields):
+    valid = {k: v for k, v in fields.items()
+             if k in ("status", "summary", "body", "follow_up_at", "patient_id", "channel")}
+    if not valid:
+        return
+    sets = [f"{k} = ?" for k in valid]
+    conn = get_db()
+    conn.execute(f"UPDATE communications SET {', '.join(sets)} WHERE id = ?",
+                 list(valid.values()) + [comm_id])
+    conn.commit()
+    conn.close()
+
+
+def delete_communication(comm_id):
+    conn = get_db()
+    conn.execute("DELETE FROM communications WHERE id = ?", (comm_id,))
+    conn.commit()
+    conn.close()
+
+
+def patient_timeline(patient_id):
+    """환자의 모든 접점을 시간순(최신순)으로 병합 — 상담/문자/생애주기/커뮤니케이션."""
+    conn = get_db()
+    items = []
+    for r in conn.execute(
+        "SELECT id, consult_date, consult_time, consult_channel, consult_result "
+        "FROM consultations WHERE patient_id = ?", (patient_id,)):
+        items.append({
+            "kind": "consult", "channel": r["consult_channel"] or "전화",
+            "direction": "in", "date": (r["consult_date"] or "")[:10],
+            "time": r["consult_time"] or "",
+            "title": "상담 — " + (r["consult_result"] or "상담완료"),
+            "detail": "", "ref": f"/consult/{r['id']}",
+            "del_kind": None, "del_id": None, "status": None,
+        })
+    for r in conn.execute(
+        "SELECT id, created_at, body FROM sms_log WHERE patient_id = ?", (patient_id,)):
+        ca = r["created_at"] or ""
+        items.append({
+            "kind": "sms", "channel": "문자", "direction": "out",
+            "date": ca[:10], "time": ca[11:16],
+            "title": "문자 발송", "detail": r["body"] or "",
+            "ref": None, "del_kind": None, "del_id": None, "status": None,
+        })
+    for r in conn.execute(
+        "SELECT * FROM lifecycle_events WHERE patient_id = ?", (patient_id,)):
+        items.append({
+            "kind": "lifecycle", "channel": r["event_type"], "direction": "",
+            "date": r["event_date"] or (r["created_at"] or "")[:10],
+            "time": "", "title": r["title"] or r["event_type"],
+            "detail": r["detail"] or "", "ref": None,
+            "del_kind": "lifecycle", "del_id": r["id"], "status": None,
+        })
+    for r in conn.execute(
+        "SELECT * FROM communications WHERE patient_id = ?", (patient_id,)):
+        oc = r["occurred_at"] or r["created_at"] or ""
+        items.append({
+            "kind": "comm", "channel": r["channel"] or "기타",
+            "direction": r["direction"] or "in",
+            "date": oc[:10], "time": oc[11:16],
+            "title": r["summary"] or (r["channel"] or "커뮤니케이션"),
+            "detail": r["body"] or "", "ref": None,
+            "del_kind": "comm", "del_id": r["id"], "status": r["status"],
+        })
+    for r in conn.execute(
+        "SELECT * FROM patient_documents WHERE patient_id = ?", (patient_id,)):
+        ca = r["created_at"] or ""
+        items.append({
+            "kind": "doc", "channel": r["source"] or "문서", "direction": "in",
+            "date": ca[:10], "time": ca[11:16],
+            "title": "문서 — " + (r["filename"] or "첨부"),
+            "detail": r["ai_summary"] or (r["ocr_text"] or "")[:300],
+            "ref": f"/documents#doc-{r['id']}",
+            "del_kind": "doc", "del_id": r["id"], "status": r["status"],
+        })
+    conn.close()
+    items.sort(key=lambda x: (x["date"] or "", x["time"] or ""), reverse=True)
+    return items
+
+
+def inbox_callbacks():
+    """재연락 대기 — consult_result='상담요청'인 상담. 재연락 시기=consult_result_reason."""
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT c.id, c.consult_date, c.consult_result_reason, c.counselor,
+                  p.id AS patient_id, p.name AS patient_name, p.guardian_name,
+                  p.guardian_phone, p.blacklist
+           FROM consultations c JOIN patients p ON p.id = c.patient_id
+           WHERE c.consult_result = '상담요청'
+           ORDER BY c.consult_date DESC, c.id DESC""").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def inbox_open_communications():
+    """미처리 인바운드 — status='open'인 커뮤니케이션."""
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT m.*, p.name AS patient_name, p.blacklist
+           FROM communications m LEFT JOIN patients p ON p.id = m.patient_id
+           WHERE m.status = 'open'
+           ORDER BY COALESCE(m.occurred_at, m.created_at) DESC""").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def inbox_upcoming_admissions(within_days: int = 3):
+    """입원예정 임박 — planned_admission_date가 오늘~within_days 이내이고
+    아직 입원완료/취소/퇴원완료가 아닌 상담 (입원 안내 문자 대상)."""
+    from datetime import date, timedelta
+    today = date.today().isoformat()
+    until = (date.today() + timedelta(days=within_days)).isoformat()
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT c.id, c.consult_date, c.planned_admission_date, c.attending_doctor,
+                  c.admission_status, p.id AS patient_id, p.name AS patient_name,
+                  p.guardian_name, p.guardian_phone, p.blacklist
+           FROM consultations c JOIN patients p ON p.id = c.patient_id
+           WHERE c.planned_admission_date >= ? AND c.planned_admission_date <= ?
+             AND (c.admission_status IS NULL OR c.admission_status NOT IN
+                  ('입원완료', '입원취소', '퇴원완료'))
+           ORDER BY c.planned_admission_date""", (today, until)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+# ─── 환자 문서 (팩스/스캔 — OCR + AI 분석) ───
+
+def create_document(*, patient_id=None, consultation_id=None, filename=None,
+                    stored_path=None, mime=None, source="업로드",
+                    ocr_text=None, ai_summary=None, status="pending",
+                    created_by=None) -> int:
+    conn = get_db()
+    cur = conn.execute(
+        """INSERT INTO patient_documents
+           (patient_id, consultation_id, filename, stored_path, mime, source,
+            ocr_text, ai_summary, status, created_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (patient_id, consultation_id, filename, stored_path, mime, source,
+         ocr_text, ai_summary, status, created_by),
+    )
+    did = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return did
+
+
+def get_document(doc_id):
+    conn = get_db()
+    row = conn.execute(
+        "SELECT d.*, p.name AS patient_name FROM patient_documents d "
+        "LEFT JOIN patients p ON p.id = d.patient_id WHERE d.id = ?", (doc_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def list_documents(limit: int = 200):
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT d.*, p.name AS patient_name FROM patient_documents d "
+        "LEFT JOIN patients p ON p.id = d.patient_id "
+        "ORDER BY d.created_at DESC, d.id DESC LIMIT ?", (limit,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def update_document(doc_id, **fields):
+    valid = {k: v for k, v in fields.items()
+             if k in ("patient_id", "consultation_id", "ocr_text", "ai_summary",
+                      "status", "source")}
+    if not valid:
+        return
+    sets = [f"{k} = ?" for k in valid]
+    conn = get_db()
+    conn.execute(f"UPDATE patient_documents SET {', '.join(sets)} WHERE id = ?",
+                 list(valid.values()) + [doc_id])
+    conn.commit()
+    conn.close()
+
+
+def delete_document(doc_id):
+    conn = get_db()
+    conn.execute("DELETE FROM patient_documents WHERE id = ?", (doc_id,))
+    conn.commit()
+    conn.close()
+
+
+def inbox_documents():
+    """인박스용 — 처리 대기(분석 전) 또는 환자 미연결 문서."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT d.*, p.name AS patient_name FROM patient_documents d "
+        "LEFT JOIN patients p ON p.id = d.patient_id "
+        "WHERE d.status = 'pending' OR d.patient_id IS NULL "
+        "ORDER BY d.created_at DESC LIMIT 50").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]

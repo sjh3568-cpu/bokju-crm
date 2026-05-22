@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}문자 템플릿 관리 — 복주 상담실{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>문자 템플릿 관리 <span class="muted" style="font-size:0.66em">환자군별 정형 안내문</span></h1>
+    <a class="btn btn-secondary btn-sm" href="/sms">← 문자 전송</a>
+</div>
+
+<div class="card">
+    <h3>새 템플릿 추가</h3>
+    <div class="tpl-edit" id="tpl-new">
+        <div class="tpl-row">
+            <input type="text" class="t-name" placeholder="템플릿 이름 (예: 입원 예정 안내)">
+            <select class="t-group">
+                {% for g in SMS_TEMPLATE_GROUPS %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+            </select>
+        </div>
+        <textarea class="t-body" rows="3" placeholder="문자 본문 — {환자명} {보호자명} {병원명} {입원예정일} {주치의} 토큰 사용 가능"></textarea>
+        <div class="tpl-actions">
+            <button type="button" class="btn btn-primary btn-sm" id="tpl-add">추가</button>
+            <span class="tpl-msg muted"></span>
+        </div>
+    </div>
+</div>
+
+<div class="card" style="margin-top:12px">
+    <h3>등록된 템플릿 ({{ templates|length }})</h3>
+    {% for t in templates %}
+    <div class="tpl-edit tpl-item{% if not t.active %} inactive{% endif %}" data-tid="{{ t.id }}">
+        <div class="tpl-row">
+            <input type="text" class="t-name" value="{{ t.name }}">
+            <select class="t-group">
+                {% for g in SMS_TEMPLATE_GROUPS %}<option value="{{ g }}" {% if t.template_group == g %}selected{% endif %}>{{ g }}</option>{% endfor %}
+            </select>
+            <label class="t-active"><input type="checkbox" class="t-active-cb" {% if t.active %}checked{% endif %}> 사용</label>
+        </div>
+        <textarea class="t-body" rows="3">{{ t.body }}</textarea>
+        <div class="tpl-actions">
+            <button type="button" class="btn btn-primary btn-sm tpl-save">저장</button>
+            <button type="button" class="btn btn-danger btn-sm tpl-del">삭제</button>
+            <span class="tpl-msg muted"></span>
+        </div>
+    </div>
+    {% else %}
+    <div class="empty">등록된 템플릿이 없습니다.</div>
+    {% endfor %}
+</div>
+
+<style>
+.tpl-edit { border:1px solid var(--border); border-radius:8px; padding:10px; margin-bottom:10px; }
+.tpl-item.inactive { opacity:0.6; background:#f8fafc; }
+.tpl-row { display:flex; gap:8px; align-items:center; margin-bottom:6px; flex-wrap:wrap; }
+.tpl-row .t-name { flex:1; min-width:180px; padding:5px 9px; border:1px solid var(--border);
+    border-radius:6px; font-family:inherit; font-size:0.9em; }
+.tpl-row .t-group { padding:5px 9px; border:1px solid var(--border); border-radius:6px;
+    font-family:inherit; font-size:0.88em; }
+.t-active { font-size:0.85em; display:flex; gap:4px; align-items:center; white-space:nowrap; }
+.tpl-edit .t-body { width:100%; padding:7px 9px; border:1px solid var(--border);
+    border-radius:6px; font-family:inherit; font-size:0.9em; box-sizing:border-box;
+    resize:vertical; line-height:1.5; }
+.tpl-actions { display:flex; gap:8px; align-items:center; margin-top:6px; }
+.tpl-msg.ok { color:var(--success); }
+.tpl-msg.err { color:var(--danger); }
+.btn-danger { background:#dc2626; color:#fff; border-color:#dc2626; }
+.btn-danger:hover { background:#b91c1c; }
+</style>
+
+<script src="/static/js/common.js"></script>
+<script>
+(function() {
+    const newBox = document.getElementById('tpl-new');
+    document.getElementById('tpl-add').addEventListener('click', async () => {
+        const msg = newBox.querySelector('.tpl-msg');
+        const body = {
+            name: newBox.querySelector('.t-name').value.trim(),
+            template_group: newBox.querySelector('.t-group').value,
+            body: newBox.querySelector('.t-body').value.trim(),
+        };
+        if (!body.name || !body.body) {
+            msg.className = 'tpl-msg err'; msg.textContent = '이름·본문을 입력하세요.'; return;
+        }
+        msg.className = 'tpl-msg muted'; msg.textContent = '추가 중...';
+        try { await api.post('/api/sms/template', body); location.reload(); }
+        catch (e) { msg.className = 'tpl-msg err'; msg.textContent = '실패: ' + e.message; }
+    });
+
+    document.querySelectorAll('.tpl-item').forEach(item => {
+        const tid = item.dataset.tid;
+        const msg = item.querySelector('.tpl-msg');
+        item.querySelector('.tpl-save').addEventListener('click', async () => {
+            const body = {
+                name: item.querySelector('.t-name').value.trim(),
+                template_group: item.querySelector('.t-group').value,
+                body: item.querySelector('.t-body').value.trim(),
+                active: item.querySelector('.t-active-cb').checked,
+            };
+            if (!body.name || !body.body) {
+                msg.className = 'tpl-msg err'; msg.textContent = '이름·본문은 비울 수 없습니다.'; return;
+            }
+            msg.className = 'tpl-msg muted'; msg.textContent = '저장 중...';
+            try {
+                await api.post('/api/sms/template/' + tid, body);
+                msg.className = 'tpl-msg ok'; msg.textContent = '저장됨';
+                item.classList.toggle('inactive', !body.active);
+                setTimeout(() => { msg.textContent = ''; }, 2000);
+            } catch (e) { msg.className = 'tpl-msg err'; msg.textContent = '실패: ' + e.message; }
+        });
+        item.querySelector('.tpl-del').addEventListener('click', async () => {
+            if (!confirm('이 템플릿을 삭제할까요?')) return;
+            try {
+                const r = await fetch('/api/sms/template/' + tid, { method: 'DELETE' });
+                if (!r.ok) throw new Error((await r.json()).error || r.status);
+                item.remove();
+            } catch (e) { alert('삭제 실패: ' + e.message); }
+        });
+    });
+})();
+</script>
+{% endblock %}

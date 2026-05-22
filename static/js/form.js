@@ -164,7 +164,18 @@
                 el.value = val;
             }
         });
-        toast('기존 환자 정보를 불러왔습니다.', 'info');
+        // 블랙리스트 상태 반영 (4번 요청)
+        const blChk = document.getElementById('blacklist-check');
+        const blReason = document.getElementById('blacklist-reason');
+        if (blChk) {
+            blChk.checked = !!it.blacklist;
+            if (blReason) {
+                blReason.hidden = !it.blacklist;
+                if (it.blacklist_reason) blReason.value = it.blacklist_reason;
+            }
+        }
+        toast('기존 환자 정보를 불러왔습니다.' + (it.blacklist ? ' ⚠ 블랙리스트 환자입니다.' : ''),
+              it.blacklist ? 'error' : 'info');
     }
 
     // 폼 제출 — JSON으로 변환해서 전송
@@ -172,7 +183,44 @@
         e.preventDefault();
         const btn = document.getElementById('save-btn');
         btn.disabled = true;
-        // 상담 결과 — 입원보류/입원취소 사유 필수
+        // 상담 결과 ① 상담 진행 — 재입원/요청/보류/취소 사유 필수
+        const crChecked = form.querySelector('input[name="consultation.consult_result"]:checked');
+        const cr = crChecked ? crChecked.value : '';
+        if (['재입원 상담', '상담요청', '상담보류', '상담취소'].includes(cr)) {
+            const crr = form.querySelector('input[name="consultation.consult_result_reason"]');
+            if (!crr || !crr.value.trim()) {
+                toast('상담 결과 사유를 입력하세요.', 'error');
+                btn.disabled = false; return;
+            }
+        }
+        // 블랙리스트 — 체크 시 사유 필수
+        const blChk = document.getElementById('blacklist-check');
+        if (blChk && blChk.checked) {
+            const blr = document.getElementById('blacklist-reason');
+            if (!blr || !blr.value.trim()) {
+                toast('블랙리스트 지정 사유를 입력하세요.', 'error');
+                btn.disabled = false; return;
+            }
+        }
+        // 신규 상담 — 블랙리스트 환자 등록 경고 (제안 2, 임상 안전)
+        if (!isEdit) {
+            const nmEl = form.querySelector('[name="patient.name"]');
+            const phEl = form.querySelector('[name="patient.guardian_phone"]');
+            try {
+                const qs = new URLSearchParams({
+                    name: nmEl ? nmEl.value.trim() : '',
+                    phone: phEl ? phEl.value.trim() : '',
+                });
+                const chk = await api.get('/api/patient/blacklist-check?' + qs.toString());
+                if (chk.blacklisted &&
+                    !confirm('⚠ 블랙리스트로 지정된 환자입니다.\n사유: '
+                             + (chk.reason || '(미기재)')
+                             + '\n\n그래도 상담을 등록할까요?')) {
+                    btn.disabled = false; return;
+                }
+            } catch (e) { /* 조회 실패 시 등록을 막지 않음 */ }
+        }
+        // 상담 결과 ② 입원 진행 — 입원보류/입원취소 사유 필수
         const stChecked = form.querySelector('input[name="consultation.admission_status"]:checked');
         const st = stChecked ? stChecked.value : '';
         if (st === '입원보류') {
@@ -399,7 +447,7 @@
         showWeekday();
     })();
 
-    // ─── 상담 결과: 입원보류/취소 사유칸·입원완료 입원일칸 토글 ───
+    // ─── 상담 결과 ② 입원 진행: 입원보류/취소 사유칸·입원완료 입원일칸 토글 ───
     (function() {
         const statusRadios = form.querySelectorAll('input[name="consultation.admission_status"]');
         if (!statusRadios.length) return;
@@ -415,5 +463,40 @@
         }
         statusRadios.forEach(r => r.addEventListener('change', refresh));
         refresh();
+    })();
+
+    // ─── 상담 결과 ① 상담 진행: 사유칸 토글 + 라벨 변경 (7번 요청) ───
+    (function() {
+        const crRadios = form.querySelectorAll('input[name="consultation.consult_result"]');
+        if (!crRadios.length) return;
+        const reasonRow = document.getElementById('consult-result-reason-row');
+        const reasonLabel = document.getElementById('consult-result-reason-label');
+        const reasonInput = form.querySelector('input[name="consultation.consult_result_reason"]');
+        const LABELS = {
+            '재입원 상담': '재입원 사유 / 이전 입원 정보',
+            '상담요청': '재연락 시기',
+            '상담보류': '보류 사유',
+            '상담취소': '취소 사유',
+        };
+        function refresh() {
+            const c = form.querySelector('input[name="consultation.consult_result"]:checked');
+            const v = c ? c.value : '';
+            const need = !!LABELS[v];
+            if (reasonRow) reasonRow.hidden = !need;
+            if (need && reasonLabel) {
+                reasonLabel.innerHTML = LABELS[v] + ' <span class="req">*</span>';
+            }
+            if (need && reasonInput) reasonInput.placeholder = LABELS[v] + ' (필수)';
+        }
+        crRadios.forEach(r => r.addEventListener('change', refresh));
+        refresh();
+    })();
+
+    // ─── 블랙리스트: 체크 시 사유칸 표시 (4번 요청) ───
+    (function() {
+        const blChk = document.getElementById('blacklist-check');
+        const blReason = document.getElementById('blacklist-reason');
+        if (!blChk || !blReason) return;
+        blChk.addEventListener('change', () => { blReason.hidden = !blChk.checked; });
     })();
 })();

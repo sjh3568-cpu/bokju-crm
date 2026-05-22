@@ -85,17 +85,42 @@
         </select>
     </div>
     <div class="field">
-        <label>상담상태</label>
+        <label>내원 유형</label>
+        <select name="admission_type">
+            <option value="">전체</option>
+            {% for t in ADMISSION_TYPES %}
+            <option value="{{ t }}" {% if filters.admission_type == t %}selected{% endif %}>{{ t }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label>상담 결과</label>
+        <select name="consult_result">
+            <option value="">전체</option>
+            {% for r in CONSULT_RESULTS %}
+            <option value="{{ r }}" {% if filters.consult_result == r %}selected{% endif %}>{{ r }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label>입원 진행</label>
         <select name="admission_status">
             <option value="">전체</option>
+            <option value="미정" {% if filters.admission_status == '미정' %}selected{% endif %}>미정</option>
             {% for s in ADMISSION_STATUSES %}
             <option value="{{ s }}" {% if filters.admission_status == s %}selected{% endif %}>{{ s }}</option>
             {% endfor %}
+            <option value="퇴원완료" {% if filters.admission_status == '퇴원완료' %}selected{% endif %}>퇴원완료</option>
         </select>
     </div>
     <div class="field" style="flex:1; min-width:140px">
         <label>검색 (환자명·모병원)</label>
         <input type="text" name="q" value="{{ filters.q or '' }}" placeholder="키워드">
+    </div>
+    <div class="field" style="min-width:auto">
+        <label>블랙리스트</label>
+        <label class="bl-filter"><input type="checkbox" name="blacklist" value="1"
+               {% if filters.blacklist %}checked{% endif %}> ⚠ 블랙리스트만</label>
     </div>
     <div style="display:flex; gap:6px; align-self:flex-end">
         <button class="btn btn-primary btn-sm" type="submit">검색</button>
@@ -107,7 +132,7 @@
 <div id="bulk-toolbar" class="bulk-toolbar hide">
     <span><strong id="bulk-count">0</strong>건 선택</span>
     <select id="bulk-status">
-        <option value="">상담상태 일괄변경...</option>
+        <option value="">입원진행 일괄변경...</option>
         {% for s in ADMISSION_STATUSES %}
         <option value="{{ s }}">{{ s }}</option>
         {% endfor %}
@@ -127,14 +152,18 @@
                 <th class="check-col"><input type="checkbox" id="check-all" title="전체 선택"></th>
                 {{ sort_th('date', '상담일') }}
                 {{ sort_th('patient', '환자') }}
+                <th>성별</th>
+                <th>나이</th>
                 {{ sort_th('residence', '거주지') }}
+                <th>보험</th>
                 <th>보호자</th>
                 {{ sort_th('hospital', '모병원') }}
                 <th>병명</th>
                 <th>유입경로</th>
+                <th>내원유형</th>
                 {{ sort_th('channel', '상담방법') }}
                 <th>회복기대상</th>
-                {{ sort_th('status', '상담상태') }}
+                {{ sort_th('status', '상담결과 / 입원진행') }}
                 <th>입원만료</th>
                 {{ sort_th('counselor', '상담자') }}
                 <th class="edit-col"></th>
@@ -142,21 +171,25 @@
         </thead>
         <tbody>
             {% for r in rows %}
-            {% set status = r.admission_status or '상담완료' %}
+            {% set status = r.admission_status or '미정' %}
+            {% set cresult = r.consult_result or '상담완료' %}
             {% set purpose = (r.admission_purpose or '').strip() %}
-            <tr data-cid="{{ r.id }}">
+            <tr data-cid="{{ r.id }}"{% if r.blacklist %} class="bl-row"{% endif %}>
                 <td class="check-col"><input type="checkbox" class="row-check" value="{{ r.id }}"></td>
                 <td class="nowrap">{{ r.consult_date|krdate_wd }}</td>
                 <td class="patient-cell">
+                    {% if r.blacklist %}<span class="bl-mark" title="블랙리스트 환자{% if r.blacklist_reason %} — {{ r.blacklist_reason }}{% endif %}">⚠블랙</span>{% endif %}
                     <a href="/consult/{{ r.id }}" class="patient-link"
                        title="{% if r.prior_consult_count > 0 %}이전 상담 {{ r.prior_consult_count }}회{% else %}첫 상담{% endif %}{% if r.homonym_count > 1 %} · 동명이인 {{ r.homonym_count }}명{% endif %}">{{ r.patient_name }}</a>{% if r.homonym_count > 1 %}<span class="warn-mark" title="동명이인 {{ r.homonym_count }}명 — 보호자 전화로 구분">⚠</span>{% endif %}
-                    <span class="meta">{% if r.patient_age is not none %}{{ r.patient_age }}{% endif %}{% if r.gender == 'M' %}·M{% elif r.gender == 'F' %}·F{% endif %}</span>
                     {% if r.prior_consult_count > 0 %}<span class="repeat-mark" title="이전 상담 {{ r.prior_consult_count }}회">↻{{ r.prior_consult_count }}</span>{% endif %}
                 </td>
+                <td class="nowrap">{% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% endif %}</td>
+                <td class="nowrap">{% if r.patient_age is not none %}{{ r.patient_age }}{% endif %}</td>
                 <td class="muted-sm">
                     {% if r.residence_sido %}{{ r.residence_sido|sido_short }}{% endif %}
                     {% if r.residence_sigungu %} {{ r.residence_sigungu }}{% endif %}
                 </td>
+                <td class="nowrap muted-sm">{{ r.insurance_type or '' }}</td>
                 <td class="guardian-cell">
                     {% if r.guardian_name or r.guardian_relation or r.guardian_phone %}
                         {% if r.guardian_name %}{{ r.guardian_name }}{% endif %}{% if r.guardian_relation %} <span class="muted-sm">({{ r.guardian_relation }})</span>{% endif %}{% if r.guardian_phone %} <span class="phone">{{ r.guardian_phone }}</span>{% endif %}
@@ -194,6 +227,12 @@
                 <td class="referral-cell" title="{% if r.referral_source_type %}{{ r.referral_source_type|join('/') }}{% endif %}{% if r.referral_source_detail %} · {{ r.referral_source_detail|join(', ') }}{% endif %}">
                     {% if r.referral_source_type %}<span class="muted-sm">{{ r.referral_source_type|join('/') }}</span>{% endif %}{% if r.referral_source_detail %} {{ r.referral_source_detail|join(',') }}{% endif %}
                 </td>
+                <td class="nowrap atype-cell">
+                    {% set at = r.admission_type or '일반' %}
+                    {% if at == '응급이송' %}<span class="atype-badge at-emerg">응급이송</span>
+                    {% elif at == '전원' %}<span class="atype-badge at-transfer">전원</span>
+                    {% else %}<span class="muted-sm">일반</span>{% endif %}
+                </td>
                 <td class="nowrap">
                     {% if r.consult_channel == '전화상담' %}전화{% elif r.consult_channel == '내원상담' %}내원{% else %}{{ r.consult_channel or '' }}{% endif %}
                 </td>
@@ -209,12 +248,23 @@
                     {% endif %}
                 </td>
                 <td class="status-cell">
+                    {# ① 상담 결과 — 인라인 변경 #}
+                    <select class="result-select badge-select cr-{{ {'상담완료':'done','재입원 상담':'readm','상담요청':'req','상담보류':'hold','상담취소':'cancel'}.get(cresult,'done') }}"
+                            data-cid="{{ r.id }}" data-current="{{ cresult }}" title="상담 결과 인라인 변경">
+                        {% for cr in CONSULT_RESULTS %}
+                        <option value="{{ cr }}" {% if cresult == cr %}selected{% endif %}>{{ cr }}</option>
+                        {% endfor %}
+                    </select>
+                    {% if r.consult_result_reason %}<span class="cr-reason" title="{{ r.consult_result_reason }}">{{ r.consult_result_reason }}</span>{% endif %}
+                    {# ② 입원 진행 — 인라인 변경 #}
+                    <div class="adm-line">
                     {% if status == '퇴원완료' %}
                         <span class="badge st-discharge-done">퇴원완료</span>
                         {% if r.discharge_date %}<span class="muted-sm">{{ r.discharge_date|krdate_wd }}</span>{% endif %}
                     {% else %}
-                        <select class="status-select badge-select st-{{ {'상담완료':'pending','입원보류':'hold','입원취소':'cancelled','입원완료':'completed'}.get(status,'pending') }}"
-                                data-cid="{{ r.id }}" data-current="{{ status }}" title="상담상태 인라인 변경">
+                        <select class="status-select badge-select st-{{ {'미정':'pending','입원보류':'hold','입원취소':'cancelled','입원완료':'completed'}.get(status,'pending') }}"
+                                data-cid="{{ r.id }}" data-current="{{ status }}" title="입원 진행 인라인 변경">
+                            <option value="" {% if status == '미정' %}selected{% endif %}>미정</option>
                             {% for s in ADMISSION_STATUSES %}
                             <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s }}</option>
                             {% endfor %}
@@ -232,6 +282,7 @@
                             {% endif %}
                         {% endif %}
                     {% endif %}
+                    </div>
                 </td>
                 <td class="nowrap admexp-cell">
                     {% set ax = r|admission_expiry %}
@@ -353,6 +404,31 @@
 .badge-select.flash-err { box-shadow: 0 0 0 2px #dc2626; }
 .status-cell .muted-sm { display: block; margin-top: 2px; font-size: 0.78em; }
 
+/* ① 상담 결과 select-as-badge (7번 요청 2단계 중 첫째) */
+.badge-select.cr-done   { background-color: #f1f5f9; color: #475569; }
+.badge-select.cr-readm  { background-color: #e0e7ff; color: #3730a3; }
+.badge-select.cr-req    { background-color: #cffafe; color: #155e75; }
+.badge-select.cr-hold   { background-color: #fef3c7; color: #92400e; }
+.badge-select.cr-cancel { background-color: #fee2e2; color: #991b1b; }
+.status-cell .adm-line { margin-top: 3px; }
+.cr-reason { display:block; font-size:0.74em; color: var(--text-light);
+    max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* 내원 유형 배지 (1번 요청) */
+.atype-badge { display:inline-block; padding:1px 7px; border-radius:9px;
+    font-size:0.74em; font-weight:600; }
+.atype-badge.at-emerg    { background:#fee2e2; color:#b91c1c; }
+.atype-badge.at-transfer { background:#e0e7ff; color:#3730a3; }
+
+/* 블랙리스트 (4번 요청) */
+.bl-mark { display:inline-block; padding:0 5px; margin-right:3px; background:#1f2937;
+    color:#fecaca; border-radius:6px; font-size:0.7em; font-weight:700;
+    vertical-align:middle; cursor:help; }
+.tbl-compact tr.bl-row { background:#fff7ed; }
+.tbl-compact tr.bl-row:hover { background:#ffedd5; }
+.bl-filter { display:flex; align-items:center; gap:4px; font-size:0.85em;
+    white-space:nowrap; padding:4px 0; }
+
 /* 퇴원 워크플로 — 퇴원완료 배지 / 퇴원예정 알림 + 액션 버튼 */
 .badge.st-discharge-done { background: #cffafe; color: #155e75; }
 .badge.st-discharge-due  { background: #fed7aa; color: #9a3412; }
@@ -419,8 +495,19 @@
 <script>
 (function() {
     const STATUS_CLASS = {
-        '상담완료': 'st-pending', '입원보류': 'st-hold',
+        '미정': 'st-pending', '': 'st-pending', '입원보류': 'st-hold',
         '입원취소': 'st-cancelled', '입원완료': 'st-completed',
+    };
+    const RESULT_CLASS = {
+        '상담완료': 'cr-done', '재입원 상담': 'cr-readm', '상담요청': 'cr-req',
+        '상담보류': 'cr-hold', '상담취소': 'cr-cancel',
+    };
+    // 사유 입력이 필수인 상담 결과 → 프롬프트 문구
+    const RESULT_REASON_PROMPT = {
+        '재입원 상담': '재입원 사유 / 이전 입원 정보를 입력하세요 (필수)',
+        '상담요청': '재연락 시기를 입력하세요 (필수)',
+        '상담보류': '보류 사유를 입력하세요 (필수)',
+        '상담취소': '취소 사유를 입력하세요 (필수)',
     };
 
     // ─── 병명 +N 클릭 시 펼침 ───
@@ -441,46 +528,70 @@
         });
     });
 
-    // ─── 인라인 상담상태 변경 ───
+    async function applyStatus(sel, body, newVal, classMap) {
+        const old = sel.dataset.current;
+        try {
+            const r = await fetch(`/api/consult/${sel.dataset.cid}/status`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body),
+            });
+            if (!r.ok) {
+                let msg = r.status;
+                try { msg = (await r.json()).error || msg; } catch {}
+                throw new Error(msg);
+            }
+            sel.dataset.current = newVal;
+            Object.values(classMap).forEach(c => sel.classList.remove(c));
+            sel.classList.add(classMap[newVal] || classMap[''] || '');
+            sel.classList.add('flash-ok');
+            setTimeout(() => sel.classList.remove('flash-ok'), 1200);
+        } catch (e) {
+            alert('변경 실패: ' + e.message);
+            sel.value = old;
+            sel.classList.add('flash-err');
+            setTimeout(() => sel.classList.remove('flash-err'), 1200);
+        }
+    }
+
+    // ─── 인라인 ① 상담 결과 변경 ───
+    document.querySelectorAll('.result-select').forEach(sel => {
+        sel.addEventListener('change', async () => {
+            const newVal = sel.value;
+            const old = sel.dataset.current;
+            if (newVal === old) return;
+            const body = { consult_result: newVal };
+            if (RESULT_REASON_PROMPT[newVal]) {
+                const reason = prompt(RESULT_REASON_PROMPT[newVal]);
+                if (!reason || !reason.trim()) { sel.value = old; return; }
+                body.consult_result_reason = reason.trim();
+            }
+            await applyStatus(sel, body, newVal, RESULT_CLASS);
+        });
+    });
+
+    // ─── 인라인 ② 입원 진행 변경 ───
     document.querySelectorAll('.status-select').forEach(sel => {
         sel.addEventListener('change', async () => {
-            const cid = sel.dataset.cid;
-            const newStatus = sel.value;
+            const newStatus = sel.value;            // '' = 미정
             const old = sel.dataset.current;
-            if (newStatus === old) return;
+            if (newStatus === old || (newStatus === '' && old === '미정')) return;
             const body = { admission_status: newStatus };
             if (newStatus === '입원보류') {
                 const hr = prompt('입원보류 사유를 입력하세요 (필수)');
-                if (!hr || !hr.trim()) { sel.value = old; return; }
+                if (!hr || !hr.trim()) { sel.value = old === '미정' ? '' : old; return; }
                 body.hold_reason = hr.trim();
             } else if (newStatus === '입원취소') {
                 const rr = prompt('입원취소 사유를 입력하세요 (필수)');
-                if (!rr || !rr.trim()) { sel.value = old; return; }
+                if (!rr || !rr.trim()) { sel.value = old === '미정' ? '' : old; return; }
                 body.rejection_reason_detail = rr.trim();
             } else if (newStatus === '입원완료') {
                 if (!confirm("'입원완료'로 변경합니다. 실제 입원일 등 세부정보는 상담 상세 페이지에서 추가 입력하세요. 계속할까요?")) {
-                    sel.value = old;
+                    sel.value = old === '미정' ? '' : old;
                     return;
                 }
             }
-            try {
-                const r = await fetch(`/api/consult/${cid}/status`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(body),
-                });
-                if (!r.ok) throw new Error(await r.text());
-                sel.dataset.current = newStatus;
-                Object.values(STATUS_CLASS).forEach(c => sel.classList.remove(c));
-                sel.classList.add(STATUS_CLASS[newStatus] || 'st-pending');
-                sel.classList.add('flash-ok');
-                setTimeout(() => sel.classList.remove('flash-ok'), 1200);
-            } catch (e) {
-                alert('상태 변경 실패: ' + e.message);
-                sel.value = old;
-                sel.classList.add('flash-err');
-                setTimeout(() => sel.classList.remove('flash-err'), 1200);
-            }
+            await applyStatus(sel, body, newStatus || '미정', STATUS_CLASS);
         });
     });
 

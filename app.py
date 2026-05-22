@@ -25,18 +25,23 @@ from auth import (
 from config import (
     ACTIVITY_ACTIVE_OPTIONS, ACTIVITY_DIAPER_OPTIONS, ACTIVITY_OTHERS_OPTIONS,
     ACTIVITY_WHEELCHAIR_OPTIONS, ADMISSION_DOCS, ADMISSION_STATUSES,
+    ADMISSION_TYPES, ATTENDING_DOCTORS,
     BED_OPTIONS, CAREGIVER_OPTIONS,
     CONSCIOUSNESS_MAIN_OPTIONS, CONSULT_CHANNELS, CONVERSATION_LEVEL_OPTIONS,
-    REJECTION_REASONS,
+    CONSULT_RESULTS, CONSULT_RESULT_REASON_LABELS, REJECTION_REASONS,
+    COMM_CHANNELS, COMM_INBOUND_CHANNELS,
     COST_GUIDANCE_OPTIONS, CURRENT_LOCATION_TYPES, DIET_TYPES, DIET_LAYOUT,
     DISEASES_CHECKLIST, DISEASES_GROUPS, GUARDIAN_RELATION_SUGGESTIONS,
     HEARING_OPTIONS, INFO_PROVIDED_OPTIONS,
     COUNSELORS, DISEASES_LAYOUT, OTHERS_LAYOUT,
     INSURANCE_TYPES, OTHERS_CHECKLIST, REFERRAL_SOURCE_GROUPS, REFERRAL_TYPES,
+    LIFECYCLE_STAGES, LIFECYCLE_EVENT_TYPES,
     SIDO_LIST, SIGUNGU_INDEX, SIGUNGU_LIST,
+    SMS_TEMPLATE_GROUPS, SMS_PLACEHOLDERS,
     SPECIAL_CARE_OPTIONS, SPECIAL_CARE_NOTE_FIELDS,
     THERAPY_OPTIONS, TRANSPORT_OPTIONS, WOUND_CARE_OPTIONS, WOUND_CARE_NOTE_FIELDS,
 )
+import sms as sms_gateway
 
 load_dotenv()
 
@@ -97,7 +102,16 @@ def _inject_globals():
         "current_user": current_user(),
         "INSURANCE_TYPES": INSURANCE_TYPES,
         "CONSULT_CHANNELS": CONSULT_CHANNELS,
+        "ADMISSION_TYPES": ADMISSION_TYPES,
+        "ATTENDING_DOCTORS": ATTENDING_DOCTORS,
         "ADMISSION_STATUSES": ADMISSION_STATUSES,
+        "CONSULT_RESULTS": CONSULT_RESULTS,
+        "CONSULT_RESULT_REASON_LABELS": CONSULT_RESULT_REASON_LABELS,
+        "LIFECYCLE_STAGES": LIFECYCLE_STAGES,
+        "LIFECYCLE_EVENT_TYPES": LIFECYCLE_EVENT_TYPES,
+        "SMS_TEMPLATE_GROUPS": SMS_TEMPLATE_GROUPS,
+        "COMM_CHANNELS": COMM_CHANNELS,
+        "COMM_INBOUND_CHANNELS": COMM_INBOUND_CHANNELS,
         "REJECTION_REASONS": REJECTION_REASONS,
         "GUARDIAN_RELATION_SUGGESTIONS": GUARDIAN_RELATION_SUGGESTIONS,
         "COUNSELORS": COUNSELORS,
@@ -460,6 +474,31 @@ def _agefrom(birth_year):
     return datetime.now().year - int(birth_year)
 
 
+# ── 생애주기 단계 자동 동기화 (제안 1 — 상담 결과 → 단계) ──
+# 입원완료→입원, 입원보류→입원대기, 퇴원완료→퇴원. 전진만 (수동 지정한 더 앞선
+# 단계는 되돌리지 않음). 퇴원은 종료 단계라 항상 적용.
+_STATUS_TO_STAGE = {"입원완료": "입원", "입원보류": "입원대기", "퇴원완료": "퇴원"}
+
+
+def _sync_lifecycle_stage(patient_id, admission_status):
+    """상담의 입원 진행 변화에 맞춰 환자 생애주기 단계를 자동 전진시킨다.
+    이중 입력 제거 — 상담 결과만 바꾸면 생애주기 보드에도 반영된다.
+    """
+    target = _STATUS_TO_STAGE.get((admission_status or "").strip())
+    if not target:
+        return
+    p = models.get_patient(patient_id)
+    if not p:
+        return
+    order = {s: i for i, s in enumerate(LIFECYCLE_STAGES)}
+    cur_idx = order.get((p.get("lifecycle_stage") or "").strip(), -1)
+    tgt_idx = order.get(target, -1)
+    if tgt_idx < 0:
+        return
+    if target == "퇴원" or tgt_idx > cur_idx:
+        models.set_patient_stage(patient_id, target)
+
+
 # ───────────────────── 인증 ─────────────────────
 
 @app.route("/login", methods=["GET", "POST"])
@@ -681,11 +720,12 @@ def consult_csv():
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow([
-        "상담일", "상담시각", "환자명", "성별", "나이",
+        "상담일", "상담시각", "환자명", "성별", "나이", "블랙리스트",
         "거주시도", "거주시군구", "주소", "보험유형",
         "보호자", "관계", "연락처",
-        "상담방법", "유입경로(상위)", "세부경로",
-        "모병원", "병명", "발병일", "회복기", "상담상태",
+        "상담방법", "내원유형", "유입경로(상위)", "세부경로",
+        "모병원", "병명", "발병일", "회복기",
+        "상담결과", "상담결과사유", "입원진행",
         "주치의", "호실", "입원예정일", "입원완료일", "상담자",
     ])
     for r in rows:
@@ -699,6 +739,7 @@ def consult_csv():
             r.get("patient_name") or "",
             r.get("gender") or "",
             r.get("patient_age") if r.get("patient_age") is not None else "",
+            "블랙리스트" if r.get("blacklist") else "",
             r.get("residence_sido") or "",
             r.get("residence_sigungu") or "",
             r.get("address_full") or "",
@@ -707,13 +748,16 @@ def consult_csv():
             r.get("guardian_relation") or "",
             r.get("guardian_phone") or "",
             r.get("consult_channel") or "",
+            r.get("admission_type") or "일반",
             _csv_list(r.get("referral_source_type")),
             _csv_list(r.get("referral_source_detail")),
             r.get("source_hospital") or "",
             _csv_list(r.get("diseases")),
             r.get("disease_onset") or "",
             recovery_label,
-            r.get("admission_status") or "상담완료",
+            r.get("consult_result") or "상담완료",
+            r.get("consult_result_reason") or "",
+            r.get("admission_status") or "미정",
             r.get("attending_doctor") or "",
             r.get("room_number") or "",
             r.get("planned_admission_date") or "",
@@ -740,12 +784,13 @@ def patient_detail(pid):
     if not p:
         abort(404)
     history = models.patient_consultations(pid)
+    timeline = models.patient_timeline(pid)
     models.log_audit(
         user_id=g.user["id"], username=g.user["username"],
         action="view_patient", target_type="patient", target_id=pid,
         ip=request.remote_addr,
     )
-    return render_template("patient_detail.html", p=p, history=history)
+    return render_template("patient_detail.html", p=p, history=history, timeline=timeline)
 
 
 # ───────────────────── API: 상담 CRUD ─────────────────────
@@ -771,12 +816,19 @@ def api_consult_create():
         guardian_relation=p.get("guardian_relation"),
         family_info=p.get("family_info"),
     )
+    # 블랙리스트 (4번) — 폼 체크 상태 반영
+    if "blacklist" in p:
+        models.set_patient_blacklist(
+            pid, bool(p.get("blacklist")),
+            (p.get("blacklist_reason") or "").strip() or None)
 
     c = payload.get("consultation", {})
     cfields = _consult_fields_from_payload(c)
     cfields.setdefault("consult_date", datetime.now().strftime("%Y-%m-%d"))
     cfields.setdefault("counselor", g.user.get("display_name"))
     cid = models.create_consultation(patient_id=pid, **cfields)
+    if cfields.get("admission_status"):
+        _sync_lifecycle_stage(pid, cfields["admission_status"])
     models.log_audit(
         user_id=g.user["id"], username=g.user["username"],
         action="create_consult", target_type="consultation", target_id=cid,
@@ -806,11 +858,17 @@ def api_consult_update(cid):
         valid = {k: v for k, v in p.items() if k in patient_cols and v not in (None, "")}
         if valid:
             models.update_patient(existing["patient_id"], **valid)
+        if "blacklist" in p:
+            models.set_patient_blacklist(
+                existing["patient_id"], bool(p.get("blacklist")),
+                (p.get("blacklist_reason") or "").strip() or None)
 
     c = payload.get("consultation") or {}
     update_fields = _consult_fields_from_payload(c)
     if update_fields:
         models.update_consultation(cid, **update_fields)
+        if "admission_status" in update_fields:
+            _sync_lifecycle_stage(existing["patient_id"], update_fields["admission_status"])
 
     models.log_audit(
         user_id=g.user["id"], username=g.user["username"],
@@ -825,52 +883,74 @@ def api_consult_update(cid):
 @app.route("/api/consult/<int:cid>/status", methods=["POST"])
 @login_required
 def api_consult_status(cid):
+    """상담 결과 2단계 변경 — ① consult_result(상담 진행) ② admission_status(입원 진행).
+    payload에 들어온 단계만 변경. 두 단계 모두 한 번에 보낼 수도 있다.
+    """
     existing = models.get_consultation(cid)
     if not existing:
         return jsonify({"error": "not found"}), 404
     payload = request.get_json(silent=True) or {}
-    status = (payload.get("admission_status") or "").strip()
-    if status not in ADMISSION_STATUSES:
-        return jsonify({"error": "허용되지 않은 상태값"}), 400
+    fields = {}
+    audit = []
 
-    fields = {"admission_status": status}
-    # 입원완료 시 admission_date 함께 저장 (선택). 다른 상태는 admission_date 변경 안 함.
-    adate = (payload.get("admission_date") or "").strip()
-    if status == "입원완료" and adate:
-        try:
-            datetime.strptime(adate, "%Y-%m-%d")
-            fields["admission_date"] = adate
-        except ValueError:
-            return jsonify({"error": "입원일자 형식 오류"}), 400
+    # ① 상담 진행 (Tier 1)
+    if "consult_result" in payload:
+        cr = (payload.get("consult_result") or "").strip()
+        if cr and cr not in CONSULT_RESULTS:
+            return jsonify({"error": "허용되지 않은 상담 결과값"}), 400
+        if cr:
+            reason = (payload.get("consult_result_reason") or "").strip()
+            if cr in CONSULT_RESULT_REASON_LABELS and not reason:
+                return jsonify(
+                    {"error": f"{CONSULT_RESULT_REASON_LABELS[cr]}을(를) 입력하세요."}), 400
+            fields["consult_result"] = cr
+            fields["consult_result_reason"] = reason or None
+            audit.append(f"상담:{cr}")
 
-    # 입원보류 시 사유 필수.
-    if status == "입원보류":
-        hold_reason = (payload.get("hold_reason") or "").strip()
-        if not hold_reason:
-            return jsonify({"error": "입원보류 사유를 입력하세요."}), 400
-        fields["hold_reason"] = hold_reason
+    # ② 입원 진행 (Tier 2) — 빈값은 '미정'(입원 단계 미진입)
+    if "admission_status" in payload:
+        status = (payload.get("admission_status") or "").strip()
+        if status and status not in ADMISSION_STATUSES:
+            return jsonify({"error": "허용되지 않은 입원 진행값"}), 400
+        fields["admission_status"] = status or None
+        audit.append(f"입원:{status or '미정'}")
+        if status == "입원완료":
+            adate = (payload.get("admission_date") or "").strip()
+            if adate:
+                try:
+                    datetime.strptime(adate, "%Y-%m-%d")
+                    fields["admission_date"] = adate
+                except ValueError:
+                    return jsonify({"error": "입원일자 형식 오류"}), 400
+        elif status == "입원보류":
+            hold_reason = (payload.get("hold_reason") or "").strip()
+            if not hold_reason:
+                return jsonify({"error": "입원보류 사유를 입력하세요."}), 400
+            fields["hold_reason"] = hold_reason
+        elif status == "입원취소":
+            reason = (payload.get("rejection_reason") or "").strip()
+            reason_detail = (payload.get("rejection_reason_detail") or "").strip()
+            if reason and reason not in REJECTION_REASONS:
+                return jsonify({"error": "허용되지 않은 취소 사유"}), 400
+            if not reason and not reason_detail:
+                return jsonify({"error": "입원취소 사유를 입력하세요."}), 400
+            if reason:
+                fields["rejection_reason"] = reason
+            if reason_detail:
+                fields["rejection_reason_detail"] = reason_detail
 
-    # 입원취소 시 사유(라벨) + 자유메모 함께 저장. 라벨은 화이트리스트 검증, 사유 필수.
-    if status == "입원취소":
-        reason = (payload.get("rejection_reason") or "").strip()
-        reason_detail = (payload.get("rejection_reason_detail") or "").strip()
-        if reason and reason not in REJECTION_REASONS:
-            return jsonify({"error": "허용되지 않은 취소 사유"}), 400
-        if not reason and not reason_detail:
-            return jsonify({"error": "입원취소 사유를 입력하세요."}), 400
-        if reason:
-            fields["rejection_reason"] = reason
-        if reason_detail:
-            fields["rejection_reason_detail"] = reason_detail
+    if not fields:
+        return jsonify({"error": "변경할 값이 없습니다."}), 400
 
     models.update_consultation_meta(cid, **fields)
+    if "admission_status" in fields:
+        _sync_lifecycle_stage(existing["patient_id"], fields["admission_status"])
     models.log_audit(
         user_id=g.user["id"], username=g.user["username"],
         action="update_status", target_type="consultation", target_id=cid,
-        detail=status, ip=request.remote_addr,
+        detail=" / ".join(audit), ip=request.remote_addr,
     )
-    return jsonify({"ok": True, "admission_status": status,
-                    "admission_date": fields.get("admission_date")})
+    return jsonify({"ok": True, **fields})
 
 
 # ───────────────────── API: 퇴원 워크플로 (상담목록) ─────────────────────
@@ -911,6 +991,8 @@ def api_consult_discharge(cid):
         return jsonify({"error": "허용되지 않은 동작"}), 400
 
     models.update_consultation_meta(cid, **fields)
+    if action == "complete":
+        _sync_lifecycle_stage(existing["patient_id"], "퇴원완료")
     models.log_audit(
         user_id=g.user["id"], username=g.user["username"],
         action="update_discharge", target_type="consultation", target_id=cid,
@@ -934,6 +1016,333 @@ def api_consult_delete(cid):
         detail=detail, ip=request.remote_addr,
     )
     return jsonify({"ok": True})
+
+
+# ───────────────────── 생애주기 (3번 요청) ─────────────────────
+
+@app.route("/lifecycle")
+@login_required
+def lifecycle_board():
+    """환자 생애주기 관리 보드 — 단계별 컬럼에 환자 카드 배치."""
+    q = (request.args.get("q") or "").strip() or None
+    patients = models.lifecycle_board(q=q)
+    board = {s: [] for s in LIFECYCLE_STAGES}
+    board["기타"] = []
+    for pt in patients:
+        st = pt.get("lifecycle_stage") or "기타"
+        board.setdefault(st if st in board else "기타", []).append(pt)
+    if not board["기타"]:
+        board.pop("기타")
+    return render_template(
+        "lifecycle.html", board=board, q=q or "", total=len(patients),
+    )
+
+
+@app.route("/api/patient/<int:pid>/stage", methods=["POST"])
+@login_required
+def api_patient_stage(pid):
+    if not models.get_patient(pid):
+        return jsonify({"error": "not found"}), 404
+    payload = request.get_json(silent=True) or {}
+    stage = (payload.get("stage") or "").strip()
+    if stage and stage not in LIFECYCLE_STAGES:
+        return jsonify({"error": "허용되지 않은 단계값"}), 400
+    models.set_patient_stage(pid, stage or None)
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="update_stage", target_type="patient", target_id=pid,
+        detail=stage or "(미설정)", ip=request.remote_addr,
+    )
+    return jsonify({"ok": True, "stage": stage})
+
+
+@app.route("/api/patient/<int:pid>/lifecycle/event", methods=["POST"])
+@login_required
+def api_lifecycle_event_add(pid):
+    if not models.get_patient(pid):
+        return jsonify({"error": "not found"}), 404
+    payload = request.get_json(silent=True) or {}
+    event_type = (payload.get("event_type") or "").strip()
+    if event_type not in LIFECYCLE_EVENT_TYPES:
+        return jsonify({"error": "이벤트 유형을 선택하세요."}), 400
+    event_date = (payload.get("event_date") or "").strip() or None
+    if event_date:
+        try:
+            datetime.strptime(event_date, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"error": "이벤트 일자 형식 오류 (YYYY-MM-DD)"}), 400
+    eid = models.add_lifecycle_event(
+        patient_id=pid, event_type=event_type, event_date=event_date,
+        title=(payload.get("title") or "").strip() or None,
+        detail=(payload.get("detail") or "").strip() or None,
+        created_by=g.user.get("display_name"),
+    )
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="add_lifecycle_event", target_type="patient", target_id=pid,
+        detail=event_type, ip=request.remote_addr,
+    )
+    return jsonify({"ok": True, "id": eid})
+
+
+@app.route("/api/lifecycle/event/<int:eid>", methods=["DELETE"])
+@login_required
+def api_lifecycle_event_delete(eid):
+    ev = models.get_lifecycle_event(eid)
+    if not ev:
+        return jsonify({"error": "not found"}), 404
+    models.delete_lifecycle_event(eid)
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="delete_lifecycle_event", target_type="patient",
+        target_id=ev["patient_id"], detail=ev.get("event_type"),
+        ip=request.remote_addr,
+    )
+    return jsonify({"ok": True})
+
+
+@app.route("/api/patient/<int:pid>/blacklist", methods=["POST"])
+@login_required
+def api_patient_blacklist(pid):
+    """블랙리스트 지정/해제 (4번 요청)."""
+    if not models.get_patient(pid):
+        return jsonify({"error": "not found"}), 404
+    payload = request.get_json(silent=True) or {}
+    on = bool(payload.get("blacklist"))
+    reason = (payload.get("blacklist_reason") or "").strip() or None
+    if on and not reason:
+        return jsonify({"error": "블랙리스트 지정 사유를 입력하세요."}), 400
+    models.set_patient_blacklist(pid, on, reason)
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="update_blacklist", target_type="patient", target_id=pid,
+        detail=("ON: " + (reason or "")) if on else "OFF", ip=request.remote_addr,
+    )
+    return jsonify({"ok": True, "blacklist": on})
+
+
+@app.route("/api/patient/blacklist-check")
+@login_required
+def api_blacklist_check():
+    """이름·연락처로 블랙리스트 환자 여부 조회 (신규 상담 등록 전 경고용)."""
+    name = (request.args.get("name") or "").strip()
+    phone = (request.args.get("phone") or "").strip()
+    hit = models.find_blacklisted(name=name, phone=phone)
+    if hit:
+        return jsonify({"blacklisted": True, "name": hit.get("name"),
+                        "reason": hit.get("blacklist_reason") or ""})
+    return jsonify({"blacklisted": False})
+
+
+# ───────────────────── 옴니채널 — 인박스·커뮤니케이션 ─────────────────────
+
+@app.route("/inbox")
+@login_required
+def inbox_view():
+    """통합 인박스 — 재연락 대기 + 미처리 인바운드 + 입원안내 예정 + 퇴원예정.
+    상담사의 '오늘 처리할 일'을 채널 무관하게 한곳에 모은다.
+    """
+    callbacks = models.inbox_callbacks()
+    open_comms = models.inbox_open_communications()
+    upcoming = models.inbox_upcoming_admissions(within_days=3)
+    # 퇴원예정 — 입원완료 상담 중 퇴원 임박
+    discharge_due = []
+    for con in models.list_consultations(admission_status="입원완료", limit=10000):
+        dw = _discharge_watch(con)
+        if dw and dw.get("state"):
+            discharge_due.append({"con": con, "watch": dw})
+    discharge_due.sort(key=lambda x: x["watch"]["days_left"])
+    return render_template(
+        "inbox.html", callbacks=callbacks, open_comms=open_comms,
+        upcoming=upcoming, discharge_due=discharge_due,
+    )
+
+
+@app.route("/api/communication", methods=["POST"])
+@login_required
+def api_communication_create():
+    """인바운드/기타 커뮤니케이션 1건 기록 (받은 문자·카톡·웹문의·부재중 등)."""
+    payload = request.get_json(silent=True) or {}
+    channel = (payload.get("channel") or "").strip()
+    if channel not in COMM_CHANNELS:
+        return jsonify({"error": "채널을 선택하세요."}), 400
+    direction = "out" if payload.get("direction") == "out" else "in"
+    summary = (payload.get("summary") or "").strip()
+    body = (payload.get("body") or "").strip()
+    if not summary and not body:
+        return jsonify({"error": "요약 또는 내용을 입력하세요."}), 400
+    pid = payload.get("patient_id")
+    cid = models.create_communication(
+        patient_id=pid, consultation_id=payload.get("consultation_id"),
+        channel=channel, direction=direction,
+        contact=(payload.get("contact") or "").strip() or None,
+        summary=summary or None, body=body or None,
+        follow_up_at=(payload.get("follow_up_at") or "").strip() or None,
+        occurred_at=(payload.get("occurred_at") or "").strip() or None,
+        created_by=g.user.get("display_name"),
+        status="open" if direction == "in" else "done",
+    )
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="add_communication", target_type="patient", target_id=pid,
+        detail=f"{channel}/{direction}", ip=request.remote_addr,
+    )
+    return jsonify({"ok": True, "id": cid})
+
+
+@app.route("/api/communication/<int:comm_id>/done", methods=["POST"])
+@login_required
+def api_communication_done(comm_id):
+    if not models.get_communication(comm_id):
+        return jsonify({"error": "not found"}), 404
+    models.update_communication(comm_id, status="done")
+    return jsonify({"ok": True})
+
+
+@app.route("/api/communication/<int:comm_id>", methods=["DELETE"])
+@login_required
+def api_communication_delete(comm_id):
+    if not models.get_communication(comm_id):
+        return jsonify({"error": "not found"}), 404
+    models.delete_communication(comm_id)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/webhook/kakao", methods=["POST"])
+def api_webhook_kakao():
+    """카카오 비즈채널 인바운드 webhook 수신 자리 — 구조만 (비즈채널 연동 시 작동).
+    .env의 KAKAO_WEBHOOK_TOKEN으로 호출자 검증. 보호자 번호로 환자 자동 매칭해
+    communications에 인바운드로 기록 → 인박스에 노출.
+    실제 카카오 페이로드 형식은 채널 연동 시 확정 (현재는 범용 형태 수신).
+    """
+    expected = os.getenv("KAKAO_WEBHOOK_TOKEN", "").strip()
+    if not expected:
+        return jsonify({"error": "webhook 미설정 — .env KAKAO_WEBHOOK_TOKEN 필요"}), 503
+    token = request.headers.get("X-Webhook-Token") or request.args.get("token") or ""
+    if token != expected:
+        return jsonify({"error": "unauthorized"}), 401
+    payload = request.get_json(silent=True) or {}
+    phone = (payload.get("phone") or "").strip()
+    name = (payload.get("name") or "").strip()
+    message = (payload.get("message") or "").strip()
+    if not message:
+        return jsonify({"error": "message 필수"}), 400
+    pid = models.match_patient_by_phone(phone)
+    comm_id = models.create_communication(
+        patient_id=pid, channel="카카오", direction="in",
+        contact=phone or name or None,
+        summary="카카오 메시지" + (f" · {name}" if name else ""),
+        body=message, status="open", created_by="카카오봇",
+    )
+    return jsonify({"ok": True, "id": comm_id, "matched_patient": pid})
+
+
+# ───────────────────── 문자 발송 (5번 요청) ─────────────────────
+
+@app.route("/sms")
+@login_required
+def sms_compose():
+    """문자 전송 — 최근 상담에서 보호자 선택 → 환자군 템플릿 → 발송."""
+    recent = models.list_consultations(limit=200)
+    cid = request.args.get("cid", type=int)
+    preselect = models.get_consultation(cid) if cid else None
+    return render_template(
+        "sms.html", recent=recent, templates=models.list_sms_templates(),
+        preselect=preselect, log=models.list_sms_log(30),
+        placeholders=SMS_PLACEHOLDERS,
+        gateway_ready=sms_gateway.gateway_configured(),
+    )
+
+
+@app.route("/sms/templates")
+@login_required
+def sms_templates_view():
+    return render_template(
+        "sms_templates.html",
+        templates=models.list_sms_templates(active_only=False),
+    )
+
+
+@app.route("/api/sms/template", methods=["POST"])
+@login_required
+def api_sms_template_create():
+    payload = request.get_json(silent=True) or {}
+    name = (payload.get("name") or "").strip()
+    body = (payload.get("body") or "").strip()
+    group = (payload.get("template_group") or "공통").strip()
+    if not name or not body:
+        return jsonify({"error": "템플릿 이름과 본문을 입력하세요."}), 400
+    tid = models.create_sms_template(
+        name=name, body=body,
+        template_group=group if group in SMS_TEMPLATE_GROUPS else "공통",
+    )
+    return jsonify({"ok": True, "id": tid})
+
+
+@app.route("/api/sms/template/<int:tid>", methods=["POST"])
+@login_required
+def api_sms_template_update(tid):
+    if not models.get_sms_template(tid):
+        return jsonify({"error": "not found"}), 404
+    payload = request.get_json(silent=True) or {}
+    fields = {}
+    if "name" in payload:
+        fields["name"] = (payload.get("name") or "").strip()
+    if "body" in payload:
+        fields["body"] = (payload.get("body") or "").strip()
+    if "template_group" in payload:
+        gr = (payload.get("template_group") or "공통").strip()
+        fields["template_group"] = gr if gr in SMS_TEMPLATE_GROUPS else "공통"
+    if "active" in payload:
+        fields["active"] = 1 if payload.get("active") else 0
+    if fields.get("name") == "" or fields.get("body") == "":
+        return jsonify({"error": "이름·본문은 비울 수 없습니다."}), 400
+    models.update_sms_template(tid, **fields)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/sms/template/<int:tid>", methods=["DELETE"])
+@login_required
+def api_sms_template_delete(tid):
+    if not models.get_sms_template(tid):
+        return jsonify({"error": "not found"}), 404
+    models.delete_sms_template(tid)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/sms/send", methods=["POST"])
+@login_required
+def api_sms_send():
+    """문자 발송 — 게이트웨이 설정 시 직접 발송, 미설정 시 'manual'(휴대폰 문자앱).
+    어느 쪽이든 sms_log에 이력을 남긴다. 환자정보 보호: 외부 전송은 수신번호·본문 한정.
+    """
+    payload = request.get_json(silent=True) or {}
+    to_phone = (payload.get("to_phone") or "").strip()
+    body = (payload.get("body") or "").strip()
+    if not to_phone or not body:
+        return jsonify({"error": "수신 번호와 본문이 필요합니다."}), 400
+
+    status, error = "manual", None
+    if sms_gateway.gateway_configured():
+        result = sms_gateway.send_sms(to_phone, body)
+        status = "sent" if result.get("ok") else "failed"
+        error = result.get("error")
+
+    sid = models.log_sms(
+        consultation_id=payload.get("consultation_id"),
+        patient_id=payload.get("patient_id"),
+        template_id=payload.get("template_id"),
+        to_name=(payload.get("to_name") or "").strip() or None,
+        to_phone=to_phone, body=body, status=status,
+        sent_by=g.user.get("display_name"),
+    )
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="send_sms", target_type="consultation",
+        target_id=payload.get("consultation_id"),
+        detail=f"{to_phone} [{status}]", ip=request.remote_addr,
+    )
+    return jsonify({"ok": True, "id": sid, "status": status, "error": error})
 
 
 # ───────────────────── API: 자동완성 ─────────────────────
@@ -974,6 +1383,9 @@ def _list_filters_from_request():
         "insurance": request.args.get("insurance") or None,
         "counselor": request.args.get("counselor") or None,
         "admission_status": request.args.get("admission_status") or None,
+        "consult_result": request.args.get("consult_result") or None,
+        "admission_type": request.args.get("admission_type") or None,
+        "blacklist": "1" if request.args.get("blacklist") else None,
         "disease_group": request.args.get("disease_group") or None,
         "residence_sido": request.args.get("residence_sido") or None,
         "recovery": request.args.get("recovery") or None,
@@ -1115,10 +1527,16 @@ def _validate_consult_payload(payload, *, require_patient):
             datetime.strptime(cd, "%Y-%m-%d")
         except ValueError:
             return "상담일자 형식이 올바르지 않습니다 (YYYY-MM-DD)."
-    # 상담 결과(입원 진행 상태) — 화이트리스트 + 보류/취소 사유 필수
+    # 상담 결과 ① 상담 진행 — 화이트리스트 + 사유 필수 (재입원/요청/보류/취소)
+    cr = (c.get("consult_result") or "").strip()
+    if cr and cr not in CONSULT_RESULTS:
+        return "허용되지 않은 상담 결과값입니다."
+    if cr in CONSULT_RESULT_REASON_LABELS and not (c.get("consult_result_reason") or "").strip():
+        return f"{CONSULT_RESULT_REASON_LABELS[cr]}을(를) 입력하세요."
+    # 상담 결과 ② 입원 진행 — 화이트리스트 + 보류/취소 사유 필수
     status = (c.get("admission_status") or "").strip()
     if status and status not in ADMISSION_STATUSES:
-        return "허용되지 않은 상담 상태값입니다."
+        return "허용되지 않은 입원 진행값입니다."
     if status == "입원보류" and not (c.get("hold_reason") or "").strip():
         return "입원보류 사유를 입력하세요."
     if status == "입원취소":
@@ -1128,6 +1546,10 @@ def _validate_consult_payload(payload, *, require_patient):
             return "허용되지 않은 입원취소 사유입니다."
         if not reason and not detail:
             return "입원취소 사유를 입력하세요."
+    # 내원 유형 — 화이트리스트
+    atype = (c.get("admission_type") or "").strip()
+    if atype and atype not in ADMISSION_TYPES:
+        return "허용되지 않은 내원 유형입니다."
     return None
 
 
