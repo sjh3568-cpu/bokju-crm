@@ -20,8 +20,8 @@
             <h3>1. 수신자 선택</h3>
             <select id="sms-consult">
                 <option value="">— 최근 상담에서 보호자 선택 —</option>
-                {% for r in recent %}{% if r.guardian_phone %}
-                <option value="{{ r.id }}" {% if preselect and preselect.id == r.id %}selected{% endif %}>{{ r.consult_date|krdate }} · {{ r.patient_name }} · {{ r.guardian_name or '보호자' }} {{ r.guardian_phone }}</option>
+                {% for r in recent %}{% if r.guardian_phone or (preselect and preselect.id == r.id) %}
+                <option value="{{ r.id }}" {% if preselect and preselect.id == r.id %}selected{% endif %}>{{ r.consult_date|krdate }} · {{ r.patient_name }} · {{ r.guardian_name or '보호자' }} {{ r.guardian_phone or '(연락처 없음)' }}</option>
                 {% endif %}{% endfor %}
             </select>
             <div class="sms-recipient">
@@ -125,7 +125,7 @@
 
 <script>
 window.SMS_CONSULTS = {
-{% for r in recent %}{% if r.guardian_phone %}"{{ r.id }}": {name: {{ (r.patient_name or '')|tojson }}, guardian: {{ (r.guardian_name or '')|tojson }}, phone: {{ (r.guardian_phone or '')|tojson }}, planned: {{ (r.planned_admission_date or '')|tojson }}, doctor: {{ (r.attending_doctor or '')|tojson }}, pid: {{ r.patient_id }}},
+{% for r in recent %}{% if r.guardian_phone or (preselect and preselect.id == r.id) %}"{{ r.id }}": {name: {{ (r.patient_name or '')|tojson }}, guardian: {{ (r.guardian_name or '')|tojson }}, phone: {{ (r.guardian_phone or '')|tojson }}, planned: {{ (r.planned_admission_date or '')|tojson }}, doctor: {{ (r.attending_doctor or '')|tojson }}, pid: {{ r.patient_id }}},
 {% endif %}{% endfor %}};
 </script>
 <script src="/static/js/common.js"></script>

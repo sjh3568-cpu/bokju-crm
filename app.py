@@ -1246,6 +1246,10 @@ def sms_compose():
     recent = models.list_consultations(limit=200)
     cid = request.args.get("cid", type=int)
     preselect = models.get_consultation(cid) if cid else None
+    # 선택 대상이 최근 200건 밖이면 드롭다운에 옵션이 없어 프리필이 안 된다
+    # (인박스 퇴원예정 등 오래된 상담의 '문자' 버튼 진입 케이스) → 목록 맨 앞에 보강.
+    if preselect and not any(r["id"] == preselect["id"] for r in recent):
+        recent = [preselect] + recent
     return render_template(
         "sms.html", recent=recent, templates=models.list_sms_templates(),
         preselect=preselect, log=models.list_sms_log(30),
