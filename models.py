@@ -929,6 +929,19 @@ def autocomplete_hospitals(q: str, limit: int = 10):
     return [dict(r) for r in rows]
 
 
+def top_source_hospitals(limit: int = 5):
+    """가장 자주 입력된 모병원 Top N — 상담일지 폼 빠른 선택 버튼용."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT source_hospital, COUNT(*) AS n FROM consultations "
+        "WHERE source_hospital IS NOT NULL AND TRIM(source_hospital) != '' "
+        "GROUP BY source_hospital ORDER BY n DESC, source_hospital LIMIT ?",
+        (limit,),
+    ).fetchall()
+    conn.close()
+    return [r["source_hospital"] for r in rows]
+
+
 def autocomplete_diagnoses(q: str, limit: int = 10):
     conn = get_db()
     rows = conn.execute(

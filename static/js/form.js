@@ -421,14 +421,61 @@
     [onsetDateEl, onsetTextEl].forEach(el => {
         if (el) ['change', 'blur', 'input'].forEach(ev => el.addEventListener(ev, syncOnset));
     });
+
+    // 발병일 자유텍스트에 정확한 날짜(26.4.15·2026.4.15·26-4-15 등)를 입력하면
+    // ISO(YYYY-MM-DD)로 자동 변환하고 날짜 선택기 모드로 되돌린다.
+    function normalizeDateText(s) {
+        s = String(s || '').trim();
+        const m = s.match(/^(\d{2,4})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})\s*일?\.?$/);
+        if (!m) return null;
+        let y = m[1];
+        if (y.length === 2) {
+            y = '20' + y;
+            if (+y > new Date().getFullYear()) y = '19' + m[1];
+        }
+        const yy = +y, mm = +m[2], dd = +m[3];
+        if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+        const dt = new Date(yy, mm - 1, dd);
+        if (dt.getFullYear() !== yy || dt.getMonth() !== mm - 1 || dt.getDate() !== dd) return null;
+        return `${yy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+    }
+    if (onsetTextEl) {
+        onsetTextEl.addEventListener('blur', () => {
+            const iso = normalizeDateText(onsetTextEl.value);
+            if (!iso) return;
+            if (onsetDateEl) onsetDateEl.value = iso;
+            if (onsetUnknownEl) onsetUnknownEl.checked = false;
+            onsetTextEl.value = '';
+            applyOnsetMode();
+            syncOnset();
+        });
+    }
     [consultDateEl, plannedEl].forEach(el => {
         if (el) ['change', 'blur', 'input'].forEach(ev => el.addEventListener(ev, recomputeRecovery));
     });
+    // 병명 그룹 자동 추론 배지 — 체크된 병명의 소속 그룹(fieldset legend)을 배지로 표시
+    const dxBadgesEl = document.getElementById('dx-group-badges');
+    function updateDiseaseGroupBadges() {
+        if (!dxBadgesEl) return;
+        const groups = [];
+        form.querySelectorAll('[name="consultation.diseases[]"]:checked').forEach(cb => {
+            const fs = cb.closest('fieldset');
+            const lg = fs && fs.querySelector('legend');
+            const g = lg ? lg.textContent.trim() : '';
+            if (g && groups.indexOf(g) === -1) groups.push(g);
+        });
+        dxBadgesEl.innerHTML = groups.map(g =>
+            '<span class="dx-grp-badge">' + g + '</span>').join('');
+    }
     form.querySelectorAll('[name="consultation.diseases[]"]').forEach(cb => {
-        cb.addEventListener('change', recomputeRecovery);
+        cb.addEventListener('change', () => {
+            recomputeRecovery();
+            updateDiseaseGroupBadges();
+        });
     });
     // 페이지 로드 시 한 번 (수정 모드에서)
     setTimeout(recomputeRecovery, 100);
+    updateDiseaseGroupBadges();
 
     // ─── 상담일자 → 요일 자동 표시 ───
     (function() {
@@ -498,5 +545,17 @@
         const blReason = document.getElementById('blacklist-reason');
         if (!blChk || !blReason) return;
         blChk.addEventListener('change', () => { blReason.hidden = !blChk.checked; });
+    })();
+
+    // ─── 모병원 빠른 선택 — Top 5 버튼 클릭 시 병원칸 채움 ───
+    (function() {
+        const hospInput = form.querySelector('[name="consultation.current_location_name"]');
+        if (!hospInput) return;
+        form.querySelectorAll('.hosp-quick-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                hospInput.value = btn.dataset.hosp || '';
+                hospInput.focus();
+            });
+        });
     })();
 })();

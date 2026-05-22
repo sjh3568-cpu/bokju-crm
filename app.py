@@ -650,7 +650,8 @@ def api_stats_insight():
 @app.route("/consult/new")
 @login_required
 def consult_new():
-    return render_template("consult_form.html", consultation=None, patient=None)
+    return render_template("consult_form.html", consultation=None, patient=None,
+                           top_hospitals=models.top_source_hospitals())
 
 
 @app.route("/consult/<int:cid>")
@@ -675,7 +676,8 @@ def consult_edit(cid):
     if not c:
         abort(404)
     patient = models.get_patient(c["patient_id"])
-    return render_template("consult_form.html", consultation=c, patient=patient)
+    return render_template("consult_form.html", consultation=c, patient=patient,
+                           top_hospitals=models.top_source_hospitals())
 
 
 CONSULT_PAGE_SIZE = 100  # 상담 목록 페이지당 행 수

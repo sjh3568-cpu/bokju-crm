@@ -264,6 +264,14 @@
                    data-ac="hospital" autocomplete="off"
                    value="{{ consultation.current_location_name if is_edit and consultation.current_location_name else '' }}">
             <div class="ac-list" id="ac-hospital" hidden></div>
+            {% if top_hospitals %}
+            <div class="hosp-quick">
+                <span class="hosp-quick-label">자주:</span>
+                {% for h in top_hospitals %}
+                <button type="button" class="hosp-quick-btn" data-hosp="{{ h }}">{{ h }}</button>
+                {% endfor %}
+            </div>
+            {% endif %}
         </div>
         <div class="field grow">
             <label>요양원 <span class="muted" style="font-size:0.78em">(입소중일 때 모병원 통계 반영)</span></label>
@@ -359,7 +367,18 @@
     </div>
 
     <div class="field">
-        <label>병명</label>
+        <label>병명 <span id="dx-group-badges" class="dx-grp-badges"></span></label>
+        <details class="rec-guide">
+            <summary>ℹ 의료법 회복기 인정 기준 — 발병/수술 후 며칠 이내</summary>
+            <ul class="rec-guide-list">
+                <li><b>중추신경계</b> 뇌출혈·뇌경색·척수손상·마비 등 — <b>90일</b></li>
+                <li><b>근골격계 골절</b> 고관절·대퇴·골반·절단·슬관절 — <b>30일</b></li>
+                <li><b>골유합 지연</b> — <b>60일</b></li>
+                <li><b>비사용증후군</b> 호흡·심장질환·다제내성균·파킨슨(신규)·길랑바레 등 — <b>60일</b></li>
+            </ul>
+            <p class="rec-guide-note">발병일~입원(예정)일 차이가 인정 기간 이내면 회복기.
+                여러 병명 매칭 시 가장 긴 기간 적용.</p>
+        </details>
         <div class="option-group">
             {% for group_name, items in DISEASES_LAYOUT.items() %}
             <fieldset class="opt-box {% if group_name in ['기저질환', '중추신경계'] %}box-full{% else %}box-half{% endif %}">
@@ -724,6 +743,28 @@
     </button>
 </div>
 </form>
+
+<style>
+/* 회복기 인정 기준 미니가이드 */
+.rec-guide { margin: 4px 0 8px; font-size: 0.82em; }
+.rec-guide summary { cursor: pointer; color: #1e40af; font-weight: 600;
+    padding: 3px 0; user-select: none; }
+.rec-guide-list { margin: 4px 0; padding-left: 18px; line-height: 1.7; }
+.rec-guide-list b { color: #0f172a; }
+.rec-guide-note { margin: 4px 0 2px; color: #64748b; }
+/* 병명 그룹 자동 추론 배지 */
+.dx-grp-badges { display: inline-flex; gap: 4px; vertical-align: middle; }
+.dx-grp-badge { padding: 1px 8px; border-radius: 9px; font-size: 0.7em;
+    font-weight: 700; background: #dbeafe; color: #1e40af; }
+/* 모병원 빠른 선택 */
+.hosp-quick { display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+    margin-top: 5px; }
+.hosp-quick-label { font-size: 0.76em; color: #94a3b8; }
+.hosp-quick-btn { padding: 2px 9px; border: 1px solid #cbd5e1;
+    border-radius: 12px; background: #f8fafc; font-size: 0.78em;
+    cursor: pointer; font-family: inherit; color: #334155; }
+.hosp-quick-btn:hover { background: #e0e7ff; border-color: #818cf8; }
+</style>
 {% endblock %}
 {% block scripts %}
 <script>window.SIGUNGU_INDEX = {{ SIGUNGU_INDEX|tojson }};</script>
