@@ -318,6 +318,8 @@ def _recovery_status(consultation):
             return "비회복기"
         if p.startswith("회복기재활") or p == "회복기":
             return "회복기"
+        if p.startswith("일반재활"):
+            return "일반재활"
         if p.startswith("요양"):
             return "요양"
         return None
@@ -708,7 +710,7 @@ def consult_list():
         SIDO_LIST=SIDO_LIST,
         REFERRAL_TYPES=REFERRAL_TYPES,
         CONSULT_CHANNELS=CONSULT_CHANNELS,
-        RECOVERY_OPTIONS=["회복기", "비회복기", "요양"],
+        RECOVERY_OPTIONS=["회복기", "비회복기", "일반재활", "요양"],
     )
 
 

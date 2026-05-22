@@ -789,6 +789,8 @@ def _build_consult_where(*, date_from=None, date_to=None, insurance=None, q=None
             where.append("(c.admission_purpose LIKE '회복기재활%' OR c.admission_purpose = '회복기')")
         elif recovery == "비회복기":
             where.append("(c.admission_purpose LIKE '비회복기재활%' OR c.admission_purpose = '비회복기')")
+        elif recovery == "일반재활":
+            where.append("c.admission_purpose LIKE '일반재활%'")
         elif recovery == "요양":
             where.append("c.admission_purpose IN ('요양', '요양병원')")
     if consult_channel:

@@ -241,6 +241,7 @@
                     {% if rec.label == '회복기' %}<span class="badge rh-yes {% if rec.source == 'auto' %}rh-auto{% endif %}" title="{% if rec.source == 'auto' %}발병일 기준 자동 판정{% else %}입력값: {{ purpose }}{% endif %}">회복기{% if rec.source == 'auto' %}*{% endif %}</span>
                     {% elif rec.label == '비회복기' %}<span class="badge rh-no {% if rec.source == 'auto' %}rh-auto{% endif %}" title="{% if rec.source == 'auto' %}발병일 기준 자동 판정 (인정 기간 초과){% else %}입력값: {{ purpose }}{% endif %}">비회복기{% if rec.source == 'auto' %}*{% endif %}</span>
                     {% elif rec.label == '요양' %}<span class="badge rh-care">요양</span>
+                    {% elif rec.label == '일반재활' %}<span class="badge rh-general" title="일반재활 — 의료법상 회복기/비회복기 구분 대상 아님">일반재활</span>
                     {% elif rec.label == '기타' %}<span class="badge rh-other" title="입력값: {{ purpose }}">기타</span>
                     {% endif %}
                     {% if rec.label == '회복기' and rec.days_left is not none and rec.days_left >= 0 and rec.days_left <= 14 %}
@@ -389,6 +390,7 @@
 .rh-yes   { background: #dcfce7; color: #166534; }
 .rh-no    { background: #f1f5f9; color: #475569; }
 .rh-care  { background: #ffedd5; color: #9a3412; }
+.rh-general { background: #dbeafe; color: #1e40af; }
 .rh-other { background: #fee2e2; color: #991b1b; }
 /* 자동 판정값 — 별표(*) 표기 + 외곽선으로 구분 */
 .rh-auto  { box-shadow: inset 0 0 0 1px rgba(100,116,139,0.4); font-style: italic; }
