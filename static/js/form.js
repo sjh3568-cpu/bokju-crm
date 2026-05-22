@@ -477,21 +477,28 @@
     setTimeout(recomputeRecovery, 100);
     updateDiseaseGroupBadges();
 
-    // ─── 상담일자 → 요일 자동 표시 ───
+    // ─── 모든 날짜 입력칸 → 요일 자동 표시 (예: 2026-05-22(금)) ───
     (function() {
-        const dateEl = form.querySelector('[name="consultation.consult_date"]');
-        const wdEl = document.getElementById('consult-weekday');
-        if (!dateEl || !wdEl) return;
         const WD = ['일', '월', '화', '수', '목', '금', '토'];
-        function showWeekday() {
-            const m = String(dateEl.value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
-            if (!m) { wdEl.textContent = ''; return; }
-            const d = new Date(+m[1], +m[2] - 1, +m[3]);
-            // 예: 2026.05.11(수)
-            wdEl.textContent = isNaN(d.getTime()) ? '' : `${m[1]}.${m[2]}.${m[3]}(${WD[d.getDay()]})`;
-        }
-        ['change', 'input'].forEach(ev => dateEl.addEventListener(ev, showWeekday));
-        showWeekday();
+        form.querySelectorAll('input[type="date"]').forEach(dateEl => {
+            const tag = document.createElement('span');
+            tag.className = 'weekday-tag';
+            // .field 직속 입력칸은 라벨 끝에, 그 외(인라인)는 입력칸 바로 뒤에 표시
+            const field = dateEl.parentElement;
+            const label = field && field.classList.contains('field')
+                ? field.querySelector(':scope > label') : null;
+            if (label) label.appendChild(tag);
+            else dateEl.insertAdjacentElement('afterend', tag);
+            function show() {
+                const m = String(dateEl.value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+                if (!m) { tag.textContent = ''; return; }
+                const d = new Date(+m[1], +m[2] - 1, +m[3]);
+                tag.textContent = isNaN(d.getTime())
+                    ? '' : `${m[1]}-${m[2]}-${m[3]}(${WD[d.getDay()]})`;
+            }
+            ['change', 'input'].forEach(ev => dateEl.addEventListener(ev, show));
+            show();
+        });
     })();
 
     // ─── 상담 결과 ② 입원 진행: 입원보류/취소 사유칸·입원완료 입원일칸 토글 ───

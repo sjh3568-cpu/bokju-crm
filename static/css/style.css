@@ -208,9 +208,15 @@ fieldset.opt-box.box-half { flex: 1 1 calc(50% - 12px); min-width: 200px; }
 /* 폼 섹션 간격 */
 .form-section + .form-section { margin-top: 14px; }
 
-/* 라디오 + 인접 입력 — 라디오는 컨텐츠만큼, 입력은 나머지 폭 */
-.inline-pair { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+/* 라디오 + 인접 입력 — 라디오는 컨텐츠만큼, 입력은 나머지 폭.
+   라벨이 nowrap(항상 1줄)이라 flex-start면 라벨 아래 입력칸들이 같은 높이에서 시작.
+   필드에 부가 요소(모병원 빠른선택 등)가 붙어도 옆 칸 정렬이 깨지지 않는다. */
+.inline-pair { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-start; }
 .inline-pair .field { margin-bottom: 12px; }
+/* 인접 입력칸·라디오 박스 높이 통일 */
+.inline-pair .field-radio,
+.inline-pair .boxed-input { box-sizing: border-box; min-height: 37px; }
+.inline-pair .field-radio { display: flex; align-items: center; }
 .inline-pair .field.shrink { flex: 0 0 auto; }
 .inline-pair .field.grow { flex: 1 1 240px; min-width: 200px; }
 

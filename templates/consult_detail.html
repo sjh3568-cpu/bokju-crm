@@ -258,12 +258,6 @@
         <dt>상담일시</dt><dd>{{ c.consult_date|krdate_wd_full}} {{ c.consult_time or '' }}</dd>
         <dt>상담자</dt><dd>{{ c.counselor or '-' }}</dd>
         <dt>상담방법</dt><dd>{{ c.consult_channel or '-' }}</dd>
-        <dt>내원 유형</dt><dd>
-            {% set _at = c.admission_type or '일반' %}
-            {% if _at == '응급이송' %}<span class="badge" style="background:#fee2e2;color:#b91c1c">응급이송</span>
-            {% elif _at == '전원' %}<span class="badge" style="background:#e0e7ff;color:#3730a3">전원</span>
-            {% else %}일반{% endif %}
-        </dd>
         <dt>입원경로</dt><dd>
             {% if c.referral_source_type %}
                 {% for t in c.referral_source_type %}<span class="badge badge-facility">{{ t }}</span> {% endfor %}
@@ -285,6 +279,101 @@
         {% endif %}
     </dl>
 </div>
+
+<div class="card">
+    <h3>입원 중 이벤트 <span class="muted" style="font-size:0.66em">— 응급전원·모병원 외래치료 등 입원 기간 중 외부 의료기관 이용 내역</span></h3>
+    <div class="tbl-wrap" id="ae-table-wrap" {% if not admission_events %}hidden{% endif %}>
+        <table class="tbl tbl-compact">
+            <thead><tr><th>발생일</th><th>유형</th><th>의료기관</th><th>메모</th><th></th></tr></thead>
+            <tbody>
+                {% for e in admission_events %}
+                <tr data-aevent="{{ e.id }}">
+                    <td class="nowrap">{% if e.event_date %}{{ e.event_date|krdate_wd }}{% else %}-{% endif %}</td>
+                    <td class="nowrap"><span class="ae-type ae-{{ {'응급전원':'emerg','모병원 외래치료':'visit','복귀':'back'}.get(e.event_type,'etc') }}">{{ e.event_type or '' }}</span></td>
+                    <td>{{ e.hospital or '' }}</td>
+                    <td>{{ e.memo or '' }}</td>
+                    <td class="nowrap"><button type="button" class="btn btn-secondary ae-del" data-aevent="{{ e.id }}">삭제</button></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="empty" id="ae-empty" {% if admission_events %}hidden{% endif %}>기록된 입원 중 이벤트가 없습니다.</div>
+    <div class="ae-add" data-cid="{{ c.id }}">
+        <select id="ae-type">
+            <option value="">유형 선택</option>
+            {% for t in ADMISSION_EVENT_TYPES %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+        </select>
+        <input type="date" id="ae-date" title="발생일">
+        <input type="text" id="ae-hospital" placeholder="의료기관 (선택)">
+        <input type="text" id="ae-memo" placeholder="메모 (선택)">
+        <button type="button" class="btn btn-primary btn-sm" id="ae-add-btn">+ 추가</button>
+        <span class="ae-msg muted" id="ae-msg"></span>
+    </div>
+</div>
+
+<style>
+.ae-type { display:inline-block; padding:1px 8px; border-radius:9px;
+    font-size:0.76em; font-weight:600; }
+.ae-type.ae-emerg { background:#fee2e2; color:#b91c1c; }
+.ae-type.ae-visit { background:#dbeafe; color:#1e40af; }
+.ae-type.ae-back  { background:#dcfce7; color:#166534; }
+.ae-type.ae-etc   { background:#f1f5f9; color:#475569; }
+.ae-add { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; align-items:center; }
+.ae-add select, .ae-add input[type="date"], .ae-add input[type="text"] {
+    padding:5px 8px; border:1px solid var(--border); border-radius:6px;
+    font-family:inherit; font-size:0.85em; }
+.ae-add #ae-hospital { flex:1 1 150px; min-width:120px; }
+.ae-add #ae-memo { flex:2 1 200px; min-width:140px; }
+.ae-del { padding:2px 8px; font-size:0.76em; }
+.ae-msg { font-size:0.82em; }
+.ae-msg.err { color:var(--danger); }
+.ae-msg.ok { color:var(--success); }
+</style>
+<script>
+(function() {
+    const addBtn = document.getElementById('ae-add-btn');
+    if (!addBtn) return;
+    const cid = document.querySelector('.ae-add').dataset.cid;
+    const msg = document.getElementById('ae-msg');
+    addBtn.addEventListener('click', async () => {
+        const payload = {
+            event_type: document.getElementById('ae-type').value,
+            event_date: document.getElementById('ae-date').value,
+            hospital: document.getElementById('ae-hospital').value.trim(),
+            memo: document.getElementById('ae-memo').value.trim(),
+        };
+        if (!payload.event_type) {
+            msg.className = 'ae-msg err'; msg.textContent = '이벤트 유형을 선택하세요.'; return;
+        }
+        msg.className = 'ae-msg muted'; msg.textContent = '저장 중...';
+        addBtn.disabled = true;
+        try {
+            const r = await fetch(`/api/consult/${cid}/admission-event`, {
+                method: 'POST', headers: {'content-type': 'application/json'},
+                body: JSON.stringify(payload),
+            });
+            const j = await r.json();
+            if (!r.ok) throw new Error(j.error || r.status);
+            location.reload();
+        } catch (e) {
+            msg.className = 'ae-msg err'; msg.textContent = '추가 실패: ' + e.message;
+            addBtn.disabled = false;
+        }
+    });
+    document.querySelectorAll('.ae-del').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            if (!confirm('이 입원 중 이벤트를 삭제할까요?')) return;
+            try {
+                const r = await fetch(`/api/admission-event/${btn.dataset.aevent}`,
+                                      { method: 'DELETE' });
+                if (!r.ok) throw new Error((await r.json()).error || r.status);
+                location.reload();
+            } catch (e) { alert('삭제 실패: ' + e.message); }
+        });
+    });
+})();
+</script>
 
 <div class="card">
     <h3>환자 기본정보</h3>

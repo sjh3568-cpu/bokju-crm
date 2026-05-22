@@ -25,7 +25,7 @@ from auth import (
 from config import (
     ACTIVITY_ACTIVE_OPTIONS, ACTIVITY_DIAPER_OPTIONS, ACTIVITY_OTHERS_OPTIONS,
     ACTIVITY_WHEELCHAIR_OPTIONS, ADMISSION_DOCS, ADMISSION_STATUSES,
-    ADMISSION_TYPES, ATTENDING_DOCTORS,
+    ADMISSION_EVENT_TYPES, ATTENDING_DOCTORS,
     BED_OPTIONS, CAREGIVER_OPTIONS,
     CONSCIOUSNESS_MAIN_OPTIONS, CONSULT_CHANNELS, CONVERSATION_LEVEL_OPTIONS,
     CONSULT_RESULTS, CONSULT_RESULT_REASON_LABELS, REJECTION_REASONS,
@@ -102,7 +102,7 @@ def _inject_globals():
         "current_user": current_user(),
         "INSURANCE_TYPES": INSURANCE_TYPES,
         "CONSULT_CHANNELS": CONSULT_CHANNELS,
-        "ADMISSION_TYPES": ADMISSION_TYPES,
+        "ADMISSION_EVENT_TYPES": ADMISSION_EVENT_TYPES,
         "ATTENDING_DOCTORS": ATTENDING_DOCTORS,
         "ADMISSION_STATUSES": ADMISSION_STATUSES,
         "CONSULT_RESULTS": CONSULT_RESULTS,
@@ -666,7 +666,8 @@ def consult_detail(cid):
         ip=request.remote_addr,
     )
     history = models.patient_consultations(c["patient_id"])
-    return render_template("consult_detail.html", c=c, history=history)
+    return render_template("consult_detail.html", c=c, history=history,
+                           admission_events=models.list_admission_events(cid))
 
 
 @app.route("/consult/<int:cid>/edit")
@@ -727,7 +728,7 @@ def consult_csv():
         "상담일", "상담시각", "환자명", "성별", "나이", "블랙리스트",
         "거주시도", "거주시군구", "주소", "보험유형",
         "보호자", "관계", "연락처",
-        "상담방법", "내원유형", "유입경로(상위)", "세부경로",
+        "상담방법", "유입경로(상위)", "세부경로",
         "모병원", "병명", "발병일", "회복기",
         "상담결과", "상담결과사유", "입원진행",
         "주치의", "호실", "입원예정일", "입원완료일", "상담자",
@@ -752,7 +753,6 @@ def consult_csv():
             r.get("guardian_relation") or "",
             r.get("guardian_phone") or "",
             r.get("consult_channel") or "",
-            r.get("admission_type") or "일반",
             _csv_list(r.get("referral_source_type")),
             _csv_list(r.get("referral_source_detail")),
             r.get("source_hospital") or "",
@@ -1212,6 +1212,46 @@ def api_communication_delete(comm_id):
     return jsonify({"ok": True})
 
 
+@app.route("/api/consult/<int:cid>/admission-event", methods=["POST"])
+@login_required
+def api_admission_event_create(cid):
+    """입원 중 이벤트 1건 추가 (응급전원·모병원 외래치료 등)."""
+    if not models.get_consultation(cid):
+        return jsonify({"error": "상담을 찾을 수 없습니다."}), 404
+    payload = request.get_json(silent=True) or {}
+    event_type = (payload.get("event_type") or "").strip()
+    if event_type not in ADMISSION_EVENT_TYPES:
+        return jsonify({"error": "이벤트 유형을 선택하세요."}), 400
+    event_date = (payload.get("event_date") or "").strip()
+    if event_date:
+        try:
+            datetime.strptime(event_date, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"error": "발생일 형식 오류"}), 400
+    eid = models.create_admission_event(
+        consultation_id=cid, event_type=event_type,
+        event_date=event_date or None,
+        hospital=(payload.get("hospital") or "").strip() or None,
+        memo=(payload.get("memo") or "").strip() or None,
+        created_by=g.user.get("display_name"),
+    )
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="add_admission_event", target_type="consultation", target_id=cid,
+        detail=event_type, ip=request.remote_addr,
+    )
+    return jsonify({"ok": True, "id": eid})
+
+
+@app.route("/api/admission-event/<int:event_id>", methods=["DELETE"])
+@login_required
+def api_admission_event_delete(event_id):
+    if not models.get_admission_event(event_id):
+        return jsonify({"error": "not found"}), 404
+    models.delete_admission_event(event_id)
+    return jsonify({"ok": True})
+
+
 @app.route("/api/webhook/kakao", methods=["POST"])
 def api_webhook_kakao():
     """카카오 비즈채널 인바운드 webhook 수신 자리 — 구조만 (비즈채널 연동 시 작동).
@@ -1392,7 +1432,6 @@ def _list_filters_from_request():
         "counselor": request.args.get("counselor") or None,
         "admission_status": request.args.get("admission_status") or None,
         "consult_result": request.args.get("consult_result") or None,
-        "admission_type": request.args.get("admission_type") or None,
         "blacklist": "1" if request.args.get("blacklist") else None,
         "disease_group": request.args.get("disease_group") or None,
         "residence_sido": request.args.get("residence_sido") or None,
@@ -1554,10 +1593,6 @@ def _validate_consult_payload(payload, *, require_patient):
             return "허용되지 않은 입원취소 사유입니다."
         if not reason and not detail:
             return "입원취소 사유를 입력하세요."
-    # 내원 유형 — 화이트리스트
-    atype = (c.get("admission_type") or "").strip()
-    if atype and atype not in ADMISSION_TYPES:
-        return "허용되지 않은 내원 유형입니다."
     return None
 
 

@@ -233,6 +233,20 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_doc_patient ON patient_documents(patient_id);
         CREATE INDEX IF NOT EXISTS idx_doc_status ON patient_documents(status);
+
+        -- 입원 중 이벤트 — 입원완료 환자가 입원 기간 중 응급전원·모병원 외래치료
+        -- 등으로 외부 의료기관을 다녀온 내역. 상담 1건(입원 1건)에 N개.
+        CREATE TABLE IF NOT EXISTS admission_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            consultation_id INTEGER NOT NULL REFERENCES consultations(id) ON DELETE CASCADE,
+            event_type TEXT,
+            event_date DATE,
+            hospital TEXT,
+            memo TEXT,
+            created_by TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_admevent_consult ON admission_events(consultation_id);
     """)
 
     # ─── 마이그레이션: 종이 상담일지 항목 매핑 ───
@@ -1286,9 +1300,8 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
         # 진행 단계는 정해진 순서 그대로 유지 (도넛/막대 안정 표기). 퇴원완료 포함.
         "by_status": [{"label": s, "count": status_counts[s]}
                       for s in (["미정"] + ADMISSION_STATUS_ALL)],
-        # 상담 진행 단계 (Tier 1) + 내원 유형
+        # 상담 진행 단계 (Tier 1)
         "by_consult_result": [{"label": s, "count": result_counts[s]} for s in CONSULT_RESULTS],
-        "by_admission_type": _sort_desc(_count_simple(rows, "admission_type")),
         "by_source_hospital": by_hospital,
         "by_rejection_reason": by_reason,
         "by_referral_type": _sort_desc(_count_json_multi(rows, "referral_source_type")),
@@ -1715,6 +1728,50 @@ def update_communication(comm_id, **fields):
 def delete_communication(comm_id):
     conn = get_db()
     conn.execute("DELETE FROM communications WHERE id = ?", (comm_id,))
+    conn.commit()
+    conn.close()
+
+
+# ─── 입원 중 이벤트 (응급전원·모병원 외래치료 등) ───
+
+def create_admission_event(*, consultation_id, event_type=None, event_date=None,
+                           hospital=None, memo=None, created_by=None) -> int:
+    conn = get_db()
+    cur = conn.execute(
+        """INSERT INTO admission_events
+           (consultation_id, event_type, event_date, hospital, memo, created_by)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (consultation_id, event_type, event_date, hospital, memo, created_by),
+    )
+    eid = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return eid
+
+
+def list_admission_events(consultation_id):
+    """상담(입원) 1건의 입원 중 이벤트 — 발생일 오름차순."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM admission_events WHERE consultation_id = ? "
+        "ORDER BY (event_date IS NULL OR event_date = '') ASC, event_date ASC, id ASC",
+        (consultation_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_admission_event(event_id):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM admission_events WHERE id = ?",
+                       (event_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def delete_admission_event(event_id):
+    conn = get_db()
+    conn.execute("DELETE FROM admission_events WHERE id = ?", (event_id,))
     conn.commit()
     conn.close()
 

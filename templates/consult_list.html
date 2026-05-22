@@ -85,15 +85,6 @@
         </select>
     </div>
     <div class="field">
-        <label>내원 유형</label>
-        <select name="admission_type">
-            <option value="">전체</option>
-            {% for t in ADMISSION_TYPES %}
-            <option value="{{ t }}" {% if filters.admission_type == t %}selected{% endif %}>{{ t }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    <div class="field">
         <label>상담 결과</label>
         <select name="consult_result">
             <option value="">전체</option>
@@ -160,7 +151,6 @@
                 {{ sort_th('hospital', '모병원') }}
                 <th>병명</th>
                 <th>유입경로</th>
-                <th>내원유형</th>
                 {{ sort_th('channel', '상담방법') }}
                 <th>회복기대상</th>
                 {{ sort_th('status', '상담결과 / 입원진행') }}
@@ -226,12 +216,6 @@
                 </td>
                 <td class="referral-cell" title="{% if r.referral_source_type %}{{ r.referral_source_type|join('/') }}{% endif %}{% if r.referral_source_detail %} · {{ r.referral_source_detail|join(', ') }}{% endif %}">
                     {% if r.referral_source_type %}<span class="muted-sm">{{ r.referral_source_type|join('/') }}</span>{% endif %}{% if r.referral_source_detail %} {{ r.referral_source_detail|join(',') }}{% endif %}
-                </td>
-                <td class="nowrap atype-cell">
-                    {% set at = r.admission_type or '일반' %}
-                    {% if at == '응급이송' %}<span class="atype-badge at-emerg">응급이송</span>
-                    {% elif at == '전원' %}<span class="atype-badge at-transfer">전원</span>
-                    {% else %}<span class="muted-sm">일반</span>{% endif %}
                 </td>
                 <td class="nowrap">
                     {% if r.consult_channel == '전화상담' %}전화{% elif r.consult_channel == '내원상담' %}내원{% else %}{{ r.consult_channel or '' }}{% endif %}
@@ -415,12 +399,6 @@
 .status-cell .adm-line { margin-top: 3px; }
 .cr-reason { display:block; font-size:0.74em; color: var(--text-light);
     max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-
-/* 내원 유형 배지 (1번 요청) */
-.atype-badge { display:inline-block; padding:1px 7px; border-radius:9px;
-    font-size:0.74em; font-weight:600; }
-.atype-badge.at-emerg    { background:#fee2e2; color:#b91c1c; }
-.atype-badge.at-transfer { background:#e0e7ff; color:#3730a3; }
 
 /* 블랙리스트 (4번 요청) */
 .bl-mark { display:inline-block; padding:0 5px; margin-right:3px; background:#1f2937;

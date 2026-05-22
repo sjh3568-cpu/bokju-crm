@@ -59,12 +59,8 @@
     <div class="field-row cols-3">
         <div class="field">
             <label>상담일자 <span class="req">*</span></label>
-            <div class="date-combo">
-                <input type="text" id="consult-date-display" class="date-combo-display" readonly
-                       placeholder="날짜 선택">
-                <input type="date" name="consultation.consult_date" id="consult-date-real"
-                       value="{{ (consultation.consult_date if is_edit else now().strftime('%Y-%m-%d')) }}" required>
-            </div>
+            <input type="date" name="consultation.consult_date" id="consult-date-real"
+                   value="{{ (consultation.consult_date if is_edit else now().strftime('%Y-%m-%d')) }}" required>
         </div>
         <div class="field">
             <label>시각</label>
@@ -176,25 +172,13 @@
     </div>
 
     {% set referral_set = (consultation.referral_source_detail if is_edit else []) %}
-    <div class="field-row">
-        <div class="field">
-            <label>상담방법</label>
-            <div class="field-radio">
-                {% for ch in CONSULT_CHANNELS %}
-                <label><input type="radio" name="consultation.consult_channel" value="{{ ch }}"
-                              {% if is_edit and consultation.consult_channel == ch %}checked{% endif %}> {{ ch }}</label>
-                {% endfor %}
-            </div>
-        </div>
-        <div class="field">
-            <label>내원 유형 <span class="muted" style="font-size:0.85em">— 응급이송·전원 환자 구분</span></label>
-            <div class="field-radio">
-                {% set _atype = (consultation.admission_type if is_edit and consultation.admission_type else '일반') %}
-                {% for t in ADMISSION_TYPES %}
-                <label><input type="radio" name="consultation.admission_type" value="{{ t }}"
-                              {% if _atype == t %}checked{% endif %}> {{ t }}</label>
-                {% endfor %}
-            </div>
+    <div class="field">
+        <label>상담방법</label>
+        <div class="field-radio">
+            {% for ch in CONSULT_CHANNELS %}
+            <label><input type="radio" name="consultation.consult_channel" value="{{ ch }}"
+                          {% if is_edit and consultation.consult_channel == ch %}checked{% endif %}> {{ ch }}</label>
+            {% endfor %}
         </div>
     </div>
 
@@ -369,15 +353,40 @@
     <div class="field">
         <label>병명 <span id="dx-group-badges" class="dx-grp-badges"></span></label>
         <details class="rec-guide">
-            <summary>ℹ 의료법 회복기 인정 기준 — 발병/수술 후 며칠 이내</summary>
-            <ul class="rec-guide-list">
-                <li><b>중추신경계</b> 뇌출혈·뇌경색·척수손상·마비 등 — <b>90일</b></li>
-                <li><b>근골격계 골절</b> 고관절·대퇴·골반·절단·슬관절 — <b>30일</b></li>
-                <li><b>골유합 지연</b> — <b>60일</b></li>
-                <li><b>비사용증후군</b> 호흡·심장질환·다제내성균·파킨슨(신규)·길랑바레 등 — <b>60일</b></li>
+            <summary>ℹ 재활의료기관 환자구성의 기준 (회복기 입원 기준)</summary>
+            <table class="rec-guide-tbl">
+                <thead>
+                    <tr>
+                        <th>대상<br>환자군</th>
+                        <th>입원시기<br><span>발병/수술 후</span></th>
+                        <th>종료일<br><span>입원일로부터</span></th>
+                        <th>기능평가항목 및 점수</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td>가 및 나</td><td>90일 내</td><td>180일 이내</td><td>-</td></tr>
+                    <tr><td>다-1</td><td>30일 내</td><td>30일 이내</td><td>-</td></tr>
+                    <tr><td>다-2</td><td>60일 내</td><td>60일 이내</td><td></td></tr>
+                    <tr><td>다-3</td><td>첫 번째 수술일로부터 30일 내</td><td>30일 이내</td><td></td></tr>
+                    <tr><td>라</td><td>60일 내</td><td>60일 이내</td><td>-</td></tr>
+                    <tr><td>마</td><td>60일 내</td><td>60일 이내</td>
+                        <td>① 도수근력검사 48점 미만<br>② 일상생활동작검사 80점 이하 또는
+                            버그 균형검사 40점 이하<br><span class="rg-em">①②를 모두 충족하여야 함</span></td></tr>
+                </tbody>
+            </table>
+            <ul class="rec-guide-notes">
+                <li><b>입원시기</b> = 발병 후 해당 의료기관 입원까지 경과기간.
+                    <b>종료일</b> = 입원기간 중 환자구성에 포함될 수 있는 기간의 종료일.</li>
+                <li>가·나 환자 중 의학적 판단으로 급성기 치료가 추가로 필요한 등 불가피한 사유로
+                    전원할 수 없으면, 입원시기가 90일을 초과해도 발병/수술일로부터
+                    <b>270일 이내</b>로 적용 (진료기록부 등 객관적 자료 첨부).</li>
+                <li>다-1 중 골유합을 위한 소요기간이 필요해 30일 내 입원이 불가능하면
+                    <b>다-2의 입원시기</b>를 적용.</li>
+                <li>다-1 중 골절 내고정술·고관절 전치환술을 시행한 환자는 <b>다-2의 종료일</b>을
+                    적용 (30일 이상 입원 사유 객관적 자료 첨부).</li>
+                <li>다-3(양측 슬관절치환술 — 단측 또는 양측 복잡수술)은 동일 입원기간 내
+                    <b>첫 번째 수술일로부터 30일 이내</b> 입원 (객관적 자료 첨부).</li>
             </ul>
-            <p class="rec-guide-note">발병일~입원(예정)일 차이가 인정 기간 이내면 회복기.
-                여러 병명 매칭 시 가장 긴 기간 적용.</p>
         </details>
         <div class="option-group">
             {% for group_name, items in DISEASES_LAYOUT.items() %}
@@ -534,7 +543,7 @@
 
     <div class="field">
         <label>식사종류</label>
-        <div class="checkbox-grid">
+        <div class="checkbox-grid checkbox-flow">
             {% for it in DIET_LAYOUT %}
             {% if it.kind == 'checkbox' %}
             <label><input type="checkbox" name="consultation.diet_types[]" value="{{ it.value }}"
@@ -749,9 +758,17 @@
 .rec-guide { margin: 4px 0 8px; font-size: 0.82em; }
 .rec-guide summary { cursor: pointer; color: #1e40af; font-weight: 600;
     padding: 3px 0; user-select: none; }
-.rec-guide-list { margin: 4px 0; padding-left: 18px; line-height: 1.7; }
-.rec-guide-list b { color: #0f172a; }
-.rec-guide-note { margin: 4px 0 2px; color: #64748b; }
+.rec-guide-tbl { width: 100%; border-collapse: collapse; margin: 6px 0; }
+.rec-guide-tbl th, .rec-guide-tbl td {
+    border: 1px solid #d1d5db; padding: 4px 8px; text-align: center;
+    vertical-align: middle; }
+.rec-guide-tbl th { background: #eef2ff; color: #1e3a8a; font-weight: 700; }
+.rec-guide-tbl th span { font-weight: 500; color: #6b7280; font-size: 0.9em; }
+.rec-guide-tbl td:last-child { text-align: left; }
+.rec-guide-tbl .rg-em { color: #b91c1c; font-weight: 600; }
+.rec-guide-notes { margin: 4px 0 2px; padding-left: 18px; line-height: 1.65;
+    color: #64748b; }
+.rec-guide-notes b { color: #0f172a; }
 /* 병명 그룹 자동 추론 배지 */
 .dx-grp-badges { display: inline-flex; gap: 4px; vertical-align: middle; }
 .dx-grp-badge { padding: 1px 8px; border-radius: 9px; font-size: 0.7em;
