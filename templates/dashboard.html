@@ -332,8 +332,7 @@
     </div>
     <div class="dash-filter-row">
         <div class="dash-status-tabs" role="tablist" aria-label="입원 진행 상태">
-            <button type="button" class="dash-status-btn active" data-status="all" aria-pressed="true">전체 <span>{{ summary.admission_week or 0 }}</span></button>
-            <button type="button" class="dash-status-btn" data-status="planned" aria-pressed="false">입원예정 <span>{{ summary.admission_planned_week or 0 }}</span></button>
+            <button type="button" class="dash-status-btn active" data-status="planned" aria-pressed="true">입원예정 <span>{{ summary.admission_planned_week or 0 }}</span></button>
             <button type="button" class="dash-status-btn" data-status="completed" aria-pressed="false">입원완료 <span>{{ summary.admission_completed_week or 0 }}</span></button>
         </div>
         <div class="dash-view-tabs" role="tablist" aria-label="입원 환자 현황 보기">
@@ -342,11 +341,7 @@
             <button type="button" class="dash-view-btn" data-view="ward" aria-pressed="false">병동별</button>
         </div>
     </div>
-    {{ admission_group_panel('all', 'counselor', admission_group_all['counselor'], '상담사별로 볼 입원 예정/완료 환자가 없습니다.', True) }}
-    {{ admission_group_panel('all', 'doctor', admission_group_all['doctor'], '주치의별로 볼 입원 예정/완료 환자가 없습니다.') }}
-    {{ admission_group_panel('all', 'ward', admission_group_all['ward'], '병동별로 볼 입원 예정/완료 환자가 없습니다.') }}
-
-    {{ admission_group_panel('planned', 'counselor', admission_group_planned['counselor'], '상담사별로 볼 입원 예정 환자가 없습니다.') }}
+    {{ admission_group_panel('planned', 'counselor', admission_group_planned['counselor'], '상담사별로 볼 입원 예정 환자가 없습니다.', True) }}
     {{ admission_group_panel('planned', 'doctor', admission_group_planned['doctor'], '주치의별로 볼 입원 예정 환자가 없습니다.') }}
     {{ admission_group_panel('planned', 'ward', admission_group_planned['ward'], '병동별로 볼 입원 예정 환자가 없습니다.') }}
 
@@ -727,7 +722,7 @@
 </style>
 <script>
 function syncAdmissionPanels() {
-    const status = document.querySelector('.dash-status-btn.active')?.dataset.status || 'all';
+    const status = document.querySelector('.dash-status-btn.active')?.dataset.status || 'planned';
     const view = document.querySelector('.dash-view-btn.active')?.dataset.view || 'counselor';
     document.querySelectorAll('.dash-admission-view').forEach((panel) => {
         panel.classList.toggle(
