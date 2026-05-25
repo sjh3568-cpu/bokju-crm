@@ -175,8 +175,12 @@
                 <td class="nowrap">{{ r.consult_date|krdate_wd }}</td>
                 <td class="patient-cell">
                     {% if r.blacklist %}<span class="bl-mark" title="블랙리스트 환자{% if r.blacklist_reason %} — {{ r.blacklist_reason }}{% endif %}">⚠블랙</span>{% endif %}
-                    <a href="/consult/{{ r.id }}" class="patient-link"
-                       title="{% if r.prior_consult_count > 0 %}이전 상담 {{ r.prior_consult_count }}회{% else %}첫 상담{% endif %}{% if r.homonym_count > 1 %} · 동명이인 {{ r.homonym_count }}명{% endif %}">{{ r.patient_name }}</a>{% if r.homonym_count > 1 %}<span class="warn-mark" title="동명이인 {{ r.homonym_count }}명 — 보호자 전화로 구분">⚠</span>{% endif %}
+                    <a href="/consult/{{ r.id }}" class="patient-link mc-trigger"
+                       data-pid="{{ r.patient_id }}"
+                       aria-describedby="mc-popover">{{ r.patient_name }}</a>{% if r.homonym_count > 1 %}<button type="button" class="warn-mark namesake-btn"
+                       data-name="{{ r.patient_name }}"
+                       data-count="{{ r.homonym_count }}"
+                       title="동명이인 {{ r.homonym_count }}명 — 클릭 시 보호자 전화 비교">⚠</button>{% endif %}
                     {% if r.prior_consult_count > 0 %}<span class="repeat-mark" title="이전 상담 {{ r.prior_consult_count }}회">↻{{ r.prior_consult_count }}</span>{% endif %}
                 </td>
                 <td class="nowrap">{% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% endif %}</td>
@@ -324,6 +328,19 @@
 </nav>
 {% endif %}
 
+<!-- 환자 미니카드 (hover) — 공유 1개 -->
+<div id="mc-popover" class="mc-popover hide" role="tooltip" aria-hidden="true"></div>
+
+<!-- 동명이인 비교 모달 -->
+<div id="namesake-modal" class="ns-modal hide" role="dialog" aria-modal="true" aria-labelledby="ns-title">
+    <div class="ns-modal-backdrop"></div>
+    <div class="ns-modal-content">
+        <button type="button" class="ns-close" aria-label="닫기">×</button>
+        <h3 id="ns-title">동명이인 비교</h3>
+        <div class="ns-modal-body">불러오는 중…</div>
+    </div>
+</div>
+
 <style>
 /* 상담목록은 17컬럼이라 base.html의 1200px 제한 풀고 전체 화면 활용 */
 body .container { max-width: none; padding: 0 12px; }
@@ -379,8 +396,68 @@ body .container { max-width: none; padding: 0 12px; }
 
 .patient-cell .patient-link { font-weight: 600; color: var(--primary); }
 .patient-cell .meta { color: var(--text-light); font-size: 0.85em; margin-left: 4px; }
-.patient-cell .warn-mark { color: #dc2626; margin-left: 2px; cursor: help; font-size: 0.9em; }
+/* warn-mark — button 형태(동명이인 비교 트리거) */
+.patient-cell .warn-mark { display: inline-block; margin-left: 2px; padding: 0;
+    background: none; border: none; cursor: pointer; color: #dc2626; font-size: 0.9em;
+    font-family: inherit; line-height: 1; }
+.patient-cell .warn-mark:hover { color: #b91c1c; transform: scale(1.15); }
 .patient-cell .repeat-mark { display: inline-block; margin-left: 4px; padding: 0 5px; background: #fef3c7; color: #92400e; border-radius: 8px; font-size: 0.7em; vertical-align: middle; cursor: help; }
+
+/* 환자 미니카드 (hover) */
+.mc-popover { position: absolute; z-index: 1000; min-width: 240px; max-width: 320px;
+    background: #fff; border: 1px solid #cbd5e1; border-radius: 8px;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.14); padding: 10px 12px; font-size: 0.82em;
+    line-height: 1.5; color: var(--text); pointer-events: auto;
+    transition: opacity 0.12s ease;
+}
+.mc-popover.hide { display: none; }
+.mc-popover.loading { opacity: 0.6; }
+.mc-popover .mc-name { font-size: 1.05em; font-weight: 700; color: var(--primary); margin-bottom: 4px; }
+.mc-popover .mc-bl { display: inline-block; margin-left: 6px; padding: 1px 6px;
+    background: #1f2937; color: #fecaca; border-radius: 6px; font-size: 0.75em; font-weight: 700; }
+.mc-popover .mc-row { display: flex; gap: 6px; padding: 1px 0; }
+.mc-popover .mc-row .mc-label { color: var(--text-light); min-width: 56px; font-size: 0.92em; }
+.mc-popover .mc-row .mc-val { flex: 1; word-break: break-word; }
+.mc-popover .mc-sep { border-top: 1px dashed #e2e8f0; margin: 6px 0; }
+.mc-popover .mc-last { background: #f8fafc; border-radius: 6px; padding: 6px 8px; margin-top: 4px; }
+.mc-popover .mc-last-head { font-size: 0.82em; color: var(--text-light); margin-bottom: 2px; }
+.mc-popover .mc-empty { color: var(--text-light); font-style: italic; padding: 4px 0; }
+.mc-popover .mc-link { display: block; margin-top: 6px; text-align: right;
+    color: var(--primary); text-decoration: none; font-weight: 600; font-size: 0.92em; }
+.mc-popover .mc-link:hover { text-decoration: underline; }
+.mc-popover .mc-days-recent { color: #16a34a; font-weight: 600; }
+.mc-popover .mc-days-old { color: #94a3b8; }
+@media print { .mc-popover { display: none !important; } }
+
+/* 동명이인 비교 모달 */
+.ns-modal { position: fixed; inset: 0; z-index: 2000; display: flex;
+    align-items: center; justify-content: center; }
+.ns-modal.hide { display: none; }
+.ns-modal-backdrop { position: absolute; inset: 0; background: rgba(15,23,42,0.55); }
+.ns-modal-content { position: relative; background: #fff; border-radius: 10px;
+    max-width: 920px; width: calc(100% - 40px); max-height: 85vh; overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3); display: flex; flex-direction: column; }
+.ns-modal-content h3 { margin: 0; padding: 14px 18px; border-bottom: 1px solid #e2e8f0;
+    font-size: 1.1em; }
+.ns-close { position: absolute; top: 8px; right: 12px; background: none; border: none;
+    font-size: 1.6em; line-height: 1; cursor: pointer; color: #64748b; padding: 4px 10px; }
+.ns-close:hover { color: #0f172a; }
+.ns-modal-body { padding: 14px 18px; overflow: auto; }
+.ns-modal-body table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
+.ns-modal-body th, .ns-modal-body td { padding: 6px 8px; text-align: left;
+    border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+.ns-modal-body th { background: #f8fafc; font-weight: 600; font-size: 0.92em;
+    border-bottom: 2px solid #e2e8f0; }
+.ns-modal-body td.ns-phone { font-feature-settings: "tnum"; font-weight: 600; color: #0f172a; }
+.ns-modal-body td.ns-empty { color: #94a3b8; }
+.ns-modal-body tr.ns-bl-row { background: #fff7ed; }
+.ns-modal-body tr.ns-bl-row:hover { background: #ffedd5; }
+.ns-modal-body tr:hover { background: #fafbfc; }
+.ns-bl-badge { display:inline-block; padding:0 5px; background:#1f2937; color:#fecaca;
+    border-radius:6px; font-size:0.78em; font-weight:700; }
+.ns-modal-body .ns-link { color: var(--primary); text-decoration: none; font-weight: 600; }
+.ns-modal-body .ns-link:hover { text-decoration: underline; }
+.ns-empty-state { color: var(--text-light); padding: 20px 0; text-align: center; }
 
 .guardian-cell .phone { font-size: 0.92em; color: var(--text); font-feature-settings: "tnum"; }
 
@@ -761,6 +838,227 @@ body .container { max-width: none; padding: 0 12px; }
             location.reload();
         });
     }
+
+    // ─── 환자 미니카드 (hover) ───
+    const mcPop = document.getElementById('mc-popover');
+    const mcCache = new Map();      // pid -> data
+    const mcInflight = new Map();   // pid -> Promise
+    let mcShowTimer = null;
+    let mcHideTimer = null;
+    let mcCurrent = null;           // 현재 보여주는 anchor 요소
+
+    function fmtDaysAgo(n) {
+        if (n === null || n === undefined) return '';
+        if (n === 0) return '오늘';
+        if (n === 1) return '어제';
+        if (n < 7)  return n + '일 전';
+        if (n < 30) return n + '일 전';
+        if (n < 365) return Math.round(n / 30) + '개월 전';
+        return Math.round(n / 365 * 10) / 10 + '년 전';
+    }
+    function escHtml(s) {
+        if (s === null || s === undefined) return '';
+        return String(s).replace(/[&<>"']/g, ch => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[ch]));
+    }
+    function genderLabel(g) {
+        if (g === 'M') return '남'; if (g === 'F') return '여'; return '';
+    }
+    function residence(d) {
+        const a = (d.residence_sido || '').replace('특별시', '').replace('광역시', '').replace('특별자치도','').replace('특별자치시','');
+        const b = d.residence_sigungu || '';
+        return (a + ' ' + b).trim();
+    }
+    function renderMinicard(d) {
+        const lastDays = d.last_days_ago;
+        const daysCls = lastDays !== null && lastDays < 30 ? 'mc-days-recent' : 'mc-days-old';
+        const lastSection = d.last ? `
+            <div class="mc-last">
+                <div class="mc-last-head">최근 상담 <span class="${daysCls}">${escHtml(fmtDaysAgo(lastDays))}</span> · ${escHtml(d.last.consult_date || '')}</div>
+                ${d.last.counselor ? `<div class="mc-row"><span class="mc-label">상담자</span><span class="mc-val">${escHtml(d.last.counselor)}</span></div>` : ''}
+                ${d.last.consult_channel ? `<div class="mc-row"><span class="mc-label">상담방법</span><span class="mc-val">${escHtml(d.last.consult_channel)}</span></div>` : ''}
+                ${d.last.consult_result ? `<div class="mc-row"><span class="mc-label">상담결과</span><span class="mc-val">${escHtml(d.last.consult_result)}${d.last.consult_result_reason ? ' — ' + escHtml(d.last.consult_result_reason) : ''}</span></div>` : ''}
+                ${d.last.admission_status ? `<div class="mc-row"><span class="mc-label">입원진행</span><span class="mc-val">${escHtml(d.last.admission_status)}</span></div>` : ''}
+                ${d.last.source_hospital ? `<div class="mc-row"><span class="mc-label">모병원</span><span class="mc-val">${escHtml(d.last.source_hospital)}</span></div>` : ''}
+            </div>` : '<div class="mc-empty">상담 이력 없음</div>';
+        const blBadge = d.blacklist ? `<span class="mc-bl" title="${escHtml(d.blacklist_reason || '')}">⚠ 블랙</span>` : '';
+        const guardian = (d.guardian_name || d.guardian_phone) ? `
+            <div class="mc-row"><span class="mc-label">보호자</span><span class="mc-val">${escHtml(d.guardian_name || '')}${d.guardian_relation ? ' (' + escHtml(d.guardian_relation) + ')' : ''}${d.guardian_phone ? ' · ' + escHtml(d.guardian_phone) : ''}</span></div>` : '';
+        return `
+            <div class="mc-name">${escHtml(d.name)} ${blBadge}</div>
+            <div class="mc-row"><span class="mc-label">상담횟수</span><span class="mc-val"><strong>${d.total_consultations}</strong>회${d.prior_count > 0 ? ` (이전 ${d.prior_count}회)` : ' (첫 상담)'}</span></div>
+            ${d.gender || d.insurance_type ? `<div class="mc-row"><span class="mc-label">기본</span><span class="mc-val">${escHtml(genderLabel(d.gender))}${d.insurance_type ? ' · ' + escHtml(d.insurance_type) : ''}</span></div>` : ''}
+            ${residence(d) ? `<div class="mc-row"><span class="mc-label">거주지</span><span class="mc-val">${escHtml(residence(d))}</span></div>` : ''}
+            ${guardian}
+            <div class="mc-sep"></div>
+            ${lastSection}
+            <a href="/patients/${d.id}" class="mc-link">환자 상세 보기 →</a>
+        `;
+    }
+    function positionPopover(anchor) {
+        const r = anchor.getBoundingClientRect();
+        const sx = window.scrollX || window.pageXOffset;
+        const sy = window.scrollY || window.pageYOffset;
+        // 우선 anchor 우측. 화면 우측 넘치면 anchor 좌측.
+        mcPop.style.left = '0px';
+        mcPop.style.top = '0px';
+        mcPop.classList.remove('hide');
+        const pw = mcPop.offsetWidth, ph = mcPop.offsetHeight;
+        let left = r.right + sx + 6;
+        if (left + pw > sx + window.innerWidth - 8) left = r.left + sx - pw - 6;
+        if (left < sx + 8) left = sx + 8;
+        let top = r.top + sy - 2;
+        if (top + ph > sy + window.innerHeight - 8) top = sy + window.innerHeight - ph - 8;
+        if (top < sy + 8) top = sy + 8;
+        mcPop.style.left = left + 'px';
+        mcPop.style.top = top + 'px';
+    }
+    async function fetchMinicard(pid) {
+        if (mcCache.has(pid)) return mcCache.get(pid);
+        if (mcInflight.has(pid)) return mcInflight.get(pid);
+        const p = fetch(`/api/patient/${pid}/minicard`)
+            .then(r => r.ok ? r.json() : Promise.reject(r.status))
+            .then(d => { mcCache.set(pid, d); mcInflight.delete(pid); return d; })
+            .catch(e => { mcInflight.delete(pid); throw e; });
+        mcInflight.set(pid, p);
+        return p;
+    }
+    function showMinicard(anchor) {
+        const pid = anchor.dataset.pid;
+        if (!pid) return;
+        mcCurrent = anchor;
+        const cached = mcCache.get(pid);
+        if (cached) {
+            mcPop.innerHTML = renderMinicard(cached);
+            mcPop.classList.remove('loading');
+            positionPopover(anchor);
+            return;
+        }
+        mcPop.innerHTML = '<div class="mc-empty">불러오는 중…</div>';
+        mcPop.classList.add('loading');
+        positionPopover(anchor);
+        fetchMinicard(pid).then(d => {
+            if (mcCurrent !== anchor) return;
+            mcPop.innerHTML = renderMinicard(d);
+            mcPop.classList.remove('loading');
+            positionPopover(anchor);
+        }).catch(() => {
+            if (mcCurrent !== anchor) return;
+            mcPop.innerHTML = '<div class="mc-empty">불러오기 실패</div>';
+            mcPop.classList.remove('loading');
+        });
+    }
+    function hideMinicard() {
+        mcPop.classList.add('hide');
+        mcCurrent = null;
+    }
+    document.querySelectorAll('.mc-trigger').forEach(a => {
+        a.addEventListener('mouseenter', () => {
+            clearTimeout(mcHideTimer);
+            clearTimeout(mcShowTimer);
+            mcShowTimer = setTimeout(() => showMinicard(a), 220);
+        });
+        a.addEventListener('mouseleave', () => {
+            clearTimeout(mcShowTimer);
+            mcHideTimer = setTimeout(hideMinicard, 180);
+        });
+        a.addEventListener('focus', () => showMinicard(a));
+        a.addEventListener('blur', () => mcHideTimer = setTimeout(hideMinicard, 180));
+    });
+    mcPop.addEventListener('mouseenter', () => clearTimeout(mcHideTimer));
+    mcPop.addEventListener('mouseleave', () => {
+        mcHideTimer = setTimeout(hideMinicard, 120);
+    });
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') hideMinicard();
+    });
+
+    // ─── 동명이인 비교 모달 ───
+    const nsModal = document.getElementById('namesake-modal');
+    const nsBody = nsModal.querySelector('.ns-modal-body');
+    const nsTitle = nsModal.querySelector('#ns-title');
+    const nsCloseBtn = nsModal.querySelector('.ns-close');
+    const nsBackdrop = nsModal.querySelector('.ns-modal-backdrop');
+
+    function showNamesakeModal(name) {
+        nsTitle.textContent = `동명이인 비교 — "${name}"`;
+        nsBody.innerHTML = '<div class="ns-empty-state">불러오는 중…</div>';
+        nsModal.classList.remove('hide');
+        document.body.style.overflow = 'hidden';
+        fetch(`/api/patients/by-name?name=${encodeURIComponent(name)}`)
+            .then(r => r.ok ? r.json() : Promise.reject(r.status))
+            .then(j => renderNamesakeBody(name, j.items || []))
+            .catch(() => {
+                nsBody.innerHTML = '<div class="ns-empty-state">불러오기 실패</div>';
+            });
+    }
+    function renderNamesakeBody(name, items) {
+        if (!items.length) {
+            nsBody.innerHTML = '<div class="ns-empty-state">해당 이름의 환자가 없습니다.</div>';
+            return;
+        }
+        const rows = items.map(p => {
+            const last = p.last || {};
+            return `<tr class="${p.blacklist ? 'ns-bl-row' : ''}">
+                <td>
+                    ${p.blacklist ? '<span class="ns-bl-badge" title="' + escHtml(p.blacklist_reason || '') + '">⚠ 블랙</span> ' : ''}
+                    <a href="/patients/${p.id}" class="ns-link">${escHtml(p.name)}</a>
+                    <div style="font-size:0.85em;color:#64748b">ID #${p.id} · ${escHtml(genderLabel(p.gender))}</div>
+                </td>
+                <td class="${p.guardian_phone ? 'ns-phone' : 'ns-empty'}">
+                    ${p.guardian_phone ? escHtml(p.guardian_phone) : '—'}
+                </td>
+                <td class="${p.guardian_name ? '' : 'ns-empty'}">
+                    ${p.guardian_name ? escHtml(p.guardian_name) : '—'}${p.guardian_relation ? ' <span style="color:#94a3b8">(' + escHtml(p.guardian_relation) + ')</span>' : ''}
+                </td>
+                <td>${escHtml(residence(p)) || '<span class="ns-empty">—</span>'}</td>
+                <td>${p.insurance_type ? escHtml(p.insurance_type) : '<span class="ns-empty">—</span>'}</td>
+                <td><strong>${p.consultation_count}</strong>회</td>
+                <td>
+                    ${last.consult_date ? escHtml(last.consult_date) : '<span class="ns-empty">—</span>'}
+                    ${last.source_hospital ? '<div style="font-size:0.85em;color:#64748b">' + escHtml(last.source_hospital) + '</div>' : ''}
+                </td>
+                <td>${last.admission_status ? escHtml(last.admission_status) : (last.consult_result ? escHtml(last.consult_result) : '<span class="ns-empty">—</span>')}</td>
+            </tr>`;
+        }).join('');
+        nsBody.innerHTML = `
+            <p style="margin:0 0 10px;color:#64748b;font-size:0.88em">
+                같은 이름 환자 <strong>${items.length}</strong>명입니다. 보호자 전화번호로 동일인 여부를 확인하세요.
+            </p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>환자</th>
+                        <th>보호자 전화</th>
+                        <th>보호자 이름·관계</th>
+                        <th>거주지</th>
+                        <th>보험</th>
+                        <th>상담 횟수</th>
+                        <th>최근 상담</th>
+                        <th>상태</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+    }
+    function hideNamesakeModal() {
+        nsModal.classList.add('hide');
+        document.body.style.overflow = '';
+    }
+    document.querySelectorAll('.namesake-btn').forEach(b => {
+        b.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            hideMinicard();
+            showNamesakeModal(b.dataset.name);
+        });
+    });
+    nsCloseBtn.addEventListener('click', hideNamesakeModal);
+    nsBackdrop.addEventListener('click', hideNamesakeModal);
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && !nsModal.classList.contains('hide')) hideNamesakeModal();
+    });
 
     // ─── 컬럼별 필터 자동 적용 ───
     // select 변경 시 즉시 submit, text/number는 Enter 또는 blur 300ms 디바운스

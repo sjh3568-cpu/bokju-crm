@@ -993,6 +993,90 @@ def patient_consultations(patient_id: int):
     return [_deserialize_consultation(dict(r)) for r in rows]
 
 
+def patient_minicard(pid: int) -> dict | None:
+    """환자 미니카드 — 상담목록에서 환자명 hover 시 요약 표시용.
+    이전 상담 N회, 최근 상담일/결과·입원진행, 마지막 모병원, 블랙리스트, 보호자.
+    """
+    conn = get_db()
+    p = conn.execute(
+        """SELECT id, name, gender, residence_sido, residence_sigungu,
+                  insurance_type, guardian_name, guardian_relation, guardian_phone,
+                  blacklist, blacklist_reason, lifecycle_stage, family_info
+           FROM patients WHERE id = ?""",
+        (pid,),
+    ).fetchone()
+    if not p:
+        conn.close()
+        return None
+    n_total = conn.execute(
+        "SELECT COUNT(*) FROM consultations WHERE patient_id = ?", (pid,)
+    ).fetchone()[0]
+    last = conn.execute(
+        """SELECT id, consult_date, consult_channel, counselor,
+                  consult_result, consult_result_reason,
+                  admission_status, source_hospital,
+                  planned_admission_date, actual_admission_date
+           FROM consultations WHERE patient_id = ?
+           ORDER BY consult_date DESC, id DESC LIMIT 1""",
+        (pid,),
+    ).fetchone()
+    conn.close()
+    out = dict(p)
+    out["total_consultations"] = n_total
+    out["prior_count"] = max(n_total - 1, 0)
+    out["last"] = dict(last) if last else None
+    if last and last["consult_date"]:
+        try:
+            from datetime import date
+            y, m, d = (int(x) for x in last["consult_date"].split("-"))
+            delta = (date.today() - date(y, m, d)).days
+            out["last_days_ago"] = delta
+        except Exception:
+            out["last_days_ago"] = None
+    else:
+        out["last_days_ago"] = None
+    return out
+
+
+def patients_by_name(name: str) -> list[dict]:
+    """같은 이름 환자 전부 — 동명이인 비교 모달용.
+    보호자 정보·최근 상담일·최근 모병원·블랙리스트 요약 포함.
+    """
+    name = (name or "").strip()
+    if not name:
+        return []
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT id, name, gender, residence_sido, residence_sigungu,
+                  insurance_type, guardian_name, guardian_relation, guardian_phone,
+                  blacklist, blacklist_reason, address_full, family_info,
+                  lifecycle_stage
+           FROM patients WHERE name = ? ORDER BY updated_at DESC""",
+        (name,),
+    ).fetchall()
+    if not rows:
+        conn.close()
+        return []
+    items = []
+    for r in rows:
+        d = dict(r)
+        last = conn.execute(
+            """SELECT consult_date, consult_channel, counselor,
+                      consult_result, admission_status, source_hospital
+               FROM consultations WHERE patient_id = ?
+               ORDER BY consult_date DESC, id DESC LIMIT 1""",
+            (d["id"],),
+        ).fetchone()
+        n = conn.execute(
+            "SELECT COUNT(*) FROM consultations WHERE patient_id = ?", (d["id"],)
+        ).fetchone()[0]
+        d["last"] = dict(last) if last else None
+        d["consultation_count"] = n
+        items.append(d)
+    conn.close()
+    return items
+
+
 # ─── 자동완성 ───
 
 def autocomplete_hospitals(q: str, limit: int = 10):

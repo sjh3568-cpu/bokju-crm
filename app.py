@@ -1930,6 +1930,24 @@ def api_ac_patient():
     return jsonify({"items": models.autocomplete_patients(q, limit=10)})
 
 
+@app.route("/api/patient/<int:pid>/minicard")
+@login_required
+def api_patient_minicard(pid):
+    info = models.patient_minicard(pid)
+    if not info:
+        return jsonify({"error": "not_found"}), 404
+    return jsonify(info)
+
+
+@app.route("/api/patients/by-name")
+@login_required
+def api_patients_by_name():
+    name = (request.args.get("name") or "").strip()
+    if not name:
+        return jsonify({"items": []})
+    return jsonify({"items": models.patients_by_name(name)})
+
+
 # ───────────────────── helpers ─────────────────────
 
 def _list_filters_from_request():
