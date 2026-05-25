@@ -8,7 +8,9 @@
                 <th>시간</th>
                 <th>상태</th>
                 <th>환자</th>
+                <th>보험</th>
                 <th>병명</th>
+                <th>발병일</th>
                 <th>병실</th>
                 <th>회복기</th>
                 <th>상담사</th>
@@ -31,9 +33,11 @@
                     <a href="/consult/{{ r.id }}">{{ r.patient_name }}</a>
                     <span class="muted-sm">{% if r.patient_age is not none %}{{ r.patient_age }}{% endif %}{% if r.gender == 'M' %}·남{% elif r.gender == 'F' %}·여{% endif %}</span>
                 </td>
+                <td class="nowrap">{{ r.insurance_type or '-' }}</td>
                 <td class="dash-dx" title="{{ r.diseases|join(', ') if r.diseases else '' }}">
                     {% if r.diseases %}{{ r.diseases[:3]|join(', ') }}{% if r.diseases|length > 3 %} 외{% endif %}{% else %}-{% endif %}
                 </td>
+                <td class="nowrap">{{ r.disease_onset or '-' }}</td>
                 <td class="nowrap">{{ r.room_number or '-' }}</td>
                 <td class="nowrap">
                     {% if rec.label == '회복기' %}<span class="badge rh-yes">회복기{% if rec.source == 'auto' %}*{% endif %}</span>
@@ -50,17 +54,8 @@
     </table>
 </div>
 {% endmacro %}
-{% macro admission_flat_panel(status_key, rows, empty_text, active=False) %}
-<div class="dash-admission-view{% if active %} active{% endif %}" data-status-panel="{{ status_key }}" data-view-panel="all">
-    {% if rows %}
-    {{ admission_table(rows) }}
-    {% else %}
-    <div class="empty">{{ empty_text }}</div>
-    {% endif %}
-</div>
-{% endmacro %}
-{% macro admission_group_panel(status_key, view_key, groups, empty_text) %}
-<div class="dash-admission-view" data-status-panel="{{ status_key }}" data-view-panel="{{ view_key }}">
+{% macro admission_group_panel(status_key, view_key, groups, empty_text, active=False) %}
+<div class="dash-admission-view{% if active %} active{% endif %}" data-status-panel="{{ status_key }}" data-view-panel="{{ view_key }}">
     {% if groups %}
     {% for g in groups %}
     <div class="dash-group">
@@ -230,7 +225,7 @@
 {% macro action_queue_panel(queue) %}
 <div class="card dash-action-card" id="action-queue">
     <div class="dash-section-head">
-        <h3>오늘 처리 필요</h3>
+        <h3>오늘 처리 필요 <span class="muted" style="font-size:0.7em">— 7일 이내</span></h3>
         <span class="muted">긴급 {{ queue.danger or 0 }} · 주의 {{ queue.warn or 0 }}</span>
     </div>
     {% if queue['items'] %}
@@ -248,6 +243,27 @@
     </div>
     {% else %}
     <div class="empty">오늘 즉시 처리할 큐가 없습니다.</div>
+    {% endif %}
+
+    {% if queue.stale_items %}
+    <details class="dash-stale-block">
+        <summary>
+            <span class="stale-summary-title">⚠ 오래 방치 ({{ queue.stale_total }}건, 8일 이상)</span>
+            <span class="muted" style="font-size:0.82em">긴급 {{ queue.stale_danger or 0 }} · 정리·종결 권장</span>
+        </summary>
+        <div class="dash-action-list">
+            {% for item in queue.stale_items %}
+            <a class="dash-action-row {{ item.tone }} stale" href="{{ item.href or '#' }}">
+                <span class="dash-action-kind">{{ item.kind }}</span>
+                <span class="dash-action-main">
+                    <strong>{{ item.title }}</strong>
+                    {% if item.detail %}<small>{{ item.detail }}</small>{% endif %}
+                </span>
+                <span class="dash-action-meta"><b>{{ item.age_days }}일 방치</b><br><span class="muted-sm">{{ item.meta }}</span></span>
+            </a>
+            {% endfor %}
+        </div>
+    </details>
     {% endif %}
 </div>
 {% endmacro %}
@@ -273,7 +289,7 @@
     <a class="stat-card danger" href="#action-queue">
         <div class="label">처리 필요</div>
         <div class="value">{{ summary.action_total or 0 }}</div>
-        <div class="sub">긴급 {{ summary.action_danger or 0 }}건</div>
+        <div class="sub">긴급 {{ summary.action_danger or 0 }}건{% if summary.action_stale %} · 방치 {{ summary.action_stale }}건{% endif %}</div>
     </a>
     <a class="stat-card accent" href="#admission-schedule">
         <div class="label">오늘 입원 현황</div>
@@ -321,23 +337,19 @@
             <button type="button" class="dash-status-btn" data-status="completed" aria-pressed="false">입원완료 <span>{{ summary.admission_completed_week or 0 }}</span></button>
         </div>
         <div class="dash-view-tabs" role="tablist" aria-label="입원 환자 현황 보기">
-            <button type="button" class="dash-view-btn active" data-view="all" aria-pressed="true">전체</button>
-            <button type="button" class="dash-view-btn" data-view="counselor" aria-pressed="false">상담사별</button>
+            <button type="button" class="dash-view-btn active" data-view="counselor" aria-pressed="true">상담사별</button>
             <button type="button" class="dash-view-btn" data-view="doctor" aria-pressed="false">주치의별</button>
             <button type="button" class="dash-view-btn" data-view="ward" aria-pressed="false">병동별</button>
         </div>
     </div>
-    {{ admission_flat_panel('all', admission_all, '15일 내 입원 예정/완료 환자가 없습니다.', True) }}
-    {{ admission_group_panel('all', 'counselor', admission_group_all['counselor'], '상담사별로 볼 입원 예정/완료 환자가 없습니다.') }}
+    {{ admission_group_panel('all', 'counselor', admission_group_all['counselor'], '상담사별로 볼 입원 예정/완료 환자가 없습니다.', True) }}
     {{ admission_group_panel('all', 'doctor', admission_group_all['doctor'], '주치의별로 볼 입원 예정/완료 환자가 없습니다.') }}
     {{ admission_group_panel('all', 'ward', admission_group_all['ward'], '병동별로 볼 입원 예정/완료 환자가 없습니다.') }}
 
-    {{ admission_flat_panel('planned', admission_planned, '15일 내 입원 예정 환자가 없습니다.') }}
     {{ admission_group_panel('planned', 'counselor', admission_group_planned['counselor'], '상담사별로 볼 입원 예정 환자가 없습니다.') }}
     {{ admission_group_panel('planned', 'doctor', admission_group_planned['doctor'], '주치의별로 볼 입원 예정 환자가 없습니다.') }}
     {{ admission_group_panel('planned', 'ward', admission_group_planned['ward'], '병동별로 볼 입원 예정 환자가 없습니다.') }}
 
-    {{ admission_flat_panel('completed', admission_completed, '15일 내 입원 완료 환자가 없습니다.') }}
     {{ admission_group_panel('completed', 'counselor', admission_group_completed['counselor'], '상담사별로 볼 입원 완료 환자가 없습니다.') }}
     {{ admission_group_panel('completed', 'doctor', admission_group_completed['doctor'], '주치의별로 볼 입원 완료 환자가 없습니다.') }}
     {{ admission_group_panel('completed', 'ward', admission_group_completed['ward'], '병동별로 볼 입원 완료 환자가 없습니다.') }}
@@ -716,7 +728,7 @@
 <script>
 function syncAdmissionPanels() {
     const status = document.querySelector('.dash-status-btn.active')?.dataset.status || 'all';
-    const view = document.querySelector('.dash-view-btn.active')?.dataset.view || 'all';
+    const view = document.querySelector('.dash-view-btn.active')?.dataset.view || 'counselor';
     document.querySelectorAll('.dash-admission-view').forEach((panel) => {
         panel.classList.toggle(
             'active',
