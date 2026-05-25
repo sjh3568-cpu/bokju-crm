@@ -1038,6 +1038,121 @@ def patient_minicard(pid: int) -> dict | None:
     return out
 
 
+def patient_blacklist_info(pid: int) -> dict | None:
+    """블랙리스트 환자 상세 — ⚠블랙 마크 클릭 시 모달용.
+    환자 기본 정보 + 블랙리스트 사유·등록일 + 전체 상담 이력 요약.
+    """
+    conn = get_db()
+    p = conn.execute(
+        """SELECT id, name, gender, residence_sido, residence_sigungu, address_full,
+                  insurance_type, guardian_name, guardian_relation, guardian_phone,
+                  blacklist, blacklist_reason, blacklist_at, lifecycle_stage
+           FROM patients WHERE id = ?""",
+        (pid,),
+    ).fetchone()
+    if not p:
+        conn.close()
+        return None
+    rows = conn.execute(
+        """SELECT id, consult_date, consult_channel, counselor,
+                  consult_result, consult_result_reason,
+                  admission_status, source_hospital,
+                  planned_admission_date, actual_admission_date
+           FROM consultations WHERE patient_id = ?
+           ORDER BY consult_date DESC, id DESC""",
+        (pid,),
+    ).fetchall()
+    conn.close()
+    out = dict(p)
+    out["consultations"] = [dict(r) for r in rows]
+    return out
+
+
+def merge_patients(source_id: int, target_id: int) -> dict:
+    """동명이인 병합 — source 환자의 모든 데이터를 target에 통합 후 source 삭제.
+    FK 일괄 이전: consultations / lifecycle_events / sms_log / communications /
+    patient_documents. target에 비어있는 환자 필드는 source 값으로 채움.
+    반환: {moved: {table: n}, filled_fields: [...], source_name, target_name}
+    """
+    if source_id == target_id:
+        raise ValueError("source와 target이 동일합니다")
+    conn = get_db()
+    try:
+        s = conn.execute("SELECT * FROM patients WHERE id = ?", (source_id,)).fetchone()
+        t = conn.execute("SELECT * FROM patients WHERE id = ?", (target_id,)).fetchone()
+        if not s or not t:
+            raise ValueError("환자를 찾을 수 없습니다")
+        if (s["name"] or "") != (t["name"] or ""):
+            raise ValueError(f"이름이 다릅니다: '{s['name']}' vs '{t['name']}'")
+
+        moved = {}
+        for table in ("consultations", "lifecycle_events", "sms_log",
+                      "communications", "patient_documents"):
+            cur = conn.execute(
+                f"UPDATE {table} SET patient_id = ? WHERE patient_id = ?",
+                (target_id, source_id),
+            )
+            if cur.rowcount:
+                moved[table] = cur.rowcount
+
+        FILLABLE = (
+            "gender", "residence_sido", "residence_sigungu", "address_full",
+            "insurance_type", "guardian_name", "guardian_relation", "guardian_phone",
+            "family_info", "lifecycle_stage",
+        )
+        filled = []
+        fill_sets = []
+        fill_vals = []
+        for col in FILLABLE:
+            t_val = t[col]
+            is_empty = t_val is None or (isinstance(t_val, str) and not t_val.strip())
+            if not is_empty:
+                continue
+            src_val = s[col]
+            if src_val is None:
+                continue
+            if isinstance(src_val, str) and not src_val.strip():
+                continue
+            fill_sets.append(f"{col} = ?")
+            fill_vals.append(src_val)
+            filled.append(col)
+
+        if not t["blacklist"] and s["blacklist"]:
+            fill_sets.append("blacklist = ?")
+            fill_vals.append(1)
+            filled.append("blacklist")
+            if s["blacklist_reason"]:
+                fill_sets.append("blacklist_reason = ?")
+                fill_vals.append(s["blacklist_reason"])
+            if s["blacklist_at"]:
+                fill_sets.append("blacklist_at = ?")
+                fill_vals.append(s["blacklist_at"])
+
+        if fill_sets:
+            fill_sets.append("updated_at = CURRENT_TIMESTAMP")
+            fill_vals.append(target_id)
+            conn.execute(
+                f"UPDATE patients SET {', '.join(fill_sets)} WHERE id = ?",
+                fill_vals,
+            )
+
+        conn.execute("DELETE FROM patients WHERE id = ?", (source_id,))
+        conn.commit()
+        return {
+            "moved": moved,
+            "filled_fields": filled,
+            "source_id": source_id,
+            "target_id": target_id,
+            "source_name": s["name"],
+            "target_name": t["name"],
+        }
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def patients_by_name(name: str) -> list[dict]:
     """같은 이름 환자 전부 — 동명이인 비교 모달용.
     보호자 정보·최근 상담일·최근 모병원·블랙리스트 요약 포함.

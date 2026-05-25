@@ -996,6 +996,7 @@ def consult_new():
     # 인박스 미처리 인바운드에서 상담 등록을 시작한 경우 — communication 로드 후 prefill
     inbox_comm = None
     patient = None
+    prefill_consult = None  # 재상담: 같은 환자의 가장 최근 상담에서 일부 필드 prefill
     try:
         comm_id = int(request.args.get("comm_id") or 0)
     except (ValueError, TypeError):
@@ -1013,8 +1014,32 @@ def consult_new():
                     "id": None, "name": "",
                     "guardian_phone": contact if contact else "",
                 }
+
+    # 미니카드 '새 상담 등록' / 환자 상세 '재상담' 진입 — 환자 정보 + 가장 최근 상담 일부 필드 prefill
+    if not patient:
+        try:
+            pid_arg = int(request.args.get("patient_id") or 0)
+        except (ValueError, TypeError):
+            pid_arg = 0
+        if pid_arg:
+            patient = models.get_patient(pid_arg)
+            if patient:
+                history = models.patient_consultations(pid_arg)
+                if history:
+                    last = history[0]  # 가장 최근 상담 (consult_date DESC)
+                    # 환자 단위로 거의 변하지 않는 필드만 prefill — 매 상담마다 새로 입력해야 하는
+                    # 발병일·의식·활동·병명·입원예정일 등은 제외. source_hospital은 저장 시
+                    # current_location_name에서 자동 매핑되므로 둘 다 채울 필요는 없음.
+                    SAFE_PREFILL = (
+                        "current_location_type", "current_location_name",
+                        "referral_source_detail",
+                        "referrer_person", "referrer_institution",
+                        "attending_doctor",
+                    )
+                    prefill_consult = {k: last.get(k) for k in SAFE_PREFILL if last.get(k)}
+
     return render_template("consult_form.html", consultation=None, patient=patient,
-                           inbox_comm=inbox_comm,
+                           inbox_comm=inbox_comm, prefill=prefill_consult,
                            top_hospitals=models.top_source_hospitals())
 
 
@@ -1939,6 +1964,15 @@ def api_patient_minicard(pid):
     return jsonify(info)
 
 
+@app.route("/api/patient/<int:pid>/blacklist-info")
+@login_required
+def api_patient_blacklist_info(pid):
+    info = models.patient_blacklist_info(pid)
+    if not info:
+        return jsonify({"error": "not_found"}), 404
+    return jsonify(info)
+
+
 @app.route("/api/patients/by-name")
 @login_required
 def api_patients_by_name():
@@ -1946,6 +1980,32 @@ def api_patients_by_name():
     if not name:
         return jsonify({"items": []})
     return jsonify({"items": models.patients_by_name(name)})
+
+
+@app.route("/api/patient/merge", methods=["POST"])
+@login_required
+@admin_required
+def api_patient_merge():
+    payload = request.get_json(silent=True) or {}
+    try:
+        source_id = int(payload.get("source_id"))
+        target_id = int(payload.get("target_id"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "source_id·target_id 필수"}), 400
+    try:
+        result = models.merge_patients(source_id, target_id)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"병합 실패: {e}"}), 500
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="merge_patient", target_type="patient", target_id=target_id,
+        detail=f"merged #{source_id} → #{target_id}: "
+               f"{result['moved']} fields_filled={result['filled_fields']}",
+        ip=request.remote_addr,
+    )
+    return jsonify({"ok": True, **result})
 
 
 # ───────────────────── helpers ─────────────────────

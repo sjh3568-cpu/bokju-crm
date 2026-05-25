@@ -639,6 +639,21 @@
 </style>
 {% endif %}
 
+{% if prefill and not is_edit %}
+<div class="prefill-banner">
+    <strong>🔁 재상담 등록</strong>
+    <span class="muted">— {{ patient.name }} 환자의 이전 상담에서 일부 정보를 미리 채웠습니다</span>
+    <div class="muted-sm">채워진 항목: {% for k in prefill.keys() %}<code>{{ k }}</code>{% if not loop.last %}, {% endif %}{% endfor %} — 필요 시 변경하세요.</div>
+</div>
+<style>
+.prefill-banner { padding:10px 14px; margin:6px 0 12px; background:#e0e7ff;
+    border-left:4px solid #4f46e5; border-radius:6px; font-size:0.9em; color:#1e1b4b; }
+.prefill-banner code { background:#fff; padding:1px 5px; border-radius:4px;
+    font-size:0.85em; color:#3730a3; }
+.prefill-banner .muted-sm { margin-top:4px; font-size:0.85em; color:#4338ca; }
+</style>
+{% endif %}
+
 <form id="consult-form"
       data-edit="{{ '1' if is_edit else '0' }}"
       data-cid="{{ consultation.id if is_edit else '' }}"
@@ -661,7 +676,7 @@
             <label>주치의</label>
             <div class="combobox">
                 <input type="text" name="consultation.attending_doctor"
-                       value="{{ consultation.attending_doctor if is_edit and consultation.attending_doctor else '' }}"
+                       value="{{ consultation.attending_doctor if is_edit and consultation.attending_doctor else ((prefill.attending_doctor if prefill else '') or '') }}"
                        placeholder="선택 또는 직접 입력">
                 <button type="button" class="combobox-arrow" tabindex="-1" aria-label="목록 열기">▾</button>
                 <ul class="combobox-list" hidden>
@@ -793,7 +808,7 @@
                {% if not (patient and patient.blacklist) %}hidden{% endif %}>
     </div>
 
-    {% set referral_set = (consultation.referral_source_detail if is_edit else []) %}
+    {% set referral_set = (consultation.referral_source_detail if is_edit else (prefill.referral_source_detail if prefill else [])) %}
     <div class="field">
         <label>상담방법</label>
         <div class="field-radio">
@@ -824,9 +839,9 @@
                 {% elif group_name == '소개' %}
                 <div class="referrer-row">
                     <input type="text" name="consultation.referrer_person" placeholder="추천인"
-                           value="{{ consultation.referrer_person if is_edit and consultation.referrer_person else '' }}">
+                           value="{{ consultation.referrer_person if is_edit and consultation.referrer_person else ((prefill.referrer_person if prefill else '') or '') }}">
                     <input type="text" name="consultation.referrer_institution" placeholder="추천 기관"
-                           value="{{ consultation.referrer_institution if is_edit and consultation.referrer_institution else '' }}">
+                           value="{{ consultation.referrer_institution if is_edit and consultation.referrer_institution else ((prefill.referrer_institution if prefill else '') or '') }}">
                 </div>
                 {% elif group_name == '기타' %}
                 <div class="referrer-row">
@@ -860,7 +875,7 @@
             <div class="field-radio">
                 {% for t in CURRENT_LOCATION_TYPES %}
                 <label><input type="radio" name="consultation.current_location_type" value="{{ t }}"
-                              {% if is_edit and consultation.current_location_type == t %}checked{% endif %}> {{ t }}</label>
+                              {% if (is_edit and consultation.current_location_type == t) or (not is_edit and prefill and prefill.current_location_type == t) %}checked{% endif %}> {{ t }}</label>
                 {% endfor %}
             </div>
         </div>
@@ -868,7 +883,7 @@
             <label>병원 <span class="muted" style="font-size:0.78em">(입원중일 때 모병원 통계 반영)</span></label>
             <input type="text" class="boxed-input" name="consultation.current_location_name"
                    data-ac="hospital" autocomplete="off"
-                   value="{{ consultation.current_location_name if is_edit and consultation.current_location_name else '' }}">
+                   value="{{ consultation.current_location_name if is_edit and consultation.current_location_name else ((prefill.current_location_name if prefill else '') or '') }}">
             <div class="ac-list" id="ac-hospital" hidden></div>
             {% if top_hospitals %}
             <div class="hosp-quick">
