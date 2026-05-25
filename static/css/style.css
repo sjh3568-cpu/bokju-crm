@@ -517,6 +517,30 @@ fieldset.opt-box legend { white-space: nowrap; }
     border: 1px solid transparent;
 }
 .flash.error { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
+
+/* 동명이인 사전 경고 모달 (신규 상담 등록 시) */
+.hpw-modal { display: none; position: fixed; inset: 0; z-index: 2500;
+    align-items: center; justify-content: center; }
+.hpw-modal.show { display: flex; }
+.hpw-modal .hpw-backdrop { position: absolute; inset: 0; background: rgba(15,23,42,0.55); }
+.hpw-modal .hpw-content { position: relative; background: #fff; border-radius: 10px;
+    max-width: 880px; width: calc(100% - 40px); max-height: 80vh; overflow: auto;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3); padding: 18px 22px;
+    border-top: 5px solid var(--danger); }
+.hpw-modal .hpw-title { margin: 0 0 8px; font-size: 1.1em; color: var(--danger); }
+.hpw-modal .hpw-help { margin: 0 0 14px; color: var(--text-light); font-size: 0.9em; }
+.hpw-tbl { width: 100%; border-collapse: collapse; font-size: 0.88em; }
+.hpw-tbl th, .hpw-tbl td { padding: 7px 8px; text-align: left; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+.hpw-tbl th { background: #f8fafc; font-weight: 600; border-bottom: 2px solid #e2e8f0; }
+.hpw-tbl tr:hover { background: #fafbfc; }
+.hpw-tbl tr.hpw-bl-row { background: #fff7ed; }
+.hpw-tbl tr.hpw-bl-row:hover { background: #ffedd5; }
+.hpw-tbl .hpw-phone { font-feature-settings: "tnum"; font-weight: 600; color: #0f172a; }
+.hpw-tbl .hpw-empty { color: #94a3b8; }
+.hpw-bl-badge { display: inline-block; padding: 0 5px; background: #1f2937; color: #fecaca;
+    border-radius: 6px; font-size: 0.78em; font-weight: 700; margin-left: 4px; }
+.hpw-actions { margin-top: 14px; text-align: right; padding-top: 12px; border-top: 1px dashed #e2e8f0; }
+.hpw-pick { white-space: nowrap; }
 .flash.warn { background: #fef3c7; color: #92400e; border-color: #fde68a; }
 .flash.info { background: #dbeafe; color: #1e40af; border-color: #bfdbfe; }
 .flash.success { background: #d1fae5; color: #047857; border-color: #a7f3d0; }

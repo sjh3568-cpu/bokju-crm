@@ -82,6 +82,135 @@
     // 자동완성: 환자명, 모병원, 질환
     document.querySelectorAll('input[data-ac]').forEach(setupAutocomplete);
 
+    // 신규 상담 — 환자명 blur 시 동명이인 사전 경고 (수정 모드 / 기존 환자 선택 후엔 스킵)
+    if (!isEdit) setupHomonymPreWarning();
+
+    function setupHomonymPreWarning() {
+        const nameInput = form.querySelector('input[name="patient.name"]');
+        if (!nameInput) return;
+        // patient.id가 이미 세팅된 경우(인박스/prefill/자동완성 선택) — 첫 진입은 스킵.
+        // 사용자가 이름을 바꾸면 그때 다시 체크.
+        const initialName = (nameInput.value || '').trim();
+        let lastCheckedName = initialName;
+        // 세션 동안 "신규로 진행" 결정한 이름은 다시 안 띄움
+        const dismissed = new Set();
+
+        async function check() {
+            const name = (nameInput.value || '').trim();
+            if (!name) return;
+            if (name === lastCheckedName) return;  // 동일 이름 재체크 방지
+            lastCheckedName = name;
+            if (dismissed.has(name)) return;
+            // 보호자 전화가 이미 채워져 있으면 — 자동완성 선택 직후거나 사용자가 환자 정보를
+            // 이미 알고 있는 경우로 간주, 모달 스킵. 진짜 신규 환자 등록 시작 시점엔 빈값.
+            const phEl = form.querySelector('input[name="patient.guardian_phone"]');
+            const phVal = phEl ? phEl.value.trim() : '';
+            if (phVal && phVal !== '010-') return;
+            try {
+                const r = await fetch(`/api/patients/by-name?name=${encodeURIComponent(name)}`);
+                if (!r.ok) return;
+                const j = await r.json();
+                const items = j.items || [];
+                if (!items.length) return;
+                showHomonymModal(name, items, () => dismissed.add(name));
+            } catch (e) { /* 조회 실패 시 등록을 막지 않음 */ }
+        }
+        nameInput.addEventListener('blur', () => {
+            // 자동완성 클릭으로 blur 발생할 수 있음 — 짧은 지연 후 자동완성 리스트가 닫힌 뒤 체크
+            setTimeout(check, 100);
+        });
+    }
+
+    function showHomonymModal(name, items, onDismiss) {
+        let modal = document.getElementById('homonym-prewarn-modal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'homonym-prewarn-modal';
+            modal.className = 'hpw-modal';
+            modal.innerHTML = `
+                <div class="hpw-backdrop"></div>
+                <div class="hpw-content">
+                    <h3 class="hpw-title"></h3>
+                    <p class="hpw-help">동일인이면 [이 환자입니다]를 눌러 정보를 불러오고, 다른 환자라면 [신규 환자] 버튼을 누르세요.</p>
+                    <div class="hpw-body"></div>
+                    <div class="hpw-actions">
+                        <button type="button" class="btn btn-primary btn-sm" id="hpw-new">＋ 신규 환자입니다 — 계속 진행</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(modal);
+            modal.querySelector('.hpw-backdrop').addEventListener('click', () => closeHomonymModal());
+        }
+        modal.querySelector('.hpw-title').textContent =
+            `⚠ 같은 이름 환자 ${items.length}명이 이미 등록되어 있습니다 — "${name}"`;
+        const body = modal.querySelector('.hpw-body');
+        body.innerHTML = `
+            <table class="hpw-tbl">
+                <thead>
+                    <tr>
+                        <th>보호자 전화</th>
+                        <th>보호자</th>
+                        <th>거주지</th>
+                        <th>보험</th>
+                        <th>상담</th>
+                        <th>최근 상담일</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${items.map(p => {
+                        const last = p.last || {};
+                        const sido = (p.residence_sido || '').replace(/특별시|광역시|특별자치도|특별자치시/g, '');
+                        const res = (sido + ' ' + (p.residence_sigungu || '')).trim();
+                        return `<tr class="${p.blacklist ? 'hpw-bl-row' : ''}" data-pid="${p.id}">
+                            <td class="${p.guardian_phone ? 'hpw-phone' : 'hpw-empty'}">${p.guardian_phone ? escHpw(p.guardian_phone) : '—'}</td>
+                            <td>${escHpw(p.guardian_name || '')}${p.guardian_relation ? ' (' + escHpw(p.guardian_relation) + ')' : ''}</td>
+                            <td>${escHpw(res) || '<span class="hpw-empty">—</span>'}</td>
+                            <td>${escHpw(p.insurance_type || '') || '<span class="hpw-empty">—</span>'}</td>
+                            <td><strong>${p.consultation_count}</strong>회</td>
+                            <td>${last.consult_date ? escHpw(last.consult_date) : '<span class="hpw-empty">—</span>'}${p.blacklist ? ' <span class="hpw-bl-badge">⚠블랙</span>' : ''}</td>
+                            <td><button type="button" class="btn btn-secondary btn-sm hpw-pick" data-pid="${p.id}">이 환자입니다 →</button></td>
+                        </tr>`;
+                    }).join('')}
+                </tbody>
+            </table>`;
+        modal.classList.add('show');
+        document.body.style.overflow = 'hidden';
+        body.querySelectorAll('.hpw-pick').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const pid = parseInt(btn.dataset.pid);
+                const it = items.find(p => p.id === pid);
+                if (it) {
+                    // 환자 정보 prefill (기존 autoFillPatient 사용)
+                    autoFillPatient(it);
+                    toast('기존 환자 정보를 불러왔습니다.' + (it.blacklist ? ' ⚠ 블랙리스트 환자입니다.' : ''),
+                          it.blacklist ? 'error' : 'info');
+                }
+                closeHomonymModal();
+            });
+        });
+        modal.querySelector('#hpw-new').onclick = () => {
+            onDismiss();
+            closeHomonymModal();
+            toast('신규 환자로 등록을 계속합니다.', 'info');
+        };
+    }
+    function closeHomonymModal() {
+        const modal = document.getElementById('homonym-prewarn-modal');
+        if (modal) modal.classList.remove('show');
+        document.body.style.overflow = '';
+    }
+    function escHpw(s) {
+        if (s === null || s === undefined) return '';
+        return String(s).replace(/[&<>"']/g, ch => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[ch]));
+    }
+    document.addEventListener('keydown', e => {
+        if (e.key !== 'Escape') return;
+        const m = document.getElementById('homonym-prewarn-modal');
+        if (m && m.classList.contains('show')) closeHomonymModal();
+    });
+
     function setupAutocomplete(input) {
         const kind = input.dataset.ac; // patient | hospital | diagnosis
         const list = document.getElementById('ac-' + kind);
