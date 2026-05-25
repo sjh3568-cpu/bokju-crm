@@ -1001,12 +1001,18 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <tr><td>가 및 나</td><td>90일 내</td><td>180일 이내</td><td>-</td></tr>
-                    <tr><td>다-1</td><td>30일 내</td><td>30일 이내</td><td>-</td></tr>
-                    <tr><td>다-2</td><td>60일 내</td><td>60일 이내</td><td></td></tr>
-                    <tr><td>다-3</td><td>첫 번째 수술일로부터 30일 내</td><td>30일 이내</td><td></td></tr>
-                    <tr><td>라</td><td>60일 내</td><td>60일 이내</td><td>-</td></tr>
-                    <tr><td>마</td><td>60일 내</td><td>60일 이내</td>
+                    <tr><td>중추신경계 <span class="rg-code">(가·나)</span><br><span class="rg-sub">뇌·척수 질환</span></td>
+                        <td>90일 내</td><td>180일 이내</td><td>-</td></tr>
+                    <tr><td>근골격계 <span class="rg-code">(다-1)</span><br><span class="rg-sub">골절·관절수술</span></td>
+                        <td>30일 내</td><td>30일 이내</td><td>-</td></tr>
+                    <tr><td>골유합 지연·내고정·전치환 <span class="rg-code">(다-2)</span></td>
+                        <td>60일 내</td><td>60일 이내</td><td></td></tr>
+                    <tr><td>양측 슬관절치환술 <span class="rg-code">(다-3)</span><br><span class="rg-sub">복잡수술</span></td>
+                        <td>첫 번째 수술일로부터 30일 내</td><td>30일 이내</td><td></td></tr>
+                    <tr><td>절단 <span class="rg-code">(라)</span><br><span class="rg-sub">하지 부위 등</span></td>
+                        <td>60일 내</td><td>60일 이내</td><td>-</td></tr>
+                    <tr><td>비사용증후군 <span class="rg-code">(마)</span><br><span class="rg-sub">호흡·심장·신생물·길랑바레·파킨슨(신규) 등</span></td>
+                        <td>60일 내</td><td>60일 이내</td>
                         <td>① 도수근력검사 48점 미만<br>② 일상생활동작검사 80점 이하 또는
                             버그 균형검사 40점 이하<br><span class="rg-em">①②를 모두 충족하여야 함</span></td></tr>
                 </tbody>
@@ -1014,14 +1020,15 @@
             <ul class="rec-guide-notes">
                 <li><b>입원시기</b> = 발병 후 해당 의료기관 입원까지 경과기간.
                     <b>종료일</b> = 입원기간 중 환자구성에 포함될 수 있는 기간의 종료일.</li>
-                <li>가·나 환자 중 의학적 판단으로 급성기 치료가 추가로 필요한 등 불가피한 사유로
-                    전원할 수 없으면, 입원시기가 90일을 초과해도 발병/수술일로부터
+                <li><b>중추신경계</b> 환자 중 의학적 판단으로 급성기 치료가 추가로 필요한 등 불가피한
+                    사유로 전원할 수 없으면, 입원시기가 90일을 초과해도 발병/수술일로부터
                     <b>270일 이내</b>로 적용 (진료기록부 등 객관적 자료 첨부).</li>
-                <li>다-1 중 골유합을 위한 소요기간이 필요해 30일 내 입원이 불가능하면
-                    <b>다-2의 입원시기</b>를 적용.</li>
-                <li>다-1 중 골절 내고정술·고관절 전치환술을 시행한 환자는 <b>다-2의 종료일</b>을
-                    적용 (30일 이상 입원 사유 객관적 자료 첨부).</li>
-                <li>다-3(양측 슬관절치환술 — 단측 또는 양측 복잡수술)은 동일 입원기간 내
+                <li><b>근골격계</b> 중 골유합을 위한 소요기간이 필요해 30일 내 입원이 불가능하면
+                    <b>골유합 지연·내고정·전치환의 입원시기</b>(60일 내)를 적용.</li>
+                <li><b>근골격계</b> 중 골절 내고정술·고관절 전치환술을 시행한 환자는
+                    <b>골유합 지연·내고정·전치환의 종료일</b>(60일 이내)을 적용
+                    (30일 이상 입원 사유 객관적 자료 첨부).</li>
+                <li><b>양측 슬관절치환술</b>(단측 또는 양측 복잡수술)은 동일 입원기간 내
                     <b>첫 번째 수술일로부터 30일 이내</b> 입원 (객관적 자료 첨부).</li>
             </ul>
         </details>
@@ -1431,6 +1438,10 @@
 .rec-guide-tbl th span { font-weight: 500; color: #6b7280; font-size: 0.9em; }
 .rec-guide-tbl td:last-child { text-align: left; }
 .rec-guide-tbl .rg-em { color: #b91c1c; font-weight: 600; }
+.rec-guide-tbl td:first-child { text-align: left; font-weight: 600; line-height: 1.35; }
+.rec-guide-tbl .rg-code { font-weight: 500; color: #6b7280; font-size: 0.88em; }
+.rec-guide-tbl .rg-sub { display: block; font-weight: 400; color: #6b7280;
+    font-size: 0.84em; margin-top: 1px; }
 .rec-guide-notes { margin: 4px 0 2px; padding-left: 18px; line-height: 1.65;
     color: #64748b; }
 .rec-guide-notes b { color: #0f172a; }
