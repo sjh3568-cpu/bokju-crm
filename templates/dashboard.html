@@ -54,8 +54,17 @@
     </table>
 </div>
 {% endmacro %}
-{% macro admission_group_panel(status_key, view_key, groups, empty_text, active=False) %}
-<div class="dash-admission-view{% if active %} active{% endif %}" data-status-panel="{{ status_key }}" data-view-panel="{{ view_key }}">
+{% macro admission_flat_panel(view_key, rows, empty_text, active=False) %}
+<div class="dash-admission-view{% if active %} active{% endif %}" data-view-panel="{{ view_key }}">
+    {% if rows %}
+    {{ admission_table(rows) }}
+    {% else %}
+    <div class="empty">{{ empty_text }}</div>
+    {% endif %}
+</div>
+{% endmacro %}
+{% macro admission_group_panel(view_key, groups, empty_text, active=False) %}
+<div class="dash-admission-view{% if active %} active{% endif %}" data-view-panel="{{ view_key }}">
     {% if groups %}
     {% for g in groups %}
     <div class="dash-group">
@@ -331,23 +340,21 @@
         <span class="muted">입원예정 · 입원완료 · 15일</span>
     </div>
     <div class="dash-filter-row">
-        <div class="dash-status-tabs" role="tablist" aria-label="입원 진행 상태">
-            <button type="button" class="dash-status-btn active" data-status="planned" aria-pressed="true">입원예정 <span>{{ summary.admission_planned_week or 0 }}</span></button>
-            <button type="button" class="dash-status-btn" data-status="completed" aria-pressed="false">입원완료 <span>{{ summary.admission_completed_week or 0 }}</span></button>
-        </div>
         <div class="dash-view-tabs" role="tablist" aria-label="입원 환자 현황 보기">
-            <button type="button" class="dash-view-btn active" data-view="counselor" aria-pressed="true">상담사별</button>
-            <button type="button" class="dash-view-btn" data-view="doctor" aria-pressed="false">주치의별</button>
+            <button type="button" class="dash-view-btn active" data-view="all" aria-pressed="true">전체 <span>{{ summary.admission_week or 0 }}</span></button>
+            <button type="button" class="dash-view-btn" data-view="planned" aria-pressed="false">입원예정 <span>{{ summary.admission_planned_week or 0 }}</span></button>
+            <button type="button" class="dash-view-btn" data-view="completed" aria-pressed="false">입원완료 <span>{{ summary.admission_completed_week or 0 }}</span></button>
+            <button type="button" class="dash-view-btn" data-view="counselor" aria-pressed="false">상담사별</button>
             <button type="button" class="dash-view-btn" data-view="ward" aria-pressed="false">병동별</button>
+            <button type="button" class="dash-view-btn" data-view="doctor" aria-pressed="false">주치의별</button>
         </div>
     </div>
-    {{ admission_group_panel('planned', 'counselor', admission_group_planned['counselor'], '상담사별로 볼 입원 예정 환자가 없습니다.', True) }}
-    {{ admission_group_panel('planned', 'doctor', admission_group_planned['doctor'], '주치의별로 볼 입원 예정 환자가 없습니다.') }}
-    {{ admission_group_panel('planned', 'ward', admission_group_planned['ward'], '병동별로 볼 입원 예정 환자가 없습니다.') }}
-
-    {{ admission_group_panel('completed', 'counselor', admission_group_completed['counselor'], '상담사별로 볼 입원 완료 환자가 없습니다.') }}
-    {{ admission_group_panel('completed', 'doctor', admission_group_completed['doctor'], '주치의별로 볼 입원 완료 환자가 없습니다.') }}
-    {{ admission_group_panel('completed', 'ward', admission_group_completed['ward'], '병동별로 볼 입원 완료 환자가 없습니다.') }}
+    {{ admission_flat_panel('all', admission_all, '15일 내 입원 예정/완료 환자가 없습니다.', True) }}
+    {{ admission_flat_panel('planned', admission_planned, '15일 내 입원 예정 환자가 없습니다.') }}
+    {{ admission_flat_panel('completed', admission_completed, '15일 내 입원 완료 환자가 없습니다.') }}
+    {{ admission_group_panel('counselor', admission_group_all['counselor'], '상담사별로 볼 입원 환자가 없습니다.') }}
+    {{ admission_group_panel('ward', admission_group_all['ward'], '병동별로 볼 입원 환자가 없습니다.') }}
+    {{ admission_group_panel('doctor', admission_group_all['doctor'], '주치의별로 볼 입원 환자가 없습니다.') }}
 </div>
 
 <div class="dash-two-col" id="today-consults">
@@ -722,25 +729,11 @@
 </style>
 <script>
 function syncAdmissionPanels() {
-    const status = document.querySelector('.dash-status-btn.active')?.dataset.status || 'planned';
-    const view = document.querySelector('.dash-view-btn.active')?.dataset.view || 'counselor';
+    const view = document.querySelector('.dash-view-btn.active')?.dataset.view || 'all';
     document.querySelectorAll('.dash-admission-view').forEach((panel) => {
-        panel.classList.toggle(
-            'active',
-            panel.dataset.statusPanel === status && panel.dataset.viewPanel === view
-        );
+        panel.classList.toggle('active', panel.dataset.viewPanel === view);
     });
 }
-
-document.querySelectorAll('.dash-status-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-        document.querySelectorAll('.dash-status-btn').forEach((b) => {
-            b.classList.toggle('active', b === btn);
-            b.setAttribute('aria-pressed', b === btn ? 'true' : 'false');
-        });
-        syncAdmissionPanels();
-    });
-});
 
 document.querySelectorAll('.dash-view-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
