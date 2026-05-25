@@ -9,7 +9,7 @@ import logging
 import os
 import secrets
 from datetime import datetime, timedelta
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from dotenv import load_dotenv
 from flask import (
@@ -94,6 +94,19 @@ def _url_with(**overrides):
             args[k] = str(v)
     qs = urlencode(args)
     return request.path + (("?" + qs) if qs else "")
+
+
+def _is_safe_next_url(value):
+    """Allow only local absolute paths for post-login redirects."""
+    value = (value or "").strip()
+    if not value or not value.startswith("/"):
+        return False
+    if value.startswith("//") or value.startswith("/\\"):
+        return False
+    if any(ord(ch) < 32 for ch in value):
+        return False
+    parsed = urlsplit(value)
+    return not parsed.scheme and not parsed.netloc
 
 
 @app.context_processor
@@ -212,7 +225,8 @@ def _sido_short(value):
 
 # 기저질환 그룹의 부모 라벨 prefix — 병명 셀에서 제외용
 _CHRONIC_PREFIXES = ("당뇨", "고혈압", "파킨슨", "희귀성난치질환",
-                     "치매", "인지기능저하", "이상행동", "탈출", "암")
+                     "치매", "인지기능저하", "이상행동", "탈출", "암",
+                     "마비-편마비", "편마비")
 
 
 @app.template_filter("hide_chronic")
@@ -224,7 +238,8 @@ def _hide_chronic(diseases_list):
     for d in diseases_list:
         if d == "기저질환":
             continue
-        if any(d == p or d.startswith(p + "-") for p in _CHRONIC_PREFIXES):
+        if any(d == p or d.startswith(p + "-") or d.startswith(p + " ")
+               for p in _CHRONIC_PREFIXES):
             continue
         out.append(d)
     return out
@@ -469,6 +484,235 @@ def _discharge_watch(consultation):
     }
 
 
+def _dashboard_ward_label(room_number):
+    room = (room_number or "").strip()
+    if not room:
+        return "병동 미지정"
+    if "병동" in room:
+        return room
+    digits = ""
+    started = False
+    for ch in room:
+        if ch.isdigit():
+            digits += ch
+            started = True
+        elif started:
+            break
+    if len(digits) >= 3:
+        return f"{digits[0]}병동"
+    if digits:
+        return f"{digits}병동"
+    return room
+
+
+def _dashboard_disease_labels(record):
+    labels = []
+    diseases = record.get("diseases") or []
+    if isinstance(diseases, list):
+        labels.extend(str(v).strip() for v in diseases if str(v).strip())
+    elif str(diseases).strip():
+        labels.append(str(diseases).strip())
+    for key in ("primary_diagnosis", "secondary_diagnosis"):
+        value = (record.get(key) or "").strip()
+        if value and value not in labels:
+            labels.append(value)
+    labels = _hide_chronic(labels)
+    return labels or ["병명 미지정"]
+
+
+def _dashboard_groups(items, labels_fn):
+    grouped = {}
+    for item in items:
+        labels = labels_fn(item)
+        if isinstance(labels, str):
+            labels = [labels]
+        for label in labels:
+            label = (label or "").strip() or "미지정"
+            grouped.setdefault(label, []).append(item)
+    return sorted(
+        ({"label": label, "count": len(rows), "rows": rows}
+         for label, rows in grouped.items()),
+        key=lambda g: (-g["count"], g["label"]),
+    )
+
+
+def _dashboard_inbound_bucket(comm):
+    channel = (comm.get("channel") or "").strip()
+    if "카카오" in channel:
+        return "카카오채널"
+    if "웹" in channel or "홈" in channel:
+        return "홈페이지"
+    return channel or "기타"
+
+
+def _dashboard_parse_datetime(value):
+    value = (value or "").strip()
+    if not value:
+        return None
+    formats = (
+        ("%Y-%m-%d %H:%M:%S", 19),
+        ("%Y-%m-%dT%H:%M:%S", 19),
+        ("%Y-%m-%d %H:%M", 16),
+        ("%Y-%m-%d", 10),
+    )
+    for fmt, size in formats:
+        try:
+            return datetime.strptime(value[:size], fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _dashboard_elapsed_label(dt):
+    if not dt:
+        return ""
+    minutes = max(0, int((datetime.now() - dt).total_seconds() // 60))
+    if minutes < 60:
+        return f"{minutes}분 경과"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours}시간 경과"
+    days = hours // 24
+    rem = hours % 24
+    return f"{days}일 {rem}시간 경과" if rem else f"{days}일 경과"
+
+
+def _dashboard_days_since(value):
+    dt = _dashboard_parse_datetime(value)
+    if not dt:
+        return None
+    return (datetime.now().date() - dt.date()).days
+
+
+def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge_due):
+    today = datetime.now().strftime("%Y-%m-%d")
+    items = []
+
+    def add(kind, tone, title, detail="", meta="", href=None, sort=50):
+        items.append({
+            "kind": kind,
+            "tone": tone,
+            "title": title,
+            "detail": detail,
+            "meta": meta,
+            "href": href,
+            "sort": sort,
+        })
+
+    for m in open_comms:
+        occurred = _dashboard_parse_datetime(m.get("occurred_at") or m.get("created_at"))
+        hours = ((datetime.now() - occurred).total_seconds() / 3600) if occurred else 0
+        tone = "danger" if hours >= 24 else "warn" if hours >= 2 else "info"
+        who = m.get("patient_name") or m.get("contact") or "미연결 문의"
+        add(
+            _dashboard_inbound_bucket(m),
+            tone,
+            who,
+            (m.get("summary") or m.get("body") or "")[:70],
+            _dashboard_elapsed_label(occurred),
+            "/inbox",
+            0 if tone == "danger" else 15 if tone == "warn" else 45,
+        )
+
+    for r in callbacks:
+        days = _dashboard_days_since(r.get("consult_date"))
+        tone = "danger" if days is not None and days >= 2 else "warn"
+        meta = f"{days}일 대기" if days and days > 0 else "오늘 재연락"
+        add(
+            "재연락",
+            tone,
+            r.get("patient_name") or "환자 미지정",
+            " · ".join(v for v in (
+                r.get("counselor") or "상담사 미지정",
+                r.get("disease_summary") or "병명 미지정",
+                r.get("consult_result_reason") or "",
+            ) if v),
+            meta,
+            f"/consult/{r.get('id')}" if r.get("id") else "/inbox",
+            8 if tone == "danger" else 25,
+        )
+
+    for r in data.get("admission_by_status", {}).get("planned", []):
+        if r.get("admission_display_date") != today:
+            continue
+        missing = []
+        if not (r.get("planned_admission_time") or "").strip():
+            missing.append("입원시간")
+        if not (r.get("attending_doctor") or "").strip():
+            missing.append("주치의")
+        if not (r.get("room_number") or "").strip():
+            missing.append("병실")
+        if not (r.get("counselor") or "").strip():
+            missing.append("상담사")
+        if missing:
+            add(
+                "입원준비",
+                "danger",
+                r.get("patient_name") or "환자 미지정",
+                "누락: " + ", ".join(missing),
+                "오늘 입원 예정",
+                f"/consult/{r.get('id')}" if r.get("id") else None,
+                2,
+            )
+
+    for r in data.get("today", []):
+        if not (r.get("counselor") or "").strip():
+            add(
+                "담당자",
+                "warn",
+                r.get("patient_name") or "환자 미지정",
+                "오늘 상담의 상담사가 지정되지 않았습니다.",
+                r.get("consult_time") or "시간 미지정",
+                f"/consult/{r.get('id')}" if r.get("id") else None,
+                28,
+            )
+
+    for d in recovery_due[:6]:
+        left = d["watch"].get("billing_left")
+        add(
+            "전환체크",
+            "danger" if left is not None and left <= 0 else "warn",
+            d["con"].get("patient_name") or "환자 미지정",
+            "회복기 수가 만료 임박",
+            f"{abs(left)}일 초과" if left is not None and left < 0 else f"D-{left}",
+            f"/consult/{d['con'].get('id')}" if d["con"].get("id") else None,
+            6 if left is not None and left <= 0 else 22,
+        )
+
+    for d in discharge_due[:6]:
+        left = d["watch"].get("days_left")
+        add(
+            "퇴원예정",
+            "danger" if left is not None and left <= 0 else "warn",
+            d["con"].get("patient_name") or "환자 미지정",
+            "퇴원 예정일 확인 필요",
+            f"{abs(left)}일 초과" if left is not None and left < 0 else f"D-{left}",
+            f"/consult/{d['con'].get('id')}" if d["con"].get("id") else None,
+            10 if left is not None and left <= 0 else 30,
+        )
+
+    for h in data.get("holds", [])[:8]:
+        days = _dashboard_days_since(h.get("updated_at") or h.get("consult_date"))
+        add(
+            h.get("hold_kind") or "보류",
+            "danger" if h.get("hold_kind") == "입원보류" else "warn",
+            h.get("patient_name") or "환자 미지정",
+            h.get("hold_reason_text") or "보류 사유 확인 필요",
+            f"{days}일 경과" if days and days > 0 else "보류",
+            f"/consult/{h.get('id')}" if h.get("id") else None,
+            35,
+        )
+
+    tone_rank = {"danger": 0, "warn": 1, "info": 2}
+    items.sort(key=lambda x: (tone_rank.get(x["tone"], 9), x["sort"], x["title"]))
+    return {
+        "items": items[:14],
+        "total": len(items),
+        "danger": sum(1 for x in items if x["tone"] == "danger"),
+        "warn": sum(1 for x in items if x["tone"] == "warn"),
+    }
+
+
 @app.template_filter("agefrom")
 def _agefrom(birth_year):
     if not birth_year:
@@ -501,6 +745,36 @@ def _sync_lifecycle_stage(patient_id, admission_status):
         models.set_patient_stage(patient_id, target)
 
 
+def _sync_lifecycle_stage_if_unset(patient_id, target_stage):
+    """환자 단계가 비어 있을 때만 target_stage로 설정.
+    트리거 ① 신규 상담 등록 시 기본 '상담' 단계 자동 부여용 — 이미 단계가 있는
+    (입원/회복기/퇴원 등) 환자는 건드리지 않는다."""
+    if target_stage not in LIFECYCLE_STAGES:
+        return
+    p = models.get_patient(patient_id)
+    if not p:
+        return
+    if (p.get("lifecycle_stage") or "").strip():
+        return  # 이미 단계 있음 — 손대지 않음
+    models.set_patient_stage(patient_id, target_stage)
+
+
+def _set_lifecycle_stage_clinical(patient_id, target_stage):
+    """임상 이벤트 기반 단계 전환 — 응급치료·복귀·회복기·비회복기·퇴원 등.
+    의료 사건이 발생하면 단계가 뒤로 갈 수도 있으므로(예: 회복기→응급치료)
+    `_sync_lifecycle_stage`의 '앞으로만' 룰을 우회한다. 단, 이미 '퇴원' 상태인
+    환자는 더 이상 변동하지 않는다(완료 케이스 보호)."""
+    if target_stage not in LIFECYCLE_STAGES:
+        return
+    p = models.get_patient(patient_id)
+    if not p:
+        return
+    cur = (p.get("lifecycle_stage") or "").strip()
+    if cur == "퇴원" and target_stage != "퇴원":
+        return  # 퇴원 환자는 다시 끌어내지 않음
+    models.set_patient_stage(patient_id, target_stage)
+
+
 # ───────────────────── 인증 ─────────────────────
 
 @app.route("/login", methods=["GET", "POST"])
@@ -518,7 +792,7 @@ def login_view():
             return render_template("login.html"), 401
         login_user(user)
         next_url = request.args.get("next") or request.form.get("next") or url_for("dashboard")
-        if not next_url.startswith("/"):
+        if not _is_safe_next_url(next_url):
             next_url = url_for("dashboard")
         return redirect(next_url)
     if current_user():
@@ -539,16 +813,85 @@ def logout_view():
 @login_required
 def dashboard():
     data = models.dashboard_summary()
-    # 퇴원예정 — 입원완료 상담 중 입원기간 만료 30일 이내(또는 초과). 병상 회전 계획용.
+    open_comms = models.inbox_open_communications()
+    callbacks = models.inbox_callbacks()
+
+    # 입원완료 환자 중 회복기→비회복기 전환 D-15, 퇴원예정 D-30.
     admitted = models.list_consultations(admission_status="입원완료", limit=10000)
-    data["summary"]["discharge_pending"] = sum(
-        1 for con in admitted if (_discharge_watch(con) or {}).get("state"))
+    recovery_transition_due = []
+    discharge_due = []
+    for con in admitted:
+        disease_labels = _dashboard_disease_labels(con)
+        con["disease_summary"] = "" if disease_labels == ["병명 미지정"] else ", ".join(disease_labels[:3])
+        con["ward"] = _dashboard_ward_label(con.get("room_number"))
+        ax = _admission_expiry(con)
+        if ax and ax.get("billing_left") is not None and ax["billing_left"] <= 15:
+            recovery_transition_due.append({"con": con, "watch": ax})
+        dw = _discharge_watch(con)
+        if dw and dw.get("days_left") is not None and dw["days_left"] <= 30:
+            discharge_due.append({"con": con, "watch": dw})
+    recovery_transition_due.sort(key=lambda x: x["watch"]["billing_left"])
+    discharge_due.sort(key=lambda x: x["watch"]["days_left"])
+
+    for cb in callbacks:
+        disease_labels = _dashboard_disease_labels(cb)
+        cb["disease_summary"] = "" if disease_labels == ["병명 미지정"] else ", ".join(disease_labels[:3])
+
+    inbound_groups = {
+        "all": open_comms,
+        "kakao": [m for m in open_comms if _dashboard_inbound_bucket(m) == "카카오채널"],
+        "homepage": [m for m in open_comms if _dashboard_inbound_bucket(m) == "홈페이지"],
+        "other": [
+            m for m in open_comms
+            if _dashboard_inbound_bucket(m) not in ("카카오채널", "홈페이지")
+        ],
+    }
+    discharge_groups = {
+        "disease": _dashboard_groups(discharge_due, lambda x: _dashboard_disease_labels(x["con"])),
+        "ward": _dashboard_groups(discharge_due, lambda x: _dashboard_ward_label(x["con"].get("room_number"))),
+        "doctor": _dashboard_groups(
+            discharge_due,
+            lambda x: (x["con"].get("attending_doctor") or "").strip() or "주치의 미지정",
+        ),
+    }
+    callback_groups = {
+        "counselor": _dashboard_groups(
+            callbacks,
+            lambda x: (x.get("counselor") or "").strip() or "상담사 미지정",
+        ),
+        "disease": _dashboard_groups(callbacks, _dashboard_disease_labels),
+    }
+    action_queue = _dashboard_action_queue(
+        data, open_comms, callbacks, recovery_transition_due, discharge_due,
+    )
+
+    data["open_comms"] = open_comms
+    data["inbound_groups"] = inbound_groups
+    data["callbacks"] = callbacks
+    data["callback_groups"] = callback_groups
+    data["recovery_transition_due"] = recovery_transition_due
+    data["discharge_due"] = discharge_due
+    data["discharge_groups"] = discharge_groups
+    data["action_queue"] = action_queue
+    data["summary"]["open_inbound"] = len(open_comms)
+    data["summary"]["callbacks"] = len(callbacks)
+    data["summary"]["recovery_transition_due"] = len(recovery_transition_due)
+    data["summary"]["discharge_pending"] = len(discharge_due)
+    data["summary"]["action_total"] = action_queue["total"]
+    data["summary"]["action_danger"] = action_queue["danger"]
     return render_template("dashboard.html", **data)
 
 
 @app.route("/healthz")
 def healthz():
     return {"ok": True}
+
+
+@app.route("/help")
+@login_required
+def help_manual():
+    """8개 메뉴 사용 매뉴얼 — 신규 상담사 온보딩·일상 참고용."""
+    return render_template("help.html")
 
 
 # ───────────────────── 통계 (Phase 3) ─────────────────────
@@ -650,7 +993,28 @@ def api_stats_insight():
 @app.route("/consult/new")
 @login_required
 def consult_new():
-    return render_template("consult_form.html", consultation=None, patient=None,
+    # 인박스 미처리 인바운드에서 상담 등록을 시작한 경우 — communication 로드 후 prefill
+    inbox_comm = None
+    patient = None
+    try:
+        comm_id = int(request.args.get("comm_id") or 0)
+    except (ValueError, TypeError):
+        comm_id = 0
+    if comm_id:
+        comm = models.get_communication(comm_id)
+        if comm and (comm.get("status") or "") != "done":
+            inbox_comm = comm
+            if comm.get("patient_id"):
+                patient = models.get_patient(comm["patient_id"])
+            else:
+                # 환자 미연결 — contact(연락처)·body로 보호자 정보 추론하여 가상 patient
+                contact = (comm.get("contact") or "").strip()
+                patient = {
+                    "id": None, "name": "",
+                    "guardian_phone": contact if contact else "",
+                }
+    return render_template("consult_form.html", consultation=None, patient=patient,
+                           inbox_comm=inbox_comm,
                            top_hospitals=models.top_source_hospitals())
 
 
@@ -667,7 +1031,8 @@ def consult_detail(cid):
     )
     history = models.patient_consultations(c["patient_id"])
     return render_template("consult_detail.html", c=c, history=history,
-                           admission_events=models.list_admission_events(cid))
+                           admission_events=models.list_admission_events(cid),
+                           LIFECYCLE_EVENT_TYPES=LIFECYCLE_EVENT_TYPES)
 
 
 @app.route("/consult/<int:cid>/edit")
@@ -789,12 +1154,15 @@ def patient_detail(pid):
         abort(404)
     history = models.patient_consultations(pid)
     timeline = models.patient_timeline(pid)
+    # 생애주기 보드 검색어(q) 보존 — 보드 → 환자상세 → 보드 복귀 시 검색 상태 유지
+    lc_back_q = (request.args.get("q") or "").strip()
     models.log_audit(
         user_id=g.user["id"], username=g.user["username"],
         action="view_patient", target_type="patient", target_id=pid,
         ip=request.remote_addr,
     )
-    return render_template("patient_detail.html", p=p, history=history, timeline=timeline)
+    return render_template("patient_detail.html", p=p, history=history,
+                           timeline=timeline, lc_back_q=lc_back_q)
 
 
 # ───────────────────── API: 상담 CRUD ─────────────────────
@@ -833,6 +1201,24 @@ def api_consult_create():
     cid = models.create_consultation(patient_id=pid, **cfields)
     if cfields.get("admission_status"):
         _sync_lifecycle_stage(pid, cfields["admission_status"])
+    else:
+        # 트리거 ① — 신규 상담은 기본 '상담' 단계 자동 부여 (단계 미지정 환자 한정)
+        # 이미 입원/회복기 등 더 뒤 단계인 환자는 룰 A로 후진 안 함
+        _sync_lifecycle_stage_if_unset(pid, "상담")
+    # 인박스에서 등록 → 해당 communication을 'done' + consultation_id/patient_id 연결
+    try:
+        comm_id = int(request.args.get("comm_id") or 0)
+    except (ValueError, TypeError):
+        comm_id = 0
+    if comm_id and models.get_communication(comm_id):
+        models.update_communication(
+            comm_id, status="done", consultation_id=cid, patient_id=pid,
+        )
+        models.log_audit(
+            user_id=g.user["id"], username=g.user["username"],
+            action="close_communication", target_type="communication",
+            target_id=comm_id, detail=f"→ consult #{cid}", ip=request.remote_addr,
+        )
     models.log_audit(
         user_id=g.user["id"], username=g.user["username"],
         action="create_consult", target_type="consultation", target_id=cid,
@@ -859,7 +1245,11 @@ def api_consult_update(cid):
             "insurance_type", "guardian_name", "guardian_relation",
             "guardian_phone", "family_info",
         )
-        valid = {k: v for k, v in p.items() if k in patient_cols and v not in (None, "")}
+        valid = {}
+        for k, v in p.items():
+            if k not in patient_cols:
+                continue
+            valid[k] = (v.strip() or None) if isinstance(v, str) else v
         if valid:
             models.update_patient(existing["patient_id"], **valid)
         if "blacklist" in p:
@@ -1027,9 +1417,80 @@ def api_consult_delete(cid):
 @app.route("/lifecycle")
 @login_required
 def lifecycle_board():
-    """환자 생애주기 관리 보드 — 단계별 컬럼에 환자 카드 배치."""
+    """환자 생애주기 관리 보드 — 단계별 컬럼에 환자 카드 배치.
+    필터: q(검색) / period(기간) / stages[](단계) / dx(병명그룹) / doctor / archived(아카이브 포함)
+    """
     q = (request.args.get("q") or "").strip() or None
-    patients = models.lifecycle_board(q=q)
+    # 기간 — 기본 90일, '0'/'all'은 전체
+    period_raw = request.args.get("period", "90")
+    try:
+        period_days = None if period_raw in ("0", "all", "") else int(period_raw)
+    except (ValueError, TypeError):
+        period_days = 90
+    # 단계 필터 — 여러 단계 체크박스
+    stage_filter = request.args.getlist("stage") or []
+    stage_filter = [s for s in stage_filter if s in LIFECYCLE_STAGES] or None
+    # 병명 그룹·주치의·모병원
+    dx = (request.args.get("dx") or "").strip() or None
+    doctor = (request.args.get("doctor") or "").strip() or None
+    hospital = (request.args.get("hospital") or "").strip() or None
+    # 아카이브 포함 (자동 정리 룰 우회)
+    include_archived = request.args.get("archived") in ("1", "true", "yes")
+    # KPI 클릭 필터·프리셋
+    stale_only = request.args.get("stale") in ("1", "true", "yes")
+    new_30d_only = request.args.get("new30") in ("1", "true", "yes")
+    discharge_imminent_only = request.args.get("discharge_imminent") in ("1", "true", "yes")
+    emergency_overdue_only = request.args.get("emergency_overdue") in ("1", "true", "yes")
+    # 기본 보기 — view=all이 아니면 입원·응급치료·입원대기 자동 필터 (시급 환자)
+    view = request.args.get("view") or ""
+    any_explicit_filter = (q or stage_filter or dx or doctor or hospital or
+                           stale_only or new_30d_only or
+                           discharge_imminent_only or emergency_overdue_only or
+                           include_archived)
+    if view != "all" and not any_explicit_filter:
+        stage_filter = ["입원", "응급치료", "입원대기"]
+    # 액션 필터(퇴원임박·응급복귀)는 단계 무관 (모든 단계에서 적용)
+    if discharge_imminent_only or emergency_overdue_only:
+        stage_filter = None
+
+    patients = models.lifecycle_board(
+        q=q, period_days=period_days, stages=stage_filter,
+        disease_group=dx, doctor=doctor, include_archived=include_archived,
+        stale_only=stale_only, new_30d_only=new_30d_only,
+    )
+    # 모병원 필터 (post-filter)
+    if hospital:
+        pid_set = set()
+        if patients:
+            conn = models.get_db()
+            placeholders = ",".join("?" * len(patients))
+            rows = conn.execute(
+                f"SELECT DISTINCT patient_id FROM consultations "
+                f"WHERE patient_id IN ({placeholders}) AND source_hospital = ?",
+                [p["id"] for p in patients] + [hospital],
+            ).fetchall()
+            pid_set = {r["patient_id"] for r in rows}
+            conn.close()
+        patients = [p for p in patients if p["id"] in pid_set]
+    # 입원중 단계 환자의 퇴원 D-day 계산 (의료법 입원기간 룰 기반)
+    for pt in patients:
+        if pt.get("last_admission_status") == "입원완료" and pt.get("last_consult_id"):
+            con = models.get_consultation(pt["last_consult_id"])
+            if con:
+                dw = _discharge_watch(con)
+                if dw:
+                    pt["discharge_dday"] = dw["days_left"]
+                    pt["discharge_due_date"] = dw["due_date"]
+    # KPI 계산은 액션 필터 적용 전 patients 기준 (전체 카운트 정확)
+    kpis = models.lifecycle_board_kpis(patients)
+    # 액션 필터 (퇴원 임박·응급 복귀 미기록) — KPI 계산 후 post-filter
+    if discharge_imminent_only:
+        patients = [p for p in patients
+                    if p.get("discharge_dday") is not None and p["discharge_dday"] <= 3]
+    if emergency_overdue_only:
+        patients = [p for p in patients
+                    if p.get("lifecycle_stage") == "응급치료"
+                    and (p.get("stage_days_int") or 0) >= 3]
     board = {s: [] for s in LIFECYCLE_STAGES}
     board["기타"] = []
     for pt in patients:
@@ -1037,8 +1498,28 @@ def lifecycle_board():
         board.setdefault(st if st in board else "기타", []).append(pt)
     if not board["기타"]:
         board.pop("기타")
+    # 단계별 카운트는 KPI 필터 영향 받음 — 카테고리 카드는 전체 환자 기준으로 별도 조회가 필요할 수도 있으나
+    # 일단 보드와 동기화된 값으로 표시 (현재 상황 = 활성 단계만)
+    # 사이드 패널 데이터 (모병원·응급전원)
+    side = models.lifecycle_board_side(patients)
+    # 주치의 옵션 — 최근 상담에서 추출 (config 5명 + 자유 입력 환자가 있을 수 있음)
+    doctor_options = sorted(set(filter(None,
+        (p.get("last_doctor") for p in patients))))
     return render_template(
         "lifecycle.html", board=board, q=q or "", total=len(patients),
+        kpis=kpis, side=side,
+        filters={
+            "period": period_raw, "stages": stage_filter or [],
+            "dx": dx or "", "doctor": doctor or "", "hospital": hospital or "",
+            "archived": include_archived,
+            "stale": stale_only, "new30": new_30d_only,
+            "discharge_imminent": discharge_imminent_only,
+            "emergency_overdue": emergency_overdue_only,
+            "view": view,
+        },
+        LIFECYCLE_STAGES=LIFECYCLE_STAGES,
+        doctor_options=doctor_options,
+        DISEASE_GROUPS=list(DISEASES_GROUPS.keys()),
     )
 
 
@@ -1081,6 +1562,17 @@ def api_lifecycle_event_add(pid):
         detail=(payload.get("detail") or "").strip() or None,
         created_by=g.user.get("display_name"),
     )
+    # 트리거 ③ — 생애주기 이벤트가 단계 전환 신호인 경우 환자 단계 자동 변경
+    stage_map = {
+        "회복기 전환": "회복기",
+        "비회복기 전환": "비회복기",
+        "응급치료": "응급치료",
+        "복귀": "입원",
+        "퇴원": "퇴원",
+    }
+    target = stage_map.get(event_type)
+    if target:
+        _set_lifecycle_stage_clinical(pid, target)
     models.log_audit(
         user_id=g.user["id"], username=g.user["username"],
         action="add_lifecycle_event", target_type="patient", target_id=pid,
@@ -1235,6 +1727,13 @@ def api_admission_event_create(cid):
         memo=(payload.get("memo") or "").strip() or None,
         created_by=g.user.get("display_name"),
     )
+    # 트리거 ② — 입원 중 이벤트가 단계 전환 신호인 경우 환자 단계 자동 변경
+    con = models.get_consultation(cid)
+    if con:
+        stage_map = {"응급전원": "응급치료", "모병원 외래치료": "응급치료", "복귀": "입원"}
+        target = stage_map.get(event_type)
+        if target:
+            _set_lifecycle_stage_clinical(con["patient_id"], target)
     models.log_audit(
         user_id=g.user["id"], username=g.user["username"],
         action="add_admission_event", target_type="consultation", target_id=cid,
@@ -1289,16 +1788,25 @@ def sms_compose():
     """문자 전송 — 최근 상담에서 보호자 선택 → 환자군 템플릿 → 발송."""
     recent = models.list_consultations(limit=200)
     cid = request.args.get("cid", type=int)
+    pid = request.args.get("pid", type=int)
     preselect = models.get_consultation(cid) if cid else None
     # 선택 대상이 최근 200건 밖이면 드롭다운에 옵션이 없어 프리필이 안 된다
     # (인박스 퇴원예정 등 오래된 상담의 '문자' 버튼 진입 케이스) → 목록 맨 앞에 보강.
     if preselect and not any(r["id"] == preselect["id"] for r in recent):
         recent = [preselect] + recent
+    # ← 돌아가기 — 진입 경로 추론 (cid → 상담상세 / pid → 환자상세 / 그 외 → 인박스)
+    if cid and preselect:
+        back_url, back_label = f"/consult/{cid}", "← 상담 상세"
+    elif pid:
+        back_url, back_label = f"/patients/{pid}", "← 환자 상세"
+    else:
+        back_url, back_label = "/inbox", "← 인박스"
     return render_template(
         "sms.html", recent=recent, templates=models.list_sms_templates(),
         preselect=preselect, log=models.list_sms_log(30),
         placeholders=SMS_PLACEHOLDERS,
         gateway_ready=sms_gateway.gateway_configured(),
+        back_url=back_url, back_label=back_label,
     )
 
 
@@ -1425,6 +1933,11 @@ def api_ac_patient():
 # ───────────────────── helpers ─────────────────────
 
 def _list_filters_from_request():
+    def _int_or_none(v):
+        try:
+            return int(v) if v not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
     return {
         "date_from": request.args.get("from") or None,
         "date_to": request.args.get("to") or None,
@@ -1439,6 +1952,12 @@ def _list_filters_from_request():
         "consult_channel": request.args.get("consult_channel") or None,
         "referral_type": request.args.get("referral_type") or None,
         "q": request.args.get("q") or None,
+        # 컬럼별 필터 — 성별·나이 범위·보호자·모병원
+        "gender": request.args.get("gender") or None,
+        "age_min": _int_or_none(request.args.get("age_min")),
+        "age_max": _int_or_none(request.args.get("age_max")),
+        "guardian": request.args.get("guardian") or None,
+        "hospital": request.args.get("hospital") or None,
     }
 
 

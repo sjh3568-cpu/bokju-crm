@@ -22,7 +22,12 @@
                 <td>{{ r.consult_result_reason or '(미기재)' }}</td>
                 <td class="nowrap">{{ r.guardian_name or '' }} {{ r.guardian_phone or '' }}</td>
                 <td class="nowrap">{{ r.counselor or '' }}</td>
-                <td class="nowrap"><a class="btn btn-secondary btn-xs" href="/sms?cid={{ r.id }}">문자</a> <a class="btn btn-secondary btn-xs" href="/consult/{{ r.id }}">상담</a></td>
+                <td class="nowrap">
+                    <a class="btn btn-secondary btn-xs" href="/sms?cid={{ r.id }}">문자</a>
+                    <a class="btn btn-secondary btn-xs" href="/consult/{{ r.id }}">상담</a>
+                    <button class="btn btn-primary btn-xs ib-callback-done" data-cid="{{ r.id }}"
+                            title="재연락 완료 — 상담 결과를 '상담완료'로 즉시 변경">✓ 완료</button>
+                </td>
             </tr>
             {% endfor %}
         </tbody>
@@ -38,12 +43,19 @@
         <thead><tr><th>일시</th><th>채널</th><th>환자/연락처</th><th>내용</th><th></th></tr></thead>
         <tbody>
             {% for m in open_comms %}
-            <tr data-comm="{{ m.id }}">
+            <tr data-comm="{{ m.id }}"{% if m.blacklist %} class="ib-row-bl"{% endif %}>
                 <td class="nowrap">{{ (m.occurred_at or m.created_at or '')[:16] }}</td>
                 <td class="nowrap"><span class="ib-ch">{{ m.channel }}</span> {{ '↘' if m.direction == 'in' else '↗' }}</td>
-                <td class="nowrap">{% if m.patient_id %}<a href="/patients/{{ m.patient_id }}">{{ m.patient_name }}</a>{% else %}<span class="muted">미연결</span>{% endif %}{% if m.contact %} <span class="muted-sm">{{ m.contact }}</span>{% endif %}</td>
+                <td class="nowrap">
+                    {% if m.blacklist %}<span class="bl-mark" title="블랙리스트{% if m.blacklist_reason %} — {{ m.blacklist_reason }}{% endif %}">⚠</span> {% endif %}
+                    {% if m.patient_id %}<a href="/patients/{{ m.patient_id }}">{{ m.patient_name }}</a>
+                    {% elif m.matched_patient_id %}<a href="/patients/{{ m.matched_patient_id }}" class="ib-matched" title="연락처로 매칭된 환자">{{ m.matched_patient_name }}</a>
+                    {% else %}<span class="muted">미연결</span>{% endif %}
+                    {% if m.contact %} <span class="muted-sm">{{ m.contact }}</span>{% endif %}
+                </td>
                 <td class="ib-body" title="{{ m.body or m.summary }}">{{ m.summary or '' }}{% if m.summary and m.body %} — {% endif %}{{ m.body or '' }}</td>
                 <td class="nowrap">
+                    <a class="btn btn-primary btn-xs" href="/consult/new?comm_id={{ m.id }}">상담 등록</a>
                     <button class="btn btn-secondary btn-xs ib-done" data-comm="{{ m.id }}">처리완료</button>
                     <button class="btn btn-secondary btn-xs ib-del" data-comm="{{ m.id }}">삭제</button>
                 </td>
@@ -106,6 +118,9 @@
     font-size:0.92em; font-weight:600; }
 .ib-body { max-width:360px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:0.86em; }
 .ib-over { color:#b91c1c; font-weight:700; }
+.ib-row-bl { background:#fef2f2; }
+.ib-matched { color:#9333ea; }
+.ib-matched::after { content:" (연락처 매칭)"; font-size:0.78em; color:#a78bfa; }
 .bl-mark { display:inline-block; padding:0 4px; background:#1f2937; color:#fecaca;
     border-radius:5px; font-size:0.7em; font-weight:700; }
 .btn-xs { padding:2px 8px; font-size:0.76em; }
@@ -130,6 +145,21 @@ document.querySelectorAll('.ib-del').forEach(btn => {
             if (!r.ok) throw new Error((await r.json()).error || r.status);
             const tr = btn.closest('tr'); if (tr) tr.remove();
         } catch (e) { alert('삭제 실패: ' + e.message); }
+    });
+});
+// 재연락 완료 1-click — 상담 결과를 '상담완료'로 즉시 변경 (사유는 비움)
+document.querySelectorAll('.ib-callback-done').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        if (!confirm('재연락 완료로 표시할까요?\n상담 결과가 "상담완료"로 변경됩니다.')) return;
+        btn.disabled = true;
+        try {
+            await api.post(`/api/consult/${btn.dataset.cid}/status`,
+                { consult_result: '상담완료', consult_result_reason: '' });
+            const tr = btn.closest('tr'); if (tr) tr.remove();
+        } catch (e) {
+            alert('처리 실패: ' + e.message);
+            btn.disabled = false;
+        }
     });
 });
 </script>

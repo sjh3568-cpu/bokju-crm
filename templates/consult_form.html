@@ -20,20 +20,642 @@
 
 <div class="page-header">
     <h1>{% if is_edit %}상담일지 수정 (#{{ consultation.id }}){% else %}새 상담일지{% endif %}</h1>
-    <a href="{% if is_edit %}/consult/{{ consultation.id }}{% else %}/{% endif %}" class="btn-back">← 돌아가기</a>
+    <a href="{% if is_edit %}/consult/{{ consultation.id }}{% elif inbox_comm %}/inbox{% else %}/{% endif %}" class="btn-back">← 돌아가기</a>
 </div>
+
+{% if not is_edit %}
+{# ─── 입원 자격 사전 체크 위저드 — 통화 시작 30초 안에 회복기 가능/불가 판정 ─── #}
+{# 디폴트 접힘 — 통화 시작 시 [▾]로 펼쳐서 사용 #}
+<div class="elig-wizard collapsed" id="elig-wizard">
+    <div class="elig-head">
+        <strong>📋 입원 자격 사전 체크</strong>
+        <span class="muted" style="font-size:0.8em">통화 직후 회복기 가능 여부 즉시 판정 — 클릭해서 펼치세요 ▾</span>
+        <button type="button" class="elig-toggle" id="elig-toggle" title="접기/펼치기">▾</button>
+    </div>
+    <div class="elig-body" id="elig-body">
+        <div class="elig-row elig-row-table">
+            <label class="elig-label">병명 카테고리</label>
+            <table class="elig-table">
+                <thead>
+                    <tr>
+                        <th></th>
+                        <th>카테고리</th>
+                        <th class="num">입원시기</th>
+                        <th class="num">입원 기간</th>
+                        <th>비고</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><input type="radio" name="elig-dx" value="중추신경계" data-period="90" data-stay="회복기(S005) 180일 + 비회복기(S006) 180일 = 최대 360일" data-overflow="비회복기" data-overflow-stay="비회복기(S006) 180일"></td>
+                        <td>
+                            중추신경계
+                            <div class="elig-cns-sub">
+                                <label class="elig-cns-chk"><input type="checkbox" name="elig-cns" value="뇌출혈"> 뇌출혈</label>
+                                <label class="elig-cns-chk"><input type="checkbox" name="elig-cns" value="뇌경색"> 뇌경색</label>
+                                <label class="elig-cns-chk"><input type="checkbox" name="elig-cns" value="척수손상"> 척수손상</label>
+                                <label class="elig-cns-chk"><input type="checkbox" name="elig-cns" value="기타 뇌손상"> 기타 뇌손상</label>
+                            </div>
+                        </td>
+                        <td class="num">90일</td>
+                        <td class="num">360일</td>
+                        <td class="elig-note">
+                            <strong>회복기(S005):</strong> 180일 · <strong>비회복기(S006):</strong> 180일<br>
+                            <strong>지연된 회복기(S044):</strong> 90일 초과 시 급성기 치료 한정 적용 (270 − 발병 경과일)<br>
+                            ※ 척수손상 포함 — 뇌졸중·외상성·비외상성 뇌손상·척수손상
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><input type="radio" name="elig-dx" value="근골격계_단일" data-period="30" data-stay="30일" data-overflow="불가"></td>
+                        <td>근골격계 단일부위 <span class="elig-sub">(고관절·대퇴부·골절)</span></td>
+                        <td class="num">30일</td>
+                        <td class="num">30일</td>
+                        <td class="elig-note">단순 골절 · 골유합지연 + 내고정/전치환술 동반 시 아래 옵션 선택</td>
+                    </tr>
+                    <tr class="elig-sub-row">
+                        <td><input type="radio" name="elig-dx" value="골유합지연_내고정전치환술" data-period="60" data-stay="60일" data-overflow="불가"></td>
+                        <td>└ 골유합지연 + 내고정술 / 전치환술</td>
+                        <td class="num">60일</td>
+                        <td class="num">60일</td>
+                        <td class="elig-note">
+                            <strong>골유합 지연:</strong> 입원시기 60일<br>
+                            <strong>내고정술 / 전치환술:</strong> 입원 기간 60일
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><input type="radio" name="elig-dx" value="근골격계_다발" data-period="60" data-stay="60일" data-overflow="불가"></td>
+                        <td>근골격계 다발부위 <span class="elig-sub">(고관절·대퇴부·골절)</span></td>
+                        <td class="num">60일</td>
+                        <td class="num">60일</td>
+                        <td class="elig-note">초과 시 입원 불가</td>
+                    </tr>
+                    <tr>
+                        <td><input type="radio" name="elig-dx" value="양측슬관절치환술" data-period="30" data-stay="30일" data-warn="복잡기준 충족 필요 — 행정해석(보험급여과-2502호) 행위 복잡기준 (1)(2)(5)(6)(7)(10)(11) 중 해당 항목. 입원시기는 첫 번째 수술일로부터 30일 이내" data-overflow="불가"></td>
+                        <td>양측슬관절치환술 <span class="elig-warn-mark">⚠</span></td>
+                        <td class="num">30일</td>
+                        <td class="num">30일</td>
+                        <td class="elig-note">
+                            <strong>대상:</strong> 단측 또는 양측이 <strong>복잡수술</strong>에 해당하는 경우<br>
+                            <strong>입원시기:</strong> 첫 번째 수술일로부터 30일 이내<br>
+                            <strong>복잡기준:</strong> 보험급여과-2502호(2014.7.22) 행위 복잡기준 (1)(2)(5)(6)(7)(10)(11) 중 해당<br>
+                            <strong>재활치료료:</strong> 1일 최대 8회(2시간) — 다른 카테고리 1일 16회(4시간)와 다름
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><input type="radio" name="elig-dx" value="하지절단" data-period="60" data-stay="60일" data-overflow="불가" data-warn="족부절단은 제외 — 골반·대퇴·하퇴 절단만 대상"></td>
+                        <td>하지부위절단 <span class="elig-warn-mark">⚠</span></td>
+                        <td class="num">60일</td>
+                        <td class="num">60일</td>
+                        <td class="elig-note"><strong>족부절단 제외</strong> — 골반·대퇴·하퇴 부위 절단만 대상 · 초과 시 입원 불가</td>
+                    </tr>
+                    <tr>
+                        <td><input type="radio" name="elig-dx" value="비사용증후군" data-period="60" data-stay="60일" data-overflow="불가" data-warn="다제내성균만으로 비사용 여부 검토 필요 (단독 분류 불가, 기능평가 후 비사용증후군 포함 가능)"></td>
+                        <td>비사용증후군 <span class="elig-warn-mark">⚠</span></td>
+                        <td class="num">60일</td>
+                        <td class="num">60일</td>
+                        <td class="elig-note">호흡·심장·신생물·파킨슨·길랑바레 등 · 다제내성균만으로 비사용 여부 검토 필요</td>
+                    </tr>
+                    <tr>
+                        <td><input type="radio" name="elig-dx" value="파킨슨" data-period="60" data-stay="60일" data-overflow="비회복기" data-overflow-stay="비회복기 180일"></td>
+                        <td>파킨슨</td>
+                        <td class="num">60일</td>
+                        <td class="num">60일</td>
+                        <td class="elig-note">신규 진단 기준 · 초과 시 비회복기 180일 입원 가능</td>
+                    </tr>
+                    <tr>
+                        <td><input type="radio" name="elig-dx" value="기타" data-period="0" data-stay="" data-overflow="불가"></td>
+                        <td>해당 없음</td>
+                        <td class="num">—</td>
+                        <td class="num">—</td>
+                        <td class="elig-note">회복기 대상 아님</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="elig-row">
+            <label class="elig-label">발병/수술일</label>
+            <input type="date" id="elig-onset">
+            <label class="elig-label">보험</label>
+            <select id="elig-insurance">
+                <option value="">— 선택 —</option>
+                {% for t in INSURANCE_TYPES %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+                <option value="산재">산재</option>
+            </select>
+        </div>
+        <div class="elig-result" id="elig-result">
+            <div class="elig-badge elig-pending">⏸ 입력 대기</div>
+            <div class="elig-detail muted">병명·발병일·보험을 선택하면 즉시 판정합니다.</div>
+        </div>
+        {# 회복기 불가/일반재활/입원 불가 시 같은 재단 시설 안내 체크박스 #}
+        <div class="elig-referral" id="elig-referral" hidden>
+            <div class="elig-ref-label">📞 통화 종료 시 안내한 시설 (선택, 통계 집계)</div>
+            <label class="elig-ref-chk"><input type="checkbox" name="elig-ref" value="경도요양병원"> 경도요양병원 (같은 재단)</label>
+            <label class="elig-ref-chk"><input type="checkbox" name="elig-ref" value="복주요양원"> 복주요양원 (같은 재단)</label>
+            <label class="elig-ref-chk"><input type="checkbox" name="elig-ref" value="타 요양병원"> 타 요양병원</label>
+            <label class="elig-ref-chk"><input type="checkbox" name="elig-ref" value="타 요양원"> 타 요양원</label>
+            <label class="elig-ref-chk"><input type="checkbox" name="elig-ref" value="기타" id="elig-ref-etc"> 기타</label>
+            <input type="text" id="elig-ref-etc-note" class="elig-ref-note" hidden
+                   placeholder="기타 시설명·기관명·메모 (예: ○○요양병원, 보호자가 직접 알아보기로 함)">
+        </div>
+        <div class="elig-actions">
+            <button type="button" class="btn btn-primary btn-sm" id="elig-apply">상담 폼에 채우기</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="elig-reset">초기화</button>
+        </div>
+    </div>
+</div>
+<style>
+.elig-wizard { background:#f0fdf4; border:1px solid #86efac; border-radius:10px;
+    padding:10px 14px; margin:6px 0 12px; font-size:0.9em; }
+.elig-head { display:flex; align-items:center; gap:8px; }
+.elig-head strong { font-size:1em; }
+.elig-toggle { margin-left:auto; background:none; border:none; font-size:1em; cursor:pointer;
+    padding:2px 8px; border-radius:4px; }
+.elig-toggle:hover { background:#dcfce7; }
+.elig-wizard.collapsed .elig-body { display:none; }
+.elig-wizard.collapsed .elig-toggle { transform:rotate(-90deg); }
+.elig-body { margin-top:10px; }
+.elig-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
+.elig-label { font-size:0.86em; color:#475569; font-weight:600; min-width:90px; }
+.elig-chips { display:flex; flex-wrap:wrap; gap:5px; flex:1; }
+.elig-chip { display:inline-flex; align-items:center; padding:4px 10px;
+    border:1px solid #d1d5db; border-radius:9999px; background:#fff; cursor:pointer;
+    font-size:0.86em; }
+.elig-chip input { margin-right:4px; }
+.elig-chip:has(input:checked) { background:#16a34a; color:#fff; border-color:#16a34a; }
+.elig-sub { font-size:0.82em; opacity:0.75; margin-left:2px; }
+.elig-chip:has(input:checked) .elig-sub { opacity:0.9; }
+.elig-chip-sub { margin-left:18px; background:#f8fafc; }
+
+/* 카테고리 표 — 입원시기·입원 기간 한눈에 비교 */
+.elig-row-table { flex-direction:column; align-items:stretch; }
+.elig-row-table .elig-label { margin-bottom:4px; }
+.elig-table { width:100%; border-collapse:collapse; font-size:0.88em;
+    background:#fff; border-radius:6px; overflow:hidden;
+    border:1px solid #d1fae5; }
+.elig-table th { background:#dcfce7; color:#374151; font-weight:600;
+    font-size:0.78em; padding:5px 8px; text-align:left; }
+.elig-table th.num { text-align:center; }
+.elig-table td { padding:6px 8px; border-top:1px solid #f0fdf4; }
+.elig-table td.num { text-align:center; font-variant-numeric:tabular-nums;
+    color:#0369a1; font-weight:600; }
+.elig-table tr { cursor:pointer; transition:background 0.08s; }
+.elig-table tbody tr:hover { background:#f0fdf4; }
+.elig-table tbody tr.elig-sel { background:#dcfce7; }
+.elig-table tbody tr.elig-sel td.num { color:#15803d; }
+.elig-table .elig-sub-row td:nth-child(2) { padding-left:18px; color:#475569; }
+.elig-table .elig-note { font-size:0.8em; color:#6b7280; line-height:1.5; }
+.elig-table .elig-note strong { color:#374151; }
+.elig-table .elig-sub-row .elig-note { font-size:0.78em; }
+.elig-warn-mark { color:#dc2626; font-size:0.9em; margin-left:2px; }
+/* 중추신경계 서브 체크박스 (뇌출혈/뇌경색/척수손상/기타) */
+.elig-cns-sub { display:flex; flex-wrap:wrap; gap:4px 10px; margin-top:4px;
+    padding:4px 0 0 4px; }
+.elig-cns-chk { display:inline-flex; align-items:center; gap:3px; font-size:0.82em;
+    color:#475569; cursor:pointer; }
+.elig-cns-chk input { margin:0 2px 0 0; }
+/* 접힘 상태 토글 화살표 회전 */
+.elig-wizard.collapsed .elig-toggle { transform:rotate(-90deg); }
+.elig-toggle { transition:transform 0.15s; }
+.elig-row input[type="date"], .elig-row select { padding:5px 8px;
+    border:1px solid var(--border); border-radius:6px; font-family:inherit; }
+.elig-result { padding:10px 12px; background:#fff; border-radius:8px; margin:8px 0;
+    border-left:4px solid #86efac; }
+.elig-badge { font-size:1em; font-weight:700; margin-bottom:4px; }
+.elig-badge.elig-pending { color:#6b7280; }
+.elig-badge.elig-ok { color:#16a34a; }
+.elig-badge.elig-soso { color:#ca8a04; }
+.elig-badge.elig-no { color:#dc2626; }
+.elig-result.r-ok { border-left-color:#16a34a; }
+.elig-result.r-soso { border-left-color:#ca8a04; background:#fefce8; }
+.elig-result.r-no { border-left-color:#dc2626; background:#fef2f2; }
+.elig-detail { font-size:0.86em; line-height:1.5; }
+.elig-detail .elig-extra { display:block; margin-top:3px; color:#92400e; }
+.elig-actions { display:flex; gap:6px; }
+.elig-referral { background:#fff; border:1px dashed #fca5a5; border-radius:8px;
+    padding:8px 10px; margin:6px 0; }
+.elig-ref-label { font-size:0.84em; color:#991b1b; font-weight:600; margin-bottom:4px; }
+.elig-ref-chk { display:inline-flex; align-items:center; gap:3px; margin-right:10px;
+    font-size:0.86em; cursor:pointer; }
+.elig-ref-note { display:block; width:100%; margin-top:6px; padding:5px 8px;
+    border:1px solid #fca5a5; border-radius:5px; font-family:inherit; font-size:0.86em;
+    background:#fff7f7; }
+</style>
+<script>
+(function() {
+    const wizard = document.getElementById('elig-wizard');
+    if (!wizard) return;
+    const result = document.getElementById('elig-result');
+    const badge = result.querySelector('.elig-badge');
+    const detail = result.querySelector('.elig-detail');
+    const dxRadios = wizard.querySelectorAll('input[name="elig-dx"]');
+    const onsetInput = document.getElementById('elig-onset');
+    const insSelect = document.getElementById('elig-insurance');
+
+    // 보험별 룰 — 매뉴얼 슬라이드 5 매트릭스 기준 (회복기 / 간호간병)
+    const INSURANCE_CAP = {
+        '보험':     { rec:true,  cov:true,  note:'' },
+        '보호1종':  { rec:true,  cov:true,  note:'' },
+        '보호2종':  { rec:true,  cov:true,  note:'' },
+        '차상위 1종':{ rec:true,  cov:true,  note:'' },
+        '차상위 2종':{ rec:true,  cov:true,  note:'' },
+        '자보':     { rec:false, cov:false, note:'자보 환자 — 회복기 혜택 불가 · 간호간병통합서비스 불가, 일반재활만 가능' },
+        '산재':     { rec:false, cov:true,  note:'산재 환자 — 회복기 불가 / 간호간병 가능. 산재 보험사 사전 협의 필요' },
+        '장애':     { rec:true,  cov:true,  note:'' },
+        '암등록':   { rec:true,  cov:true,  note:'' },
+        '장기요양': { rec:false, cov:false, note:'장기요양 등급자 — 같은 재단 복주요양원·경도요양병원 안내 우선' },
+        '산정특례': { rec:true,  cov:true,  note:'' },
+    };
+    // 결과에 보험 매트릭스 한 줄 추가 (회복기 / 간호간병)
+    function insuranceLine(rule, ins) {
+        if (!rule || !ins) return '';
+        const rec = rule.rec ? '✅' : '❌';
+        const cov = rule.cov ? '✅' : '❌';
+        return `📋 ${ins}: 회복기 ${rec} · 간호간병통합 ${cov}`;
+    }
+
+    function getDx() {
+        for (const r of dxRadios) if (r.checked) return {
+            group: r.value,
+            period: parseInt(r.dataset.period, 10),
+            stay: r.dataset.stay || '',
+            warn: r.dataset.warn || '',
+            overflow: r.dataset.overflow || '불가',         // '비회복기' | '불가'
+            overflowStay: r.dataset.overflowStay || '',
+        };
+        return null;
+    }
+    // 표 행 클릭 시 라디오 자동 체크 + 선택 행 시각 강조
+    document.querySelectorAll('.elig-table tbody tr').forEach(tr => {
+        const radio = tr.querySelector('input[type=radio]');
+        if (!radio) return;
+        tr.addEventListener('click', e => {
+            if (e.target.tagName !== 'INPUT') {
+                radio.checked = true;
+                radio.dispatchEvent(new Event('change', { bubbles:true }));
+            }
+        });
+    });
+    function paintSelectedRow() {
+        document.querySelectorAll('.elig-table tbody tr').forEach(tr => {
+            const radio = tr.querySelector('input[type=radio]');
+            tr.classList.toggle('elig-sel', !!radio && radio.checked);
+        });
+    }
+    function daysSince(dateStr) {
+        if (!dateStr) return null;
+        const d = new Date(dateStr);
+        if (isNaN(d)) return null;
+        return Math.floor((Date.now() - d.getTime()) / 86400000);
+    }
+    function judge() {
+        const dx = getDx();
+        const onset = onsetInput.value;
+        const ins = insSelect.value;
+
+        // 입력 부족
+        if (!dx && !onset && !ins) {
+            return { cls:'pending', badge:'⏸ 입력 대기',
+                detail:'병명·발병일·보험을 선택하면 즉시 판정합니다.', extras:[] };
+        }
+        const extras = [];
+        // 보험 매트릭스 + 메모
+        let insRule = ins ? INSURANCE_CAP[ins] : null;
+        if (insRule) {
+            const line = insuranceLine(insRule, ins);
+            if (line) extras.push(line);
+            if (insRule.note) extras.push('⚠ ' + insRule.note);
+        }
+
+        if (!dx) return { cls:'pending', badge:'⏸ 병명 카테고리를 선택하세요', detail:'', extras };
+
+        if (dx.group === '기타' || dx.period === 0) {
+            return { cls:'no', badge:'❌ 회복기 대상 아님',
+                detail:'선택한 병명은 재활의료기관 회복기 인정 대상이 아닙니다. '
+                    + '▶ <strong>같은 재단의 경도요양병원 또는 복주요양원</strong> 연계 안내.',
+                extras };
+        }
+
+        // 자보·산재·장기요양 — 회복기 불가
+        if (insRule && insRule.rec === false) {
+            return { cls:'soso', badge:'🟡 회복기 불가, 일반재활 가능',
+                detail:`병명(${dx.group})은 회복기 인정 ${dx.period}일이지만 보험 사유로 회복기 혜택 적용 불가.`,
+                extras };
+        }
+
+        // 발병일 없음
+        if (!onset) {
+            return { cls:'pending', badge:'⏸ 발병일 입력 필요',
+                detail:`병명(${dx.group}) 인정 기간: 발병/수술 후 ${dx.period}일 이내. 발병일을 입력하세요.`,
+                extras };
+        }
+        const elapsed = daysSince(onset);
+        if (elapsed === null) {
+            return { cls:'pending', badge:'⏸ 발병일 형식 확인',
+                detail:'발병/수술일을 다시 확인해주세요.', extras };
+        }
+        // 입원 기간 정보를 별도 행으로 안내
+        if (dx.stay) extras.push('🛏 입원 기간: ' + dx.stay);
+        // 카테고리별 특별 안내 (양측슬관절치환술 등)
+        if (dx.warn) extras.push('⚠ ' + dx.warn);
+        const left = dx.period - elapsed;
+        if (left >= 0) {
+            return { cls:'ok', badge:'✅ 회복기 가능',
+                detail:`발병 후 ${elapsed}일 경과 — 인정 기간 ${dx.period}일 중 ${left}일 남음.`,
+                extras };
+        }
+        // 중추신경계 초과 — 지연된 회복기(S044) + 비회복기(S006) 연속 적용 안내
+        if (dx.group === '중추신경계') {
+            const s044Days = 270 - elapsed;  // S044 가능 일수 = 270 - 발병 경과일
+            if (s044Days > 0) {
+                const totalDays = s044Days + 180;
+                return { cls:'soso',
+                    badge:'🟡 지연 회복기(S044) + 비회복기(S006) 가능',
+                    detail:`발병 후 ${elapsed}일 경과 — 회복기 인정 90일을 ${-left}일 초과.<br>`
+                        + `▶ <strong>지연된 회복기(S044)</strong>: 급성기 병원 치료로 지연된 경우 한정. `
+                        + `회복기 혜택 <strong>${s044Days}일</strong> (270 − 발병 ${elapsed}일)<br>`
+                        + `▶ 이후 <strong>비회복기(S006) 180일</strong> 추가 가능<br>`
+                        + `▶ 총 입원 가능 <strong>${totalDays}일</strong>`,
+                    extras };
+            }
+            // S044 한도 도달 (발병 270일 이상) — S006만 가능
+            return { cls:'soso',
+                badge:'🟡 비회복기(S006) 180일만 가능',
+                detail:`발병 후 ${elapsed}일 경과 — S044 지연 회복기 한도(발병 270일) 초과. `
+                    + `비회복기 180일만 적용 가능.`,
+                extras };
+        }
+        // 입원 시기 초과 — 카테고리별 분기
+        if (dx.overflow === '비회복기') {
+            return { cls:'soso',
+                badge:'🟡 회복기(S005) 불가 — 비회복기(S006) 입원 가능',
+                detail:`발병 후 ${elapsed}일 경과 — 회복기 인정 ${dx.period}일을 ${-left}일 초과.`
+                       + (dx.overflowStay ? ` ${dx.overflowStay} 적용 가능.` : ''),
+                extras };
+        }
+        // 입원 자체 불가 — 같은 재단의 경도요양병원·복주요양원 안내
+        return { cls:'no', badge:'❌ 입원 불가 (입원 시기 초과)',
+            detail:`발병/수술 후 ${elapsed}일 경과 — 인정 기간 ${dx.period}일을 ${-left}일 초과. `
+                   + `해당 카테고리는 시기 초과 시 회복·비회복기 모두 불가. `
+                   + `▶ <strong>같은 재단의 경도요양병원 또는 복주요양원</strong> 연계 안내.`,
+            extras };
+    }
+    function render() {
+        const r = judge();
+        result.className = 'elig-result r-' + r.cls;
+        badge.className = 'elig-badge elig-' + (r.cls === 'pending' ? 'pending'
+            : r.cls === 'ok' ? 'ok' : r.cls === 'soso' ? 'soso' : 'no');
+        badge.textContent = r.badge;
+        detail.innerHTML = r.detail + (r.extras.length
+            ? '<span class="elig-extra">' + r.extras.join('<br>') + '</span>' : '');
+        paintSelectedRow();
+        // 회복기 불가/일반재활/입원 불가일 때만 연계 안내 체크박스 표시
+        const refBox = document.getElementById('elig-referral');
+        if (refBox) refBox.hidden = !(r.cls === 'soso' || r.cls === 'no');
+    }
+    dxRadios.forEach(r => r.addEventListener('change', render));
+    onsetInput.addEventListener('change', render);
+    onsetInput.addEventListener('input', render);
+    insSelect.addEventListener('change', render);
+    render();
+
+    // 접기/펼치기 — 헤더 전체 클릭 가능
+    const elig_head = wizard.querySelector('.elig-head');
+    if (elig_head) {
+        elig_head.style.cursor = 'pointer';
+        elig_head.addEventListener('click', (e) => {
+            // 토글 버튼은 별도로 처리되니 중복 방지
+            if (e.target.tagName === 'BUTTON') return;
+            wizard.classList.toggle('collapsed');
+        });
+    }
+    document.getElementById('elig-toggle').addEventListener('click', () => {
+        wizard.classList.toggle('collapsed');
+    });
+
+    // '기타' 체크 시 자유 텍스트 박스 토글
+    const etcChk = document.getElementById('elig-ref-etc');
+    const etcNote = document.getElementById('elig-ref-etc-note');
+    if (etcChk && etcNote) {
+        etcChk.addEventListener('change', () => {
+            etcNote.hidden = !etcChk.checked;
+            if (etcChk.checked) setTimeout(() => etcNote.focus(), 10);
+            else etcNote.value = '';
+        });
+    }
+
+    // 위저드 카테고리 → 본 폼 병명 체크박스 매핑 (정확히 1:1 또는 N:1 매칭 가능한 케이스만)
+    const DISEASE_MAP = {
+        '양측슬관절치환술': ['양측슬관절치환술'],
+        '하지절단': ['하지 부위 절단'],
+        '파킨슨': ['파킨슨(신규)'],
+        '골유합지연_내고정전치환술': ['골유합 지연', '내고정술', '전치환술'],
+        '근골격계_다발': ['골반 골절', '골반-다발 부위'],
+        // 모호한 카테고리(중추신경계·근골격계_단일·비사용증후군)는 폼 메모로만 표시
+    };
+    // 중추신경계 서브 체크박스 → 본 폼 병명 매핑 (사용자가 위저드에서 체크한 항목만)
+    const CNS_SUB_MAP = {
+        '뇌출혈': '뇌출혈',
+        '뇌경색': '뇌경색',
+        '척수손상': '척수손상',
+        // '기타 뇌손상'은 본 폼에 정확한 매핑 없음 → 메모로 처리
+    };
+    const DISEASE_HINT_LABEL = {
+        '중추신경계': '중추신경계 (위저드 판정)',
+        '근골격계_단일': '근골격계 단일부위 (위저드 판정 — 본 폼에서 고관절/대퇴부/골반 등 세부 선택)',
+        '근골격계_다발': '근골격계 다발부위 (위저드 판정 — 본 폼에서 골반 다발 등 세부 확인)',
+        '비사용증후군': '비사용증후군 (위저드 판정 — 본 폼에서 호흡/심장/신생물 등 세부 선택)',
+        '골유합지연_내고정전치환술': '골유합지연 + 내고정술/전치환술 (위저드 판정)',
+        '양측슬관절치환술': '양측슬관절치환술 (위저드 판정)',
+        '하지절단': '하지부위절단 (위저드 판정 — 족부절단 제외)',
+        '파킨슨': '파킨슨(신규) (위저드 판정)',
+    };
+
+    // 폼에 채우기 — 발병일·보험·병명·연계를 본 폼의 해당 필드에 복사 + 위저드 자동 접기
+    document.getElementById('elig-apply').addEventListener('click', () => {
+        const form = document.getElementById('consult-form');
+        if (!form) return;
+        let filled = [];
+
+        // ① 발병일 → onset-date(date) + onset-hidden(submit value) 동시 설정
+        if (onsetInput.value) {
+            const dateEl = document.getElementById('onset-date');
+            const textEl = document.getElementById('onset-text');
+            const hiddenEl = document.getElementById('onset-hidden');
+            if (dateEl) {
+                dateEl.value = onsetInput.value;
+                dateEl.style.display = '';      // date 모드 보장
+                dateEl.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            if (textEl) textEl.style.display = 'none';
+            if (hiddenEl) hiddenEl.value = onsetInput.value;
+            // '정확한 날짜 모름' 체크박스 해제
+            const unknownChk = document.getElementById('onset-unknown');
+            if (unknownChk) unknownChk.checked = false;
+            filled.push('발병일');
+        }
+
+        // ② 보험 → patient.insurance_type 라디오
+        if (insSelect.value && insSelect.value !== '산재') {
+            const insRadio = form.querySelector(`input[name="patient.insurance_type"][value="${insSelect.value}"]`);
+            if (insRadio) {
+                insRadio.checked = true;
+                insRadio.dispatchEvent(new Event('change', { bubbles: true }));
+                filled.push('보험');
+            }
+        }
+
+        // ③ 병명 카테고리 → 본 폼 체크박스 자동 체크 + 메모
+        //   [폼에 채우기]는 멱등 — 이전에 위저드가 채워준 항목(data-wizard-checked="1")
+        //   먼저 해제 후 새 매핑 적용. 사용자가 본 폼에서 직접 체크한 건 건드리지 않음.
+        const allDxBoxes = form.querySelectorAll(
+            'input[type="checkbox"][name="consultation.diseases[]"]');
+        // (a) 이전 위저드 매핑 해제
+        allDxBoxes.forEach(cb => {
+            if (cb.dataset.wizardChecked === '1') {
+                cb.checked = false;
+                delete cb.dataset.wizardChecked;
+                cb.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        });
+        const dx = getDx();
+        if (dx && dx.group !== '기타') {
+            // 중추신경계는 서브 체크박스(뇌출혈/뇌경색/척수손상)로 본 폼 매핑
+            let targetVals = DISEASE_MAP[dx.group] || [];
+            let cnsSubChecked = 0;
+            if (dx.group === '중추신경계') {
+                const cnsChecks = document.querySelectorAll('input[name="elig-cns"]:checked');
+                cnsSubChecked = cnsChecks.length;
+                targetVals = Array.from(cnsChecks)
+                    .map(c => CNS_SUB_MAP[c.value])
+                    .filter(Boolean);
+            }
+            // (b) 새 매핑 적용 — Set.has로 안전한 매칭(괄호·공백 escape 문제 회피)
+            const targetSet = new Set(targetVals);
+            const checked = [];
+            allDxBoxes.forEach(cb => {
+                if (targetSet.has(cb.value)) {
+                    cb.checked = true;
+                    cb.dataset.wizardChecked = '1';  // 다음 재적용 시 해제 추적
+                    cb.dispatchEvent(new Event('change', { bubbles: true }));
+                    checked.push(cb.value);
+                }
+            });
+            // 매핑된 항목이 없으면 메모 칸에 위저드 판정 결과 prefill
+            if (!checked.length) {
+                const detailEl = form.querySelector('input[name="consultation.disease_detail"], textarea[name="consultation.disease_detail"]');
+                let hint = DISEASE_HINT_LABEL[dx.group] || dx.group;
+                if (dx.group === '중추신경계' && cnsSubChecked === 0) {
+                    hint = '중추신경계 — 위저드 ☐뇌출혈/뇌경색/척수손상/기타뇌손상 보조 체크박스를 먼저 선택하세요';
+                }
+                if (detailEl) {
+                    detailEl.value = detailEl.value
+                        ? detailEl.value + ' / ' + hint
+                        : hint;
+                    filled.push('병명 메모');
+                }
+            } else {
+                filled.push(`병명(${checked.join('·')})`);
+            }
+        } else if (dx && dx.group === '기타') {
+            // '해당 없음' 선택 시 — 이전 위저드 매핑은 위에서 이미 해제됨
+            filled.push('병명(해제)');
+        }
+
+        // ④ 연계 체크박스 → 본 폼의 consultation.external_referral[] 동기화 (멱등)
+        const refChecks = document.querySelectorAll('input[name="elig-ref"]:checked');
+        const refSet = new Set(Array.from(refChecks).map(c => c.value));
+        const allRefBoxes = form.querySelectorAll('input[name="consultation.external_referral[]"]');
+        // (a) 이전 위저드 체크 해제
+        allRefBoxes.forEach(cb => {
+            if (cb.dataset.wizardChecked === '1') {
+                cb.checked = false;
+                delete cb.dataset.wizardChecked;
+            }
+        });
+        // (b) 새 매핑 적용
+        if (refSet.size) {
+            allRefBoxes.forEach(cb => {
+                if (refSet.has(cb.value)) {
+                    cb.checked = true;
+                    cb.dataset.wizardChecked = '1';
+                }
+            });
+            filled.push(`연계(${[...refSet].join('·')})`);
+        }
+        // ⑤ '기타' 자유 텍스트 → 본 폼의 external_referral_note
+        const etcVal = etcNote ? (etcNote.value || '').trim() : '';
+        if (etcVal) {
+            const noteEl = form.querySelector('input[name="consultation.external_referral_note"]');
+            if (noteEl) {
+                noteEl.value = noteEl.value
+                    ? noteEl.value + ' / ' + etcVal
+                    : etcVal;
+                filled.push('연계 메모');
+            }
+        }
+
+        // 알림
+        if (filled.length) {
+            wizard.classList.add('collapsed');
+            // 첫 비어 있는 필드(환자명)로 스크롤
+            const nameEl = form.querySelector('input[name="patient.name"]');
+            if (nameEl) { nameEl.focus(); nameEl.scrollIntoView({ behavior:'smooth', block:'center' }); }
+            // toast
+            if (typeof toast === 'function') toast(`✓ ${filled.join('·')} 폼에 채워졌습니다.`, 'success');
+        } else {
+            alert('채울 데이터가 없습니다. 병명·발병일·보험을 먼저 입력하세요.');
+        }
+    });
+    document.getElementById('elig-reset').addEventListener('click', () => {
+        dxRadios.forEach(r => r.checked = false);
+        onsetInput.value = '';
+        insSelect.value = '';
+        render();
+    });
+})();
+</script>
+{% endif %}
+
+{% if inbox_comm %}
+<div class="inbox-banner">
+    <strong>📨 인박스 인바운드에서 상담 등록 중</strong>
+    <span class="ib-ch">{{ inbox_comm.channel or '?' }}</span>
+    {% if inbox_comm.occurred_at or inbox_comm.created_at %}
+    <span class="muted">{{ (inbox_comm.occurred_at or inbox_comm.created_at)[:16] }}</span>
+    {% endif %}
+    {% if inbox_comm.contact %}<span class="muted">· 연락처 {{ inbox_comm.contact }}</span>{% endif %}
+    {% if inbox_comm.summary or inbox_comm.body %}
+    <div class="inbox-banner-body">{{ inbox_comm.summary or '' }}{% if inbox_comm.summary and inbox_comm.body %} — {% endif %}{{ inbox_comm.body or '' }}</div>
+    {% endif %}
+    <div class="muted-sm">상담 저장 시 이 인바운드는 자동으로 '처리완료'로 표시되고 상담에 연결됩니다.</div>
+</div>
+<style>
+.inbox-banner { padding:10px 14px; margin:6px 0 12px; background:#fef3c7;
+    border-left:4px solid #d97706; border-radius:6px; font-size:0.9em; }
+.inbox-banner .ib-ch { display:inline-block; padding:1px 7px; margin-left:6px;
+    background:#fff7ed; color:#92400e; border-radius:8px; font-weight:600; }
+.inbox-banner-body { margin-top:4px; color:#374151; }
+.inbox-banner .muted-sm { margin-top:4px; font-size:0.85em; color:#6b7280; }
+</style>
+{% endif %}
 
 <form id="consult-form"
       data-edit="{{ '1' if is_edit else '0' }}"
-      data-cid="{{ consultation.id if is_edit else '' }}">
+      data-cid="{{ consultation.id if is_edit else '' }}"
+      data-comm-id="{{ inbox_comm.id if inbox_comm else '' }}">
 
 <!-- ───────── 헤더 (입원예정·주치의·호실·상담일시·상담자) ───────── -->
 <div class="form-section">
-    <div class="field-row cols-3">
+    <div class="field-row cols-4">
         <div class="field">
             <label>입원예정 (월/일)</label>
             <input type="date" name="consultation.planned_admission_date"
                    value="{{ consultation.planned_admission_date if is_edit and consultation.planned_admission_date else '' }}">
+        </div>
+        <div class="field">
+            <label>입원예정 시간</label>
+            <input type="time" name="consultation.planned_admission_time"
+                   value="{{ consultation.planned_admission_time if is_edit and consultation.planned_admission_time else '' }}">
         </div>
         <div class="field">
             <label>주치의</label>
@@ -742,6 +1364,24 @@
         <input type="text" class="boxed-input" name="consultation.disuse_screening_note"
                value="{{ consultation.disuse_screening_note if is_edit and consultation.disuse_screening_note else '' }}"
                placeholder="비사용증후군 발굴 대상 메모">
+    </div>
+
+    {# ─ 회복기 불가 → 같은 재단·외부 시설 연계 안내 (수요 캡처율 KPI) ─ #}
+    {% set _ref_set = (consultation.external_referral if is_edit else []) %}
+    <div class="field" id="external-referral-field">
+        <label>타 기관 연계 안내 <span class="muted" style="font-size:0.85em">— 본원 입원 불가 시 어느 시설을 안내했는지</span></label>
+        <div class="option-group" style="gap:10px">
+            {% for opt in ['경도요양병원', '복주요양원', '타 요양병원', '타 요양원', '기타'] %}
+            <label class="opt-chk">
+                <input type="checkbox" name="consultation.external_referral[]" value="{{ opt }}"
+                       {% if opt in _ref_set %}checked{% endif %}>
+                <span>{{ opt }}</span>
+            </label>
+            {% endfor %}
+        </div>
+        <input type="text" class="boxed-input" name="consultation.external_referral_note"
+               value="{{ consultation.external_referral_note if is_edit and consultation.external_referral_note else '' }}"
+               placeholder="연계 메모 (선택, 예: 보호자가 직접 알아보기로 함)" style="margin-top:6px">
     </div>
 </div>
 

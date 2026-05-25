@@ -133,6 +133,22 @@
     </div>
 </div>
 
+<!-- 회복기 불가 → 외부 시설 연계 (수요 캡처) -->
+<div class="chart-grid">
+    <div class="card chart-card">
+        <h3>외부 시설 연계 분포
+            <span class="muted" id="referral-capture-rate" style="font-weight:400; font-size:0.9em"></span>
+        </h3>
+        <div class="chart-box sm"><canvas id="chart-external-referral"></canvas></div>
+    </div>
+    <div class="card chart-card">
+        <h3>회복기 불가 · 같은 재단 캡처
+            <span class="muted" style="font-weight:400; font-size:0.85em">— 입원취소·상담취소 중 시설 안내율</span>
+        </h3>
+        <div class="chart-box sm"><canvas id="chart-referral-capture"></canvas></div>
+    </div>
+</div>
+
 <!-- Claude 자동 인사이트 -->
 <div class="card insight-card">
     <div class="insight-head">
@@ -522,6 +538,17 @@
         if (smsTotalEl) smsTotalEl.textContent = '· 총 ' + (sms.total || 0) + '건';
         makeDoughnut('chart-sms-status', sms.by_status);
         makeDoughnut('chart-sms-group', sms.by_group);
+        // 회복기 불가 → 외부 시설 연계 (수요 캡처)
+        makeDoughnut('chart-external-referral', d.by_external_referral || []);
+        const rc = d.referral_capture || { no_admit_total: 0, with_referral: 0, rate: 0 };
+        const rcEl = document.getElementById('referral-capture-rate');
+        if (rcEl) rcEl.textContent =
+            `· 캡처율 ${rc.rate}% (입원 불가 ${rc.no_admit_total}건 중 ${rc.with_referral}건 안내)`;
+        const captureData = [
+            { label: '같은 재단 시설 안내', count: rc.with_referral },
+            { label: '미안내(이탈)', count: Math.max(0, rc.no_admit_total - rc.with_referral) },
+        ];
+        makeDoughnut('chart-referral-capture', captureData);
     }
 
     // ─── 인사이트 ───

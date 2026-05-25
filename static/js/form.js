@@ -239,7 +239,12 @@
         }
         const payload = collectPayload();
         try {
-            const url = isEdit ? `/api/consult/${cid}` : '/api/consult';
+            let url = isEdit ? `/api/consult/${cid}` : '/api/consult';
+            // 인박스에서 진입한 신규 상담 — comm_id 전달 → 등록 후 인바운드 자동 처리완료
+            if (!isEdit) {
+                const commId = form.dataset.commId || '';
+                if (commId) url += `?comm_id=${encodeURIComponent(commId)}`;
+            }
             const res = await api.post(url, payload);
             const targetId = res.id || cid;
             location.href = `/consult/${targetId}`;
@@ -270,7 +275,7 @@
                 out[section][key] = el.checked;
             } else {
                 const v = el.value.trim();
-                if (v !== '') out[section][key] = v;
+                out[section][key] = v;
             }
         }
         // 다중 체크박스 그룹은 빈 배열도 명시 — 모두 해제했을 때 DB에 반영

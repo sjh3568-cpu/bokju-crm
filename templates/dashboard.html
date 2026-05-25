@@ -1,80 +1,733 @@
 {% extends "base.html" %}
-{% block title %}대시보드 — 복주 상담실{% endblock %}
-{% block content %}
-<div class="page-header">
-    <h1>대시보드 <span class="muted" style="font-size:0.7em">({{ now().strftime('%Y년 %m월') }})</span></h1>
-    <a href="/consult/new" class="btn btn-primary">+ 새 상담일지</a>
+{% macro admission_table(rows) %}
+<div class="tbl-wrap">
+    <table class="tbl dash-table">
+        <thead>
+            <tr>
+                <th>일자</th>
+                <th>시간</th>
+                <th>상태</th>
+                <th>환자</th>
+                <th>병명</th>
+                <th>병실</th>
+                <th>회복기</th>
+                <th>상담사</th>
+                <th>주치의</th>
+                <th>기타</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in rows %}
+            {% set rec = r|recovery_status %}
+            <tr>
+                <td class="nowrap"><strong>{{ r.day_label }}</strong><br><span class="muted-sm">{{ r.admission_display_date|krdate_wd }}</span></td>
+                <td class="nowrap">{{ r.admission_time or '-' }}</td>
+                <td class="nowrap dash-adm-state">
+                    <span class="badge {% if r.admission_bucket == 'completed' %}adm-completed{% else %}adm-planned{% endif %}">{{ r.admission_bucket_label }}</span>
+                    <span class="muted-sm">{{ r.admission_date_kind }}</span>
+                </td>
+                <td class="nowrap">
+                    {% if r.blacklist %}<span class="bl-mark">블랙</span> {% endif %}
+                    <a href="/consult/{{ r.id }}">{{ r.patient_name }}</a>
+                    <span class="muted-sm">{% if r.patient_age is not none %}{{ r.patient_age }}{% endif %}{% if r.gender == 'M' %}·남{% elif r.gender == 'F' %}·여{% endif %}</span>
+                </td>
+                <td class="dash-dx" title="{{ r.diseases|join(', ') if r.diseases else '' }}">
+                    {% if r.diseases %}{{ r.diseases[:3]|join(', ') }}{% if r.diseases|length > 3 %} 외{% endif %}{% else %}-{% endif %}
+                </td>
+                <td class="nowrap">{{ r.room_number or '-' }}</td>
+                <td class="nowrap">
+                    {% if rec.label == '회복기' %}<span class="badge rh-yes">회복기{% if rec.source == 'auto' %}*{% endif %}</span>
+                    {% elif rec.label == '비회복기' %}<span class="badge rh-no">비회복기{% if rec.source == 'auto' %}*{% endif %}</span>
+                    {% elif rec.label %}<span class="badge badge-pending">{{ rec.label }}</span>
+                    {% else %}<span class="muted">-</span>{% endif %}
+                </td>
+                <td class="nowrap">{{ r.counselor or '-' }}</td>
+                <td class="nowrap">{{ r.attending_doctor or '-' }}</td>
+                <td class="dash-note" title="{{ r.other_note }}">{{ r.other_note or '-' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </div>
-
-<div class="stat-grid">
-    <div class="stat-card">
-        <div class="label">이번 달 상담</div>
-        <div class="value">{{ summary.total or 0 }}</div>
-    </div>
-    <div class="stat-card accent">
-        <div class="label">입원예정 등록</div>
-        <div class="value">{{ summary.planned or 0 }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="label">입원예정 비율</div>
-        <div class="value">{{ summary.plan_rate or 0 }}<span style="font-size:0.5em">%</span></div>
-    </div>
-    <a class="stat-card warn" href="/consultations?admission_status=입원완료"
-       style="text-decoration:none; display:block" title="입원완료 환자 목록에서 퇴원예정 확인">
-        <div class="label">퇴원예정 <span style="font-size:0.85em; color:var(--text-light)">— 입원만료 30일 이내</span></div>
-        <div class="value">{{ summary.discharge_pending or 0 }}<span style="font-size:0.5em">명</span></div>
-    </a>
-</div>
-
-<div class="card">
-    <h3>오늘 등록된 상담</h3>
-    {% if today %}
-    <div class="tbl-wrap">
-        <table class="tbl">
-            <thead>
-                <tr>
-                    <th>시각</th>
-                    <th>환자</th>
-                    <th>주치의</th>
-                    <th>호실</th>
-                    <th>입원예정</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for r in today %}
-                <tr>
-                    <td>{{ r.consult_time or '' }}</td>
-                    <td><a href="/consult/{{ r.id }}">{{ r.patient_name }}</a></td>
-                    <td>{{ r.attending_doctor or '-' }}</td>
-                    <td>{{ r.room_number or '-' }}</td>
-                    <td>{{ r.planned_admission_date|krdate or '-' }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
+{% endmacro %}
+{% macro admission_flat_panel(status_key, rows, empty_text, active=False) %}
+<div class="dash-admission-view{% if active %} active{% endif %}" data-status-panel="{{ status_key }}" data-view-panel="all">
+    {% if rows %}
+    {{ admission_table(rows) }}
     {% else %}
-    <div class="empty">오늘 등록된 상담이 없습니다.</div>
+    <div class="empty">{{ empty_text }}</div>
     {% endif %}
 </div>
-
-<div class="card" style="margin-top:16px">
-    <h3>최근 7일 상담 추이</h3>
-    {% if week_trend %}
-    <div style="display:flex; gap:6px; align-items:flex-end; height:80px; padding:8px 0">
-        {% set max_n = (week_trend|map(attribute='n')|list|max) or 1 %}
-        {% for d in week_trend %}
-        <div style="flex:1; text-align:center">
-            <div title="{{ d.d }}: {{ d.n }}건"
-                 style="background:var(--primary-light); border-radius:4px 4px 0 0;
-                        height:{{ (d.n / max_n * 100)|round }}%; min-height:4px"></div>
-            <div class="note" style="font-size:0.7em; margin-top:4px">{{ d.d[5:] }}</div>
-            <div style="font-weight:600; font-size:0.78em">{{ d.n }}</div>
-        </div>
+{% endmacro %}
+{% macro admission_group_panel(status_key, view_key, groups, empty_text) %}
+<div class="dash-admission-view" data-status-panel="{{ status_key }}" data-view-panel="{{ view_key }}">
+    {% if groups %}
+    {% for g in groups %}
+    <div class="dash-group">
+        <div class="dash-group-title"><strong>{{ g.label }}</strong><span>{{ g.count }}명</span></div>
+        {{ admission_table(g.rows) }}
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="empty">{{ empty_text }}</div>
+    {% endif %}
+</div>
+{% endmacro %}
+{% macro consult_table(rows) %}
+<div class="tbl-wrap">
+    <table class="tbl dash-table">
+        <thead><tr><th>시간</th><th>환자</th><th>병명</th><th>상담사</th><th>결과</th><th>입원</th></tr></thead>
+        <tbody>
+            {% for r in rows %}
+            {% set cr = r.consult_result or '상담완료' %}
+            <tr>
+                <td class="nowrap">{{ r.consult_time or '-' }}</td>
+                <td class="nowrap">
+                    {% if r.blacklist %}<span class="bl-mark">블랙</span> {% endif %}
+                    <a href="/consult/{{ r.id }}">{{ r.patient_name }}</a>
+                </td>
+                <td class="dash-dx" title="{{ r.disease_summary }}">{{ r.disease_summary or '-' }}</td>
+                <td class="nowrap">{{ r.counselor or '-' }}</td>
+                <td class="nowrap">{{ cr }}</td>
+                <td class="nowrap">{{ r.admission_status or '미정' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endmacro %}
+{% macro consult_flat_panel(view_key, rows, empty_text, active=False) %}
+<div class="dash-consult-view{% if active %} active{% endif %}" data-consult-view-panel="{{ view_key }}">
+    {% if rows %}
+    {{ consult_table(rows[:12]) }}
+    {% else %}
+    <div class="empty">{{ empty_text }}</div>
+    {% endif %}
+</div>
+{% endmacro %}
+{% macro consult_group_panel(view_key, groups, empty_text) %}
+<div class="dash-consult-view" data-consult-view-panel="{{ view_key }}">
+    {% if groups %}
+    {% for g in groups %}
+    <div class="dash-group">
+        <div class="dash-group-title"><strong>{{ g.label }}</strong><span>{{ g.count }}건</span></div>
+        {{ consult_table(g.rows) }}
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="empty">{{ empty_text }}</div>
+    {% endif %}
+</div>
+{% endmacro %}
+{% macro discharge_table(rows) %}
+<div class="tbl-wrap">
+    <table class="tbl dash-table">
+        <thead><tr><th>D-day</th><th>환자</th><th>병명</th><th>병동</th><th>주치의</th><th>퇴원예정</th></tr></thead>
+        <tbody>
+            {% for d in rows %}
+            <tr>
+                <td class="nowrap">{% if d.watch.days_left < 0 %}<span class="danger-text">{{ -d.watch.days_left }}일 초과</span>{% else %}D-{{ d.watch.days_left }}{% endif %}</td>
+                <td class="nowrap"><a href="/consult/{{ d.con.id }}">{{ d.con.patient_name }}</a></td>
+                <td class="dash-dx" title="{{ d.con.disease_summary }}">{{ d.con.disease_summary or '-' }}</td>
+                <td class="nowrap">{{ d.con.ward or '-' }}</td>
+                <td class="nowrap">{{ d.con.attending_doctor or '-' }}</td>
+                <td class="nowrap">{{ d.watch.due_date|krdate_wd }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endmacro %}
+{% macro discharge_group_panel(view_key, groups, empty_text) %}
+<div class="dash-discharge-view" data-discharge-view-panel="{{ view_key }}">
+    {% if groups %}
+    {% for g in groups %}
+    <div class="dash-group">
+        <div class="dash-group-title"><strong>{{ g.label }}</strong><span>{{ g.count }}명</span></div>
+        {{ discharge_table(g.rows) }}
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="empty">{{ empty_text }}</div>
+    {% endif %}
+</div>
+{% endmacro %}
+{% macro inbound_list(rows) %}
+<div class="dash-mini-list">
+    {% for m in rows[:8] %}
+    <div class="dash-mini-row">
+        <span class="badge badge-pending">{{ m.channel or '기타' }}</span>
+        <span class="dash-mini-main">{{ m.patient_name or m.contact or '미연결' }}</span>
+        <span class="muted-sm">{{ (m.summary or m.body or '')[:42] }}</span>
+    </div>
+    {% endfor %}
+</div>
+{% endmacro %}
+{% macro inbound_panel(view_key, rows, empty_text, active=False) %}
+<div class="dash-inbound-view{% if active %} active{% endif %}" data-inbound-view-panel="{{ view_key }}">
+    {% if rows %}
+    {{ inbound_list(rows) }}
+    {% else %}
+    <div class="empty">{{ empty_text }}</div>
+    {% endif %}
+</div>
+{% endmacro %}
+{% macro callback_list(rows) %}
+<div class="dash-mini-list">
+    {% for r in rows[:8] %}
+    <div class="dash-mini-row">
+        <span class="badge badge-callback">재연락</span>
+        <span class="dash-mini-main"><a href="/consult/{{ r.id }}">{{ r.patient_name }}</a></span>
+        <span class="muted-sm">{{ r.counselor or '상담사 미지정' }} · {{ r.disease_summary or '병명 미지정' }} · {{ r.consult_result_reason or r.guardian_phone or '' }}</span>
+    </div>
+    {% endfor %}
+</div>
+{% endmacro %}
+{% macro callback_group_panel(view_key, groups, empty_text) %}
+<div class="dash-callback-view" data-callback-view-panel="{{ view_key }}">
+    {% if groups %}
+    {% for g in groups %}
+    <div class="dash-group">
+        <div class="dash-group-title"><strong>{{ g.label }}</strong><span>{{ g.count }}건</span></div>
+        {{ callback_list(g.rows) }}
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="empty">{{ empty_text }}</div>
+    {% endif %}
+</div>
+{% endmacro %}
+{% macro action_queue_panel(queue) %}
+<div class="card dash-action-card" id="action-queue">
+    <div class="dash-section-head">
+        <h3>오늘 처리 필요</h3>
+        <span class="muted">긴급 {{ queue.danger or 0 }} · 주의 {{ queue.warn or 0 }}</span>
+    </div>
+    {% if queue['items'] %}
+    <div class="dash-action-list">
+        {% for item in queue['items'] %}
+        <a class="dash-action-row {{ item.tone }}" href="{{ item.href or '#' }}">
+            <span class="dash-action-kind">{{ item.kind }}</span>
+            <span class="dash-action-main">
+                <strong>{{ item.title }}</strong>
+                {% if item.detail %}<small>{{ item.detail }}</small>{% endif %}
+            </span>
+            <span class="dash-action-meta">{{ item.meta }}</span>
+        </a>
         {% endfor %}
     </div>
     {% else %}
-    <div class="empty">최근 7일간 등록된 상담이 없습니다.</div>
+    <div class="empty">오늘 즉시 처리할 큐가 없습니다.</div>
     {% endif %}
 </div>
+{% endmacro %}
+{% block title %}대시보드 · 복주 상담CRM{% endblock %}
+{% block content %}
+<div class="page-header dash-head">
+    <div>
+        <h1>대시보드 <span class="muted" style="font-size:0.66em">{{ now().strftime('%Y-%m-%d') }}</span></h1>
+    </div>
+    <div class="dash-actions">
+        <a href="/inbox" class="btn btn-secondary btn-sm">인박스</a>
+        <a href="/consult/new" class="btn btn-primary btn-sm">+ 새 상담일지</a>
+    </div>
+</div>
+
+{% set admission_all = admission_by_status['all'] %}
+{% set admission_planned = admission_by_status['planned'] %}
+{% set admission_completed = admission_by_status['completed'] %}
+{% set admission_group_all = admission_groups_by_status['all'] %}
+{% set admission_group_planned = admission_groups_by_status['planned'] %}
+{% set admission_group_completed = admission_groups_by_status['completed'] %}
+
+<div class="stat-grid dash-stat-grid">
+    <a class="stat-card danger" href="#action-queue">
+        <div class="label">처리 필요</div>
+        <div class="value">{{ summary.action_total or 0 }}</div>
+        <div class="sub">긴급 {{ summary.action_danger or 0 }}건</div>
+    </a>
+    <a class="stat-card accent" href="#admission-schedule">
+        <div class="label">오늘 입원 현황</div>
+        <div class="value">{{ summary.admission_today or 0 }}</div>
+        <div class="sub">15일 예정 {{ summary.admission_planned_week or 0 }} · 완료 {{ summary.admission_completed_week or 0 }}</div>
+    </a>
+    <a class="stat-card" href="#today-consults">
+        <div class="label">오늘 상담</div>
+        <div class="value">{{ summary.today_consults or 0 }}</div>
+        <div class="sub">상담사 {{ counselor_today|length }}명</div>
+    </a>
+    <a class="stat-card warn" href="#recovery-transition">
+        <div class="label">비회복기 전환 D-15</div>
+        <div class="value">{{ summary.recovery_transition_due or 0 }}</div>
+        <div class="sub">회복기 산정 만료 임박</div>
+    </a>
+    <a class="stat-card danger" href="#discharge-due">
+        <div class="label">퇴원 예정 D-30</div>
+        <div class="value">{{ summary.discharge_pending or 0 }}</div>
+        <div class="sub">초과 포함</div>
+    </a>
+    <a class="stat-card" href="#inbound">
+        <div class="label">미처리 인바운드</div>
+        <div class="value">{{ summary.open_inbound or 0 }}</div>
+        <div class="sub">재연락 {{ summary.callbacks or 0 }}건</div>
+    </a>
+    <a class="stat-card warn" href="#holds">
+        <div class="label">상담/입원보류</div>
+        <div class="value">{{ summary.holds or 0 }}</div>
+        <div class="sub">최근 보류 건</div>
+    </a>
+</div>
+
+{{ action_queue_panel(action_queue) }}
+
+<div class="card" id="admission-schedule">
+    <div class="dash-section-head">
+        <h3>입원 환자 현황</h3>
+        <span class="muted">입원예정 · 입원완료 · 15일</span>
+    </div>
+    <div class="dash-filter-row">
+        <div class="dash-status-tabs" role="tablist" aria-label="입원 진행 상태">
+            <button type="button" class="dash-status-btn active" data-status="all" aria-pressed="true">전체 <span>{{ summary.admission_week or 0 }}</span></button>
+            <button type="button" class="dash-status-btn" data-status="planned" aria-pressed="false">입원예정 <span>{{ summary.admission_planned_week or 0 }}</span></button>
+            <button type="button" class="dash-status-btn" data-status="completed" aria-pressed="false">입원완료 <span>{{ summary.admission_completed_week or 0 }}</span></button>
+        </div>
+        <div class="dash-view-tabs" role="tablist" aria-label="입원 환자 현황 보기">
+            <button type="button" class="dash-view-btn active" data-view="all" aria-pressed="true">전체</button>
+            <button type="button" class="dash-view-btn" data-view="counselor" aria-pressed="false">상담사별</button>
+            <button type="button" class="dash-view-btn" data-view="doctor" aria-pressed="false">주치의별</button>
+            <button type="button" class="dash-view-btn" data-view="ward" aria-pressed="false">병동별</button>
+        </div>
+    </div>
+    {{ admission_flat_panel('all', admission_all, '15일 내 입원 예정/완료 환자가 없습니다.', True) }}
+    {{ admission_group_panel('all', 'counselor', admission_group_all['counselor'], '상담사별로 볼 입원 예정/완료 환자가 없습니다.') }}
+    {{ admission_group_panel('all', 'doctor', admission_group_all['doctor'], '주치의별로 볼 입원 예정/완료 환자가 없습니다.') }}
+    {{ admission_group_panel('all', 'ward', admission_group_all['ward'], '병동별로 볼 입원 예정/완료 환자가 없습니다.') }}
+
+    {{ admission_flat_panel('planned', admission_planned, '15일 내 입원 예정 환자가 없습니다.') }}
+    {{ admission_group_panel('planned', 'counselor', admission_group_planned['counselor'], '상담사별로 볼 입원 예정 환자가 없습니다.') }}
+    {{ admission_group_panel('planned', 'doctor', admission_group_planned['doctor'], '주치의별로 볼 입원 예정 환자가 없습니다.') }}
+    {{ admission_group_panel('planned', 'ward', admission_group_planned['ward'], '병동별로 볼 입원 예정 환자가 없습니다.') }}
+
+    {{ admission_flat_panel('completed', admission_completed, '15일 내 입원 완료 환자가 없습니다.') }}
+    {{ admission_group_panel('completed', 'counselor', admission_group_completed['counselor'], '상담사별로 볼 입원 완료 환자가 없습니다.') }}
+    {{ admission_group_panel('completed', 'doctor', admission_group_completed['doctor'], '주치의별로 볼 입원 완료 환자가 없습니다.') }}
+    {{ admission_group_panel('completed', 'ward', admission_group_completed['ward'], '병동별로 볼 입원 완료 환자가 없습니다.') }}
+</div>
+
+<div class="dash-two-col" id="today-consults">
+    <div class="card">
+        <div class="dash-section-head">
+            <h3>오늘 상담 현황</h3>
+            <a class="btn btn-secondary btn-xs" href="/consultations?from={{ now().strftime('%Y-%m-%d') }}&to={{ now().strftime('%Y-%m-%d') }}">전체</a>
+        </div>
+        <div class="dash-consult-tabs" role="tablist" aria-label="오늘 상담 현황 보기">
+            <button type="button" class="dash-consult-btn active" data-consult-view="all" aria-pressed="true">전체</button>
+            <button type="button" class="dash-consult-btn" data-consult-view="disease" aria-pressed="false">병명별</button>
+            <button type="button" class="dash-consult-btn" data-consult-view="counselor" aria-pressed="false">상담사별</button>
+            <button type="button" class="dash-consult-btn" data-consult-view="time" aria-pressed="false">시간대별</button>
+        </div>
+        {{ consult_flat_panel('all', today, '오늘 등록된 상담이 없습니다.', True) }}
+        {{ consult_group_panel('disease', today_groups['disease'], '병명별로 볼 오늘 상담이 없습니다.') }}
+        {{ consult_group_panel('counselor', today_groups['counselor'], '상담사별로 볼 오늘 상담이 없습니다.') }}
+        {{ consult_group_panel('time', today_groups['time'], '시간대별로 볼 오늘 상담이 없습니다.') }}
+    </div>
+
+    <div class="card">
+        <h3>오늘 상담 결과 요약</h3>
+        <div class="dash-outcome-grid">
+            <div class="dash-outcome-card">
+                <span class="muted-sm">후속 필요</span>
+                <strong>{{ today_outcome.follow_up or 0 }}</strong>
+            </div>
+            <div class="dash-outcome-card">
+                <span class="muted-sm">오늘 상담</span>
+                <strong>{{ summary.today_consults or 0 }}</strong>
+            </div>
+        </div>
+        {% if today_outcome.consult_results %}
+        <div class="dash-chip-list">
+            {% for r in today_outcome.consult_results %}
+            <button type="button" class="dash-chip dash-outcome-chip" data-outcome-target="consult-{{ loop.index0 }}">{{ r.label }} <strong>{{ r.count }}</strong></button>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% if today_outcome.admission_statuses %}
+        <div class="dash-chip-list compact">
+            {% for r in today_outcome.admission_statuses %}
+            <button type="button" class="dash-chip light dash-outcome-chip" data-outcome-target="admission-{{ loop.index0 }}">{{ r.label }} <strong>{{ r.count }}</strong></button>
+            {% endfor %}
+        </div>
+        {% endif %}
+        <div class="dash-outcome-panels">
+            {% for r in today_outcome.consult_results %}
+            <div class="dash-outcome-panel" data-outcome-panel="consult-{{ loop.index0 }}">
+                <div class="dash-group-title"><strong>{{ r.label }}</strong><span>{{ r.count }}건</span></div>
+                {{ consult_table(r.rows) }}
+            </div>
+            {% endfor %}
+            {% for r in today_outcome.admission_statuses %}
+            <div class="dash-outcome-panel" data-outcome-panel="admission-{{ loop.index0 }}">
+                <div class="dash-group-title"><strong>{{ r.label }}</strong><span>{{ r.count }}건</span></div>
+                {{ consult_table(r.rows) }}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="dash-two-col">
+    <div class="card" id="recovery-transition">
+        <h3>회복기 → 비회복기 전환 체크</h3>
+        {% if recovery_transition_due %}
+        <div class="tbl-wrap">
+            <table class="tbl dash-table">
+                <thead><tr><th>D-day</th><th>환자</th><th>만료일</th><th>주치의</th></tr></thead>
+                <tbody>
+                    {% for d in recovery_transition_due[:10] %}
+                    <tr>
+                        <td class="nowrap">{% if d.watch.billing_left < 0 %}<span class="danger-text">{{ -d.watch.billing_left }}일 초과</span>{% else %}D-{{ d.watch.billing_left }}{% endif %}</td>
+                        <td class="nowrap"><a href="/consult/{{ d.con.id }}">{{ d.con.patient_name }}</a></td>
+                        <td class="nowrap">{{ d.watch.billing_date|krdate_wd }}</td>
+                        <td class="nowrap">{{ d.con.attending_doctor or '-' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty">D-15 이내 전환 체크 대상이 없습니다.</div>
+        {% endif %}
+    </div>
+
+    <div class="card" id="discharge-due">
+        <h3>퇴원 예정 환자</h3>
+        <div class="dash-discharge-tabs" role="tablist" aria-label="퇴원 예정 환자 보기">
+            <button type="button" class="dash-discharge-btn active" data-discharge-view="all" aria-pressed="true">전체</button>
+            <button type="button" class="dash-discharge-btn" data-discharge-view="disease" aria-pressed="false">병명별</button>
+            <button type="button" class="dash-discharge-btn" data-discharge-view="ward" aria-pressed="false">병동별</button>
+            <button type="button" class="dash-discharge-btn" data-discharge-view="doctor" aria-pressed="false">주치의별</button>
+        </div>
+        <div class="dash-discharge-view active" data-discharge-view-panel="all">
+            {% if discharge_due %}
+            {{ discharge_table(discharge_due[:10]) }}
+            {% else %}
+            <div class="empty">D-30 이내 퇴원 예정 환자가 없습니다.</div>
+            {% endif %}
+        </div>
+        {{ discharge_group_panel('disease', discharge_groups.disease, '병명별로 볼 퇴원 예정 환자가 없습니다.') }}
+        {{ discharge_group_panel('ward', discharge_groups.ward, '병동별로 볼 퇴원 예정 환자가 없습니다.') }}
+        {{ discharge_group_panel('doctor', discharge_groups.doctor, '주치의별로 볼 퇴원 예정 환자가 없습니다.') }}
+    </div>
+</div>
+
+<div class="dash-two-col">
+    <div class="card" id="inbound">
+        <div class="dash-section-head">
+            <h3>미처리 인바운드 · 재연락</h3>
+            <a class="btn btn-secondary btn-xs" href="/inbox">인박스</a>
+        </div>
+        <div class="dash-subsection">
+            <div class="dash-subhead"><strong>미처리 인바운드</strong><span>{{ open_comms|length }}건</span></div>
+            <div class="dash-inbound-tabs" role="tablist" aria-label="미처리 인바운드 채널">
+                <button type="button" class="dash-inbound-btn active" data-inbound-view="all" aria-pressed="true">전체</button>
+                <button type="button" class="dash-inbound-btn" data-inbound-view="kakao" aria-pressed="false">카카오채널</button>
+                <button type="button" class="dash-inbound-btn" data-inbound-view="homepage" aria-pressed="false">홈페이지</button>
+                <button type="button" class="dash-inbound-btn" data-inbound-view="other" aria-pressed="false">기타</button>
+            </div>
+            {{ inbound_panel('all', inbound_groups['all'], '미처리 인바운드가 없습니다.', True) }}
+            {{ inbound_panel('kakao', inbound_groups['kakao'], '미처리 카카오채널 문의가 없습니다.') }}
+            {{ inbound_panel('homepage', inbound_groups['homepage'], '미처리 홈페이지 문의가 없습니다.') }}
+            {{ inbound_panel('other', inbound_groups['other'], '미처리 기타 인바운드가 없습니다.') }}
+        </div>
+        <div class="dash-subsection">
+            <div class="dash-subhead"><strong>재연락</strong><span>{{ callbacks|length }}건</span></div>
+            <div class="dash-callback-tabs" role="tablist" aria-label="재연락 보기">
+                <button type="button" class="dash-callback-btn active" data-callback-view="all" aria-pressed="true">전체</button>
+                <button type="button" class="dash-callback-btn" data-callback-view="counselor" aria-pressed="false">상담사별</button>
+                <button type="button" class="dash-callback-btn" data-callback-view="disease" aria-pressed="false">병명별</button>
+            </div>
+            <div class="dash-callback-view active" data-callback-view-panel="all">
+                {% if callbacks %}
+                {{ callback_list(callbacks) }}
+                {% else %}
+                <div class="empty">재연락 건이 없습니다.</div>
+                {% endif %}
+            </div>
+            {{ callback_group_panel('counselor', callback_groups.counselor, '상담사별로 볼 재연락 건이 없습니다.') }}
+            {{ callback_group_panel('disease', callback_groups.disease, '병명별로 볼 재연락 건이 없습니다.') }}
+        </div>
+    </div>
+
+    <div class="card" id="holds">
+        <h3>상담보류 · 입원보류</h3>
+        {% if holds %}
+        <div class="tbl-wrap">
+            <table class="tbl dash-table">
+                <thead><tr><th>구분</th><th>환자</th><th>사유</th><th>상담사</th></tr></thead>
+                <tbody>
+                    {% for h in holds[:10] %}
+                    <tr>
+                        <td class="nowrap"><span class="badge {% if h.hold_kind == '입원보류' %}hold-admission{% else %}hold-consult{% endif %}">{{ h.hold_kind }}</span></td>
+                        <td class="nowrap"><a href="/consult/{{ h.id }}">{{ h.patient_name }}</a></td>
+                        <td class="dash-note" title="{{ h.hold_reason_text }}">{{ h.hold_reason_text or '-' }}</td>
+                        <td class="nowrap">{{ h.counselor or '-' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty">보류 건이 없습니다.</div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <h3>최근 7일 상담/입원 흐름</h3>
+    {% if week_flow_summary.total %}
+    <div class="week-flow-summary">
+        <div><span>상담</span><strong>{{ week_flow_summary.total }}</strong></div>
+        <div><span>입원예정</span><strong>{{ week_flow_summary.planned }}</strong></div>
+        <div><span>입원완료</span><strong>{{ week_flow_summary.admitted }}</strong></div>
+        <div><span>보류</span><strong>{{ week_flow_summary.hold }}</strong></div>
+        <div><span>재연락</span><strong>{{ week_flow_summary.callback }}</strong></div>
+        <div><span>입원 연결률</span><strong>{{ week_flow_summary.conversion_rate }}%</strong></div>
+    </div>
+    <div class="week-flow-list">
+        {% for d in week_trend %}
+        {% set active = d.planned + d.admitted %}
+        {% set pending = d.hold + d.callback %}
+        <div class="week-flow-row">
+            <div class="week-flow-date">
+                <span>{{ d.label }}</span>
+                <strong>{{ d.n }}건</strong>
+            </div>
+            <div class="week-flow-track" title="{{ d.d }} 상담 {{ d.n }}건 · 입원연결 {{ active }}건 · 보류/재연락 {{ pending }}건">
+                {% if d.n %}
+                <span class="week-flow-seg planned" style="width:{{ (d.planned / d.n * 100)|round(1) }}%"></span>
+                <span class="week-flow-seg admitted" style="width:{{ (d.admitted / d.n * 100)|round(1) }}%"></span>
+                <span class="week-flow-seg hold" style="width:{{ (d.hold / d.n * 100)|round(1) }}%"></span>
+                <span class="week-flow-seg callback" style="width:{{ (d.callback / d.n * 100)|round(1) }}%"></span>
+                <span class="week-flow-seg canceled" style="width:{{ (d.canceled / d.n * 100)|round(1) }}%"></span>
+                {% endif %}
+            </div>
+            <div class="week-flow-values">
+                <span class="positive">입원 {{ active }}</span>
+                <span class="warn">보류 {{ d.hold }}</span>
+                <span class="info">재연락 {{ d.callback }}</span>
+                <span>{{ d.conversion_rate }}%</span>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <div class="week-flow-legend">
+        <span><i class="planned"></i>입원예정</span>
+        <span><i class="admitted"></i>입원완료</span>
+        <span><i class="hold"></i>보류</span>
+        <span><i class="callback"></i>재연락</span>
+        <span><i class="canceled"></i>취소</span>
+    </div>
+    {% else %}
+    <div class="empty">최근 7일 상담 기록이 없습니다.</div>
+    {% endif %}
+</div>
+
+<style>
+.dash-head { align-items:flex-start; }
+.dash-actions { display:flex; gap:6px; align-items:center; }
+.dash-stat-grid { grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); }
+.dash-stat-grid .stat-card { text-decoration:none; color:inherit; min-height:98px; }
+.dash-section-head { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px; }
+.dash-section-head h3 { margin-bottom:0; }
+.dash-filter-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:4px 0 10px; }
+.dash-status-tabs, .dash-view-tabs, .dash-consult-tabs, .dash-discharge-tabs,
+.dash-inbound-tabs, .dash-callback-tabs { display:flex; gap:6px; flex-wrap:wrap; margin:0; }
+.dash-status-btn, .dash-view-btn, .dash-consult-btn, .dash-discharge-btn,
+.dash-inbound-btn, .dash-callback-btn { border:1px solid var(--border); background:#fff; color:var(--text);
+    border-radius:6px; padding:6px 12px; font-family:inherit; font-size:0.88em; cursor:pointer; }
+.dash-status-btn span { margin-left:4px; color:var(--text-light); font-weight:700; }
+.dash-status-btn:hover, .dash-view-btn:hover, .dash-consult-btn:hover,
+.dash-discharge-btn:hover, .dash-inbound-btn:hover, .dash-callback-btn:hover { border-color:var(--primary); color:var(--primary); }
+.dash-status-btn.active { background:#0f172a; border-color:#0f172a; color:#fff; }
+.dash-status-btn.active span { color:#cbd5e1; }
+.dash-view-btn, .dash-consult-btn, .dash-discharge-btn, .dash-inbound-btn, .dash-callback-btn { padding:5px 11px; font-size:0.84em; }
+.dash-view-btn.active, .dash-consult-btn.active, .dash-discharge-btn.active,
+.dash-inbound-btn.active, .dash-callback-btn.active { background:var(--primary); border-color:var(--primary); color:#fff; }
+.dash-consult-tabs, .dash-discharge-tabs, .dash-inbound-tabs, .dash-callback-tabs { margin-bottom:10px; }
+.dash-admission-view, .dash-consult-view, .dash-discharge-view,
+.dash-inbound-view, .dash-callback-view { display:none; }
+.dash-admission-view.active, .dash-consult-view.active, .dash-discharge-view.active,
+.dash-inbound-view.active, .dash-callback-view.active { display:block; }
+.dash-group { border-top:1px solid var(--border); padding-top:10px; margin-top:10px; }
+.dash-group:first-child { border-top:none; padding-top:0; }
+.dash-group-title { display:flex; justify-content:space-between; align-items:center;
+    margin-bottom:6px; padding:6px 8px; background:#f8fafc; border-radius:6px; }
+.dash-group-title strong { color:var(--primary); }
+.dash-group-title span { color:var(--text-light); font-size:0.84em; font-weight:600; }
+.dash-two-col { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); gap:12px; margin-top:12px; }
+.dash-table th, .dash-table td { padding:7px 9px; font-size:0.84em; }
+.dash-dx { max-width:210px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.dash-note { max-width:260px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#475569; }
+.muted-sm { color:var(--text-light); font-size:0.82em; }
+.nowrap { white-space:nowrap; }
+.danger-text { color:#b91c1c; font-weight:700; }
+.bl-mark { display:inline-block; padding:0 4px; background:#1f2937; color:#fecaca;
+    border-radius:5px; font-size:0.7em; font-weight:700; }
+.rh-yes { background:#d1fae5; color:#047857; }
+.rh-no { background:#fee2e2; color:#b91c1c; }
+.adm-planned { background:#dbeafe; color:#1d4ed8; }
+.adm-completed { background:#dcfce7; color:#047857; }
+.dash-adm-state .muted-sm { display:block; margin-top:2px; }
+.badge-callback { background:#fef3c7; color:#92400e; }
+.hold-consult { background:#fef3c7; color:#92400e; }
+.hold-admission { background:#fee2e2; color:#b91c1c; }
+.btn-xs { padding:2px 8px; font-size:0.76em; }
+.dash-action-card { margin-top:12px; }
+.dash-action-list { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:8px; }
+.dash-action-row { display:grid; grid-template-columns:auto minmax(0, 1fr) auto; align-items:center;
+    gap:8px; padding:8px 10px; border:1px solid var(--border); border-radius:6px;
+    text-decoration:none; color:inherit; background:#fff; }
+.dash-action-row:hover { border-color:var(--primary); background:#f8fafc; }
+.dash-action-row.danger { border-color:#fecaca; background:#fff7f7; }
+.dash-action-row.warn { border-color:#fde68a; background:#fffbeb; }
+.dash-action-row.info { border-color:#bfdbfe; background:#eff6ff; }
+.dash-action-kind { display:inline-flex; align-items:center; justify-content:center; min-width:58px;
+    padding:3px 6px; border-radius:6px; background:#e2e8f0; color:#334155; font-size:0.76em; font-weight:700; }
+.dash-action-row.danger .dash-action-kind { background:#fee2e2; color:#b91c1c; }
+.dash-action-row.warn .dash-action-kind { background:#fef3c7; color:#92400e; }
+.dash-action-row.info .dash-action-kind { background:#dbeafe; color:#1d4ed8; }
+.dash-action-main { min-width:0; }
+.dash-action-main strong, .dash-action-main small { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.dash-action-main small { margin-top:2px; color:var(--text-light); font-size:0.8em; }
+.dash-action-meta { color:var(--text-light); font-size:0.8em; white-space:nowrap; }
+.dash-outcome-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px; }
+.dash-outcome-card { border:1px solid var(--border); border-radius:6px; padding:10px; background:#f8fafc; }
+.dash-outcome-card strong { display:block; margin-top:4px; font-size:1.45em; color:var(--text); }
+.dash-chip-list { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.dash-chip-list.compact { margin-top:6px; }
+.dash-chip { display:inline-flex; align-items:center; gap:5px; border:1px solid #bfdbfe;
+    background:#eff6ff; color:#1d4ed8; border-radius:6px; padding:4px 8px; font-size:0.82em; }
+.dash-chip.light { border-color:#e2e8f0; background:#f8fafc; color:#475569; }
+.dash-outcome-chip { cursor:pointer; font-family:inherit; }
+.dash-outcome-chip.active { background:var(--primary); border-color:var(--primary); color:#fff; }
+.dash-outcome-panel { display:none; margin-top:10px; }
+.dash-outcome-panel.active { display:block; }
+.dash-subsection { border-top:1px solid var(--border); padding-top:10px; margin-top:10px; }
+.dash-subsection:first-of-type { border-top:none; padding-top:0; margin-top:0; }
+.dash-subhead { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+.dash-subhead span { color:var(--text-light); font-size:0.84em; font-weight:600; }
+.dash-mini-list { display:flex; flex-direction:column; gap:6px; }
+.dash-mini-row { display:grid; grid-template-columns:auto minmax(80px, 150px) minmax(0, 1fr);
+    gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid var(--border); }
+.dash-mini-row:last-child { border-bottom:none; }
+.dash-mini-main { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.week-flow-summary { display:grid; grid-template-columns:repeat(auto-fit, minmax(108px, 1fr)); gap:8px; margin-bottom:12px; }
+.week-flow-summary div { border:1px solid var(--border); border-radius:6px; padding:9px 10px; background:#f8fafc; }
+.week-flow-summary span { display:block; color:var(--text-light); font-size:0.78em; font-weight:700; }
+.week-flow-summary strong { display:block; margin-top:3px; font-size:1.35em; color:var(--text); }
+.week-flow-list { display:flex; flex-direction:column; gap:8px; }
+.week-flow-row { display:grid; grid-template-columns:76px minmax(160px, 1fr) minmax(210px, auto);
+    gap:10px; align-items:center; padding:8px 0; border-bottom:1px solid var(--border); }
+.week-flow-row:last-child { border-bottom:none; }
+.week-flow-date span { display:block; color:var(--text-light); font-size:0.78em; }
+.week-flow-date strong { display:block; font-size:0.92em; }
+.week-flow-track { display:flex; height:14px; overflow:hidden; border-radius:999px; background:#e5e7eb; }
+.week-flow-seg { min-width:0; height:100%; }
+.week-flow-seg.planned, .week-flow-legend i.planned { background:#38bdf8; }
+.week-flow-seg.admitted, .week-flow-legend i.admitted { background:#22c55e; }
+.week-flow-seg.hold, .week-flow-legend i.hold { background:#f59e0b; }
+.week-flow-seg.callback, .week-flow-legend i.callback { background:#a855f7; }
+.week-flow-seg.canceled, .week-flow-legend i.canceled { background:#ef4444; }
+.week-flow-values { display:flex; justify-content:flex-end; gap:6px; flex-wrap:wrap; color:var(--text-light); font-size:0.8em; }
+.week-flow-values span { padding:2px 6px; border-radius:999px; background:#f1f5f9; white-space:nowrap; }
+.week-flow-values .positive { background:#dcfce7; color:#15803d; }
+.week-flow-values .warn { background:#fef3c7; color:#92400e; }
+.week-flow-values .info { background:#f3e8ff; color:#7e22ce; }
+.week-flow-legend { display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; color:var(--text-light); font-size:0.78em; }
+.week-flow-legend span { display:inline-flex; align-items:center; gap:4px; }
+.week-flow-legend i { width:10px; height:10px; border-radius:999px; display:inline-block; }
+@media (max-width: 920px) {
+    .dash-two-col { grid-template-columns:1fr; }
+    .dash-mini-row { grid-template-columns:auto minmax(80px, 1fr); }
+    .dash-mini-row .muted-sm { grid-column:1 / -1; }
+    .week-flow-row { grid-template-columns:70px 1fr; }
+    .week-flow-values { grid-column:1 / -1; justify-content:flex-start; }
+}
+</style>
+<script>
+function syncAdmissionPanels() {
+    const status = document.querySelector('.dash-status-btn.active')?.dataset.status || 'all';
+    const view = document.querySelector('.dash-view-btn.active')?.dataset.view || 'all';
+    document.querySelectorAll('.dash-admission-view').forEach((panel) => {
+        panel.classList.toggle(
+            'active',
+            panel.dataset.statusPanel === status && panel.dataset.viewPanel === view
+        );
+    });
+}
+
+document.querySelectorAll('.dash-status-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.dash-status-btn').forEach((b) => {
+            b.classList.toggle('active', b === btn);
+            b.setAttribute('aria-pressed', b === btn ? 'true' : 'false');
+        });
+        syncAdmissionPanels();
+    });
+});
+
+document.querySelectorAll('.dash-view-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.dash-view-btn').forEach((b) => {
+            b.classList.toggle('active', b === btn);
+            b.setAttribute('aria-pressed', b === btn ? 'true' : 'false');
+        });
+        syncAdmissionPanels();
+    });
+});
+
+document.querySelectorAll('.dash-consult-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+        const view = btn.dataset.consultView;
+        document.querySelectorAll('.dash-consult-btn').forEach((b) => {
+            b.classList.toggle('active', b === btn);
+            b.setAttribute('aria-pressed', b === btn ? 'true' : 'false');
+        });
+        document.querySelectorAll('.dash-consult-view').forEach((panel) => {
+            panel.classList.toggle('active', panel.dataset.consultViewPanel === view);
+        });
+    });
+});
+
+document.querySelectorAll('.dash-outcome-chip').forEach((btn) => {
+    btn.addEventListener('click', () => {
+        const target = btn.dataset.outcomeTarget;
+        document.querySelectorAll('.dash-outcome-chip').forEach((b) => {
+            b.classList.toggle('active', b === btn);
+        });
+        document.querySelectorAll('.dash-outcome-panel').forEach((panel) => {
+            panel.classList.toggle('active', panel.dataset.outcomePanel === target);
+        });
+    });
+});
+
+function bindDashTabs(buttonSelector, panelSelector, buttonKey, panelKey) {
+    document.querySelectorAll(buttonSelector).forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const view = btn.dataset[buttonKey];
+            document.querySelectorAll(buttonSelector).forEach((b) => {
+                b.classList.toggle('active', b === btn);
+                b.setAttribute('aria-pressed', b === btn ? 'true' : 'false');
+            });
+            document.querySelectorAll(panelSelector).forEach((panel) => {
+                panel.classList.toggle('active', panel.dataset[panelKey] === view);
+            });
+        });
+    });
+}
+
+bindDashTabs('.dash-discharge-btn', '.dash-discharge-view', 'dischargeView', 'dischargeViewPanel');
+bindDashTabs('.dash-inbound-btn', '.dash-inbound-view', 'inboundView', 'inboundViewPanel');
+bindDashTabs('.dash-callback-btn', '.dash-callback-view', 'callbackView', 'callbackViewPanel');
+</script>
 {% endblock %}

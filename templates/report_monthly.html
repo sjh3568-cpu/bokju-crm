@@ -66,17 +66,21 @@
 <!-- 섹션 3+4: 채널 ROI + 모병원 Top (2열) -->
 <div class="report-grid">
     <div class="report-card">
-        <h3>채널별 입원 전환 ROI</h3>
+        <h3>채널별 입원 전환 ROI
+            <span class="muted no-print" style="font-size:0.66em">— 행 클릭 시 해당 채널의 이번 달 상담 목록 열림</span>
+        </h3>
         {% set rows = data.channel.groups + data.channel.details %}
+        {% set _qs_from = data['from'] %}
+        {% set _qs_to = data['to'] %}
         {% if data.channel.groups or data.channel.details %}
-        <table class="report-tbl">
+        <table class="report-tbl rpt-drill">
             <thead><tr><th>채널</th><th>상담</th><th>입원완료</th><th>전환율</th></tr></thead>
             <tbody>
                 {% if data.channel.groups %}
                 <tr class="group-head"><td colspan="4">[그룹]</td></tr>
                 {% for r in data.channel.groups %}
-                <tr>
-                    <td>{{ r.label }}</td>
+                <tr class="rpt-row" data-href="/consultations?referral_type={{ r.label|urlencode }}&from={{ _qs_from }}&to={{ _qs_to }}">
+                    <td>{{ r.label }} <span class="rpt-arrow no-print">›</span></td>
                     <td class="num">{{ r.total }}</td>
                     <td class="num">{{ r.completed }}</td>
                     <td class="num"><strong>{{ r.rate }}%</strong></td>
@@ -86,8 +90,8 @@
                 {% if data.channel.details %}
                 <tr class="group-head"><td colspan="4">[세부]</td></tr>
                 {% for r in data.channel.details %}
-                <tr>
-                    <td>{{ r.label }}</td>
+                <tr class="rpt-row" data-href="/consultations?q={{ r.label|urlencode }}&from={{ _qs_from }}&to={{ _qs_to }}">
+                    <td>{{ r.label }} <span class="rpt-arrow no-print">›</span></td>
                     <td class="num">{{ r.total }}</td>
                     <td class="num">{{ r.completed }}</td>
                     <td class="num">{{ r.rate }}%</td>
@@ -104,11 +108,14 @@
     <div class="report-card">
         <h3>모병원 Top 10 <span class="muted" style="font-size:0.78em">(현재 입원중·입소중 환자 기준)</span></h3>
         {% if data.by_source_hospital %}
-        <table class="report-tbl">
+        <table class="report-tbl rpt-drill">
             <thead><tr><th>모병원</th><th>의뢰</th></tr></thead>
             <tbody>
                 {% for r in data.by_source_hospital %}
-                <tr><td>{{ r.label }}</td><td class="num">{{ r.count }}</td></tr>
+                <tr class="rpt-row" data-href="/consultations?q={{ r.label|urlencode }}&from={{ _qs_from }}&to={{ _qs_to }}">
+                    <td>{{ r.label }} <span class="rpt-arrow no-print">›</span></td>
+                    <td class="num">{{ r.count }}</td>
+                </tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -124,12 +131,12 @@
         <h3>입원취소 사유</h3>
         {% set total_cancelled = data.this.summary.cancelled %}
         {% if data.by_rejection_reason %}
-        <table class="report-tbl">
+        <table class="report-tbl rpt-drill">
             <thead><tr><th>사유</th><th>건수</th><th>비율</th></tr></thead>
             <tbody>
                 {% for r in data.by_rejection_reason %}
-                <tr>
-                    <td>{{ r.label }}</td>
+                <tr class="rpt-row" data-href="/consultations?admission_status=입원취소&q={{ r.label|urlencode }}&from={{ data['from'] }}&to={{ data['to'] }}">
+                    <td>{{ r.label }} <span class="rpt-arrow no-print">›</span></td>
                     <td class="num">{{ r.count }}</td>
                     <td class="num">{{ ((r.count / total_cancelled * 100)|round(1)) if total_cancelled else 0 }}%</td>
                 </tr>
@@ -150,6 +157,49 @@
         </div>
     </div>
 </div>
+
+<!-- 회복기 불가 → 같은 재단·외부 시설 연계 (수요 캡처) -->
+<div class="report-grid">
+    <div class="report-card">
+        <h3>같은 재단 시설 캡처율
+            <span class="muted" style="font-size:0.78em">— 회복기 불가 환자 중 경도요양병원·복주요양원 연계 비율</span>
+        </h3>
+        {% set rc = data.referral_capture %}
+        {% if rc and rc.no_admit_total %}
+        <div class="capture-summary">
+            <div class="cap-num"><strong>{{ rc.rate }}%</strong></div>
+            <div class="cap-detail">
+                회복기 불가 <strong>{{ rc.no_admit_total }}건</strong> 중
+                <strong>{{ rc.with_referral }}건</strong> 같은 재단·외부 시설 안내
+                <br><span class="muted">미안내 {{ rc.no_admit_total - rc.with_referral }}건 = 잠재 이탈</span>
+            </div>
+        </div>
+        {% else %}
+        <div class="empty-mini">이번 달 회복기 불가 케이스 없음</div>
+        {% endif %}
+    </div>
+    <div class="report-card">
+        <h3>안내한 시설 분포</h3>
+        {% if data.by_external_referral %}
+        <table class="report-tbl">
+            <thead><tr><th>시설</th><th>건수</th></tr></thead>
+            <tbody>
+                {% for r in data.by_external_referral %}
+                <tr><td>{{ r.label }}</td><td class="num">{{ r.count }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-mini">기록된 연계 없음 — 상담 폼 '타 기관 연계 안내' 또는 위저드 체크 시 자동 집계</div>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+.capture-summary { display:flex; gap:14px; align-items:center; padding:8px 4px; }
+.cap-num { font-size:2.2em; font-weight:700; color:var(--primary); line-height:1; }
+.cap-detail { font-size:0.86em; line-height:1.5; flex:1; }
+</style>
 
 <!-- 섹션 7: 데이터 부재 안내 -->
 <div class="data-gap-note no-print">
@@ -186,6 +236,14 @@
     .report-tbl td.num { text-align:right; font-variant-numeric: tabular-nums; }
     .report-tbl tr.group-head td { font-size:0.76em; font-weight:600; color:var(--text-light); padding:5px 8px 2px; background:#f8fafc; }
     .empty-mini { padding:14px 6px; text-align:center; color:var(--text-light); font-size:0.88em; }
+    .rpt-drill tbody tr.rpt-row { cursor:pointer; transition:background 0.1s; }
+    .rpt-drill tbody tr.rpt-row:hover { background:#eef2ff; }
+    .rpt-drill .rpt-arrow { color:#9ca3af; font-size:0.78em; margin-left:3px; opacity:0; transition:opacity 0.1s; }
+    .rpt-drill tbody tr.rpt-row:hover .rpt-arrow { opacity:1; color:var(--primary); }
+    @media print {
+        .rpt-drill tbody tr.rpt-row { cursor:default; background:transparent !important; }
+        .rpt-drill .rpt-arrow { display:none; }
+    }
 
     .insight-card { margin-top:8px; }
     .insight-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
@@ -300,6 +358,14 @@
             btnInsight.disabled = false;
         });
     }
+
+    // 채널 ROI·모병원·취소사유 표 행 클릭 → 필터된 상담 목록 드릴다운
+    document.querySelectorAll('.rpt-drill tr.rpt-row').forEach(tr => {
+        tr.addEventListener('click', () => {
+            const href = tr.dataset.href;
+            if (href) location.href = href;
+        });
+    });
 })();
 </script>
 

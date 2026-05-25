@@ -1,0 +1,362 @@
+{% extends "base.html" %}
+{% block title %}매뉴얼 — 복주 상담실{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>📖 사용 매뉴얼 <span class="muted" style="font-size:0.66em">신규 상담사 온보딩 · 일상 업무 참고</span></h1>
+    <div style="display:flex; gap:8px">
+        <a href="#shopping-flow" class="btn btn-secondary btn-sm">고객 여정</a>
+        <a href="#counseling-process" class="btn btn-secondary btn-sm">상담 프로세스</a>
+        <a href="#eligibility-table" class="btn btn-secondary btn-sm">회복기 자격표</a>
+        <a href="#menu-map" class="btn btn-secondary btn-sm">메뉴 한눈에</a>
+    </div>
+</div>
+
+<div class="help-toc card">
+    <strong>목차</strong>
+    <a href="#shopping-flow">🛒 고객 여정 6단계</a> ·
+    <a href="#counseling-process">🗣 상담 프로세스 6단계</a> ·
+    <a href="#eligibility-table">🏥 회복기 자격표</a> ·
+    <a href="#faq10">💬 보호자 자주 묻는 질문 10가지</a> ·
+    <a href="#empathy">💗 정서적 공감 4단계</a> ·
+    <hr style="margin:6px 0; border:none; border-top:1px dashed #d1d5db">
+    <a href="#menu-map">8개 메뉴 한 줄 요약</a> ·
+    <a href="#dashboard">🏠 대시보드</a> ·
+    <a href="#inbox">📥 인박스</a> ·
+    <a href="#consult-new">✍️ 새 상담</a> ·
+    <a href="#consult-list">📋 상담 목록</a> ·
+    <a href="#lifecycle">🚶 생애주기</a> ·
+    <a href="#sms">💬 문자</a> ·
+    <a href="#stats">📊 통계</a> ·
+    <a href="#report">📈 월간보고서</a> ·
+    <a href="#flow">🔄 메뉴 간 흐름</a>
+</div>
+
+<div class="card help-card" id="shopping-flow">
+    <h2>🛒 고객 여정 6단계 (Shopping Flow)</h2>
+    <p class="help-lead">소비자의 갑작스런 뇌졸중 사고 후 급성기 치료 → 재활병원 전원 → 입원·퇴원까지 고객 관점에서 이뤄지는 일들을 단계별로 이해합니다.</p>
+    <table class="help-tbl">
+        <thead><tr><th>단계</th><th>관점</th><th>핵심 포인트</th></tr></thead>
+        <tbody>
+            <tr><td><strong>1. 본능·검색</strong></td><td>모객</td><td>환자별(중증·균·투석)/지역별(관내·관외) 니즈 차별 마케팅. 검색 노출·알고리즘·퍼널 설계.</td></tr>
+            <tr><td><strong>2. 비교·선택</strong></td><td>모객</td><td>보호자가 다양한 병원 후보군 비교 후 가족 상의로 결정. <strong>긍정 후기 + 비교우위</strong> 핵심.</td></tr>
+            <tr><td><strong>3. 상담</strong></td><td>접객</td><td><strong>전화 90% / 온라인 7% / 방문 3%</strong>. 신속·친절·정확 3대 요소. 입원 동기 6가지 파악.</td></tr>
+            <tr><td><strong>4. 전원</strong></td><td>접객</td><td>서류·준비물 안내. 도착 시 따뜻한 웰컴, 입원수속·검사 효율적 동선.</td></tr>
+            <tr><td><strong>5. 입원생활</strong></td><td>접객</td><td>주 1회 보호자 경과 보고. 호전 이벤트(균 해제·콧줄 등). 면회·산책 자유로움.</td></tr>
+            <tr><td><strong>6. 퇴원·후속관리</strong></td><td>팬</td><td>긍정 후기 요청. 낮병동·방문재활 안내. 만족도 청취·개선 영역 즉시 반영.</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<div class="card help-card" id="counseling-process">
+    <h2>🗣 상담 프로세스 6단계 (Counseling Process & Manual)</h2>
+    <p class="help-lead">정서적 수용과 의료 정보 안내를 통합 제공하여 상담 표준화·체계화로 만족도 향상 + 입원 전환율 제고.</p>
+    <table class="help-tbl">
+        <thead><tr><th>단계</th><th>키워드</th><th>핵심 작업</th></tr></thead>
+        <tbody>
+            <tr><td><strong>1. 상담 문의(접수)</strong></td><td>첫 인상</td><td>두려움·결핍·궁금사항 파악. 안심·연결의 시작.</td></tr>
+            <tr><td><strong>2. 환자 파악(1차)</strong></td><td>자격 판정</td><td>회복기 대상 질환군·기간 확인 + 보험 매트릭스 → <strong>위저드 사용</strong>.</td></tr>
+            <tr><td><strong>3. 전문 상담(2차)</strong></td><td>심화</td><td>7개 필수 사항 기록 + <strong>정서적 공감 4단계</strong> 동시 진행.</td></tr>
+            <tr><td><strong>4. 정보 안내</strong></td><td>비교우위</td><td>회복기 혜택 + 본원만의 강점(존엄케어·중증/균 케어 등) 안내.</td></tr>
+            <tr><td><strong>5. 상담분석</strong></td><td>마케팅 연계</td><td>인지 경로 + 타기관 비교 → 매주 통계 → 우수/개선 영역 판단.</td></tr>
+            <tr><td><strong>6. 상담 종료</strong></td><td>정서 연결</td><td>두려움·결핍·궁금사항 해소 확인. 종료 후에도 심리적 연결 유지.</td></tr>
+        </tbody>
+    </table>
+    <p class="help-note">※ 상담은 절차가 아니라 <strong>관계의 시작</strong>입니다. (매뉴얼 6단계 핵심 메시지)</p>
+</div>
+
+<div class="card help-card" id="eligibility-table">
+    <h2>🏥 회복기 자격표 (위저드 룰)</h2>
+    <p class="help-lead">위저드에서 사용하는 6+1 카테고리. 회복기 인정 = 입원시기(발병→입원) + 입원 기간.</p>
+    <table class="help-tbl">
+        <thead><tr><th>카테고리</th><th>입원시기</th><th>입원 기간</th><th>비고</th></tr></thead>
+        <tbody>
+            <tr><td>중추신경계 (뇌출혈·뇌경색·척수손상·기타)</td><td>90일</td><td>회복기(S005) 180일 + 비회복기(S006) 180일 = 360일</td><td>초과 시 <strong>지연 회복기(S044, 급성기 치료 한정)</strong> = 270 − 발병일, 그 후 S006 180일</td></tr>
+            <tr><td>근골격계 단일부위 (고관절·대퇴·골절)</td><td>30일</td><td>30일</td><td>단순 골절</td></tr>
+            <tr><td>└ 골유합지연 + 내고정·전치환술</td><td>60일</td><td>60일</td><td>두 조건 동반 · 시기·입원 기간 모두 60일</td></tr>
+            <tr><td>근골격계 다발부위</td><td>60일</td><td>60일</td><td></td></tr>
+            <tr><td>양측슬관절치환술 ⚠</td><td>30일</td><td>30일</td><td>단측 또는 양측 <strong>복잡수술</strong> 한정. 첫 수술일 기준. 복잡기준: 보험급여과-2502호 (1)(2)(5)(6)(7)(10)(11)</td></tr>
+            <tr><td>하지부위절단 ⚠</td><td>60일</td><td>60일</td><td><strong>족부절단 제외</strong> — 골반·대퇴·하퇴 부위만</td></tr>
+            <tr><td>비사용증후군 ⚠</td><td>60일</td><td>60일</td><td>호흡·심장·신생물·파킨슨·길랑바레. <strong>다제내성균만으로 비사용 여부 검토 필요</strong></td></tr>
+            <tr><td>파킨슨 (신규 진단)</td><td>60일</td><td>60일</td><td>초과 시 비회복기 180일 가능</td></tr>
+        </tbody>
+    </table>
+    <h4>보험-혜택 매트릭스</h4>
+    <table class="help-tbl">
+        <thead><tr><th>보험 유형</th><th>회복기</th><th>간호간병통합</th><th>비고</th></tr></thead>
+        <tbody>
+            <tr><td>보험·보호1·2종·차상위 1·2종·장애·암등록·산정특례</td><td>✅</td><td>✅</td><td>표준 적용</td></tr>
+            <tr><td>자보</td><td>❌</td><td>❌</td><td>일반재활만 가능</td></tr>
+            <tr><td>산재</td><td>❌</td><td>✅</td><td>산재 보험사 사전 협의 필요</td></tr>
+            <tr><td>장기요양 등급자</td><td>❌</td><td>❌</td><td>같은 재단 복주요양원·경도요양병원 안내 우선</td></tr>
+        </tbody>
+    </table>
+    <p class="help-note">⚠ 회복기 불가 시 → <strong>같은 재단의 경도요양병원 또는 복주요양원</strong>으로 연계 안내</p>
+</div>
+
+<div class="card help-card" id="faq10">
+    <h2>💬 보호자 자주 묻는 질문 10가지</h2>
+    <p class="help-lead">통화 중 보호자가 자주 묻는 질문 — 미리 알아두면 즉답 가능. (쇼핑플로우 단계 2 기준)</p>
+    <ol style="line-height:1.85">
+        <li>회복기 vs 일반재활 vs 요양재활 비교</li>
+        <li>의료진의 전문성 및 협진 체계</li>
+        <li>중증 및 균 환자 입원·치료 가능한지?</li>
+        <li>적극적·전문적 재활치료 가능한지? (치료실·로봇 등 최신 장비, 치료사 수·경력)</li>
+        <li>간병비 부담은 덜 수 있는지?</li>
+        <li>집과 거리가 가까운지?</li>
+        <li>병실 및 치료실 환경은 괜찮은지?</li>
+        <li>면회는 자주 가능한지?</li>
+        <li>진정성 있는 긍정적 후기가 있는지?</li>
+        <li>응급상황 발생 시 신속한 대처가 가능한지?</li>
+    </ol>
+    <h4>본원 비교우위 핵심 키워드</h4>
+    <ul>
+        <li><strong>핵심 가치</strong>: 존엄케어, 감사나눔, 환자중심</li>
+        <li><strong>핵심 역량</strong>: 중증 및 균 환자 간호간병서비스, 365 재활치료, 1·5치료실 CPS 라인</li>
+        <li><strong>위치 강점</strong>: 청량리~부산 2시간대 진입(중앙선 개통), 터미널·역·IC 인근</li>
+        <li><strong>관내</strong>: 안동·예천·의성·영주·봉화·영양·청송 권역</li>
+    </ul>
+</div>
+
+<div class="card help-card" id="empathy">
+    <h2>💗 정서적 공감 4단계 (상담 매뉴얼 핵심)</h2>
+    <p class="help-lead">"상담은 절차가 아니라 관계의 시작" — 의료 정보 안내 못지않게 정서적 공감이 핵심.</p>
+    <table class="help-tbl">
+        <thead><tr><th>단계</th><th>행동 원칙</th><th>주의 사항</th></tr></thead>
+        <tbody>
+            <tr><td><strong>1. 감정 인지</strong></td><td>어떤 감정 상태인지 파악. 존재하게 두기.</td><td>추측 금지</td></tr>
+            <tr><td><strong>2. 감정 수용</strong></td><td>있는 그대로 받아들이기.</td><td>위로·격려 서두르지 않기</td></tr>
+            <tr><td><strong>3. 감정 동행</strong></td><td>함께 있어주기. 감정 곁에 있어주기.</td><td>해결사 역할 자제</td></tr>
+            <tr><td><strong>4. 감정 안정</strong></td><td>작은 희망 심기. 괜찮아질 가능성을 여는 말.</td><td>입원 가능 기대감 과잉 유의 — 자의적 판단 금지</td></tr>
+        </tbody>
+    </table>
+    <h4>전문 상담(2차) 필수 7가지 사항</h4>
+    <ol style="line-height:1.85">
+        <li>나이·성별·주소지·가족사항·상담자 이름·환자와의 관계</li>
+        <li>현재 병원명과 주병명 확인, 발생 시 상황 기록</li>
+        <li>환자 의식·식이 상태, 마비 상태, DNR, 수면, 섬망 상태</li>
+        <li>환자 과거력과 수술 기록, 입원 전 복용 약</li>
+        <li>욕창·기관절개 유무, 유치도뇨, 상처관리 유무</li>
+        <li>특수처치(산소·흡인·수혈·네뷸라이저) 유무</li>
+        <li>현재 전문재활·언어·연하치료 유무</li>
+    </ol>
+    <h4>상담 시 주의 사항</h4>
+    <ul>
+        <li><strong>불확실한 추측 금지</strong> 예) "아마 괜찮아 질거예요" ✗</li>
+        <li><strong>모르는 것은 솔직하게</strong> 예) "확인 후 안내해드릴께요" ✅</li>
+        <li><strong>상담자의 감정소진 유의</strong> — 정서 노동은 누적됨</li>
+    </ul>
+</div>
+
+<div class="card help-card" id="menu-map">
+    <h2>8개 메뉴 한눈에</h2>
+    <table class="help-tbl">
+        <thead><tr><th>메뉴</th><th>한 줄 요약</th><th>언제 쓰나</th></tr></thead>
+        <tbody>
+            <tr><td><a href="/">🏠 대시보드</a></td><td>5초 만에 보는 우리 팀 컨디션</td><td>출근 직후</td></tr>
+            <tr><td><a href="/inbox">📥 인박스</a></td><td>오늘 처리해야 할 To-Do</td><td>출근하자마자 + 수시</td></tr>
+            <tr><td><a href="/consult/new">✍️ 새 상담</a></td><td>통화 끝나고 한 화면에 다 채워서 저장</td><td>통화 직후</td></tr>
+            <tr><td><a href="/consultations">📋 상담 목록</a></td><td>과거 상담 검색용 백과사전</td><td>이전 상담 확인</td></tr>
+            <tr><td><a href="/lifecycle">🚶 생애주기</a></td><td>환자별 여정 지도</td><td>환자 케이스 추적</td></tr>
+            <tr><td><a href="/sms">💬 문자</a></td><td>환자군별 정형 문구 1-click 발송</td><td>입원/퇴원 안내</td></tr>
+            <tr><td><a href="/stats">📊 통계</a></td><td>자유 기간 깊은 분석 차트</td><td>분기/월 분석</td></tr>
+            <tr><td><a href="/report/monthly">📈 월간보고서</a></td><td>임원 회의용 A4 1페이지 자동 보고서</td><td>월초 임원 보고</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<div class="card help-card" id="dashboard">
+    <h2>🏠 대시보드 <a href="/" class="help-go">메뉴 열기 →</a></h2>
+    <p class="help-lead">"오늘 아침 출근해서 첫 번째로 보는 화면. 5초 만에 우리 팀 컨디션 파악."</p>
+    <h4>화면 구성</h4>
+    <ul>
+        <li>이번 달 카드 4장 — 총 상담 / 입원예정 등록·비율 / 30일 이내 퇴원예정</li>
+        <li>오늘 등록된 상담 (시각·환자·주치의·호실·입원예정일)</li>
+        <li>최근 7일 상담 추이 — 미니 라인 차트</li>
+    </ul>
+    <h4>활용 시나리오</h4>
+    <ol>
+        <li>출근 직후 → "이번 달 우리 어디까지 왔지?"</li>
+        <li>30일 이내 퇴원예정 카드 클릭 → 입원완료 환자 목록</li>
+    </ol>
+</div>
+
+<div class="card help-card" id="inbox">
+    <h2>📥 인박스 <a href="/inbox" class="help-go">메뉴 열기 →</a></h2>
+    <p class="help-lead">"이메일의 받은편지함처럼, 오늘 처리해야 할 일을 채널 무관 한곳에 모은 화면."</p>
+
+    <h4>4개 섹션이 답하는 질문</h4>
+    <ul>
+        <li><strong>📞 재연락 대기</strong> — "전에 '나중에 다시 연락드릴게요' 약속한 건 누구지?"<br>
+            상담 결과를 <code>상담요청</code>으로 표시한 건. [✓ 재연락 완료] 1-click 마킹 가능.</li>
+        <li><strong>📨 미처리 인바운드</strong> — "카톡 문의·웹문의·부재중 중 답신 안 한 게 뭐지?"<br>
+            카카오 webhook 등으로 들어온 미처리 메시지. <strong>[상담 등록]</strong> 클릭 시 보호자 연락처·메시지까지 자동 prefill된 상담 폼이 열리고, 저장 시 인박스 자동 제거. 블랙리스트 환자면 ⚠ 사전 표시.</li>
+        <li><strong>🏥 입원 안내 예정 (D-3)</strong> — "내일·모레 입원 예정 환자 안내 문자 보내야 하는 사람?"<br>
+            [입원안내 문자] → 토큰 자동 치환된 본문.</li>
+        <li><strong>🚪 퇴원 예정</strong> — "입원 만료일 가까운 환자, 가족에게 미리 안내해야 하는데?"<br>
+            의료법 입원 기간 룰로 계산한 만료일이 30일 이내. 빨간 글씨 "N일 초과" = 이미 만료(연장 결정 필요).</li>
+    </ul>
+
+    <h4>하루 흐름</h4>
+    <ol>
+        <li>출근하자마자 인박스 열기 → 어제 저녁~오늘 아침 들어온 카톡/재연락 약속 파악</li>
+        <li>재연락 대기 처리 → 보호자 전화 돌리고 결과 업데이트</li>
+        <li>미처리 인바운드 처리 → 신규는 [상담 등록]으로 정식 상담 생성</li>
+        <li>D-3 입원 안내 발송 → [입원안내 문자] 1-click</li>
+        <li>퇴원 예정 사전 안내 → 만료 30일 전부터 가족에게 미리</li>
+    </ol>
+    <p class="help-note">인박스가 텅 비어 있으면 = 응대 잘 되고 있다는 좋은 신호.</p>
+</div>
+
+<div class="card help-card" id="consult-new">
+    <h2>✍️ 새 상담 <a href="/consult/new" class="help-go">메뉴 열기 →</a></h2>
+    <p class="help-lead">"종이 상담일지의 디지털 버전. 통화 끝나자마자 한 화면에 다 채우고 저장하면 끝."</p>
+    <h4>폼 8개 섹션</h4>
+    <ol>
+        <li><strong>헤더</strong> — 입원예정일·주치의·호실·상담일자·시각·상담자</li>
+        <li><strong>환자 기본정보</strong> — 환자명(자동완성)·성별·나이·주소(시군구→시도 자동)·블랙리스트</li>
+        <li><strong>보호자</strong> — 이름·관계·연락처(010- 자동 포맷)</li>
+        <li><strong>상담 방법·입원 경로</strong></li>
+        <li><strong>병명 4그룹</strong> — 기저·중추신경계·근골격계·비사용증후군 (회복기 자동 판정)</li>
+        <li><strong>환자 상태</strong> — 의식·활동·식이·상처·치료</li>
+        <li><strong>입원 확인</strong> — 서류·이송·비용 안내</li>
+        <li><strong>상담 결과 2단계</strong> — ① 상담 진행(완료/요청/보류/취소) ② 입원 진행(완료/보류/취소)</li>
+    </ol>
+    <h4>회복기 자동 판정 룰 (위저드 기준)</h4>
+    <ul>
+        <li>중추신경계 (뇌출혈·뇌경색·척수손상): 발병 후 <strong>90일</strong>, 입원 기간 360일 (S005+S006)</li>
+        <li>근골격계 단일부위: 발병/수술 후 <strong>30일</strong>, 입원 기간 30일</li>
+        <li>└ 골유합지연 + 내고정·전치환술: <strong>60일</strong>, 입원 기간 <strong>60일</strong></li>
+        <li>근골격계 다발부위: <strong>60일</strong>, 입원 기간 60일</li>
+        <li>양측슬관절치환술 (복잡수술 한정): <strong>30일</strong>(첫 수술일 기준), 입원 기간 <strong>30일</strong></li>
+        <li>하지부위절단 (족부절단 제외): <strong>60일</strong>, 입원 기간 60일</li>
+        <li>비사용증후군: <strong>60일</strong>, 입원 기간 60일 (다제내성균 단독 시 검토 필요)</li>
+        <li>파킨슨(신규 진단): <strong>60일</strong>, 입원 기간 60일</li>
+        <li>여러 병명 시 가장 긴 인정 기간 적용</li>
+    </ul>
+    <h4>입력 편의 기능</h4>
+    <ul>
+        <li>환자명 자동완성 — 기존 환자 매칭 시 보호자·주소 자동 채움</li>
+        <li>발병일 — 날짜 선택기 + "정확한 날짜 모름" 시 자유 텍스트</li>
+        <li>자주 쓰는 모병원 Top 5 빠른 선택 버튼</li>
+        <li>인박스에서 진입 시 자동 prefill + 노란 안내 배너 + 저장 시 인박스 자동 처리완료</li>
+    </ul>
+</div>
+
+<div class="card help-card" id="consult-list">
+    <h2>📋 상담 목록 <a href="/consultations" class="help-go">메뉴 열기 →</a></h2>
+    <p class="help-lead">"검색용 백과사전. 과거 어떤 상담이 있었는지 필터·정렬해서 찾는 곳."</p>
+    <h4>주요 기능</h4>
+    <ul>
+        <li>필터 10종 — 기간·상담자·거주도·병명그룹·유입경로·상담방법·회복기·상담결과·입원진행·검색어</li>
+        <li>13컬럼 테이블 — 회복기 배지, 임박 마크(↓7일), 동명이인 ⚠, 재상담 #N</li>
+        <li>헤더 클릭 정렬 (7개 컬럼), 100건/페이지 페이지네이션</li>
+        <li>CSV 다운로드 25컬럼 (관리자)</li>
+        <li>일괄 작업 — 체크박스로 여러 건 선택 후 상태 일괄 변경·삭제</li>
+    </ul>
+    <h4>활용 시나리오</h4>
+    <ol>
+        <li>"지난달 ○○병원에서 온 입원완료 환자만" — 기간 + 모병원 + 입원진행 필터</li>
+        <li>"○○ 환자 다시 전화왔다 — 이전 상담 확인" — 검색어 입력</li>
+        <li>월말 보고용 CSV 다운로드 → 엑셀 분석</li>
+    </ol>
+</div>
+
+<div class="card help-card" id="lifecycle">
+    <h2>🚶 생애주기 <a href="/lifecycle" class="help-go">메뉴 열기 →</a></h2>
+    <p class="help-lead">"환자 한 명 한 명의 여정 지도. 지금 어느 단계에 있고, 다음에 뭘 해야 하는지."</p>
+    <h4>보드 — Kanban 7단계</h4>
+    <p>상담 → 입원대기 → 입원 → 응급치료 → 회복기 → 비회복기 → 퇴원</p>
+    <h4>환자 상세 페이지</h4>
+    <ul>
+        <li>통합 타임라인 — 상담·문자·생애주기 이벤트·커뮤니케이션 4개 소스 시간순 병합</li>
+        <li>생애주기 이벤트 추가 — 응급치료/복귀/회복기·비회복기 전환/요구사항/퇴원 등</li>
+        <li>커뮤니케이션 기록 — 전화·문자·카톡 부재중 등 수동 기록</li>
+    </ul>
+    <h4>자동 전진</h4>
+    <ul>
+        <li>입원완료 → <strong>입원</strong> 단계 자동</li>
+        <li>입원보류 → <strong>입원대기</strong> 단계 자동</li>
+        <li>퇴원완료 → <strong>퇴원</strong> 단계 자동</li>
+        <li>후진은 없음, 수동으로만 가능</li>
+    </ul>
+</div>
+
+<div class="card help-card" id="sms">
+    <h2>💬 문자 <a href="/sms" class="help-go">메뉴 열기 →</a></h2>
+    <p class="help-lead">"환자군별 정형 문구를 토큰 치환해서 발송. 인박스에서 1-click 연결."</p>
+    <h4>화면 구성</h4>
+    <ul>
+        <li>수신자 선택 — 최근 상담 200건 드롭다운 (인박스에서 진입 시 자동 선택)</li>
+        <li>환자군별 템플릿 버튼 — 입원안내·퇴원안내·재연락 등</li>
+        <li>본문 — 토큰 자동 치환: <code>{환자명}</code> <code>{보호자명}</code> <code>{병원명}</code> <code>{입원예정일}</code> <code>{주치의}</code></li>
+        <li>전송 이력 테이블</li>
+    </ul>
+    <h4>현재 한계</h4>
+    <p class="help-note">발송사 미정 → 'manual' 모드 → 휴대폰 문자앱이 본문 채워진 채로 열림. 발송사 결정 시 자동 발송 전환.</p>
+</div>
+
+<div class="card help-card" id="stats">
+    <h2>📊 통계 <a href="/stats" class="help-go">메뉴 열기 →</a></h2>
+    <p class="help-lead">"숫자와 차트로 보는 우리 팀 성적. 기간 선택해서 어떤 채널이 잘 되는지 분석."</p>
+    <h4>화면 구성</h4>
+    <ul>
+        <li>기간 선택 — 이번달·지난달·이번분기·지난분기·올해·직접지정</li>
+        <li>KPI 6+1장 — 총 상담·입원완료·전환율·보류·취소·일평균·최다 입원경로/거주지/병명</li>
+        <li>12+ 차트 — 시계열·도넛 5종·수평막대 4종·수직막대 2종</li>
+        <li>Claude AI 인사이트 버튼 (환자 식별정보 미전달)</li>
+    </ul>
+</div>
+
+<div class="card help-card" id="report">
+    <h2>📈 월간보고서 <a href="/report/monthly" class="help-go">메뉴 열기 →</a></h2>
+    <p class="help-lead">"임원 회의용 A4 1페이지 자동 보고서. Claude가 한 단락 요약까지 작성."</p>
+    <h4>화면 구성</h4>
+    <ul>
+        <li>KPI 카드 8장 (전월 대비 ±%)</li>
+        <li>Claude AI 임원 요약 1단락</li>
+        <li>채널별 입원 전환 ROI 표 (행 클릭 → 필터된 상담 목록 드릴다운)</li>
+        <li>모병원 Top 10, 입원취소 사유 Top, 환자 포트폴리오 미니 도넛 3개</li>
+    </ul>
+    <p class="help-note">가용 데이터 한계: 가동률·재원일·매출은 EMR/청구 연계 시 차후 추가.</p>
+</div>
+
+<div class="card help-card" id="flow">
+    <h2>🔄 메뉴 간 데이터 흐름</h2>
+    <pre class="help-flow">
+[카카오 webhook / 웹문의 / 전화 부재중]
+    ↓
+[📥 인박스 · 미처리 인바운드]
+    ↓ [상담 등록] 클릭 (자동 prefill)
+[✍️ 새 상담 폼]
+    ↓ 저장
+[📋 상담 목록] ←─ 회복기·임박 마크 자동
+    ↓ admission_status='입원완료'
+[🚶 생애주기 보드 · 자동 전진] ←─ 환자 상세 타임라인 누적
+    ↓ 입원 만료 30일 이내
+[📥 인박스 · 퇴원 예정] ─→ [💬 문자 발송] ─→ 환자 타임라인
+    ↓
+[📊 통계 / 📈 월간보고서] ←─ admission_status 기반 집계
+</pre>
+</div>
+
+<style>
+.help-toc { padding:10px 14px; margin-bottom:14px; font-size:0.9em; line-height:1.7; }
+.help-toc a { margin-right:4px; }
+.help-card { margin-bottom:12px; padding:14px 18px; }
+.help-card h2 { font-size:1.15em; margin-bottom:6px; }
+.help-card h4 { font-size:0.95em; margin:10px 0 4px; color:#374151; }
+.help-card .help-lead { font-size:0.95em; color:#1f2937; margin-bottom:8px;
+    padding:8px 12px; background:#fef3c7; border-left:4px solid #d97706; border-radius:6px; }
+.help-card ul, .help-card ol { padding-left:22px; line-height:1.7; font-size:0.9em; }
+.help-card .help-note { padding:8px 12px; background:#f3f4f6; border-radius:6px;
+    font-size:0.86em; color:#6b7280; margin-top:8px; }
+.help-card .help-go { font-size:0.7em; margin-left:6px; color:var(--primary); text-decoration:none; }
+.help-card .help-go:hover { text-decoration:underline; }
+.help-tbl { width:100%; border-collapse:collapse; font-size:0.92em; }
+.help-tbl th, .help-tbl td { padding:6px 10px; border-bottom:1px solid var(--border); text-align:left; }
+.help-tbl th { background:#f8fafc; font-weight:600; font-size:0.86em; }
+.help-flow { font-family:'Pretendard',monospace; font-size:0.86em; line-height:1.6;
+    padding:14px 18px; background:#f8fafc; border-radius:8px;
+    border-left:4px solid #6366f1; white-space:pre; overflow-x:auto; }
+</style>
+{% endblock %}

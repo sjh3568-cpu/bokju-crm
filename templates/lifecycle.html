@@ -3,46 +3,198 @@
 {% block content %}
 <div class="page-header">
     <h1>환자 생애주기 보드 <span class="muted" style="font-size:0.68em">({{ total }}명)</span></h1>
-    <a class="btn btn-primary btn-sm" href="/consult/new">+ 새 상담일지</a>
+    <div style="display:flex; gap:8px; align-items:center">
+        <button type="button" id="lc-mode-toggle" class="btn btn-secondary btn-sm" title="상세 모드 ↔ 컴팩트 모드">⇲ 상세</button>
+        <a class="btn btn-primary btn-sm" href="/consult/new">+ 새 상담일지</a>
+    </div>
 </div>
 
-<form class="lc-search" method="get" action="/lifecycle">
-    <input type="text" name="q" value="{{ q }}" placeholder="환자명·연락처 검색">
-    <button class="btn btn-primary btn-sm" type="submit">검색</button>
-    {% if q %}<a class="btn btn-secondary btn-sm" href="/lifecycle">초기화</a>{% endif %}
+{# ─── 1단: 오늘 액션 필요 KPI 3장 — 클릭 시 그 환자만 표시 ─── #}
+<div class="lc-kpi-row">
+    <a class="lc-kpi lc-kpi-link {% if kpis.stale %}lc-kpi-warn{% endif %} {% if filters.stale %}lc-kpi-active{% endif %}"
+       href="?stale=1" title="단계 진입 90일 이상 — 의료진 동기화 필요">
+        <div class="lc-kpi-label">⚠ 정체 90일+</div>
+        <div class="lc-kpi-val">{{ kpis.stale }}{% if kpis.stale %} <span class="lc-kpi-warn-mark">필요</span>{% endif %}</div>
+        <div class="lc-kpi-hint">의료진 동기화</div>
+    </a>
+    <a class="lc-kpi lc-kpi-link {% if kpis.discharge_imminent %}lc-kpi-warn-soft{% endif %} {% if filters.discharge_imminent %}lc-kpi-active{% endif %}"
+       href="?discharge_imminent=1" title="입원만료 D-3 이내(초과 포함) 환자 — 보호자 안내·연장 결정 필요">
+        <div class="lc-kpi-label">🚪 퇴원 임박 D-3</div>
+        <div class="lc-kpi-val">{{ kpis.discharge_imminent }}</div>
+        <div class="lc-kpi-hint">보호자 안내·연장 결정</div>
+    </a>
+    <a class="lc-kpi lc-kpi-link {% if kpis.emergency_overdue %}lc-kpi-warn{% endif %} {% if filters.emergency_overdue %}lc-kpi-active{% endif %}"
+       href="?emergency_overdue=1" title="응급치료 단계 진입 3일 이상 — 모병원에서 아직 복귀하지 않은 환자">
+        <div class="lc-kpi-label">🚑 응급 복귀 미기록</div>
+        <div class="lc-kpi-val">{{ kpis.emergency_overdue }}{% if kpis.emergency_overdue %} <span class="lc-kpi-warn-mark">확인</span>{% endif %}</div>
+        <div class="lc-kpi-hint">의료진에 상태 확인</div>
+    </a>
+    {# 보조: 전체 활성 / 신규 30일 — 작은 사이드 카드 #}
+    <div class="lc-kpi-side">
+        <a class="lc-kpi-mini {% if filters.view == 'all' and not filters.stale and not filters.discharge_imminent and not filters.emergency_overdue %}lc-kpi-mini-active{% endif %}"
+           href="?view=all" title="모든 단계 환자 보기">
+            <span class="lc-kpi-mini-num">{{ kpis.active }}</span>
+            <span class="lc-kpi-mini-lbl">전체 활성</span>
+        </a>
+        <a class="lc-kpi-mini {% if filters.new30 %}lc-kpi-mini-active{% endif %}"
+           href="?new30=1" title="최근 30일 이내 단계 진입 환자만">
+            <span class="lc-kpi-mini-num">{{ kpis.new_30d }}</span>
+            <span class="lc-kpi-mini-lbl">신규 30일</span>
+        </a>
+    </div>
+</div>
+
+{# ─── 2단: 단계 카테고리 카드 행 — 클릭 시 그 단계만 필터 ─── #}
+<div class="lc-stage-row">
+    {% for s in LIFECYCLE_STAGES %}
+    {% set cnt = kpis.stage_counts.get(s, 0) %}
+    {% set avg = kpis.avg_by_stage.get(s) %}
+    <a class="lc-stage-card stage-{{ loop.index }} {% if s in (filters.stages or []) %}lc-stage-active{% endif %}"
+       href="?stage={{ s|urlencode }}" title="{{ s }} 단계 환자만 보기">
+        <div class="lc-stage-name">{{ s }}</div>
+        <div class="lc-stage-num">{{ cnt }}</div>
+        {% if avg is not none %}<div class="lc-stage-avg">평균 {{ avg }}일</div>{% endif %}
+    </a>
+    {% endfor %}
+</div>
+
+{# ─── 활성 필터 칩 — 현재 어떤 필터가 적용 중인지 시각화 ─── #}
+{% if filters.stale or filters.new30 or filters.discharge_imminent or filters.emergency_overdue or filters.dx or filters.doctor or filters.hospital or filters.archived or filters.stages or q %}
+<div class="lc-active-chips">
+    <span class="muted">활성 필터:</span>
+    {% if filters.stale %}<a href="/lifecycle?view=all" class="lc-chip lc-chip-warn">⚠ 정체 90일+ ✕</a>{% endif %}
+    {% if filters.discharge_imminent %}<a href="/lifecycle?view=all" class="lc-chip lc-chip-warn">🚪 퇴원 임박 D-3 ✕</a>{% endif %}
+    {% if filters.emergency_overdue %}<a href="/lifecycle?view=all" class="lc-chip lc-chip-warn">🚑 응급 복귀 미기록 ✕</a>{% endif %}
+    {% if filters.new30 %}<a href="/lifecycle?view=all" class="lc-chip">🆕 신규 30일 ✕</a>{% endif %}
+    {% if q %}<a href="/lifecycle?view=all" class="lc-chip">🔍 "{{ q }}" ✕</a>{% endif %}
+    {% if filters.stages %}{% for s in filters.stages %}<a href="/lifecycle?view=all" class="lc-chip">단계: {{ s }} ✕</a>{% endfor %}{% endif %}
+    {% if filters.dx %}<a href="/lifecycle?view=all" class="lc-chip">병명: {{ filters.dx }} ✕</a>{% endif %}
+    {% if filters.doctor %}<a href="/lifecycle?view=all" class="lc-chip">주치의: {{ filters.doctor }} ✕</a>{% endif %}
+    {% if filters.hospital %}<a href="/lifecycle?view=all" class="lc-chip">🏥 {{ filters.hospital }} ✕</a>{% endif %}
+    {% if filters.archived %}<a href="/lifecycle?view=all" class="lc-chip">아카이브 포함 ✕</a>{% endif %}
+    <a href="/lifecycle" class="lc-chip-clear">기본 화면(입원·응급)으로</a>
+</div>
+{% endif %}
+
+{# ─── 필터바 (C) ─── #}
+<form class="lc-filter" method="get" action="/lifecycle">
+    <input type="text" name="q" value="{{ q }}" placeholder="환자명·연락처 검색" class="lc-q">
+    <select name="period" title="최근 N일 이내 변동·상담">
+        <option value="30"  {% if filters.period == '30' %}selected{% endif %}>최근 30일</option>
+        <option value="90"  {% if filters.period == '90' %}selected{% endif %}>최근 90일</option>
+        <option value="180" {% if filters.period == '180' %}selected{% endif %}>최근 6개월</option>
+        <option value="all" {% if filters.period in ('all','0') %}selected{% endif %}>전체</option>
+    </select>
+    <select name="dx" title="병명 그룹">
+        <option value="">전체 병명</option>
+        {% for g in DISEASE_GROUPS %}
+        <option value="{{ g }}" {% if filters.dx == g %}selected{% endif %}>{{ g }}</option>
+        {% endfor %}
+    </select>
+    <select name="doctor" title="주치의">
+        <option value="">전체 주치의</option>
+        {% for d in doctor_options %}
+        <option value="{{ d }}" {% if filters.doctor == d %}selected{% endif %}>{{ d }}</option>
+        {% endfor %}
+    </select>
+    <label class="lc-arc-toggle" title="자동 제외(상담취소 7일·퇴원 30일)된 카드도 표시">
+        <input type="checkbox" name="archived" value="1" {% if filters.archived %}checked{% endif %}>
+        <span>아카이브 포함</span>
+    </label>
+    <button type="submit" class="btn btn-primary btn-sm">적용</button>
 </form>
 
-<p class="lc-hint muted">상담 → 입원 → 응급치료 → 회복기/비회복기 → 퇴원까지 환자 단계를 관리합니다.
-   환자 상세에서 <strong>생애주기 단계</strong>를 지정하면 이 보드에 표시되고,
-   카드의 단계 선택으로 옮길 수 있습니다. 카드를 클릭하면 타임라인·요구사항을 기록할 수 있습니다.</p>
+<p class="lc-hint muted">
+    💡 단계 카드 클릭 = 그 단계만 보기 · 카드 드래그 = 단계 이동 · 카드 hover = 빠른 액션 ·
+    우측 모병원·응급전원 클릭 = 드릴다운 ·
+    <strong>기본 화면 = 입원·응급치료·입원대기 (가장 시급)</strong> · [전체 활성] 클릭 = 모든 단계
+</p>
 
 {% if total %}
-<div class="lc-board">
+<div class="lc-main">
+<div class="lc-board" id="lc-board">
     {% for stage, cards in board.items() %}
-    <div class="lc-col">
-        <div class="lc-col-head">{{ stage }} <span class="lc-col-n">{{ cards|length }}</span></div>
-        <div class="lc-col-body">
+    <div class="lc-col{% if cards|length == 0 %} lc-col-empty-slim{% endif %}"
+         data-stage="{{ stage }}">
+        <div class="lc-col-head" data-stage="{{ stage }}">
+            <span class="lc-col-name">{{ stage }}</span>
+            <span class="lc-col-n">{{ cards|length }}</span>
+        </div>
+        <div class="lc-col-body" data-stage="{{ stage }}">
             {% for pt in cards %}
-            <div class="lc-pcard{% if pt.blacklist %} bl{% endif %}">
+            {# 상담 결과/입원 진행에 따른 사유 라벨 #}
+            {% set _cr = pt.last_consult_result or '' %}
+            {% set _as = pt.last_admission_status or '' %}
+            {% set _label = '' %}{% set _label_reason = '' %}
+            {% if _as == '입원취소' %}
+                {% set _label = '✗ 입원취소' %}{% set _label_reason = pt.last_rejection_reason or '' %}
+            {% elif _as == '입원보류' %}
+                {% set _label = '⏸ 입원보류' %}{% set _label_reason = pt.last_hold_reason or '' %}
+            {% elif _cr == '상담취소' %}
+                {% set _label = '✗ 상담취소' %}{% set _label_reason = pt.last_consult_result_reason or '' %}
+            {% elif _cr == '상담보류' %}
+                {% set _label = '⏸ 상담보류' %}{% set _label_reason = pt.last_consult_result_reason or '' %}
+            {% elif _cr == '상담요청' %}
+                {% set _label = '✋ 상담요청' %}{% set _label_reason = pt.last_consult_result_reason or '' %}
+            {% elif _cr == '재입원 상담' %}
+                {% set _label = '↻ 재입원 상담' %}{% set _label_reason = pt.last_consult_result_reason or '' %}
+            {% endif %}
+
+            {# (B1) 카드 우선순위 — 좌측 4px 컬러바 통일 #}
+            {# 우선순위: 블랙리스트 > 정체 > 입원취소·상담취소 > 입원보류·상담보류 > 임박D7 > 정상 > 퇴원 #}
+            {% set _prio = 'ok' %}
+            {% if pt.blacklist %}{% set _prio = 'bl' %}
+            {% elif pt.is_stale %}{% set _prio = 'stale' %}
+            {% elif _as == '입원취소' or _cr == '상담취소' %}{% set _prio = 'reject' %}
+            {% elif _as == '입원보류' or _cr == '상담보류' %}{% set _prio = 'hold' %}
+            {% elif pt.discharge_dday is defined and pt.discharge_dday is not none and pt.discharge_dday <= 7 %}
+                {% set _prio = 'urgent' %}
+            {% elif pt.lifecycle_stage == '퇴원' %}{% set _prio = 'done' %}
+            {% endif %}
+
+            <div class="lc-pcard prio-{{ _prio }}"
+                 draggable="true"
+                 data-pid="{{ pt.id }}"
+                 data-stage="{{ pt.lifecycle_stage }}"
+                 data-name="{{ pt.name }}">
+                {# 상단: 환자명·나이성별 + 빠른 액션 (C2) #}
                 <div class="lc-pcard-top">
-                    <a href="/patients/{{ pt.id }}" class="lc-pname">
-                        {% if pt.blacklist %}<span class="bl-mark" title="블랙리스트{% if pt.blacklist_reason %} — {{ pt.blacklist_reason }}{% endif %}">⚠블랙</span> {% endif %}{{ pt.name }}</a>
-                    <span class="muted">{% if pt.patient_age is not none %}{{ pt.patient_age }}{% endif %}{% if pt.gender == 'M' %}·남{% elif pt.gender == 'F' %}·여{% endif %}</span>
+                    <a href="/patients/{{ pt.id }}{% if q %}?q={{ q|urlencode }}{% endif %}" class="lc-pname">
+                        {% if pt.blacklist %}<span class="bl-mark" title="블랙리스트{% if pt.blacklist_reason %} — {{ pt.blacklist_reason }}{% endif %}">⚠</span>{% endif %}{{ pt.name }}</a>
+                    <span class="lc-meta-mini muted">{% if pt.patient_age is not none %}{{ pt.patient_age }}{% endif %}{% if pt.gender == 'M' %}·남{% elif pt.gender == 'F' %}·여{% endif %}</span>
+                    <span class="lc-actions">
+                        {% if pt.last_consult_id %}
+                        <a href="/sms?cid={{ pt.last_consult_id }}" title="문자 전송" class="lc-act">📩</a>
+                        <a href="/consult/{{ pt.last_consult_id }}" title="상담 상세" class="lc-act">📋</a>
+                        {% endif %}
+                        <a href="/patients/{{ pt.id }}" title="환자 상세·이벤트 기록" class="lc-act">👤</a>
+                    </span>
                 </div>
-                {% if pt.last_diseases %}
-                <div class="lc-pdx">{{ pt.last_diseases[:3]|join(', ') }}{% if pt.last_diseases|length > 3 %} 외{% endif %}</div>
-                {% endif %}
-                <div class="lc-pmeta muted">
-                    {% if pt.last_consult_date %}최근상담 {{ pt.last_consult_date|krdate }} · {% endif %}상담 {{ pt.consult_count }} · 이벤트 {{ pt.event_count }}
+
+                {# 핵심 라인: 라벨 또는 D-day 또는 병명 — 모드별 다름 #}
+                <div class="lc-pcard-mid">
+                    {% if _label %}<span class="lc-pclabel">{{ _label }}</span>{% endif %}
+                    {% if pt.discharge_dday is defined and pt.discharge_dday is not none %}
+                        {% if pt.discharge_dday < 0 %}<span class="lc-dday over">⏱ {{ -pt.discharge_dday }}일 초과</span>
+                        {% elif pt.discharge_dday <= 7 %}<span class="lc-dday warn">⏱ D-{{ pt.discharge_dday }}</span>
+                        {% elif pt.discharge_dday <= 30 %}<span class="lc-dday soon">⏱ D-{{ pt.discharge_dday }}</span>{% endif %}
+                    {% endif %}
+                    {% if pt.is_stale %}<span class="lc-stale">⚠ 정체 {{ pt.stage_days_int }}일</span>{% endif %}
                 </div>
-                <div class="lc-pcard-act">
-                    <select class="lc-stage-move" data-pid="{{ pt.id }}" title="단계 이동">
-                        {% for s in LIFECYCLE_STAGES %}
-                        <option value="{{ s }}" {% if pt.lifecycle_stage == s %}selected{% endif %}>{{ s }}</option>
-                        {% endfor %}
-                        <option value="__off">미설정 (보드 제외)</option>
-                    </select>
-                    <a href="/patients/{{ pt.id }}" class="lc-pcard-link">기록 ›</a>
+
+                {# 상세 패널: 상세 모드에서만 표시 (컴팩트는 숨김) #}
+                <div class="lc-pcard-detail">
+                    {% if pt.last_diseases %}
+                    <div class="lc-pdx" title="{{ pt.last_diseases|join(', ') }}">
+                        {{ pt.last_diseases[:3]|join(', ') }}{% if pt.last_diseases|length > 3 %} 외{% endif %}
+                    </div>
+                    {% endif %}
+                    {% if _label_reason %}
+                    <div class="lc-prsn muted-sm">사유: {{ _label_reason }}</div>
+                    {% endif %}
+                    <div class="lc-pmeta muted-sm">
+                        {% if pt.last_consult_date %}최근 {{ pt.last_consult_date|krdate }} · {% endif %}상담 {{ pt.consult_count }} · 이벤트 {{ pt.event_count }}{% if pt.last_doctor %} · {{ pt.last_doctor }}{% endif %}
+                    </div>
                 </div>
             </div>
             {% endfor %}
@@ -51,54 +203,334 @@
     </div>
     {% endfor %}
 </div>
+{# ─── 사이드 패널 — 모병원·이번 주 응급전원 ─── #}
+<aside class="lc-side">
+    <div class="lc-side-card">
+        <h4>🏥 모병원 Top
+            <span class="muted-sm" style="font-weight:400; font-size:0.85em">(현재 보드 환자 기준)</span>
+        </h4>
+        {% if side.hospitals %}
+        <ul class="lc-hosp-list">
+            {% for h in side.hospitals %}
+            <li>
+                <a href="?hospital={{ h.name|urlencode }}{% if filters.view == 'all' %}&view=all{% endif %}"
+                   class="lc-hosp-link {% if filters.hospital == h.name %}lc-hosp-active{% endif %}"
+                   title="{{ h.name }} 출처 환자만 보기">
+                    <span class="lc-hosp-name">{{ h.name }}</span>
+                    <span class="lc-hosp-n">{{ h.count }}</span>
+                </a>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <div class="muted" style="font-size:0.85em; padding:6px 4px">모병원 정보가 기록된 환자 없음</div>
+        {% endif %}
+    </div>
+
+    <div class="lc-side-card">
+        <h4>🚑 이번 주 응급전원·외래
+            <span class="muted-sm" style="font-weight:400; font-size:0.85em">(최근 7일)</span>
+        </h4>
+        {% if side.recent_events %}
+        <ul class="lc-event-list">
+            {% for e in side.recent_events %}
+            <li>
+                <a href="/patients/{{ e.pid }}" class="lc-event-link">
+                    <div class="lc-event-top">
+                        <span class="lc-event-name">{{ e.pname }}</span>
+                        <span class="lc-event-date muted-sm">{% if e.event_date %}{{ e.event_date|krdate }}{% endif %}</span>
+                    </div>
+                    <div class="lc-event-body">
+                        <span class="lc-event-type">{{ e.event_type }}</span>
+                        {% if e.hospital %} → {{ e.hospital }}{% endif %}
+                        {% if e.memo %} <span class="muted-sm">— {{ e.memo|truncate(30) }}</span>{% endif %}
+                    </div>
+                </a>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <div class="muted" style="font-size:0.85em; padding:6px 4px">이번 주 응급전원·외래치료 없음 ✅</div>
+        {% endif %}
+    </div>
+</aside>
+</div>
 {% else %}
 <div class="card empty">
-    {% if q %}검색 결과가 없습니다.{% else %}생애주기 단계가 지정된 환자가 없습니다.
-    환자 상세 페이지에서 단계를 지정하면 이 보드에 나타납니다.{% endif %}
+    {% if filters.stale %}정체 90일 이상 환자가 없습니다. 좋은 신호입니다 ✅
+    {% elif filters.new30 %}최근 30일 이내 새로 진입한 환자가 없습니다.
+    {% elif q or filters.dx or filters.doctor %}검색·필터 결과가 없습니다.
+    {% else %}생애주기 단계가 지정된 환자가 없습니다.
+    환자 상세에서 단계를 지정하거나, 새 상담을 등록하면 자동으로 '상담' 단계에 등장합니다.{% endif %}
 </div>
 {% endif %}
 
 <style>
-.lc-search { display:flex; gap:6px; align-items:center; padding:8px 0; }
-.lc-search input { padding:5px 10px; border:1px solid var(--border); border-radius:6px;
-    font-family:inherit; min-width:240px; }
-.lc-hint { font-size:0.85em; margin:4px 0 12px; }
-.lc-board { display:flex; gap:10px; overflow-x:auto; padding-bottom:10px; align-items:flex-start; }
-.lc-col { flex:0 0 240px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; }
+/* 1단 KPI — 액션 필요 3장 (주) + 보조 미니 2장 */
+.lc-kpi-row { display:flex; gap:8px; margin:4px 0 8px; flex-wrap:wrap;
+    align-items:stretch; }
+.lc-kpi { background:#fff; border:1px solid var(--border); border-radius:8px;
+    padding:10px 16px; min-width:160px; text-decoration:none; color:inherit;
+    transition:all 0.15s; display:flex; flex-direction:column; }
+.lc-kpi.lc-kpi-link { cursor:pointer; }
+.lc-kpi.lc-kpi-link:hover { background:#f0f9ff; border-color:var(--primary);
+    transform:translateY(-1px); box-shadow:0 2px 6px rgba(0,0,0,0.08); }
+.lc-kpi.lc-kpi-active { background:#dbeafe; border-color:var(--primary);
+    box-shadow:inset 0 0 0 1px var(--primary); }
+.lc-kpi-label { font-size:0.82em; color:#374151; font-weight:600; }
+.lc-kpi-val { font-size:1.6em; font-weight:800; color:var(--primary); line-height:1.1; margin:2px 0; }
+.lc-kpi-hint { font-size:0.72em; color:var(--text-light); }
+/* 알림 강도 */
+.lc-kpi-warn { background:#fef2f2; border-color:#fca5a5; border-width:1.5px; }
+.lc-kpi-warn .lc-kpi-val { color:#b91c1c; }
+.lc-kpi-warn .lc-kpi-label { color:#991b1b; }
+.lc-kpi-warn:hover { background:#fee2e2; }
+.lc-kpi-warn-soft { background:#fff7ed; border-color:#fdba74; }
+.lc-kpi-warn-soft .lc-kpi-val { color:#9a3412; }
+.lc-kpi-warn-soft .lc-kpi-label { color:#9a3412; }
+.lc-kpi-warn-soft:hover { background:#ffedd5; }
+.lc-kpi-warn-mark { display:inline-block; font-size:0.5em; margin-left:4px;
+    padding:1px 6px; background:#dc2626; color:#fff; border-radius:9999px;
+    font-weight:700; vertical-align:middle; }
+/* 보조 미니 카드 (전체 활성·신규 30일) */
+.lc-kpi-side { display:flex; flex-direction:column; gap:4px; margin-left:auto; }
+.lc-kpi-mini { display:flex; align-items:center; gap:6px; padding:4px 10px;
+    background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px;
+    text-decoration:none; color:inherit; min-width:100px; }
+.lc-kpi-mini:hover { background:#eef2f7; }
+.lc-kpi-mini.lc-kpi-mini-active { background:#dbeafe; border-color:var(--primary); }
+.lc-kpi-mini-num { font-weight:700; font-size:1.05em; color:var(--primary); }
+.lc-kpi-mini-lbl { font-size:0.78em; color:var(--text-light); }
+
+/* 단계 카테고리 카드 행 */
+.lc-stage-row { display:grid; grid-template-columns:repeat(7, 1fr); gap:5px;
+    margin:6px 0 8px; }
+@media (max-width:1100px) { .lc-stage-row { grid-template-columns:repeat(4, 1fr); } }
+.lc-stage-card { background:#fff; border:1px solid var(--border); border-radius:7px;
+    padding:8px 10px; text-decoration:none; color:inherit; transition:all 0.12s;
+    text-align:center; border-top:3px solid #cbd5e1; cursor:pointer; }
+.lc-stage-card:hover { transform:translateY(-1px); box-shadow:0 2px 6px rgba(0,0,0,0.08);
+    border-color:var(--primary); }
+.lc-stage-card.lc-stage-active { background:#dbeafe; border-color:var(--primary);
+    border-top-color:var(--primary); box-shadow:inset 0 0 0 1px var(--primary); }
+/* 단계별 상단 컬러 — 의료법 표 순서 */
+.lc-stage-card.stage-1 { border-top-color:#94a3b8; } /* 상담 */
+.lc-stage-card.stage-2 { border-top-color:#fbbf24; } /* 입원대기 */
+.lc-stage-card.stage-3 { border-top-color:#16a34a; } /* 입원 */
+.lc-stage-card.stage-4 { border-top-color:#ef4444; } /* 응급치료 */
+.lc-stage-card.stage-5 { border-top-color:#0ea5e9; } /* 회복기 */
+.lc-stage-card.stage-6 { border-top-color:#a855f7; } /* 비회복기 */
+.lc-stage-card.stage-7 { border-top-color:#64748b; } /* 퇴원 */
+.lc-stage-name { font-size:0.82em; font-weight:600; color:#374151; }
+.lc-stage-num { font-size:1.5em; font-weight:700; color:var(--primary); line-height:1.1; margin:2px 0; }
+.lc-stage-avg { font-size:0.7em; color:var(--text-light); }
+
+/* 메인 + 사이드 레이아웃 */
+.lc-main { display:grid; grid-template-columns:1fr 240px; gap:10px;
+    align-items:flex-start; }
+@media (max-width:1200px) { .lc-main { grid-template-columns:1fr; } }
+.lc-side { display:flex; flex-direction:column; gap:8px; }
+.lc-side-card { background:#fff; border:1px solid var(--border); border-radius:8px;
+    padding:8px 10px; }
+.lc-side-card h4 { font-size:0.86em; margin:0 0 6px; font-weight:700; color:#374151; }
+.lc-hosp-list, .lc-event-list { list-style:none; padding:0; margin:0; }
+.lc-hosp-list li, .lc-event-list li { border-bottom:1px solid #f1f5f9; }
+.lc-hosp-list li:last-child, .lc-event-list li:last-child { border-bottom:none; }
+.lc-hosp-link { display:flex; justify-content:space-between; align-items:center;
+    padding:4px 6px; text-decoration:none; color:#374151; font-size:0.85em;
+    border-radius:4px; transition:background 0.1s; }
+.lc-hosp-link:hover { background:#f0f9ff; }
+.lc-hosp-link.lc-hosp-active { background:#dbeafe; color:#1e40af; font-weight:600; }
+.lc-hosp-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:160px; }
+.lc-hosp-n { background:#e2e8f0; color:#475569; border-radius:8px; padding:0 6px;
+    font-size:0.82em; font-weight:600; }
+.lc-event-link { display:block; padding:4px 6px; text-decoration:none; color:#374151;
+    font-size:0.85em; border-radius:4px; transition:background 0.1s; }
+.lc-event-link:hover { background:#fef2f2; }
+.lc-event-top { display:flex; justify-content:space-between; }
+.lc-event-name { font-weight:600; color:var(--primary); }
+.lc-event-date { font-size:0.85em; }
+.lc-event-body { font-size:0.82em; margin-top:1px; color:#475569; }
+.lc-event-type { background:#fee2e2; color:#991b1b; padding:0 6px; border-radius:4px;
+    font-size:0.85em; font-weight:600; }
+
+/* 활성 필터 칩 */
+.lc-active-chips { display:flex; flex-wrap:wrap; gap:5px; align-items:center;
+    margin:6px 0; font-size:0.86em; }
+.lc-chip { display:inline-flex; align-items:center; gap:3px; padding:2px 9px;
+    background:#dbeafe; color:#1e40af; border-radius:9999px;
+    text-decoration:none; font-weight:500; }
+.lc-chip:hover { background:#bfdbfe; }
+.lc-chip-warn { background:#fee2e2; color:#991b1b; }
+.lc-chip-warn:hover { background:#fecaca; }
+.lc-chip-clear { font-size:0.86em; color:var(--text-light); text-decoration:underline;
+    margin-left:4px; }
+
+.lc-filter { display:flex; gap:6px; align-items:center; padding:8px 0; flex-wrap:wrap; }
+.lc-filter .lc-q { padding:5px 10px; border:1px solid var(--border); border-radius:6px;
+    font-family:inherit; min-width:200px; }
+.lc-filter select { padding:5px 8px; border:1px solid var(--border); border-radius:6px;
+    font-family:inherit; font-size:0.88em; }
+.lc-arc-toggle { display:flex; gap:4px; align-items:center; font-size:0.86em; color:#4b5563; }
+
+.lc-hint { font-size:0.82em; margin:6px 0 10px; padding:6px 10px;
+    background:#f8fafc; border-radius:6px; border-left:3px solid #cbd5e1; }
+
+/* 보드 — Kanban */
+.lc-board { display:flex; gap:8px; overflow-x:auto; padding-bottom:10px;
+    align-items:flex-start; }
+.lc-col { flex:0 0 220px; background:#f8fafc; border:1px solid #e2e8f0;
+    border-radius:10px; transition:flex-basis 0.15s; }
+/* (A1) 빈 컬럼은 슬림 — 헤더만 보임 */
+.lc-col.lc-col-empty-slim { flex:0 0 80px; opacity:0.7; }
+.lc-col.lc-col-empty-slim .lc-col-body { padding:4px 6px; min-height:auto; }
+.lc-col.lc-col-empty-slim .lc-col-body .lc-col-empty { font-size:0.7em; }
 .lc-col-head { padding:8px 12px; font-weight:700; font-size:0.9em;
-    border-bottom:2px solid #e2e8f0; display:flex; justify-content:space-between; }
-.lc-col-n { background:#e2e8f0; border-radius:9px; padding:0 8px; font-size:0.86em; }
-.lc-col-body { padding:8px; display:flex; flex-direction:column; gap:7px;
-    min-height:60px; max-height:70vh; overflow-y:auto; }
-.lc-col-empty { color:#cbd5e1; text-align:center; padding:12px 0; }
-.lc-pcard { background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:8px 10px; }
-.lc-pcard.bl { border-color:#1f2937; background:#fff7ed; }
-.lc-pcard-top { display:flex; justify-content:space-between; align-items:baseline; gap:6px; }
-.lc-pname { font-weight:700; color:var(--primary); text-decoration:none; font-size:0.95em; }
+    border-bottom:2px solid #e2e8f0; display:flex; justify-content:space-between;
+    align-items:center; user-select:none; }
+.lc-col-empty-slim .lc-col-head { padding:8px 6px; }
+.lc-col-empty-slim .lc-col-name { font-size:0.85em; }
+.lc-col-n { background:#e2e8f0; border-radius:9px; padding:0 8px; font-size:0.86em; font-weight:600; }
+.lc-col-body { padding:8px; display:flex; flex-direction:column; gap:6px;
+    min-height:60px; max-height:75vh; overflow-y:auto; }
+.lc-col-body.lc-drop-target { background:#dbeafe; outline:2px dashed var(--primary);
+    outline-offset:-4px; }
+.lc-col-empty { color:#cbd5e1; text-align:center; padding:10px 0; font-size:0.85em; }
+
+/* (B1) 카드 — 좌측 4px 컬러바로 우선순위 통일 */
+.lc-pcard { background:#fff; border:1px solid #e2e8f0; border-radius:7px;
+    padding:6px 9px 6px 12px; position:relative; cursor:grab;
+    transition:box-shadow 0.1s, transform 0.1s; }
+.lc-pcard:hover { box-shadow:0 2px 8px rgba(0,0,0,0.08); transform:translateY(-1px); }
+.lc-pcard.dragging { opacity:0.4; cursor:grabbing; }
+.lc-pcard::before {
+    content:''; position:absolute; left:0; top:6px; bottom:6px;
+    width:4px; border-radius:2px; background:#cbd5e1;
+}
+.lc-pcard.prio-ok::before     { background:#22c55e; }   /* 정상 진행 — 초록 */
+.lc-pcard.prio-urgent::before { background:#f97316; }   /* 임박 D-7 — 주황 */
+.lc-pcard.prio-hold::before   { background:#fbbf24; }   /* 보류 — 노랑 */
+.lc-pcard.prio-reject::before { background:#ef4444; }   /* 취소 — 빨강 */
+.lc-pcard.prio-stale::before  { background:#dc2626; }   /* 정체 — 진빨강 */
+.lc-pcard.prio-bl::before     { background:#1f2937; }   /* 블랙리스트 — 검정 */
+.lc-pcard.prio-done::before   { background:#94a3b8; }   /* 퇴원 — 회색 */
+
+/* 상단 라인 */
+.lc-pcard-top { display:flex; align-items:baseline; gap:5px; }
+.lc-pname { font-weight:600; color:var(--primary); text-decoration:none; font-size:0.92em; flex-shrink:0; }
+.lc-meta-mini { font-size:0.78em; color:var(--text-light); }
 .bl-mark { display:inline-block; padding:0 4px; background:#1f2937; color:#fecaca;
-    border-radius:5px; font-size:0.68em; font-weight:700; }
-.lc-pdx { font-size:0.8em; color:#475569; margin:3px 0; }
-.lc-pmeta { font-size:0.76em; margin-bottom:5px; }
-.lc-pcard-act { display:flex; gap:6px; align-items:center; }
-.lc-stage-move { flex:1; padding:3px 5px; border:1px solid var(--border); border-radius:5px;
-    font-family:inherit; font-size:0.8em; }
-.lc-pcard-link { font-size:0.8em; color:var(--text-light); text-decoration:none; white-space:nowrap; }
-.lc-pcard-link:hover { color:var(--primary); }
+    border-radius:4px; font-size:0.62em; font-weight:700; margin-right:2px; vertical-align:middle; }
+
+/* (C2) hover 빠른 액션 — 평소엔 숨김 */
+.lc-actions { margin-left:auto; display:flex; gap:1px; opacity:0;
+    transition:opacity 0.1s; }
+.lc-pcard:hover .lc-actions { opacity:1; }
+.lc-act { display:inline-block; padding:1px 4px; font-size:0.92em; text-decoration:none;
+    border-radius:4px; }
+.lc-act:hover { background:#dbeafe; }
+
+/* 중간 라인 — 라벨·D-day·정체 한 줄 (모드 무관 항상 보임) */
+.lc-pcard-mid { display:flex; flex-wrap:wrap; gap:3px; margin-top:3px; min-height:1px; }
+.lc-pclabel { display:inline-block; padding:1px 6px; font-size:0.72em;
+    font-weight:600; border-radius:9999px; background:#f1f5f9; color:#475569; }
+.lc-pcard.prio-reject .lc-pclabel { background:#fee2e2; color:#991b1b; }
+.lc-pcard.prio-hold .lc-pclabel   { background:#fef3c7; color:#92400e; }
+.lc-pcard .lc-pclabel { background:#f1f5f9; color:#475569; }
+.lc-dday { display:inline-block; padding:1px 6px; font-size:0.72em; font-weight:600;
+    border-radius:4px; }
+.lc-dday.soon { background:#dbeafe; color:#1e40af; }
+.lc-dday.warn { background:#fed7aa; color:#9a3412; }
+.lc-dday.over { background:#fecaca; color:#991b1b; animation:lc-blink 1.6s infinite; }
+@keyframes lc-blink { 50% { opacity:0.55; } }
+.lc-stale { display:inline-block; padding:1px 6px; font-size:0.72em; font-weight:600;
+    background:#fef9c3; color:#92400e; border-radius:4px; }
+
+/* (B2) 상세 패널 — 상세 모드에서만 노출 */
+.lc-pcard-detail { display:none; margin-top:4px; padding-top:4px;
+    border-top:1px dashed #e2e8f0; }
+body.lc-detail .lc-pcard-detail { display:block; }
+.lc-pdx { font-size:0.78em; color:#475569; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap; }
+.lc-prsn { font-size:0.74em; margin-top:2px; }
+.lc-pmeta { font-size:0.72em; margin-top:2px; }
+.muted-sm { color:var(--text-light); }
 </style>
 
 <script src="/static/js/common.js"></script>
 <script>
-document.querySelectorAll('.lc-stage-move').forEach(sel => {
-    sel.addEventListener('change', async () => {
-        const pid = sel.dataset.pid;
-        const stage = sel.value === '__off' ? '' : sel.value;
-        try {
-            await api.post(`/api/patient/${pid}/stage`, { stage: stage });
-            location.reload();
-        } catch (e) {
-            alert('단계 변경 실패: ' + e.message);
+// (B3) 모드 토글 — localStorage 보존 (기본은 컴팩트)
+(function() {
+    const btn = document.getElementById('lc-mode-toggle');
+    if (!btn) return;
+    const KEY = 'bokju.lc.detailMode';
+    function apply() {
+        if (localStorage.getItem(KEY) === '1') {
+            document.body.classList.add('lc-detail');
+            btn.textContent = '⇱ 컴팩트';
+        } else {
+            document.body.classList.remove('lc-detail');
+            btn.textContent = '⇲ 상세';
         }
+    }
+    apply();
+    btn.addEventListener('click', () => {
+        const on = !document.body.classList.contains('lc-detail');
+        localStorage.setItem(KEY, on ? '1' : '0');
+        apply();
     });
-});
+})();
+
+// (C1) 드래그 앤 드롭 단계 이동
+(function() {
+    const board = document.getElementById('lc-board');
+    if (!board) return;
+    let dragged = null;
+
+    board.querySelectorAll('.lc-pcard').forEach(card => {
+        card.addEventListener('dragstart', e => {
+            dragged = card;
+            card.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', card.dataset.pid);
+        });
+        card.addEventListener('dragend', () => {
+            card.classList.remove('dragging');
+            dragged = null;
+            board.querySelectorAll('.lc-col-body').forEach(b => b.classList.remove('lc-drop-target'));
+        });
+    });
+
+    board.querySelectorAll('.lc-col-body').forEach(body => {
+        body.addEventListener('dragover', e => {
+            if (!dragged) return;
+            // 자기 컬럼은 드롭 대상 아님
+            const fromStage = dragged.dataset.stage;
+            const toStage = body.dataset.stage;
+            if (fromStage === toStage) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            body.classList.add('lc-drop-target');
+        });
+        body.addEventListener('dragleave', () => body.classList.remove('lc-drop-target'));
+        body.addEventListener('drop', async e => {
+            e.preventDefault();
+            body.classList.remove('lc-drop-target');
+            if (!dragged) return;
+            const pid = dragged.dataset.pid;
+            const toStage = body.dataset.stage;
+            const fromStage = dragged.dataset.stage;
+            if (fromStage === toStage) return;
+            try {
+                await api.post(`/api/patient/${pid}/stage`, { stage: toStage });
+                if (typeof toast === 'function')
+                    toast(`✓ ${dragged.dataset.name} → ${toStage} 단계로 이동`, 'success');
+                setTimeout(() => location.reload(), 400);
+            } catch (e) {
+                alert('단계 변경 실패: ' + e.message);
+            }
+        });
+    });
+})();
 </script>
 {% endblock %}

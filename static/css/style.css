@@ -134,6 +134,9 @@ footer p { color: var(--text-light); font-size: 0.82em; text-align: center; }
 .field textarea { min-height: 60px; resize: vertical; }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .field-row.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+.field-row.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 920px) { .field-row.cols-4 { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 620px) { .field-row.cols-3, .field-row.cols-4 { grid-template-columns: 1fr; } }
 /* 옵션 그룹 박스 — 카테고리 시각 구분 */
 .field-radio,
 .checkbox-grid {

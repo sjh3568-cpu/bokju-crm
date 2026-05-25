@@ -23,6 +23,7 @@
                     <a href="/sms" {% if request.path.startswith('/sms') %}class="active"{% endif %}>문자</a>
                     <a href="/stats" {% if request.path.startswith('/stats') %}class="active"{% endif %}>통계</a>
                     <a href="/report/monthly" {% if request.path.startswith('/report') %}class="active"{% endif %}>월간보고서</a>
+                    <a href="/help" {% if request.path.startswith('/help') %}class="active"{% endif %} title="사용 매뉴얼" style="margin-left:auto; opacity:0.7">❓</a>
                 </nav>
                 <span class="user-tag">
                     {{ current_user.display_name }}
