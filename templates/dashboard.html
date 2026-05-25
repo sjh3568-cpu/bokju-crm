@@ -535,8 +535,17 @@
 <style>
 .dash-head { align-items:flex-start; }
 .dash-actions { display:flex; gap:6px; align-items:center; }
-.dash-stat-grid { grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); }
-.dash-stat-grid .stat-card { text-decoration:none; color:inherit; min-height:98px; }
+/* KPI 카드 정렬 — 동일 행 카드 동일 높이, 내부 3분할 (label / value / sub) */
+.dash-stat-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    grid-auto-rows: 1fr; align-items: stretch; }
+.dash-stat-grid .stat-card { text-decoration:none; color:inherit;
+    display:flex; flex-direction:column; justify-content:space-between;
+    height:108px; padding:12px 14px; }
+.dash-stat-grid .stat-card .label { margin:0; line-height:1.3;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.dash-stat-grid .stat-card .value { margin:0; }
+.dash-stat-grid .stat-card .sub { margin:0; line-height:1.3;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .dash-section-head { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px; }
 .dash-section-head h3 { margin-bottom:0; }
 .dash-filter-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:4px 0 10px; }
@@ -583,10 +592,11 @@
 .hold-admission { background:#fee2e2; color:#b91c1c; }
 .btn-xs { padding:2px 8px; font-size:0.76em; }
 .dash-action-card { margin-top:12px; }
-.dash-action-list { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:8px; }
+.dash-action-list { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));
+    gap:8px; grid-auto-rows: 1fr; align-items: stretch; }
 .dash-action-row { display:grid; grid-template-columns:auto minmax(0, 1fr) auto; align-items:center;
     gap:8px; padding:8px 10px; border:1px solid var(--border); border-radius:6px;
-    text-decoration:none; color:inherit; background:#fff; }
+    text-decoration:none; color:inherit; background:#fff; min-height:50px; }
 .dash-action-row:hover { border-color:var(--primary); background:#f8fafc; }
 .dash-action-row.danger { border-color:#fecaca; background:#fff7f7; }
 .dash-action-row.warn { border-color:#fde68a; background:#fffbeb; }
@@ -600,9 +610,13 @@
 .dash-action-main strong, .dash-action-main small { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .dash-action-main small { margin-top:2px; color:var(--text-light); font-size:0.8em; }
 .dash-action-meta { color:var(--text-light); font-size:0.8em; white-space:nowrap; }
-.dash-outcome-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px; }
-.dash-outcome-card { border:1px solid var(--border); border-radius:6px; padding:10px; background:#f8fafc; }
-.dash-outcome-card strong { display:block; margin-top:4px; font-size:1.45em; color:var(--text); }
+/* 결과 카드 그룹 — 행별 동일 높이 + 내부 3분할 정렬 */
+.dash-outcome-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;
+    grid-auto-rows: 1fr; align-items: stretch; }
+.dash-outcome-card { border:1px solid var(--border); border-radius:6px; padding:10px;
+    background:#f8fafc; display:flex; flex-direction:column; justify-content:space-between;
+    min-height:84px; }
+.dash-outcome-card strong { display:block; margin:4px 0 0; font-size:1.45em; color:var(--text); line-height:1.1; }
 .dash-chip-list { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
 .dash-chip-list.compact { margin-top:6px; }
 .dash-chip { display:inline-flex; align-items:center; gap:5px; border:1px solid #bfdbfe;
@@ -621,10 +635,15 @@
     gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid var(--border); }
 .dash-mini-row:last-child { border-bottom:none; }
 .dash-mini-main { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.week-flow-summary { display:grid; grid-template-columns:repeat(auto-fit, minmax(108px, 1fr)); gap:8px; margin-bottom:12px; }
-.week-flow-summary div { border:1px solid var(--border); border-radius:6px; padding:9px 10px; background:#f8fafc; }
-.week-flow-summary span { display:block; color:var(--text-light); font-size:0.78em; font-weight:700; }
-.week-flow-summary strong { display:block; margin-top:3px; font-size:1.35em; color:var(--text); }
+/* 주간 흐름 요약 카드 — 동일 높이 + label/value 2분할 정렬 */
+.week-flow-summary { display:grid; grid-template-columns:repeat(auto-fit, minmax(110px, 1fr));
+    gap:8px; margin-bottom:12px; grid-auto-rows: 1fr; align-items: stretch; }
+.week-flow-summary div { border:1px solid var(--border); border-radius:6px; padding:9px 10px;
+    background:#f8fafc; display:flex; flex-direction:column; justify-content:space-between;
+    min-height:64px; }
+.week-flow-summary span { display:block; color:var(--text-light); font-size:0.78em; font-weight:700;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.week-flow-summary strong { display:block; margin:0; font-size:1.35em; color:var(--text); line-height:1.1; }
 .week-flow-list { display:flex; flex-direction:column; gap:8px; }
 .week-flow-row { display:grid; grid-template-columns:76px minmax(160px, 1fr) minmax(210px, auto);
     gap:10px; align-items:center; padding:8px 0; border-bottom:1px solid var(--border); }
