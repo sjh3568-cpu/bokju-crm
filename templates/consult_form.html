@@ -20,7 +20,7 @@
 
 <div class="page-header">
     <h1>{% if is_edit %}상담일지 수정 (#{{ consultation.id }}){% else %}새 상담일지{% endif %}</h1>
-    <a href="{% if is_edit %}/consult/{{ consultation.id }}{% elif inbox_comm %}/inbox{% else %}/{% endif %}" class="btn-back">← 돌아가기</a>
+    <a href="{% if is_edit %}/consult/{{ consultation.id }}{% elif inbox_comm %}/#inbound{% else %}/{% endif %}" class="btn-back">← 돌아가기</a>
 </div>
 
 {% if not is_edit %}
@@ -1322,6 +1322,10 @@
                           {% if _cr == r %}checked{% endif %}> {{ r }}</label>
             {% endfor %}
         </div>
+        <p class="muted" style="font-size:0.82em; margin:4px 0 0; line-height:1.55">
+            · <b>상담요청 / 상담보류</b> = 재연락 의향 있음 (불씨 살아 있음)
+            · <b>상담취소</b> = 환자·보호자가 진행 의사 없음, 종결
+        </p>
     </div>
     <div class="field" id="consult-result-reason-row" hidden>
         <label id="consult-result-reason-label">사유 <span class="req">*</span></label>
@@ -1373,6 +1377,12 @@
         <label>실제 입원일 <span class="muted" style="font-size:0.85em">— 입원 만료일·퇴원예정 계산에 사용</span></label>
         <input type="date" name="consultation.admission_date"
                value="{{ consultation.admission_date if is_edit and consultation.admission_date else '' }}">
+    </div>
+    <div class="field" id="status-extra-planned" hidden>
+        <p class="muted" style="font-size:0.85em; margin:0; line-height:1.55; color:#92400e">
+            ⚠ 입원예정일은 상단 헤더의 <b>'입원예정 (월/일)'</b> 칸에서 지정하세요.
+            미지정 상태로 저장 시 <b>대시보드 '할 일' 목록</b>에 "입원예정일 미지정"으로 표시됩니다.
+        </p>
     </div>
     <div class="field">
         <label>비사용증후군 발굴 대상 <span class="muted" style="font-size:0.85em">— 해당 시 대상·사유 직접 입력</span></label>

@@ -419,11 +419,12 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_cons_patient_doctor "
         "ON consultations(patient_id, attending_doctor)"
     )
-    # 입원 진행 상태 4종 개편 (2026-05): 구 5종의 '입원예정'·'입원확정'과
-    # 엑셀 구식 '방문예정'을 '입원보류'(진행중)로 통합. 멱등.
+    # 입원 진행 상태 정리 (2026-05): 구식 '입원확정'과 엑셀 구식 '방문예정'을
+    # '입원예정'으로 통합. 멱등.
+    # (2026-05-25 변경: '입원예정'은 정식 상태로 복원됨 — 더 이상 변환하지 않음)
     conn.execute(
-        "UPDATE consultations SET admission_status = '입원보류' "
-        "WHERE admission_status IN ('입원예정', '입원확정', '방문예정')"
+        "UPDATE consultations SET admission_status = '입원예정' "
+        "WHERE admission_status IN ('입원확정', '방문예정')"
     )
     # 상담 결과 2단계 분리 (2026-05-22): consult_result(상담 진행) /
     # admission_status(입원 진행)로 분리. 기존 admission_status '상담완료'는

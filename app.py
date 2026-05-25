@@ -584,9 +584,11 @@ def _dashboard_days_since(value):
     return (datetime.now().date() - dt.date()).days
 
 
-def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge_due):
+def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge_due,
+                            planned_missing_date=None):
     today = datetime.now().strftime("%Y-%m-%d")
     items = []
+    planned_missing_date = planned_missing_date or []
 
     def add(kind, tone, title, detail="", meta="", href=None, sort=50):
         items.append({
@@ -610,7 +612,7 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
             who,
             (m.get("summary") or m.get("body") or "")[:70],
             _dashboard_elapsed_label(occurred),
-            "/inbox",
+            "/#inbound",
             0 if tone == "danger" else 15 if tone == "warn" else 45,
         )
 
@@ -628,7 +630,7 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
                 r.get("consult_result_reason") or "",
             ) if v),
             meta,
-            f"/consult/{r.get('id')}" if r.get("id") else "/inbox",
+            f"/consult/{r.get('id')}" if r.get("id") else "/#inbound",
             8 if tone == "danger" else 25,
         )
 
@@ -703,6 +705,21 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
             35,
         )
 
+    # 입원예정 상태인데 planned_admission_date가 비어 있는 상담 — 날짜 지정 필요.
+    # 오래 방치될수록 우선순위 상승 (consult_date 기준 경과일).
+    for r in planned_missing_date[:8]:
+        days = _dashboard_days_since(r.get("consult_date"))
+        meta = f"{days}일 경과" if days and days > 0 else "오늘 등록"
+        add(
+            "입원예정",
+            "danger" if days is not None and days >= 3 else "warn",
+            r.get("patient_name") or "환자 미지정",
+            "입원예정일 미지정 — 상단 '입원예정 (월/일)' 칸을 채워주세요",
+            meta,
+            f"/consult/{r.get('id')}/edit" if r.get("id") else None,
+            12 if days is not None and days >= 3 else 32,
+        )
+
     tone_rank = {"danger": 0, "warn": 1, "info": 2}
     items.sort(key=lambda x: (tone_rank.get(x["tone"], 9), x["sort"], x["title"]))
     return {
@@ -721,9 +738,14 @@ def _agefrom(birth_year):
 
 
 # ── 생애주기 단계 자동 동기화 (제안 1 — 상담 결과 → 단계) ──
-# 입원완료→입원, 입원보류→입원대기, 퇴원완료→퇴원. 전진만 (수동 지정한 더 앞선
-# 단계는 되돌리지 않음). 퇴원은 종료 단계라 항상 적용.
-_STATUS_TO_STAGE = {"입원완료": "입원", "입원보류": "입원대기", "퇴원완료": "퇴원"}
+# 입원예정·입원보류→입원대기, 입원완료→입원, 퇴원완료→퇴원. 전진만 (수동 지정한
+# 더 앞선 단계는 되돌리지 않음). 퇴원은 종료 단계라 항상 적용.
+_STATUS_TO_STAGE = {
+    "입원예정": "입원대기",
+    "입원보류": "입원대기",
+    "입원완료": "입원",
+    "퇴원완료": "퇴원",
+}
 
 
 def _sync_lifecycle_stage(patient_id, admission_status):
@@ -816,6 +838,13 @@ def dashboard():
     open_comms = models.inbox_open_communications()
     callbacks = models.inbox_callbacks()
 
+    # 입원예정 상태인데 planned_admission_date가 비어 있는 상담 — 액션큐에 표시.
+    planned_consults = models.list_consultations(admission_status="입원예정", limit=10000)
+    planned_missing_date = [
+        c for c in planned_consults
+        if not (c.get("planned_admission_date") or "").strip()
+    ]
+
     # 입원완료 환자 중 회복기→비회복기 전환 D-15, 퇴원예정 D-30.
     admitted = models.list_consultations(admission_status="입원완료", limit=10000)
     recovery_transition_due = []
@@ -863,6 +892,7 @@ def dashboard():
     }
     action_queue = _dashboard_action_queue(
         data, open_comms, callbacks, recovery_transition_due, discharge_due,
+        planned_missing_date=planned_missing_date,
     )
 
     data["open_comms"] = open_comms
@@ -1655,28 +1685,9 @@ def api_blacklist_check():
     return jsonify({"blacklisted": False})
 
 
-# ───────────────────── 옴니채널 — 인박스·커뮤니케이션 ─────────────────────
-
-@app.route("/inbox")
-@login_required
-def inbox_view():
-    """통합 인박스 — 재연락 대기 + 미처리 인바운드 + 입원안내 예정 + 퇴원예정.
-    상담사의 '오늘 처리할 일'을 채널 무관하게 한곳에 모은다.
-    """
-    callbacks = models.inbox_callbacks()
-    open_comms = models.inbox_open_communications()
-    upcoming = models.inbox_upcoming_admissions(within_days=3)
-    # 퇴원예정 — 입원완료 상담 중 퇴원 임박
-    discharge_due = []
-    for con in models.list_consultations(admission_status="입원완료", limit=10000):
-        dw = _discharge_watch(con)
-        if dw and dw.get("state"):
-            discharge_due.append({"con": con, "watch": dw})
-    discharge_due.sort(key=lambda x: x["watch"]["days_left"])
-    return render_template(
-        "inbox.html", callbacks=callbacks, open_comms=open_comms,
-        upcoming=upcoming, discharge_due=discharge_due,
-    )
+# ───────────────────── 옴니채널 — 커뮤니케이션 ─────────────────────
+# (구 /inbox 라우트는 2026-05-25 대시보드로 통합되어 제거됨.
+#  models.inbox_callbacks·inbox_open_communications 등 함수는 대시보드가 사용 중)
 
 
 @app.route("/api/communication", methods=["POST"])
@@ -1819,13 +1830,13 @@ def sms_compose():
     # (인박스 퇴원예정 등 오래된 상담의 '문자' 버튼 진입 케이스) → 목록 맨 앞에 보강.
     if preselect and not any(r["id"] == preselect["id"] for r in recent):
         recent = [preselect] + recent
-    # ← 돌아가기 — 진입 경로 추론 (cid → 상담상세 / pid → 환자상세 / 그 외 → 인박스)
+    # ← 돌아가기 — 진입 경로 추론 (cid → 상담상세 / pid → 환자상세 / 그 외 → 대시보드)
     if cid and preselect:
         back_url, back_label = f"/consult/{cid}", "← 상담 상세"
     elif pid:
         back_url, back_label = f"/patients/{pid}", "← 환자 상세"
     else:
-        back_url, back_label = "/inbox", "← 인박스"
+        back_url, back_label = "/", "← 대시보드"
     return render_template(
         "sms.html", recent=recent, templates=models.list_sms_templates(),
         preselect=preselect, log=models.list_sms_log(30),

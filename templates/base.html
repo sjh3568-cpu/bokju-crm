@@ -16,7 +16,6 @@
                 {% if current_user %}
                 <nav>
                     <a href="/" {% if request.path == '/' %}class="active"{% endif %}>대시보드</a>
-                    <a href="/inbox" {% if request.path.startswith('/inbox') %}class="active"{% endif %}>인박스</a>
                     <a href="/consult/new" {% if request.path == '/consult/new' %}class="active"{% endif %}>새 상담</a>
                     <a href="/consultations" {% if request.path.startswith('/consultations') %}class="active"{% endif %}>상담 목록</a>
                     <a href="/lifecycle" {% if request.path.startswith('/lifecycle') or request.path.startswith('/patients') %}class="active"{% endif %}>생애주기</a>

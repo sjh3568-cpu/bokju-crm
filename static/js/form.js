@@ -635,22 +635,34 @@
         });
     })();
 
-    // ─── 상담 결과 ② 입원 진행: 입원보류/취소 사유칸·입원완료 입원일칸 토글 ───
+    // ─── 상담 결과 ② 입원 진행: 입원예정/보류/취소/완료에 따른 부가칸 토글 ───
     (function() {
         const statusRadios = form.querySelectorAll('input[name="consultation.admission_status"]');
         if (!statusRadios.length) return;
         const holdRow = document.getElementById('status-reason-hold');
         const cancelRow = document.getElementById('status-reason-cancel');
         const completedRow = document.getElementById('status-extra-completed');
-        function refresh() {
+        const plannedRow = document.getElementById('status-extra-planned');
+        const plannedDateEl = form.querySelector('input[name="consultation.planned_admission_date"]');
+        function refresh(triggered) {
             const c = form.querySelector('input[name="consultation.admission_status"]:checked');
             const s = c ? c.value : '';
             if (holdRow) holdRow.hidden = (s !== '입원보류');
             if (cancelRow) cancelRow.hidden = (s !== '입원취소');
             if (completedRow) completedRow.hidden = (s !== '입원완료');
+            if (plannedRow) plannedRow.hidden = (s !== '입원예정');
+            // 입원예정 선택 + 날짜 비어있음 → 헤더 입원예정일 칸 시각 강조
+            if (plannedDateEl) {
+                const needFlash = (s === '입원예정' && !plannedDateEl.value);
+                plannedDateEl.classList.toggle('field-need-attention', needFlash);
+                if (needFlash && triggered) {
+                    plannedDateEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
         }
-        statusRadios.forEach(r => r.addEventListener('change', refresh));
-        refresh();
+        statusRadios.forEach(r => r.addEventListener('change', () => refresh(true)));
+        if (plannedDateEl) plannedDateEl.addEventListener('input', () => refresh(false));
+        refresh(false);
     })();
 
     // ─── 상담 결과 ① 상담 진행: 사유칸 토글 + 라벨 변경 (7번 요청) ───

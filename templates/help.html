@@ -19,7 +19,7 @@
     <a href="#faq10">💬 보호자 자주 묻는 질문 10가지</a> ·
     <a href="#empathy">💗 정서적 공감 4단계</a> ·
     <hr style="margin:6px 0; border:none; border-top:1px dashed #d1d5db">
-    <a href="#menu-map">8개 메뉴 한 줄 요약</a> ·
+    <a href="#menu-map">7개 메뉴 한 줄 요약</a> ·
     <a href="#dashboard">🏠 대시보드</a> ·
     <a href="#inbox">📥 인박스</a> ·
     <a href="#consult-new">✍️ 새 상담</a> ·
@@ -148,12 +148,11 @@
 </div>
 
 <div class="card help-card" id="menu-map">
-    <h2>8개 메뉴 한눈에</h2>
+    <h2>7개 메뉴 한눈에</h2>
     <table class="help-tbl">
         <thead><tr><th>메뉴</th><th>한 줄 요약</th><th>언제 쓰나</th></tr></thead>
         <tbody>
-            <tr><td><a href="/">🏠 대시보드</a></td><td>5초 만에 보는 우리 팀 컨디션</td><td>출근 직후</td></tr>
-            <tr><td><a href="/inbox">📥 인박스</a></td><td>오늘 처리해야 할 To-Do</td><td>출근하자마자 + 수시</td></tr>
+            <tr><td><a href="/">🏠 대시보드</a></td><td>오늘 처리 To-Do + 우리 팀 컨디션 한곳에</td><td>출근 직후 + 수시</td></tr>
             <tr><td><a href="/consult/new">✍️ 새 상담</a></td><td>통화 끝나고 한 화면에 다 채워서 저장</td><td>통화 직후</td></tr>
             <tr><td><a href="/consultations">📋 상담 목록</a></td><td>과거 상담 검색용 백과사전</td><td>이전 상담 확인</td></tr>
             <tr><td><a href="/lifecycle">🚶 생애주기</a></td><td>환자별 여정 지도</td><td>환자 케이스 추적</td></tr>
@@ -181,30 +180,26 @@
 </div>
 
 <div class="card help-card" id="inbox">
-    <h2>📥 인박스 <a href="/inbox" class="help-go">메뉴 열기 →</a></h2>
-    <p class="help-lead">"이메일의 받은편지함처럼, 오늘 처리해야 할 일을 채널 무관 한곳에 모은 화면."</p>
+    <h2>📥 오늘 처리 To-Do <a href="/#inbound" class="help-go">대시보드 인박스 영역 열기 →</a></h2>
+    <p class="help-lead">"오늘 처리해야 할 일을 대시보드 안에 한곳에 모았습니다. 채널·진행상태 무관 한 화면에서 처리."</p>
 
-    <h4>4개 섹션이 답하는 질문</h4>
+    <h4>대시보드 안의 처리 영역들</h4>
     <ul>
-        <li><strong>📞 재연락 대기</strong> — "전에 '나중에 다시 연락드릴게요' 약속한 건 누구지?"<br>
-            상담 결과를 <code>상담요청</code>으로 표시한 건. [✓ 재연락 완료] 1-click 마킹 가능.</li>
-        <li><strong>📨 미처리 인바운드</strong> — "카톡 문의·웹문의·부재중 중 답신 안 한 게 뭐지?"<br>
-            카카오 webhook 등으로 들어온 미처리 메시지. <strong>[상담 등록]</strong> 클릭 시 보호자 연락처·메시지까지 자동 prefill된 상담 폼이 열리고, 저장 시 인박스 자동 제거. 블랙리스트 환자면 ⚠ 사전 표시.</li>
-        <li><strong>🏥 입원 안내 예정 (D-3)</strong> — "내일·모레 입원 예정 환자 안내 문자 보내야 하는 사람?"<br>
-            [입원안내 문자] → 토큰 자동 치환된 본문.</li>
-        <li><strong>🚪 퇴원 예정</strong> — "입원 만료일 가까운 환자, 가족에게 미리 안내해야 하는데?"<br>
-            의료법 입원 기간 룰로 계산한 만료일이 30일 이내. 빨간 글씨 "N일 초과" = 이미 만료(연장 결정 필요).</li>
+        <li><strong>오늘 처리 필요 카드</strong> — 긴급·주의 큐. 클릭 시 해당 상담 또는 인박스 섹션으로 이동</li>
+        <li><strong>📞 재연락 대기</strong> — 상담 결과 <code>상담요청</code> 건. <strong>[✓ 완료]</strong> 1-click 마킹 / [문자] / [상담] 액션</li>
+        <li><strong>📨 미처리 인바운드</strong> — 카톡·웹·부재중 등 채널 무관 인바운드. <strong>[상담 등록]</strong>(보호자 연락처·메시지 자동 prefill) / [완료] / [삭제] 액션. 블랙리스트 환자 행은 빨강 배경 + ⚠</li>
+        <li><strong>🚪 퇴원 예정 D-30</strong> — 의료법 입원 기간 룰로 계산. [문자]·[상담] 액션. 빨간 글씨 "N일 초과" = 만료(연장 결정 필요)</li>
+        <li><strong>🏥 입원 환자 현황 D-15</strong> — 입원예정·완료 환자 그룹별 표</li>
     </ul>
 
     <h4>하루 흐름</h4>
     <ol>
-        <li>출근하자마자 인박스 열기 → 어제 저녁~오늘 아침 들어온 카톡/재연락 약속 파악</li>
-        <li>재연락 대기 처리 → 보호자 전화 돌리고 결과 업데이트</li>
-        <li>미처리 인바운드 처리 → 신규는 [상담 등록]으로 정식 상담 생성</li>
-        <li>D-3 입원 안내 발송 → [입원안내 문자] 1-click</li>
-        <li>퇴원 예정 사전 안내 → 만료 30일 전부터 가족에게 미리</li>
+        <li>출근하자마자 대시보드 열기 → 오늘 처리 필요·재연락·미처리 인바운드 일괄 파악</li>
+        <li>재연락 대기 처리 → [✓ 완료] 또는 [상담] 이동 후 결과 업데이트</li>
+        <li>미처리 인바운드 처리 → [상담 등록]으로 정식 상담 생성, 그 외 [완료]·[삭제]</li>
+        <li>퇴원 예정 사전 안내 → [문자]로 미리 안내</li>
     </ol>
-    <p class="help-note">인박스가 텅 비어 있으면 = 응대 잘 되고 있다는 좋은 신호.</p>
+    <p class="help-note">대시보드에 처리 큐가 비어 있으면 = 응대 잘 되고 있다는 좋은 신호.</p>
 </div>
 
 <div class="card help-card" id="consult-new">

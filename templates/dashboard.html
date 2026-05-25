@@ -122,16 +122,20 @@
 {% macro discharge_table(rows) %}
 <div class="tbl-wrap">
     <table class="tbl dash-table">
-        <thead><tr><th>D-day</th><th>환자</th><th>병명</th><th>병동</th><th>주치의</th><th>퇴원예정</th></tr></thead>
+        <thead><tr><th>D-day</th><th>환자</th><th>병명</th><th>병동</th><th>주치의</th><th>퇴원예정</th><th>액션</th></tr></thead>
         <tbody>
             {% for d in rows %}
             <tr>
                 <td class="nowrap">{% if d.watch.days_left < 0 %}<span class="danger-text">{{ -d.watch.days_left }}일 초과</span>{% else %}D-{{ d.watch.days_left }}{% endif %}</td>
-                <td class="nowrap"><a href="/consult/{{ d.con.id }}">{{ d.con.patient_name }}</a></td>
+                <td class="nowrap">{% if d.con.blacklist %}<span class="bl-mark" title="블랙리스트">⚠</span> {% endif %}<a href="/consult/{{ d.con.id }}">{{ d.con.patient_name }}</a></td>
                 <td class="dash-dx" title="{{ d.con.disease_summary }}">{{ d.con.disease_summary or '-' }}</td>
                 <td class="nowrap">{{ d.con.ward or '-' }}</td>
                 <td class="nowrap">{{ d.con.attending_doctor or '-' }}</td>
                 <td class="nowrap">{{ d.watch.due_date|krdate_wd }}</td>
+                <td class="nowrap dash-action-cell">
+                    <a class="btn btn-secondary btn-xs" href="/sms?cid={{ d.con.id }}">문자</a>
+                    <a class="btn btn-secondary btn-xs" href="/consult/{{ d.con.id }}">상담</a>
+                </td>
             </tr>
             {% endfor %}
         </tbody>
@@ -153,15 +157,30 @@
 </div>
 {% endmacro %}
 {% macro inbound_list(rows) %}
-<div class="dash-mini-list">
-    {% for m in rows[:8] %}
-    <div class="dash-mini-row">
-        <span class="badge badge-pending">{{ m.channel or '기타' }}</span>
-        <span class="dash-mini-main">{{ m.patient_name or m.contact or '미연결' }}</span>
-        <span class="muted-sm">{{ (m.summary or m.body or '')[:42] }}</span>
-    </div>
-    {% endfor %}
-</div>
+<div class="tbl-wrap"><table class="tbl tbl-compact dash-inbound-tbl">
+    <thead><tr><th>일시</th><th>채널</th><th>환자/연락처</th><th>내용</th><th>액션</th></tr></thead>
+    <tbody>
+        {% for m in rows %}
+        <tr data-comm="{{ m.id }}"{% if m.blacklist %} class="ib-row-bl"{% endif %}>
+            <td class="nowrap muted-sm">{{ (m.occurred_at or m.created_at or '')[:16] }}</td>
+            <td class="nowrap"><span class="badge badge-pending">{{ m.channel or '기타' }}</span> {{ '↘' if m.direction == 'in' else '↗' }}</td>
+            <td class="nowrap">
+                {% if m.blacklist %}<span class="bl-mark" title="블랙리스트{% if m.blacklist_reason %} — {{ m.blacklist_reason }}{% endif %}">⚠</span> {% endif %}
+                {% if m.patient_id %}<a href="/patients/{{ m.patient_id }}">{{ m.patient_name }}</a>
+                {% elif m.matched_patient_id %}<a href="/patients/{{ m.matched_patient_id }}" class="ib-matched" title="연락처로 매칭된 환자">{{ m.matched_patient_name }}</a>
+                {% else %}<span class="muted">미연결</span>{% endif %}
+                {% if m.contact %} <span class="muted-sm">{{ m.contact }}</span>{% endif %}
+            </td>
+            <td class="ib-body" title="{{ m.body or m.summary }}">{{ m.summary or '' }}{% if m.summary and m.body %} — {% endif %}{{ m.body or '' }}</td>
+            <td class="nowrap dash-action-cell">
+                <a class="btn btn-primary btn-xs" href="/consult/new?comm_id={{ m.id }}">상담 등록</a>
+                <button class="btn btn-secondary btn-xs ib-done" data-comm="{{ m.id }}" title="후속 처리 완료로 표시">완료</button>
+                <button class="btn btn-secondary btn-xs ib-del" data-comm="{{ m.id }}" title="삭제">삭제</button>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table></div>
 {% endmacro %}
 {% macro inbound_panel(view_key, rows, empty_text, active=False) %}
 <div class="dash-inbound-view{% if active %} active{% endif %}" data-inbound-view-panel="{{ view_key }}">
@@ -173,15 +192,26 @@
 </div>
 {% endmacro %}
 {% macro callback_list(rows) %}
-<div class="dash-mini-list">
-    {% for r in rows[:8] %}
-    <div class="dash-mini-row">
-        <span class="badge badge-callback">재연락</span>
-        <span class="dash-mini-main"><a href="/consult/{{ r.id }}">{{ r.patient_name }}</a></span>
-        <span class="muted-sm">{{ r.counselor or '상담사 미지정' }} · {{ r.disease_summary or '병명 미지정' }} · {{ r.consult_result_reason or r.guardian_phone or '' }}</span>
-    </div>
-    {% endfor %}
-</div>
+<div class="tbl-wrap"><table class="tbl tbl-compact dash-callback-tbl">
+    <thead><tr><th>상담일</th><th>환자</th><th>재연락 시기/사유</th><th>보호자 연락처</th><th>상담자</th><th>액션</th></tr></thead>
+    <tbody>
+        {% for r in rows %}
+        <tr>
+            <td class="nowrap muted-sm">{{ r.consult_date|krdate }}</td>
+            <td class="nowrap">{% if r.blacklist %}<span class="bl-mark" title="블랙리스트">⚠</span> {% endif %}<a href="/patients/{{ r.patient_id }}">{{ r.patient_name }}</a></td>
+            <td>{{ r.consult_result_reason or '(미기재)' }}</td>
+            <td class="nowrap muted-sm">{{ r.guardian_name or '' }} {{ r.guardian_phone or '' }}</td>
+            <td class="nowrap muted-sm">{{ r.counselor or '' }}</td>
+            <td class="nowrap dash-action-cell">
+                <a class="btn btn-secondary btn-xs" href="/sms?cid={{ r.id }}">문자</a>
+                <a class="btn btn-secondary btn-xs" href="/consult/{{ r.id }}">상담</a>
+                <button class="btn btn-primary btn-xs ib-callback-done" data-cid="{{ r.id }}"
+                        title="재연락 완료 — 상담 결과를 '상담완료'로 즉시 변경">✓ 완료</button>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table></div>
 {% endmacro %}
 {% macro callback_group_panel(view_key, groups, empty_text) %}
 <div class="dash-callback-view" data-callback-view-panel="{{ view_key }}">
@@ -228,7 +258,6 @@
         <h1>대시보드 <span class="muted" style="font-size:0.66em">{{ now().strftime('%Y-%m-%d') }}</span></h1>
     </div>
     <div class="dash-actions">
-        <a href="/inbox" class="btn btn-secondary btn-sm">인박스</a>
         <a href="/consult/new" class="btn btn-primary btn-sm">+ 새 상담일지</a>
     </div>
 </div>
@@ -424,7 +453,7 @@
     <div class="card" id="inbound">
         <div class="dash-section-head">
             <h3>미처리 인바운드 · 재연락</h3>
-            <a class="btn btn-secondary btn-xs" href="/inbox">인박스</a>
+            <span class="muted-sm">상담 등록 · 처리 완료를 이곳에서 직접 처리</span>
         </div>
         <div class="dash-subsection">
             <div class="dash-subhead"><strong>미처리 인바운드</strong><span>{{ open_comms|length }}건</span></div>
@@ -672,6 +701,17 @@
     .week-flow-row { grid-template-columns:70px 1fr; }
     .week-flow-values { grid-column:1 / -1; justify-content:flex-start; }
 }
+
+/* 인박스 통합 액션 스타일 (구 인박스의 액션 셀을 대시보드로 이전) */
+.dash-action-cell { display:flex; gap:4px; align-items:center; flex-wrap:wrap; }
+.dash-action-cell .btn-xs { padding:2px 8px; font-size:0.74em; white-space:nowrap; }
+.dash-inbound-tbl, .dash-callback-tbl { width:100%; }
+.dash-inbound-tbl .ib-body { max-width:280px; overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap; font-size:0.86em; }
+.ib-row-bl { background:#fef2f2; }
+.ib-row-bl:hover { background:#fee2e2; }
+.ib-matched { color:#9333ea; }
+.ib-matched::after { content:" (연락처 매칭)"; font-size:0.78em; color:#a78bfa; }
 </style>
 <script>
 function syncAdmissionPanels() {
@@ -748,5 +788,55 @@ function bindDashTabs(buttonSelector, panelSelector, buttonKey, panelKey) {
 bindDashTabs('.dash-discharge-btn', '.dash-discharge-view', 'dischargeView', 'dischargeViewPanel');
 bindDashTabs('.dash-inbound-btn', '.dash-inbound-view', 'inboundView', 'inboundViewPanel');
 bindDashTabs('.dash-callback-btn', '.dash-callback-view', 'callbackView', 'callbackViewPanel');
+
+// ─── 인박스 통합 액션 (구 inbox.html에서 이전) ───
+// 미처리 인바운드 — 처리완료
+document.querySelectorAll('.ib-done').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try {
+            const r = await fetch(`/api/communication/${btn.dataset.comm}/done`, { method: 'POST' });
+            if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+            const tr = btn.closest('tr'); if (tr) tr.remove();
+        } catch (e) {
+            alert('처리 실패: ' + e.message);
+            btn.disabled = false;
+        }
+    });
+});
+// 미처리 인바운드 — 삭제
+document.querySelectorAll('.ib-del').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        if (!confirm('이 인바운드 기록을 삭제할까요?')) return;
+        btn.disabled = true;
+        try {
+            const r = await fetch(`/api/communication/${btn.dataset.comm}`, { method: 'DELETE' });
+            if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+            const tr = btn.closest('tr'); if (tr) tr.remove();
+        } catch (e) {
+            alert('삭제 실패: ' + e.message);
+            btn.disabled = false;
+        }
+    });
+});
+// 재연락 완료 1-click — 상담 결과를 '상담완료'로 즉시 변경
+document.querySelectorAll('.ib-callback-done').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        if (!confirm('재연락 완료로 표시할까요?\n상담 결과가 "상담완료"로 변경됩니다.')) return;
+        btn.disabled = true;
+        try {
+            const r = await fetch(`/api/consult/${btn.dataset.cid}/status`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ consult_result: '상담완료', consult_result_reason: '' }),
+            });
+            if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+            const tr = btn.closest('tr'); if (tr) tr.remove();
+        } catch (e) {
+            alert('처리 실패: ' + e.message);
+            btn.disabled = false;
+        }
+    });
+});
 </script>
 {% endblock %}

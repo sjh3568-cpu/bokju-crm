@@ -585,3 +585,14 @@ fieldset.opt-box legend { white-space: nowrap; }
 .recovery-hint.rh-warn { background: #fef3c7; color: #92400e; }
 .recovery-meta { font-size: 0.78em; color: var(--text-light); margin-top: 2px; }
 .recovery-meta:empty { display: none; }
+
+/* 입원예정 선택 + 날짜 미지정 — 헤더 입원예정일 칸 시각 강조 (펄스) */
+.field-need-attention {
+    border: 2px solid #f59e0b !important;
+    background: #fffbeb !important;
+    animation: needAttentionPulse 1.6s ease-in-out 2;
+}
+@keyframes needAttentionPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.5); }
+    50% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
+}

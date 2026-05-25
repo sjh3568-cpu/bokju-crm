@@ -5,7 +5,6 @@
 <div class="page-header">
     <h1>{{ p.name }} <span class="muted" style="font-size:0.62em">P{{ p.id }} · 생애주기 · 옴니채널</span></h1>
     <div style="display:flex; gap:8px">
-        <a href="/inbox" class="btn btn-secondary btn-sm">인박스</a>
         <a href="/lifecycle{% if lc_back_q %}?q={{ lc_back_q|urlencode }}{% endif %}" class="btn btn-secondary btn-sm">생애주기 보드</a>
         <a href="/sms?pid={{ p.id }}" class="btn btn-secondary btn-sm">📩 문자</a>
     </div>
