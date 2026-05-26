@@ -1,9 +1,11 @@
 """전국 병원 공식명 마스터 import.
 
 사용 예:
+  python tools/import_hospital_master.py --xlsx "전국 병의원 및 약국 현황 2026.3/1.병원정보서비스(2026.3.).xlsx"
   python tools/import_hospital_master.py --csv hospitals.csv
   python tools/import_hospital_master.py --api --service-key YOUR_DATA_GO_KR_KEY
 
+XLSX는 심평원 opendata.hira.or.kr '전국 병의원 및 약국 현황' 패키지의 1.병원정보서비스 파일을 권장한다.
 CSV는 심평원/공공데이터 계열의 흔한 헤더명을 자동 인식한다.
 API는 건강보험심사평가원 병원정보서비스(getHospBasisList) JSON 응답을 기준으로 한다.
 """
@@ -75,6 +77,28 @@ def _wanted(entry: dict, include_clinics: bool) -> bool:
     return kind in DEFAULT_HOSPITAL_KINDS
 
 
+def read_xlsx(path: Path, *, include_clinics: bool) -> list[dict]:
+    """심평원 '전국 병의원 및 약국 현황' xlsx (1.병원정보서비스 등) → entries."""
+    import openpyxl  # 지연 import — xlsx 모드에서만 필요
+
+    wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
+    ws = wb.active
+    iterator = ws.iter_rows(values_only=True)
+    try:
+        headers = [str(c).strip() if c is not None else "" for c in next(iterator)]
+    except StopIteration:
+        return []
+    entries: list[dict] = []
+    for row in iterator:
+        if not row or not any(row):
+            continue
+        rec = {headers[i]: row[i] for i in range(min(len(headers), len(row)))}
+        entry = _entry_from_row(rec)
+        if _wanted(entry, include_clinics):
+            entries.append(entry)
+    return entries
+
+
 def read_csv(path: Path, *, encoding: str, include_clinics: bool) -> list[dict]:
     with path.open("r", encoding=encoding, newline="") as f:
         sample = f.read(4096)
@@ -127,6 +151,7 @@ def read_api(service_key: str, *, include_clinics: bool, rows_per_page: int) -> 
 def main() -> int:
     p = argparse.ArgumentParser(description="전국 병원 공식명 마스터 import")
     src = p.add_mutually_exclusive_group(required=True)
+    src.add_argument("--xlsx", type=Path, help="심평원 '전국 병의원 및 약국 현황' 1.병원정보서비스 xlsx 경로")
     src.add_argument("--csv", type=Path, help="공식 병원 목록 CSV/TSV 파일 경로")
     src.add_argument("--api", action="store_true", help="공공데이터 병원정보서비스 API에서 직접 가져오기")
     p.add_argument("--service-key", default=os.getenv("DATA_GO_KR_SERVICE_KEY") or os.getenv("HIRA_SERVICE_KEY"))
@@ -136,7 +161,10 @@ def main() -> int:
     args = p.parse_args()
 
     models.init_db()
-    if args.csv:
+    if args.xlsx:
+        entries = read_xlsx(args.xlsx, include_clinics=args.include_clinics)
+        source = "hira_xlsx"
+    elif args.csv:
         entries = read_csv(args.csv, encoding=args.encoding, include_clinics=args.include_clinics)
         source = "hira_csv"
     else:
