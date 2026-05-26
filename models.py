@@ -1293,7 +1293,12 @@ def _hospital_match_score(query: str, row: dict) -> int | None:
         if q_raw in alias_raw or alias_raw in q_raw:
             return 10
 
-    # 룰 3 — 접미사 정규화 후 글자 집합 일치 (순서 무관)
+    # 룰 3a — 원본 이름에 입력어의 모든 글자가 포함되면 매칭(순서·위치 무관).
+    # 사용자 요청: '경북대' → '경'·'북'·'대' 각각 들어있는 모든 병원 노출.
+    if name_raw and all(ch in name_raw for ch in q_raw):
+        return 20
+
+    # 룰 3b — 접미사 정규화 키 기반 글자 집합(보조). 접미사 차이로 인한 누락 보완.
     q_key = _hospital_search_key(query)
     name_key = _hospital_search_key(name)
     if q_key and name_key and all(ch in name_key for ch in q_key):
