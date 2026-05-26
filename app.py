@@ -2177,8 +2177,10 @@ def _consult_fields_from_payload(c: dict) -> dict:
     # source_hospital 컬럼에 함께 기록. 자택 거주는 모병원 없음(통계 분석에서 제외).
     loc_type = out.get("current_location_type")
     if loc_type == "입원중" and out.get("current_location_name"):
+        out["current_location_name"] = models.canonical_hospital_name(out["current_location_name"])
         out["source_hospital"] = out["current_location_name"]
     elif loc_type == "입소중" and out.get("current_nursing_name"):
+        out["current_nursing_name"] = models.canonical_hospital_name(out["current_nursing_name"])
         out["source_hospital"] = out["current_nursing_name"]
     # 입원경로(다중) — 선택된 항목들로부터 상위 그룹(온라인/소개/기타)을 중복없이 도출
     detail = out.get("referral_source_detail")

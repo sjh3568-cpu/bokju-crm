@@ -19,7 +19,7 @@ from datetime import date, datetime, timedelta
 
 from werkzeug.security import generate_password_hash
 
-from config import DIAGNOSIS_SEED, SOURCE_HOSPITAL_SEED
+from config import DIAGNOSIS_SEED, HOSPITAL_ALIASES, SOURCE_HOSPITAL_SEED
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "bokju.db")
 _CHRONIC_DISEASE_PREFIXES = (
@@ -407,6 +407,14 @@ def init_db():
         "external_referral": "TEXT",      # JSON 배열 (경도요양병원/복주요양원/타 요양병원/타 요양원/기타)
         "external_referral_note": "TEXT", # 연계 자유 메모
     })
+    _ensure_columns(conn, "source_hospitals", {
+        "kind": "TEXT",           # 종별: 상급종합/종합병원/병원/요양병원 등
+        "address": "TEXT",
+        "phone": "TEXT",
+        "official_code": "TEXT",  # HIRA/API 식별자(제공 시)
+        "source": "TEXT",         # seed/hira_api/hira_csv 등
+        "updated_at": "DATETIME",
+    })
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_patients_lifecycle "
         "ON patients(lifecycle_stage, lifecycle_stage_changed_at)"
@@ -453,6 +461,23 @@ def init_db():
             "INSERT OR IGNORE INTO source_hospitals (name, region) VALUES (?, ?)",
             (name, region),
         )
+        conn.execute(
+            "UPDATE source_hospitals SET region = ? "
+            "WHERE name = ? AND (region IS NULL OR TRIM(region) = '')",
+            (region, name),
+        )
+    for official, aliases in HOSPITAL_ALIASES.items():
+        for alias in aliases:
+            conn.execute(
+                "UPDATE consultations SET source_hospital = ? "
+                "WHERE source_hospital = ?",
+                (official, alias),
+            )
+            conn.execute(
+                "UPDATE consultations SET current_location_name = ? "
+                "WHERE current_location_name = ?",
+                (official, alias),
+            )
 
     # 문자 템플릿 — 비어있을 때만 예시 시드 (실제 문구는 화면에서 수정).
     if conn.execute("SELECT COUNT(*) FROM sms_templates").fetchone()[0] == 0:
@@ -1195,14 +1220,122 @@ def patients_by_name(name: str) -> list[dict]:
 
 # ─── 자동완성 ───
 
+def _hospital_search_key(value: str | None) -> str:
+    value = (value or "").strip().lower()
+    for ch in (" ", "\t", "\n", "-", "_", ".", "·", "(", ")", "[", "]"):
+        value = value.replace(ch, "")
+    for suffix in ("상급종합병원", "종합병원", "대학교병원", "대학병원", "병원", "의료원"):
+        value = value.replace(suffix, "")
+    return value
+
+
+def canonical_hospital_name(value: str | None) -> str | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    key = _hospital_search_key(raw)
+    for official, aliases in HOSPITAL_ALIASES.items():
+        keys = {_hospital_search_key(official)}
+        keys.update(_hospital_search_key(alias) for alias in aliases)
+        if key in keys:
+            return official
+    return raw
+
+
+def _hospital_match_score(query: str, row: dict) -> int | None:
+    q_key = _hospital_search_key(query)
+    if not q_key:
+        return None
+    name = row.get("name") or ""
+    name_key = _hospital_search_key(name)
+    aliases = HOSPITAL_ALIASES.get(name, [])
+    alias_keys = [_hospital_search_key(alias) for alias in aliases]
+    if q_key == name_key or q_key in alias_keys:
+        return 0
+    if q_key in name_key or any(q_key in alias_key for alias_key in alias_keys):
+        return 10
+    # "아산강릉"처럼 핵심 단어 순서가 바뀐 경우: 모든 글자가 이름 안에 있으면 후보로 인정.
+    if all(ch in name_key for ch in q_key):
+        return 30
+    return None
+
+
 def autocomplete_hospitals(q: str, limit: int = 10):
     conn = get_db()
     rows = conn.execute(
-        "SELECT name, region FROM source_hospitals WHERE active = 1 AND name LIKE ? ORDER BY name LIMIT ?",
-        (f"%{q}%", limit),
+        """
+        SELECT name, region, kind, address FROM source_hospitals
+        WHERE active = 1
+        ORDER BY name
+        """,
     ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    matches = []
+    seen = set()
+    for r in rows:
+        row = dict(r)
+        score = _hospital_match_score(q, row)
+        if score is None:
+            continue
+        row["name"] = canonical_hospital_name(row["name"])
+        if row["name"] in seen:
+            continue
+        seen.add(row["name"])
+        row["official"] = True
+        matches.append((score, row["name"], row))
+    matches.sort(key=lambda x: (x[0], x[1]))
+    return [row for _, _, row in matches[:limit]]
+
+
+def upsert_source_hospitals(entries, *, source="import"):
+    """공식 병원명 마스터 대량 등록/갱신.
+
+    entries item keys: name, region, kind, address, phone, official_code.
+    같은 이름은 하나의 마스터로 합치고, 비어 있던 부가 정보는 import 값으로 보강한다.
+    """
+    cleaned = []
+    seen = set()
+    for item in entries or []:
+        name = canonical_hospital_name(item.get("name"))
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        cleaned.append({
+            "name": name,
+            "region": (item.get("region") or "").strip() or None,
+            "kind": (item.get("kind") or "").strip() or None,
+            "address": (item.get("address") or "").strip() or None,
+            "phone": (item.get("phone") or "").strip() or None,
+            "official_code": (item.get("official_code") or "").strip() or None,
+        })
+    if not cleaned:
+        return 0
+
+    conn = get_db()
+    for item in cleaned:
+        conn.execute(
+            """
+            INSERT INTO source_hospitals
+                (name, region, kind, address, phone, official_code, source, active, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+            ON CONFLICT(name) DO UPDATE SET
+                region = COALESCE(excluded.region, source_hospitals.region),
+                kind = COALESCE(excluded.kind, source_hospitals.kind),
+                address = COALESCE(excluded.address, source_hospitals.address),
+                phone = COALESCE(excluded.phone, source_hospitals.phone),
+                official_code = COALESCE(excluded.official_code, source_hospitals.official_code),
+                source = excluded.source,
+                active = 1,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                item["name"], item["region"], item["kind"], item["address"],
+                item["phone"], item["official_code"], source,
+            ),
+        )
+    conn.commit()
+    conn.close()
+    return len(cleaned)
 
 
 def top_source_hospitals(limit: int = 5):
@@ -1285,6 +1418,7 @@ def _ensure_master_entry(hospital: str | None, diagnosis: str | None):
         return
     conn = get_db()
     if hospital:
+        hospital = canonical_hospital_name(hospital)
         conn.execute(
             "INSERT OR IGNORE INTO source_hospitals (name) VALUES (?)",
             (hospital.strip(),),
@@ -1365,6 +1499,7 @@ def dashboard_summary():
                c.diseases, c.disease_detail, c.disease_onset,
                c.admission_purpose, c.external_referral_note,
                p.id AS patient_id, p.name AS patient_name, p.gender,
+               p.insurance_type,
                p.guardian_name, p.guardian_phone, p.blacklist
         FROM consultations c JOIN patients p ON p.id = c.patient_id
         WHERE COALESCE(c.admission_status, '') NOT IN ('입원취소', '퇴원완료')

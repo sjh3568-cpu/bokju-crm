@@ -184,9 +184,9 @@ DISEASES_LAYOUT = {
         ]},
     ],
     "근골격계": [
-        {"kind": "checkbox", "value": "대퇴부"},
-        {"kind": "checkbox", "value": "고관절"},
-        {"kind": "checkbox+group", "value": "골반 골절", "items": [
+        {"kind": "checkbox", "value": "대퇴부", "label": "단일 부위-대퇴"},
+        {"kind": "checkbox", "value": "고관절", "label": "단일 부위-고관절"},
+        {"kind": "checkbox+group", "value": "골반 골절", "label": "골반 골절/치환술", "items": [
             {"value": "골반-단일 부위", "label": "단일 부위"},
             {"value": "골반-다발 부위", "label": "다발 부위"},
         ]},
@@ -398,6 +398,7 @@ DIAGNOSIS_SEED = [
 ]
 
 SOURCE_HOSPITAL_SEED = [
+    ("강릉아산병원", "강원"),
     ("경북대학교병원", "대구·경북"),
     ("칠곡경북대학교병원", "대구·경북"),
     ("동산병원", "대구·경북"),
@@ -410,6 +411,18 @@ SOURCE_HOSPITAL_SEED = [
     ("구미차병원", "대구·경북"),
     ("순천향대학교 구미병원", "대구·경북"),
 ]
+
+# 병원명 별칭/통칭 → 공식명 자동완성용.
+# 예: "아산강릉"처럼 순서가 뒤섞인 검색어도 "강릉아산병원"을 제안한다.
+HOSPITAL_ALIASES = {
+    "강릉아산병원": [
+        "강릉아산",
+        "아산강릉",
+        "아산 강릉",
+        "강릉 아산",
+        "강릉아산병원",
+    ],
+}
 
 # ─── 시/도 → 시/군/구 ───
 _SIDO_SIGUNGU = {
