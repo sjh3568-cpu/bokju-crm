@@ -39,7 +39,7 @@
                 <thead>
                     <tr>
                         <th></th>
-                        <th>카테고리</th>
+                        <th>지침 병명 카테고리</th>
                         <th class="num">입원시기</th>
                         <th class="num">입원 기간</th>
                         <th>비고</th>
@@ -49,12 +49,12 @@
                     <tr>
                         <td><input type="radio" name="elig-dx" value="중추신경계" data-period="90" data-stay="회복기(S005) 180일 + 비회복기(S006) 180일 = 최대 360일" data-overflow="비회복기" data-overflow-stay="비회복기(S006) 180일"></td>
                         <td>
-                            중추신경계
+                            중추신경계 <span class="elig-sub">- 뇌손상 / 척수손상</span>
                             <div class="elig-cns-sub">
-                                <label class="elig-cns-chk"><input type="checkbox" name="elig-cns" value="뇌출혈"> 뇌출혈</label>
-                                <label class="elig-cns-chk"><input type="checkbox" name="elig-cns" value="뇌경색"> 뇌경색</label>
+                                <label class="elig-cns-chk"><input type="checkbox" name="elig-cns" value="뇌출혈"> 뇌손상(뇌출혈)</label>
+                                <label class="elig-cns-chk"><input type="checkbox" name="elig-cns" value="뇌경색"> 뇌손상(뇌경색)</label>
                                 <label class="elig-cns-chk"><input type="checkbox" name="elig-cns" value="척수손상"> 척수손상</label>
-                                <label class="elig-cns-chk"><input type="checkbox" name="elig-cns" value="기타 뇌손상"> 기타 뇌손상</label>
+                                <label class="elig-cns-chk"><input type="checkbox" name="elig-cns" value="기타 뇌손상"> 외상성/비외상성 뇌손상</label>
                             </div>
                         </td>
                         <td class="num">90일</td>
@@ -67,14 +67,16 @@
                     </tr>
                     <tr>
                         <td><input type="radio" name="elig-dx" value="근골격계_단일" data-period="30" data-stay="30일" data-overflow="불가"></td>
-                        <td>근골격계 단일부위 <span class="elig-sub">(고관절·대퇴부·골절)</span></td>
+                        <td>근골격계 <span class="elig-sub">- 단일 부위</span><br>
+                            <span class="elig-sub">고관절·골반·대퇴의 골절 및 치환술</span></td>
                         <td class="num">30일</td>
                         <td class="num">30일</td>
                         <td class="elig-note">단순 골절 · 골유합지연 + 내고정/전치환술 동반 시 아래 옵션 선택</td>
                     </tr>
                     <tr class="elig-sub-row">
                         <td><input type="radio" name="elig-dx" value="골유합지연_내고정전치환술" data-period="60" data-stay="60일" data-overflow="불가"></td>
-                        <td>└ 골유합지연 + 내고정술 / 전치환술</td>
+                        <td>근골격계 <span class="elig-sub">- 단일 부위 예외</span><br>
+                            <span class="elig-sub">골유합 지연·내고정술·고관절 전치환술</span></td>
                         <td class="num">60일</td>
                         <td class="num">60일</td>
                         <td class="elig-note">
@@ -84,14 +86,15 @@
                     </tr>
                     <tr>
                         <td><input type="radio" name="elig-dx" value="근골격계_다발" data-period="60" data-stay="60일" data-overflow="불가"></td>
-                        <td>근골격계 다발부위 <span class="elig-sub">(고관절·대퇴부·골절)</span></td>
+                        <td>근골격계 <span class="elig-sub">- 다발 부위</span><br>
+                            <span class="elig-sub">고관절·골반·대퇴 포함 2부위 이상 골절 및 치환술</span></td>
                         <td class="num">60일</td>
                         <td class="num">60일</td>
                         <td class="elig-note">초과 시 입원 불가</td>
                     </tr>
                     <tr>
                         <td><input type="radio" name="elig-dx" value="양측슬관절치환술" data-period="30" data-stay="30일" data-warn="복잡기준 충족 필요 — 행정해석(보험급여과-2502호) 행위 복잡기준 (1)(2)(5)(6)(7)(10)(11) 중 해당 항목. 입원시기는 첫 번째 수술일로부터 30일 이내" data-overflow="불가"></td>
-                        <td>양측슬관절치환술 <span class="elig-warn-mark">⚠</span></td>
+                        <td>근골격계 <span class="elig-sub">- 양측 슬관절치환술(복잡수술)</span> <span class="elig-warn-mark">⚠</span></td>
                         <td class="num">30일</td>
                         <td class="num">30일</td>
                         <td class="elig-note">
@@ -103,21 +106,21 @@
                     </tr>
                     <tr>
                         <td><input type="radio" name="elig-dx" value="하지절단" data-period="60" data-stay="60일" data-overflow="불가" data-warn="족부절단은 제외 — 골반·대퇴·하퇴 절단만 대상"></td>
-                        <td>하지부위절단 <span class="elig-warn-mark">⚠</span></td>
+                        <td>절단 <span class="elig-sub">- 하지부위 절단</span> <span class="elig-warn-mark">⚠</span></td>
                         <td class="num">60일</td>
                         <td class="num">60일</td>
                         <td class="elig-note"><strong>족부절단 제외</strong> — 골반·대퇴·하퇴 부위 절단만 대상 · 초과 시 입원 불가</td>
                     </tr>
                     <tr>
                         <td><input type="radio" name="elig-dx" value="비사용증후군" data-period="60" data-stay="60일" data-overflow="불가" data-warn="다제내성균만으로 비사용 여부 검토 필요 (단독 분류 불가, 기능평가 후 비사용증후군 포함 가능)"></td>
-                        <td>비사용증후군 <span class="elig-warn-mark">⚠</span></td>
+                        <td>그 외 <span class="elig-sub">- 비사용 증후군</span> <span class="elig-warn-mark">⚠</span></td>
                         <td class="num">60일</td>
                         <td class="num">60일</td>
                         <td class="elig-note">호흡·심장·신생물·파킨슨·길랑바레 등 · 다제내성균만으로 비사용 여부 검토 필요</td>
                     </tr>
                     <tr>
                         <td><input type="radio" name="elig-dx" value="파킨슨" data-period="60" data-stay="60일" data-overflow="비회복기" data-overflow-stay="비회복기 180일"></td>
-                        <td>파킨슨</td>
+                        <td>비사용 증후군 예외 적용 <span class="elig-sub">- 파킨슨병</span></td>
                         <td class="num">60일</td>
                         <td class="num">60일</td>
                         <td class="elig-note">신규 진단 기준 · 초과 시 비회복기 180일 입원 가능</td>
@@ -995,41 +998,56 @@
                 <thead>
                     <tr>
                         <th>대상<br>환자군</th>
+                        <th>병명 카테고리</th>
+                        <th>대상 질환</th>
                         <th>입원시기<br><span>발병/수술 후</span></th>
                         <th>종료일<br><span>입원일로부터</span></th>
                         <th>기능평가항목 및 점수</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <tr><td>중추신경계 <span class="rg-code">(가·나)</span><br><span class="rg-sub">뇌·척수 질환</span></td>
+                    <tr><td>중추신경계</td><td>뇌손상</td>
+                        <td>뇌졸중, 외상성 및 비외상성 뇌손상</td>
                         <td>90일 내</td><td>180일 이내</td><td>-</td></tr>
-                    <tr><td>근골격계 <span class="rg-code">(다-1)</span><br><span class="rg-sub">골절·관절수술</span></td>
+                    <tr><td>중추신경계</td><td>척수손상</td>
+                        <td>외상성 및 비외상성 척수손상</td>
+                        <td>90일 내</td><td>180일 이내</td><td>-</td></tr>
+                    <tr><td>근골격계</td><td>단일 부위</td>
+                        <td>고관절, 골반, 대퇴의 골절 및 치환술</td>
                         <td>30일 내</td><td>30일 이내</td><td>-</td></tr>
-                    <tr><td>골유합 지연·내고정·전치환 <span class="rg-code">(다-2)</span></td>
-                        <td>60일 내</td><td>60일 이내</td><td></td></tr>
-                    <tr><td>양측 슬관절치환술 <span class="rg-code">(다-3)</span><br><span class="rg-sub">복잡수술</span></td>
-                        <td>첫 번째 수술일로부터 30일 내</td><td>30일 이내</td><td></td></tr>
-                    <tr><td>절단 <span class="rg-code">(라)</span><br><span class="rg-sub">하지 부위 등</span></td>
+                    <tr><td>근골격계</td><td>다발 부위</td>
+                        <td>고관절, 골반, 대퇴를 포함하는 2부위 이상 골절 및 치환술<br>
+                            <span class="rg-sub">상지는 제외</span></td>
                         <td>60일 내</td><td>60일 이내</td><td>-</td></tr>
-                    <tr><td>비사용증후군 <span class="rg-code">(마)</span><br><span class="rg-sub">호흡·심장·신생물·길랑바레·파킨슨(신규) 등</span></td>
+                    <tr><td>근골격계</td><td>양측 슬관절치환술</td>
+                        <td>단측 또는 양측이 복잡수술인 경우</td>
+                        <td>첫 번째 수술일로부터 30일 내</td><td>30일 이내</td><td>-</td></tr>
+                    <tr><td>절단</td><td>하지부위 절단</td>
+                        <td>족부절단 제외</td>
+                        <td>60일 내</td><td>60일 이내</td><td>-</td></tr>
+                    <tr><td>그 외</td><td>비사용 증후군</td>
+                        <td>급성질환이나 수술로 기능상태가 현저하게 저하된 경우</td>
                         <td>60일 내</td><td>60일 이내</td>
                         <td>① 도수근력검사 48점 미만<br>② 일상생활동작검사 80점 이하 또는
                             버그 균형검사 40점 이하<br><span class="rg-em">①②를 모두 충족하여야 함</span></td></tr>
                 </tbody>
             </table>
             <ul class="rec-guide-notes">
-                <li><b>입원시기</b> = 발병 후 해당 의료기관 입원까지 경과기간.
-                    <b>종료일</b> = 입원기간 중 환자구성에 포함될 수 있는 기간의 종료일.</li>
-                <li><b>중추신경계</b> 환자 중 의학적 판단으로 급성기 치료가 추가로 필요한 등 불가피한
-                    사유로 전원할 수 없으면, 입원시기가 90일을 초과해도 발병/수술일로부터
-                    <b>270일 이내</b>로 적용 (진료기록부 등 객관적 자료 첨부).</li>
-                <li><b>근골격계</b> 중 골유합을 위한 소요기간이 필요해 30일 내 입원이 불가능하면
-                    <b>골유합 지연·내고정·전치환의 입원시기</b>(60일 내)를 적용.</li>
-                <li><b>근골격계</b> 중 골절 내고정술·고관절 전치환술을 시행한 환자는
-                    <b>골유합 지연·내고정·전치환의 종료일</b>(60일 이내)을 적용
-                    (30일 이상 입원 사유 객관적 자료 첨부).</li>
-                <li><b>양측 슬관절치환술</b>(단측 또는 양측 복잡수술)은 동일 입원기간 내
-                    <b>첫 번째 수술일로부터 30일 이내</b> 입원 (객관적 자료 첨부).</li>
+                <li><b>「입원시기」</b>라 함은 지정기준 가목에서 발병 후 해당 의료기관에 입원하기까지
+                    경과기간에 해당하며 <b>「종료일」</b>은 해당 의료기관의 입원기간 중 환자구성에 포함될 수 있는
+                    기간의 종료일을 말한다.</li>
+                <li>가 및 나 대상환자 중 의학적 판단에 따라 급성기 치료가 추가적으로 필요한 경우 등 불가피한
+                    사유로 전원을 할 수 없는 경우 입원시기가 <span class="rg-em">90일을 초과하더라도</span>,
+                    입원시기 및 종료일을 발병 또는 수술일로부터 <b>270일 이내</b>로 적용한다. 단, 불가피한
+                    사유에 대하여 진료기록부 등 객관적 자료를 첨부하여야 한다.</li>
+                <li>다-1 대상환자 중 <span class="rg-em">골유합</span>을 위한 소요기간이 필요하여 발병 또는 수술 후
+                    30일 이내 입원이 불가능한 환자는 다-2의 입원시기를 적용한다.</li>
+                <li>다-1 대상환자 중 골절 <span class="rg-em">내고정술</span>이나 고관절
+                    <span class="rg-em">전치환술</span>을 시행한 환자는 다-2의 종료일을 적용한다. 단,
+                    30일 이상 입원이 필요한 사유에 대하여 의사소견서 등 객관적 자료를 첨부하여야 한다.</li>
+                <li>다-3 대상환자 양측 슬관절치환술(단측 또는 양측 복잡수술)에 해당하는 경우 입원시기는
+                    동일 입원기간 내 첫 번째 수술일로부터 30일 이내 입원해야함을 말한다. 단, 진료기록부 등
+                    객관적 자료를 첨부하여야 한다.</li>
             </ul>
         </details>
         <div class="option-group">
