@@ -1242,32 +1242,59 @@ def canonical_hospital_name(value: str | None) -> str | None:
     return raw
 
 
+def _hospital_substring_key(value: str | None) -> str:
+    """원본 부분 매칭용 — 공백·문장부호만 제거. 접미사는 보존하여
+    '경북대'(입력)가 '경북대학교병원'·'칠곡경북대학교병원'에 부분 문자열로 잡히도록 한다."""
+    value = (value or "").strip().lower()
+    for ch in (" ", "\t", "\n", "-", "_", ".", "·", "(", ")", "[", "]"):
+        value = value.replace(ch, "")
+    return value
+
+
 def _hospital_match_score(query: str, row: dict) -> int | None:
-    q_key = _hospital_search_key(query)
-    if not q_key:
+    """병원 자동완성 매칭 점수. 낮을수록 우선.
+
+    룰 1 (가장 직관적) — 원본 이름에 입력어가 부분 문자열로 포함되면 매칭.
+      예: '경북대' → 경북대학교병원, 경북대학교치과병원, 칠곡경북대학교병원 등 전부.
+    룰 2 — 별칭(HOSPITAL_ALIASES)에 부분 일치.
+      예: '아산강릉' → 별칭으로 등록된 강릉아산병원.
+    룰 3 — 접미사 정규화 후 글자 집합 일치 (순서 무관).
+      예: '아산강릉' → '강릉아산병원'(별칭 미등록 시에도).
+    """
+    q_raw = _hospital_substring_key(query)
+    if not q_raw:
         return None
     name = row.get("name") or ""
-    name_key = _hospital_search_key(name)
-    aliases = HOSPITAL_ALIASES.get(name, [])
-    alias_keys = [_hospital_search_key(alias) for alias in aliases]
-    if q_key == name_key or q_key in alias_keys:
+    name_raw = _hospital_substring_key(name)
+
+    # 룰 1 — 원본 부분 매칭
+    if q_raw == name_raw:
         return 0
-    if q_key in name_key or any(q_key in alias_key for alias_key in alias_keys):
-        return 10
-    # 역방향 부분 매칭 — '경북대'(q_key='경북대') ↔ '경북대학교병원'(name_key='경북'.
-    # 접미사 제거로 name_key가 더 짧아져 정방향 in이 실패하는 약칭 케이스를 잡는다.
-    # name_key가 빈 문자열이면 모두 매칭되므로 제외.
-    if name_key and name_key in q_key:
-        return 20
-    if any(ak and ak in q_key for ak in alias_keys):
-        return 20
-    # "아산강릉"처럼 핵심 단어 순서가 바뀐 경우: 모든 글자가 이름 안에 있으면 후보로 인정.
-    if all(ch in name_key for ch in q_key):
+    if q_raw in name_raw:
+        return 5
+
+    # 룰 2 — 별칭 부분 매칭
+    aliases = HOSPITAL_ALIASES.get(name, [])
+    for alias in aliases:
+        alias_raw = _hospital_substring_key(alias)
+        if not alias_raw:
+            continue
+        if q_raw == alias_raw:
+            return 0
+        if q_raw in alias_raw or alias_raw in q_raw:
+            return 10
+
+    # 룰 3 — 접미사 정규화 후 글자 집합 일치 (순서 무관)
+    q_key = _hospital_search_key(query)
+    name_key = _hospital_search_key(name)
+    if q_key and name_key and all(ch in name_key for ch in q_key):
         return 30
     return None
 
 
-def autocomplete_hospitals(q: str, limit: int = 10):
+def autocomplete_hospitals(q: str, limit: int = 50):
+    """병원 자동완성. limit 기본 50 — 사용자가 짧은 검색어로 모든 후보를
+    훑어볼 수 있도록. UI에서 더 좁히려면 추가 글자 입력."""
     conn = get_db()
     rows = conn.execute(
         """
@@ -1289,9 +1316,10 @@ def autocomplete_hospitals(q: str, limit: int = 10):
             continue
         seen.add(row["name"])
         row["official"] = True
-        matches.append((score, row["name"], row))
-    matches.sort(key=lambda x: (x[0], x[1]))
-    return [row for _, _, row in matches[:limit]]
+        # 같은 score 안에서는 이름이 짧을수록 더 정확한 매칭이므로 위로
+        matches.append((score, len(row["name"]), row["name"], row))
+    matches.sort(key=lambda x: (x[0], x[1], x[2]))
+    return [row for _, _, _, row in matches[:limit]]
 
 
 def upsert_source_hospitals(entries, *, source="import"):
