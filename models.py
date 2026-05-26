@@ -414,7 +414,25 @@ def init_db():
         "official_code": "TEXT",  # HIRA/API 식별자(제공 시)
         "source": "TEXT",         # seed/hira_api/hira_csv 등
         "updated_at": "DATETIME",
+        "use_count": "INTEGER DEFAULT 0",  # 폼 저장 시 증가. 자동완성 정렬 가중치.
     })
+    # 요양원(노인의료복지시설) 별도 마스터 — 보건복지부·국민건강보험공단 데이터.
+    # 자동완성·정식명 강제는 병원과 동일 룰을 공유하지만 마스터는 분리.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS source_nursing_homes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            region TEXT,
+            kind TEXT,           -- 노인요양시설/노인요양공동생활가정 등
+            address TEXT,
+            phone TEXT,
+            official_code TEXT,
+            source TEXT,
+            active INTEGER DEFAULT 1,
+            use_count INTEGER DEFAULT 0,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_patients_lifecycle "
         "ON patients(lifecycle_stage, lifecycle_stage_changed_at)"
@@ -1299,34 +1317,183 @@ def _hospital_match_score(query: str, row: dict) -> int | None:
     return None
 
 
-def autocomplete_hospitals(q: str, limit: int = 50):
-    """병원 자동완성. limit 기본 50 — 사용자가 짧은 검색어로 모든 후보를
-    훑어볼 수 있도록. UI에서 더 좁히려면 추가 글자 입력."""
+def _autocomplete_facilities(q: str, *, table: str, aliases: dict, limit: int = 50):
+    """병원·요양원 공통 자동완성. table별로 마스터 로드 후 동일 매칭·정렬 룰 적용.
+    같은 score 안에서는 (1) 최근 사용 빈도(use_count) 많은 게 위 (2) 이름 짧은 순.
+    """
     conn = get_db()
     rows = conn.execute(
-        """
-        SELECT name, region, kind, address FROM source_hospitals
-        WHERE active = 1
-        ORDER BY name
-        """,
+        f"SELECT name, region, kind, address, COALESCE(use_count, 0) AS use_count "
+        f"FROM {table} WHERE active = 1 ORDER BY name"
     ).fetchall()
+    total_active = conn.execute(
+        f"SELECT COUNT(*) FROM {table} WHERE active = 1"
+    ).fetchone()[0]
     conn.close()
     matches = []
     seen = set()
     for r in rows:
         row = dict(r)
-        score = _hospital_match_score(q, row)
+        score = _facility_match_score(q, row, aliases)
         if score is None:
             continue
-        row["name"] = canonical_hospital_name(row["name"])
-        if row["name"] in seen:
+        # 공식명 정규화는 병원 마스터에서만 (요양원은 별칭 사전 별도). 호출자가 결정.
+        canonical = _canonical_from_aliases(row["name"], aliases) or row["name"]
+        if canonical in seen:
             continue
-        seen.add(row["name"])
+        seen.add(canonical)
+        row["name"] = canonical
         row["official"] = True
-        # 같은 score 안에서는 이름이 짧을수록 더 정확한 매칭이므로 위로
-        matches.append((score, len(row["name"]), row["name"], row))
-    matches.sort(key=lambda x: (x[0], x[1], x[2]))
-    return [row for _, _, _, row in matches[:limit]]
+        matches.append((score, -row["use_count"], len(row["name"]), row["name"], row))
+    matches.sort(key=lambda x: (x[0], x[1], x[2], x[3]))
+    return {
+        "items": [row for _, _, _, _, row in matches[:limit]],
+        "master_size": total_active,
+    }
+
+
+def _canonical_from_aliases(value, aliases):
+    """주어진 별칭 사전에서 정식명을 찾음 (없으면 None)."""
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    key = _hospital_search_key(raw)
+    for official, alts in aliases.items():
+        keys = {_hospital_search_key(official)}
+        keys.update(_hospital_search_key(a) for a in alts)
+        if key in keys:
+            return official
+    return raw
+
+
+def _facility_match_score(query, row, aliases):
+    """매칭 룰 — 병원·요양원 공통. 별칭 사전만 다름."""
+    q_raw = _hospital_substring_key(query)
+    if not q_raw:
+        return None
+    name = row.get("name") or ""
+    name_raw = _hospital_substring_key(name)
+    if q_raw == name_raw:
+        return 0
+    if q_raw in name_raw:
+        return 5
+    if name_raw and len(q_raw) >= 4:
+        for L in range(len(q_raw) - 1, 2, -1):
+            if q_raw[:L] in name_raw:
+                return 7 + (len(q_raw) - L)
+    alts = aliases.get(name, [])
+    for alt in alts:
+        alt_raw = _hospital_substring_key(alt)
+        if not alt_raw:
+            continue
+        if q_raw == alt_raw:
+            return 0
+        if q_raw in alt_raw or alt_raw in q_raw:
+            return 10
+    return None
+
+
+def autocomplete_hospitals(q: str, limit: int = 50):
+    """병원 자동완성. items + master_size 반환."""
+    return _autocomplete_facilities(
+        q, table="source_hospitals", aliases=HOSPITAL_ALIASES, limit=limit,
+    )
+
+
+# 요양원 별칭 사전 — 사용자 등록 또는 추후 데이터 기반으로 채울 수 있음. 현재 빈 dict.
+NURSING_ALIASES: dict[str, list[str]] = {}
+
+
+def canonical_nursing_name(value):
+    """요양원 별칭→공식명 정규화. 마스터에 없으면 입력 그대로 반환."""
+    return _canonical_from_aliases(value, NURSING_ALIASES)
+
+
+def autocomplete_nursing_homes(q: str, limit: int = 50):
+    """요양원 자동완성. items + master_size 반환."""
+    return _autocomplete_facilities(
+        q, table="source_nursing_homes", aliases=NURSING_ALIASES, limit=limit,
+    )
+
+
+def upsert_source_nursing_homes(entries, *, source="import"):
+    """요양원 마스터 대량 등록/갱신. upsert_source_hospitals와 동일 시그니처."""
+    cleaned = []
+    seen = set()
+    for item in entries or []:
+        name = canonical_nursing_name(item.get("name"))
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        cleaned.append({
+            "name": name,
+            "region": (item.get("region") or "").strip() or None,
+            "kind": (item.get("kind") or "").strip() or None,
+            "address": (item.get("address") or "").strip() or None,
+            "phone": (item.get("phone") or "").strip() or None,
+            "official_code": (item.get("official_code") or "").strip() or None,
+        })
+    if not cleaned:
+        return 0
+    conn = get_db()
+    for item in cleaned:
+        conn.execute(
+            """
+            INSERT INTO source_nursing_homes
+                (name, region, kind, address, phone, official_code, source, active, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+            ON CONFLICT(name) DO UPDATE SET
+                region = COALESCE(excluded.region, source_nursing_homes.region),
+                kind = COALESCE(excluded.kind, source_nursing_homes.kind),
+                address = COALESCE(excluded.address, source_nursing_homes.address),
+                phone = COALESCE(excluded.phone, source_nursing_homes.phone),
+                official_code = COALESCE(excluded.official_code, source_nursing_homes.official_code),
+                source = excluded.source,
+                active = 1,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (item["name"], item["region"], item["kind"], item["address"],
+             item["phone"], item["official_code"], source),
+        )
+    conn.commit()
+    conn.close()
+    return len(cleaned)
+
+
+def bump_facility_use_count(name, *, table):
+    """폼 저장 시 호출. 정식명과 정확히 일치하는 마스터 row의 use_count + 1.
+    table은 'source_hospitals' 또는 'source_nursing_homes'."""
+    if not name or table not in ("source_hospitals", "source_nursing_homes"):
+        return
+    conn = get_db()
+    conn.execute(
+        f"UPDATE {table} SET use_count = COALESCE(use_count, 0) + 1 WHERE name = ?",
+        (name,),
+    )
+    conn.commit()
+    conn.close()
+
+
+def backfill_facility_use_counts():
+    """기존 consultations.source_hospital/current_nursing_name 카운트로 use_count 초기화.
+    한 번만 실행하면 됨. 마스터 정식명과 정확히 일치하는 건만 반영."""
+    conn = get_db()
+    conn.execute("""
+        UPDATE source_hospitals
+        SET use_count = COALESCE((
+            SELECT COUNT(*) FROM consultations
+            WHERE source_hospital = source_hospitals.name
+        ), 0)
+    """)
+    conn.execute("""
+        UPDATE source_nursing_homes
+        SET use_count = COALESCE((
+            SELECT COUNT(*) FROM consultations
+            WHERE current_nursing_name = source_nursing_homes.name
+        ), 0)
+    """)
+    conn.commit()
+    conn.close()
 
 
 def upsert_source_hospitals(entries, *, source="import"):

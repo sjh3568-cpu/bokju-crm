@@ -143,10 +143,16 @@
                 setAgeHint('나이를 0~120 사이로 입력하세요.', 'warn');
                 return;
             }
-            ageInput.value = value;
             if (mode === 'full_age') {
-                setAgeHint(`만 ${value}세로 들음 → 저장 나이 ${value}세`);
+                const displayAge = value + 1;
+                if (displayAge > 120) {
+                    setAgeHint('만 나이를 상담용 나이로 환산하면 120세를 초과합니다.', 'warn');
+                    return;
+                }
+                ageInput.value = displayAge;
+                setAgeHint(`만 ${value}세로 들음 → 상담용 나이 ${displayAge}세로 저장`);
             } else {
+                ageInput.value = value;
                 setAgeHint(`${value}세로 저장`);
             }
         };
@@ -158,11 +164,12 @@
     // 자동완성: 환자명, 모병원, 질환
     document.querySelectorAll('input[data-ac]').forEach(setupAutocomplete);
 
-    // 병원명 정식명 강제 — 모병원·추천기관 두 칸 모두 blur 시 마스터 매칭.
-    // 자동완성 클릭으로 인한 blur는 pickItem이 먼저 dataset.hospVerified를 세팅하므로
-    // setTimeout으로 우선순위 보장.
+    // 병원·요양원 정식명 강제 — 자동완성 마스터 매칭. 자동완성 클릭으로 인한 blur는
+    // pickItem이 먼저 dataset.hospVerified를 세팅하므로 setTimeout으로 우선순위 보장.
+    // 요양원 마스터가 비어 있으면 enforce는 자유 입력 허용으로 통과.
     const HOSPITAL_NAME_INPUTS = [
         'consultation.current_location_name',
+        'consultation.current_nursing_name',
         'consultation.referrer_institution',
     ];
     HOSPITAL_NAME_INPUTS.forEach(nm => {
@@ -357,7 +364,7 @@
                     <span class="meta">${it.guardian_phone || ''} ${it.guardian_name ? '· ' + it.guardian_name : ''}</span>
                 </div>`;
             }
-            if (kind === 'hospital') {
+            if (kind === 'hospital' || kind === 'nursing') {
                 // 같은 이름·약칭 후보 식별을 위해 region·kind를 함께 표시
                 const meta = [it.region, it.kind].filter(Boolean).join(' · ');
                 return `<div class="ac-item">
@@ -370,7 +377,7 @@
         function pickItem(it) {
             input.value = it.name;
             if (kind === 'patient') autoFillPatient(it);
-            else if (kind === 'hospital') markHospitalOfficial(input, it.name);
+            else if (kind === 'hospital' || kind === 'nursing') markHospitalOfficial(input, it.name);
             hide();
         }
     }
@@ -396,11 +403,19 @@
         const raw = (input.value || '').trim();
         if (!raw) { clearHospitalMark(input); return; }
         if (input.dataset.hospVerified === raw) return;
-        let items = [];
+        // 어떤 마스터를 쓸지 input의 data-ac에 따라 결정. nursing 마스터가 비어 있으면
+        // 자유 입력 허용(아직 사용자가 요양원 마스터 데이터를 import하지 않은 단계).
+        const acKind = input.dataset.ac === 'nursing' ? 'nursing' : 'hospital';
+        let res = {};
         try {
-            const res = await api.get(`/api/autocomplete/hospital?q=${encodeURIComponent(raw)}`);
-            items = res.items || [];
+            res = await api.get(`/api/autocomplete/${acKind}?q=${encodeURIComponent(raw)}`);
         } catch (e) { return; /* 네트워크 오류 시 차단 안 함 */ }
+        if ((res.master_size || 0) === 0) {
+            // 마스터 비어 있음 — 사용자가 데이터를 적재하기 전엔 자유 입력 허용
+            clearHospitalMark(input);
+            return;
+        }
+        const items = res.items || [];
         const exact = items.find(it => it.name === raw);
         if (exact) { markHospitalOfficial(input, exact.name); return; }
         if (items.length === 1) {
@@ -414,7 +429,8 @@
             markHospitalInvalid(input, '정식 명칭을 자동완성에서 선택하세요.');
             return;
         }
-        markHospitalInvalid(input, '마스터에 없는 병원입니다. 정확한 이름을 입력하거나 관리자에게 등록을 요청하세요.');
+        const facLabel = acKind === 'nursing' ? '요양원' : '병원';
+        markHospitalInvalid(input, `마스터에 없는 ${facLabel}입니다. 정확한 이름을 입력하거나 관리자에게 등록을 요청하세요.`);
     }
 
     function autoFillPatient(it) {
@@ -512,10 +528,11 @@
                 btn.disabled = false; return;
             }
         }
-        // 병원명 정식명 최종 강제 — 모병원·추천기관 두 칸 모두 검증.
-        // 자유 입력 후 blur 없이 바로 submit한 케이스 대응.
+        // 병원·요양원 정식명 최종 강제 — 세 칸 모두 검증.
+        // 자유 입력 후 blur 없이 바로 submit한 케이스 대응. 요양원은 마스터 비어 있으면 통과.
         const HOSP_FIELD_LABELS = {
             'consultation.current_location_name': '모병원',
+            'consultation.current_nursing_name': '요양원',
             'consultation.referrer_institution': '추천 기관',
         };
         for (const [nm, label] of Object.entries(HOSP_FIELD_LABELS)) {
@@ -615,7 +632,32 @@
             }
         }
         if (matched === 0) return null;
-        return { label: days <= matched ? '회복기' : '비회복기', days, period: matched };
+        return {
+            label: days <= matched ? '회복기' : '비회복기',
+            days,
+            period: matched,
+            daysLeft: matched - days,
+            dueDate: formatDate(addDays(od, matched)),
+        };
+    }
+
+    function addDays(date, days) {
+        const d = new Date(date.getTime());
+        d.setDate(d.getDate() + days);
+        return d;
+    }
+
+    function formatDate(date) {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }
+
+    function formatRecoveryDday(result) {
+        if (!result) return '';
+        if (result.daysLeft >= 0) return `D-${result.daysLeft} 남음`;
+        return `D+${Math.abs(result.daysLeft)} 초과`;
     }
 
     // 하이브리드 발병일: 날짜 선택기(onset-date) ↔ 자유 텍스트(onset-text, "정확한 날짜 모름"),
@@ -700,8 +742,10 @@
         const autoVal = result.label + '재활 및 간호간병 통합서비스';
         // 회복기 → 회복기(S005), 비회복기 → 비회복기(S006)
         const recCode = result.label === '회복기' ? '회복기(S005)' : '비회복기(S006)';
-        setHint(`※ 자동 판정: ${recCode}`, result.label === '회복기' ? 'rh-yes' : 'rh-no');
-        setMeta(`발병 후 ${result.days}일 / 인정 기간 ${result.period}일 (입원시점 기준)`);
+        const dday = formatRecoveryDday(result);
+        setHint(`※ 자동 판정: ${recCode} · ${dday} · 기준일 ${result.dueDate}까지`,
+            result.label === '회복기' ? 'rh-yes' : 'rh-no');
+        setMeta(`입원시기 기준일 ${result.dueDate}까지 · ${dday} / 발병·수술 후 ${result.days}일 경과 / 인정 기간 ${result.period}일`);
         // 사용자가 별도 메모를 적은 게 아니면 자동 입력값으로 채움
         const cur = purposeEl.value.trim();
         if (cur === '' || cur === lastAutoValue || AUTO_VALUES.has(cur)) {

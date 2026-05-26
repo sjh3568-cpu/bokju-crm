@@ -1285,6 +1285,9 @@ def api_consult_create():
     cfields.setdefault("consult_date", datetime.now().strftime("%Y-%m-%d"))
     cfields.setdefault("counselor", g.user.get("display_name"))
     cid = models.create_consultation(patient_id=pid, **cfields)
+    # 자동완성 ranking — 신규 등록 시 사용한 마스터 row의 use_count + 1.
+    # update 시엔 안 함 (재저장으로 인플레이션 방지).
+    _bump_master_use_counts(cfields)
     if cfields.get("admission_status"):
         _sync_lifecycle_stage(pid, cfields["admission_status"])
     else:
@@ -1975,8 +1978,18 @@ def api_sms_send():
 def api_ac_hospital():
     q = (request.args.get("q") or "").strip()
     if len(q) < 1:
-        return jsonify({"items": []})
-    return jsonify({"items": models.autocomplete_hospitals(q, limit=10)})
+        return jsonify({"items": [], "master_size": 0})
+    # autocomplete_hospitals는 {items, master_size} 반환
+    return jsonify(models.autocomplete_hospitals(q, limit=50))
+
+
+@app.route("/api/autocomplete/nursing")
+@login_required
+def api_ac_nursing():
+    q = (request.args.get("q") or "").strip()
+    if len(q) < 1:
+        return jsonify({"items": [], "master_size": 0})
+    return jsonify(models.autocomplete_nursing_homes(q, limit=50))
 
 
 @app.route("/api/autocomplete/diagnosis")
@@ -2180,7 +2193,7 @@ def _consult_fields_from_payload(c: dict) -> dict:
         out["current_location_name"] = models.canonical_hospital_name(out["current_location_name"])
         out["source_hospital"] = out["current_location_name"]
     elif loc_type == "입소중" and out.get("current_nursing_name"):
-        out["current_nursing_name"] = models.canonical_hospital_name(out["current_nursing_name"])
+        out["current_nursing_name"] = models.canonical_nursing_name(out["current_nursing_name"])
         out["source_hospital"] = out["current_nursing_name"]
     # 추천 기관도 모병원과 동일하게 별칭→공식명 정규화 (마스터 미일치 자유 텍스트는
     # 클라이언트에서 차단되지만 서버에서도 보수적으로 정규화).
@@ -2203,6 +2216,17 @@ def _consult_fields_from_payload(c: dict) -> dict:
                 out["referral_source_type"] = [group_name]
                 break
     return out
+
+
+def _bump_master_use_counts(fields):
+    """신규 상담 등록 후 사용된 마스터의 use_count + 1. 자동완성 ranking용."""
+    loc_type = (fields.get("current_location_type") or "")
+    if loc_type == "입원중" and fields.get("current_location_name"):
+        models.bump_facility_use_count(fields["current_location_name"], table="source_hospitals")
+    elif loc_type == "입소중" and fields.get("current_nursing_name"):
+        models.bump_facility_use_count(fields["current_nursing_name"], table="source_nursing_homes")
+    if fields.get("referrer_institution"):
+        models.bump_facility_use_count(fields["referrer_institution"], table="source_hospitals")
 
 
 def _validate_consult_payload(payload, *, require_patient):

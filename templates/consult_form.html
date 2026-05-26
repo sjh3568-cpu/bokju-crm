@@ -911,10 +911,12 @@
             </div>
             {% endif %}
         </div>
-        <div class="field grow">
+        <div class="field grow" style="position:relative">
             <label>요양원 <span class="muted" style="font-size:0.78em">(입소중일 때 모병원 통계 반영)</span></label>
             <input type="text" class="boxed-input" name="consultation.current_nursing_name"
+                   data-ac="nursing" autocomplete="off"
                    value="{{ consultation.current_nursing_name if is_edit and consultation.current_nursing_name else '' }}">
+            <div class="ac-list" hidden></div>
         </div>
     </div>
 
@@ -1595,5 +1597,5 @@
 {% block scripts %}
 <script>window.SIGUNGU_INDEX = {{ SIGUNGU_INDEX|tojson }};</script>
 <script src="/static/js/common.js"></script>
-<script src="/static/js/form.js"></script>
+<script src="/static/js/form.js?v=recovery-duedate-20260526"></script>
 {% endblock %}
