@@ -586,11 +586,17 @@ def _dashboard_days_since(value):
 
 def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge_due,
                             planned_missing_date=None):
+    """대시보드 액션큐 — 처리 필요 카드 목록.
+    age_days 기준으로 ① '오늘 처리 필요'(0~7일)와 ② '오래 방치'(8일+)로 분리한다.
+    "오늘 처리 필요" 섹션 라벨과 묵은 카드(20일+ 등)의 모순을 해소.
+    """
     today = datetime.now().strftime("%Y-%m-%d")
     items = []
     planned_missing_date = planned_missing_date or []
 
-    def add(kind, tone, title, detail="", meta="", href=None, sort=50):
+    STALE_THRESHOLD = 8  # 일. 이 이상 방치된 건은 '오래 방치' 섹션으로 분리.
+
+    def add(kind, tone, title, detail="", meta="", href=None, sort=50, age_days=0):
         items.append({
             "kind": kind,
             "tone": tone,
@@ -599,6 +605,8 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
             "meta": meta,
             "href": href,
             "sort": sort,
+            "age_days": age_days or 0,
+            "is_stale": (age_days or 0) >= STALE_THRESHOLD,
         })
 
     for m in open_comms:
@@ -614,12 +622,13 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
             _dashboard_elapsed_label(occurred),
             "/#inbound",
             0 if tone == "danger" else 15 if tone == "warn" else 45,
+            age_days=int(hours // 24),
         )
 
     for r in callbacks:
-        days = _dashboard_days_since(r.get("consult_date"))
-        tone = "danger" if days is not None and days >= 2 else "warn"
-        meta = f"{days}일 대기" if days and days > 0 else "오늘 재연락"
+        days = _dashboard_days_since(r.get("consult_date")) or 0
+        tone = "danger" if days >= 2 else "warn"
+        meta = f"{days}일 대기" if days > 0 else "오늘 재연락"
         add(
             "재연락",
             tone,
@@ -632,6 +641,7 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
             meta,
             f"/consult/{r.get('id')}" if r.get("id") else "/#inbound",
             8 if tone == "danger" else 25,
+            age_days=days,
         )
 
     for r in data.get("admission_by_status", {}).get("planned", []):
@@ -655,6 +665,7 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
                 "오늘 입원 예정",
                 f"/consult/{r.get('id')}" if r.get("id") else None,
                 2,
+                age_days=0,
             )
 
     for r in data.get("today", []):
@@ -667,10 +678,13 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
                 r.get("consult_time") or "시간 미지정",
                 f"/consult/{r.get('id')}" if r.get("id") else None,
                 28,
+                age_days=0,
             )
 
     for d in recovery_due[:6]:
         left = d["watch"].get("billing_left")
+        # left가 음수면 만료 후 경과일수 → 방치 판단 기준
+        age = -left if (left is not None and left < 0) else 0
         add(
             "전환체크",
             "danger" if left is not None and left <= 0 else "warn",
@@ -679,10 +693,12 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
             f"{abs(left)}일 초과" if left is not None and left < 0 else f"D-{left}",
             f"/consult/{d['con'].get('id')}" if d["con"].get("id") else None,
             6 if left is not None and left <= 0 else 22,
+            age_days=age,
         )
 
     for d in discharge_due[:6]:
         left = d["watch"].get("days_left")
+        age = -left if (left is not None and left < 0) else 0
         add(
             "퇴원예정",
             "danger" if left is not None and left <= 0 else "warn",
@@ -691,42 +707,55 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
             f"{abs(left)}일 초과" if left is not None and left < 0 else f"D-{left}",
             f"/consult/{d['con'].get('id')}" if d["con"].get("id") else None,
             10 if left is not None and left <= 0 else 30,
+            age_days=age,
         )
 
     for h in data.get("holds", [])[:8]:
-        days = _dashboard_days_since(h.get("updated_at") or h.get("consult_date"))
+        days = _dashboard_days_since(h.get("updated_at") or h.get("consult_date")) or 0
         add(
             h.get("hold_kind") or "보류",
             "danger" if h.get("hold_kind") == "입원보류" else "warn",
             h.get("patient_name") or "환자 미지정",
             h.get("hold_reason_text") or "보류 사유 확인 필요",
-            f"{days}일 경과" if days and days > 0 else "보류",
+            f"{days}일 경과" if days > 0 else "보류",
             f"/consult/{h.get('id')}" if h.get("id") else None,
             35,
+            age_days=days,
         )
 
     # 입원예정 상태인데 planned_admission_date가 비어 있는 상담 — 날짜 지정 필요.
     # 오래 방치될수록 우선순위 상승 (consult_date 기준 경과일).
     for r in planned_missing_date[:8]:
-        days = _dashboard_days_since(r.get("consult_date"))
-        meta = f"{days}일 경과" if days and days > 0 else "오늘 등록"
+        days = _dashboard_days_since(r.get("consult_date")) or 0
+        meta = f"{days}일 경과" if days > 0 else "오늘 등록"
         add(
             "입원예정",
-            "danger" if days is not None and days >= 3 else "warn",
+            "danger" if days >= 3 else "warn",
             r.get("patient_name") or "환자 미지정",
             "입원예정일 미지정 — 상단 '입원예정 (월/일)' 칸을 채워주세요",
             meta,
             f"/consult/{r.get('id')}/edit" if r.get("id") else None,
-            12 if days is not None and days >= 3 else 32,
+            12 if days >= 3 else 32,
+            age_days=days,
         )
 
     tone_rank = {"danger": 0, "warn": 1, "info": 2}
     items.sort(key=lambda x: (tone_rank.get(x["tone"], 9), x["sort"], x["title"]))
+
+    today_items = [x for x in items if not x["is_stale"]]
+    stale_items = sorted(
+        [x for x in items if x["is_stale"]],
+        key=lambda x: (-x["age_days"], tone_rank.get(x["tone"], 9), x["title"]),
+    )
     return {
-        "items": items[:14],
+        "items": today_items[:14],
+        "stale_items": stale_items[:30],
+        "today_total": len(today_items),
+        "stale_total": len(stale_items),
         "total": len(items),
-        "danger": sum(1 for x in items if x["tone"] == "danger"),
-        "warn": sum(1 for x in items if x["tone"] == "warn"),
+        "danger": sum(1 for x in today_items if x["tone"] == "danger"),
+        "warn": sum(1 for x in today_items if x["tone"] == "warn"),
+        "stale_danger": sum(1 for x in stale_items if x["tone"] == "danger"),
     }
 
 
@@ -907,8 +936,10 @@ def dashboard():
     data["summary"]["callbacks"] = len(callbacks)
     data["summary"]["recovery_transition_due"] = len(recovery_transition_due)
     data["summary"]["discharge_pending"] = len(discharge_due)
-    data["summary"]["action_total"] = action_queue["total"]
+    # KPI 카운터 — "처리 필요"는 오늘 큐 기준 (8일+ stale은 별도 표시).
+    data["summary"]["action_total"] = action_queue["today_total"]
     data["summary"]["action_danger"] = action_queue["danger"]
+    data["summary"]["action_stale"] = action_queue["stale_total"]
     return render_template("dashboard.html", **data)
 
 
