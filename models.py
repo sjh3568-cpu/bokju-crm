@@ -406,6 +406,11 @@ def init_db():
         # 복주요양원 안내". 안내 시설을 다중 체크박스로 기록 → 수요 캡처율 KPI 산출.
         "external_referral": "TEXT",      # JSON 배열 (경도요양병원/복주요양원/타 요양병원/타 요양원/기타)
         "external_referral_note": "TEXT", # 연계 자유 메모
+        # ── 대시보드 follow-up 추적 (2026-05-26) ──
+        # 회복기→비회복기 전환 D-15 알림에 대한 보호자 전화 완료 시각.
+        "recovery_call_at": "DATETIME",
+        # 퇴원예정 D-30 환자의 1차 병동 면담 완료 시각.
+        "discharge_interview_at": "DATETIME",
     })
     _ensure_columns(conn, "source_hospitals", {
         "kind": "TEXT",           # 종별: 상급종합/종합병원/병원/요양병원 등

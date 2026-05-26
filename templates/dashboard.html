@@ -16,6 +16,7 @@
                 <th>상담사</th>
                 <th>주치의</th>
                 <th>기타</th>
+                <th>입원 처리</th>
             </tr>
         </thead>
         <tbody>
@@ -48,6 +49,18 @@
                 <td class="nowrap">{{ r.counselor or '-' }}</td>
                 <td class="nowrap">{{ r.attending_doctor or '-' }}</td>
                 <td class="dash-note" title="{{ r.other_note }}">{{ r.other_note or '-' }}</td>
+                <td class="nowrap dash-action-cell">
+                    {% if r.admission_bucket == 'planned' %}
+                    <button type="button" class="btn btn-primary btn-xs adm-status-btn"
+                            data-cid="{{ r.id }}" data-status="입원완료" title="입원완료로 변경">완료</button>
+                    <button type="button" class="btn btn-secondary btn-xs adm-status-btn"
+                            data-cid="{{ r.id }}" data-status="입원취소" title="입원취소로 변경 (사유 입력)">취소</button>
+                    <button type="button" class="btn btn-secondary btn-xs adm-status-btn"
+                            data-cid="{{ r.id }}" data-status="입원보류" title="입원보류로 변경 (사유 입력)">보류</button>
+                    {% else %}
+                    <span class="muted-sm">-</span>
+                    {% endif %}
+                </td>
             </tr>
             {% endfor %}
         </tbody>
@@ -126,16 +139,27 @@
 {% macro discharge_table(rows) %}
 <div class="tbl-wrap">
     <table class="tbl dash-table">
-        <thead><tr><th>D-day</th><th>환자</th><th>병명</th><th>병동</th><th>주치의</th><th>퇴원예정</th><th>액션</th></tr></thead>
+        <thead><tr><th>D-day</th><th>환자</th><th>병명</th><th>병동</th><th>주치의</th><th>퇴원예정</th><th>병동 면담</th><th>액션</th></tr></thead>
         <tbody>
             {% for d in rows %}
-            <tr>
+            {% set interviewed = d.con.discharge_interview_at %}
+            <tr{% if interviewed %} class="follow-up-done"{% endif %}>
                 <td class="nowrap">{% if d.watch.days_left < 0 %}<span class="danger-text">{{ -d.watch.days_left }}일 초과</span>{% else %}D-{{ d.watch.days_left }}{% endif %}</td>
                 <td class="nowrap">{% if d.con.blacklist %}<span class="bl-mark" title="블랙리스트">⚠</span> {% endif %}<a href="/consult/{{ d.con.id }}">{{ d.con.patient_name }}</a></td>
                 <td class="dash-dx" title="{{ d.con.disease_summary }}">{{ d.con.disease_summary or '-' }}</td>
                 <td class="nowrap">{{ d.con.ward or '-' }}</td>
                 <td class="nowrap">{{ d.con.attending_doctor or '-' }}</td>
                 <td class="nowrap">{{ d.watch.due_date|krdate_wd }}</td>
+                <td class="nowrap dash-action-cell">
+                    {% if interviewed %}
+                    <span class="follow-up-stamp" title="{{ interviewed }}">✓ {{ interviewed[5:16] }}</span>
+                    <button type="button" class="btn btn-secondary btn-xs discharge-interview-toggle"
+                            data-cid="{{ d.con.id }}" data-state="done" title="면담 완료 해제">취소</button>
+                    {% else %}
+                    <button type="button" class="btn btn-primary btn-xs discharge-interview-toggle"
+                            data-cid="{{ d.con.id }}" data-state="pending">✓ 면담완료</button>
+                    {% endif %}
+                </td>
                 <td class="nowrap dash-action-cell">
                     <a class="btn btn-secondary btn-xs" href="/sms?cid={{ d.con.id }}">문자</a>
                     <a class="btn btn-secondary btn-xs" href="/consult/{{ d.con.id }}">상담</a>
@@ -424,14 +448,25 @@
         {% if recovery_transition_due %}
         <div class="tbl-wrap">
             <table class="tbl dash-table">
-                <thead><tr><th>D-day</th><th>환자</th><th>만료일</th><th>주치의</th></tr></thead>
+                <thead><tr><th>D-day</th><th>환자</th><th>만료일</th><th>주치의</th><th>보호자 연락</th></tr></thead>
                 <tbody>
                     {% for d in recovery_transition_due[:10] %}
-                    <tr>
+                    {% set called = d.con.recovery_call_at %}
+                    <tr{% if called %} class="follow-up-done"{% endif %}>
                         <td class="nowrap">{% if d.watch.billing_left < 0 %}<span class="danger-text">{{ -d.watch.billing_left }}일 초과</span>{% else %}D-{{ d.watch.billing_left }}{% endif %}</td>
                         <td class="nowrap"><a href="/consult/{{ d.con.id }}">{{ d.con.patient_name }}</a></td>
                         <td class="nowrap">{{ d.watch.billing_date|krdate_wd }}</td>
                         <td class="nowrap">{{ d.con.attending_doctor or '-' }}</td>
+                        <td class="nowrap dash-action-cell">
+                            {% if called %}
+                            <span class="follow-up-stamp" title="{{ called }}">✓ {{ called[5:16] }}</span>
+                            <button type="button" class="btn btn-secondary btn-xs recovery-call-toggle"
+                                    data-cid="{{ d.con.id }}" data-state="done" title="연락 완료 해제">취소</button>
+                            {% else %}
+                            <button type="button" class="btn btn-primary btn-xs recovery-call-toggle"
+                                    data-cid="{{ d.con.id }}" data-state="pending">✓ 연락완료</button>
+                            {% endif %}
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -502,26 +537,57 @@
     </div>
 
     <div class="card" id="holds">
-        <h3>상담보류 · 입원보류</h3>
-        {% if holds %}
-        <div class="tbl-wrap">
-            <table class="tbl dash-table">
-                <thead><tr><th>구분</th><th>환자</th><th>사유</th><th>상담사</th></tr></thead>
-                <tbody>
-                    {% for h in holds[:10] %}
-                    <tr>
-                        <td class="nowrap"><span class="badge {% if h.hold_kind == '입원보류' %}hold-admission{% else %}hold-consult{% endif %}">{{ h.hold_kind }}</span></td>
-                        <td class="nowrap"><a href="/consult/{{ h.id }}">{{ h.patient_name }}</a></td>
-                        <td class="dash-note" title="{{ h.hold_reason_text }}">{{ h.hold_reason_text or '-' }}</td>
-                        <td class="nowrap">{{ h.counselor or '-' }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        <h3>보류 환자</h3>
+        {% set consult_holds = holds|selectattr('hold_kind','equalto','상담보류')|list %}
+        {% set admission_holds = holds|selectattr('hold_kind','equalto','입원보류')|list %}
+        <div class="dash-subsection">
+            <div class="dash-subhead">
+                <strong><span class="badge hold-consult">상담보류</span></strong>
+                <span>{{ consult_holds|length }}건</span>
+            </div>
+            {% if consult_holds %}
+            <div class="tbl-wrap">
+                <table class="tbl dash-table">
+                    <thead><tr><th>환자</th><th>사유</th><th>상담사</th></tr></thead>
+                    <tbody>
+                        {% for h in consult_holds[:10] %}
+                        <tr>
+                            <td class="nowrap"><a href="/consult/{{ h.id }}">{{ h.patient_name }}</a></td>
+                            <td class="dash-note" title="{{ h.hold_reason_text }}">{{ h.hold_reason_text or '-' }}</td>
+                            <td class="nowrap">{{ h.counselor or '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty">상담보류 건이 없습니다.</div>
+            {% endif %}
         </div>
-        {% else %}
-        <div class="empty">보류 건이 없습니다.</div>
-        {% endif %}
+        <div class="dash-subsection">
+            <div class="dash-subhead">
+                <strong><span class="badge hold-admission">입원보류</span></strong>
+                <span>{{ admission_holds|length }}건</span>
+            </div>
+            {% if admission_holds %}
+            <div class="tbl-wrap">
+                <table class="tbl dash-table">
+                    <thead><tr><th>환자</th><th>사유</th><th>상담사</th></tr></thead>
+                    <tbody>
+                        {% for h in admission_holds[:10] %}
+                        <tr>
+                            <td class="nowrap"><a href="/consult/{{ h.id }}">{{ h.patient_name }}</a></td>
+                            <td class="dash-note" title="{{ h.hold_reason_text }}">{{ h.hold_reason_text or '-' }}</td>
+                            <td class="nowrap">{{ h.counselor or '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty">입원보류 건이 없습니다.</div>
+            {% endif %}
+        </div>
     </div>
 </div>
 
@@ -832,6 +898,72 @@ document.querySelectorAll('.ib-callback-done').forEach(btn => {
             });
             if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
             const tr = btn.closest('tr'); if (tr) tr.remove();
+        } catch (e) {
+            alert('처리 실패: ' + e.message);
+            btn.disabled = false;
+        }
+    });
+});
+
+// 회복기→비회복기 전환 — 보호자 연락 완료 토글
+document.querySelectorAll('.recovery-call-toggle').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try {
+            const r = await fetch(`/api/consult/${btn.dataset.cid}/recovery-call`, { method: 'POST' });
+            if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+            location.reload();
+        } catch (e) {
+            alert('처리 실패: ' + e.message);
+            btn.disabled = false;
+        }
+    });
+});
+
+// 퇴원예정 — 1차 병동 면담 완료 토글
+document.querySelectorAll('.discharge-interview-toggle').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try {
+            const r = await fetch(`/api/consult/${btn.dataset.cid}/discharge-interview`, { method: 'POST' });
+            if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+            location.reload();
+        } catch (e) {
+            alert('처리 실패: ' + e.message);
+            btn.disabled = false;
+        }
+    });
+});
+
+// 입원예정 → 입원완료/입원취소/입원보류 변경 (당일 처리 케이스)
+document.querySelectorAll('.adm-status-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        const status = btn.dataset.status;
+        const cid = btn.dataset.cid;
+        const body = { admission_status: status };
+        // 입원완료는 오늘을 admission_date로 자동 기록 (당일 처리 케이스)
+        if (status === '입원완료') {
+            const today = new Date().toISOString().slice(0, 10);
+            body.admission_date = today;
+            if (!confirm(`오늘(${today}) 입원완료로 처리할까요?`)) return;
+        } else if (status === '입원취소') {
+            const reason = prompt('입원취소 사유를 입력하세요 (필수)', '');
+            if (!reason || !reason.trim()) return;
+            body.rejection_reason_detail = reason.trim();
+        } else if (status === '입원보류') {
+            const reason = prompt('입원보류 사유를 입력하세요 (필수)', '');
+            if (!reason || !reason.trim()) return;
+            body.hold_reason = reason.trim();
+        }
+        btn.disabled = true;
+        try {
+            const r = await fetch(`/api/consult/${cid}/status`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+            location.reload();
         } catch (e) {
             alert('처리 실패: ' + e.message);
             btn.disabled = false;

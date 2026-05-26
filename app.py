@@ -1484,6 +1484,38 @@ def api_consult_discharge(cid):
     return jsonify({"ok": True, **fields})
 
 
+# ──── 대시보드 follow-up 토글 (회복기 전환 보호자 연락 / 퇴원 1차 면담) ────
+
+def _toggle_follow_up(cid, field, audit_action):
+    """consultations[field](DATETIME)를 토글 — 비어있으면 현재 시각, 있으면 NULL."""
+    existing = models.get_consultation(cid)
+    if not existing:
+        return jsonify({"error": "not found"}), 404
+    cur = existing.get(field)
+    new_val = None if cur else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    models.update_consultation_meta(cid, **{field: new_val})
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action=audit_action, target_type="consultation", target_id=cid,
+        detail="set" if new_val else "unset", ip=request.remote_addr,
+    )
+    return jsonify({"ok": True, field: new_val})
+
+
+@app.route("/api/consult/<int:cid>/recovery-call", methods=["POST"])
+@login_required
+def api_consult_recovery_call(cid):
+    """회복기→비회복기 전환 D-15 환자의 보호자 전화 완료 마킹 토글."""
+    return _toggle_follow_up(cid, "recovery_call_at", "recovery_call")
+
+
+@app.route("/api/consult/<int:cid>/discharge-interview", methods=["POST"])
+@login_required
+def api_consult_discharge_interview(cid):
+    """퇴원예정 D-30 환자의 1차 병동 면담 완료 마킹 토글."""
+    return _toggle_follow_up(cid, "discharge_interview_at", "discharge_interview")
+
+
 @app.route("/api/consult/<int:cid>", methods=["DELETE"])
 @login_required
 def api_consult_delete(cid):

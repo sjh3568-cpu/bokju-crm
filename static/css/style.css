@@ -644,3 +644,18 @@ fieldset.opt-box legend { white-space: nowrap; }
     background: #fef2f2;
     box-shadow: 0 0 0 1px #dc2626 inset;
 }
+
+/* 대시보드 follow-up 완료 마킹 — 행 채도 낮추고 ✓ 스탬프 노출 */
+tr.follow-up-done {
+    background: #f0fdf4;
+    color: #6b7280;
+}
+tr.follow-up-done a { color: #6b7280; }
+tr.follow-up-done a:hover { color: #1f2937; }
+.follow-up-stamp {
+    display: inline-block;
+    color: #15803d;
+    font-size: 0.78em;
+    font-weight: 600;
+    margin-right: 6px;
+}
