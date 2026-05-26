@@ -128,9 +128,10 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
 - ❌ 외부 노출용 호스팅 (Vercel, Heroku, Render 등)
 - ❌ 환자 식별정보(이름/주민번호/연락처)를 로그·텔레메트리에 평문 출력
 - ❌ 양식에 없는 임의 필드 추가 — 양식·엑셀 마스터에 매칭되는 항목만
-- ❌ 모병원(`current_location_name` / `source_hospital`)에 마스터에 없는 자유 텍스트 저장 금지.
-  통계 분산을 막기 위해 항상 `source_hospitals` 마스터의 정식명만 사용. 폼은 blur/submit 시점에
-  마스터 매칭이 안 되면 차단(`.hosp-invalid`), 신규 병원은 admin이 마스터에 추가 후 입력.
+- ❌ 모병원(`current_location_name` / `source_hospital`)·추천기관(`referrer_institution`)에
+  마스터에 없는 자유 텍스트 저장 금지. 통계 분산을 막기 위해 항상 `source_hospitals`
+  마스터의 정식명만 사용. 폼은 blur/submit 시점에 마스터 매칭이 안 되면 차단
+  (`.hosp-invalid`), 신규 병원은 admin이 마스터에 추가 후 입력.
 - ❌ 모병원 주소를 환자 거주지로 자동 prefill 금지 — 둘이 다른 케이스가 많아 데이터 오염 위험.
   자동완성 메타(region·kind) 표시로만 식별을 돕고, 거주지는 보호자에게 직접 확인.
 - ❌ 양식에 없는 임의 워크플로 — 사용자 명시적 요청 외 추가 금지

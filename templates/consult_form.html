@@ -452,7 +452,7 @@
         '하지절단': ['하지 부위 절단'],
         '파킨슨': ['파킨슨(신규)'],
         '골유합지연_내고정전치환술': ['골유합 지연', '내고정술', '전치환술'],
-        '근골격계_다발': ['골반 골절', '골반-다발 부위'],
+        '근골격계_다발': ['다발부위', '다발부위-골반 골절'],
         // 모호한 카테고리(중추신경계·근골격계_단일·비사용증후군)는 폼 메모로만 표시
     };
     // 중추신경계 서브 체크박스 → 본 폼 병명 매핑 (사용자가 위저드에서 체크한 항목만)
@@ -465,7 +465,7 @@
     const DISEASE_HINT_LABEL = {
         '중추신경계': '중추신경계 (위저드 판정)',
         '근골격계_단일': '근골격계 단일부위 (위저드 판정 — 본 폼에서 고관절/대퇴부/골반 등 세부 선택)',
-        '근골격계_다발': '근골격계 다발부위 (위저드 판정 — 본 폼에서 골반 다발 등 세부 확인)',
+        '근골격계_다발': '근골격계 다발부위 (위저드 판정 — 본 폼에서 고관절/대퇴부/골반 등 세부 확인)',
         '비사용증후군': '비사용증후군 (위저드 판정 — 본 폼에서 호흡/심장/신생물 등 세부 선택)',
         '골유합지연_내고정전치환술': '골유합지연 + 내고정술/전치환술 (위저드 판정)',
         '양측슬관절치환술': '양측슬관절치환술 (위저드 판정)',
@@ -736,8 +736,18 @@
         </div>
         <div class="field">
             <label>나이</label>
-            <input type="number" name="consultation.patient_age" min="0" max="120"
+            <input type="number" name="consultation.patient_age" id="patient-age" min="0" max="120"
                    value="{{ consultation.patient_age if is_edit and consultation.patient_age is not none else '' }}">
+            <div class="age-helper">
+                <select id="age-input-mode" title="보호자가 말한 나이 형식">
+                    <option value="age">나이</option>
+                    <option value="full_age">만 나이</option>
+                    <option value="birth_year">출생년도</option>
+                </select>
+                <input type="text" id="age-raw-input" inputmode="numeric"
+                       placeholder="예: 82 / 만 79 / 44년생">
+            </div>
+            <div class="age-hint" id="age-hint"></div>
         </div>
         <div class="field">
             <label>성별</label>
@@ -843,8 +853,12 @@
                 <div class="referrer-row">
                     <input type="text" name="consultation.referrer_person" placeholder="추천인"
                            value="{{ consultation.referrer_person if is_edit and consultation.referrer_person else ((prefill.referrer_person if prefill else '') or '') }}">
-                    <input type="text" name="consultation.referrer_institution" placeholder="추천 기관"
-                           value="{{ consultation.referrer_institution if is_edit and consultation.referrer_institution else ((prefill.referrer_institution if prefill else '') or '') }}">
+                    <div class="ac-wrap" style="position:relative; flex:1">
+                        <input type="text" class="boxed-input" name="consultation.referrer_institution"
+                               data-ac="hospital" autocomplete="off" placeholder="추천 기관 (병원명 검색)"
+                               value="{{ consultation.referrer_institution if is_edit and consultation.referrer_institution else ((prefill.referrer_institution if prefill else '') or '') }}">
+                        <div class="ac-list" hidden></div>
+                    </div>
                 </div>
                 {% elif group_name == '기타' %}
                 <div class="referrer-row">
@@ -1060,6 +1074,28 @@
                     <span class="dx-item{% if it.shape == 'round' %} dx-round{% endif %}">
                         <label><input type="checkbox" name="consultation.diseases[]" value="{{ it.value }}"
                                       {% if it.value in diseases_set %}checked{% endif %}> {{ it.label or it.value }}</label>
+                        {% if it.help_title and it.help_items %}
+                        <details class="dx-help">
+                            <summary>{{ it.help_title }}</summary>
+                            <div class="dx-help-panel">
+                                <ul>
+                                    {% for help in it.help_items %}
+                                    {% if help is string %}
+                                    <li>{{ help }}</li>
+                                    {% else %}
+                                    <li>{{ help.text }}
+                                        <ul class="dx-help-subitems">
+                                            {% for subitem in help.subitems %}
+                                            <li>{{ subitem }}</li>
+                                            {% endfor %}
+                                        </ul>
+                                    </li>
+                                    {% endif %}
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        </details>
+                        {% endif %}
                     </span>
                     {% elif it.kind == 'checkbox+radio' %}
                     <span class="dx-item">
@@ -1463,6 +1499,60 @@
 .rec-guide-notes { margin: 4px 0 2px; padding-left: 18px; line-height: 1.65;
     color: #64748b; }
 .rec-guide-notes b { color: #0f172a; }
+.dx-help {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    margin-left: 4px;
+}
+.dx-help summary {
+    list-style: none;
+    cursor: pointer;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #f8fafc;
+    color: #475569;
+    font-size: 0.72em;
+    font-weight: 700;
+    line-height: 1.2;
+    padding: 2px 7px;
+    user-select: none;
+}
+.dx-help summary::-webkit-details-marker { display: none; }
+.dx-help[open] summary {
+    border-color: #2563eb;
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+.dx-help-panel {
+    position: absolute;
+    left: 0;
+    top: calc(100% + 6px);
+    z-index: 20;
+    width: min(560px, calc(100vw - 48px));
+    max-height: 420px;
+    overflow-y: auto;
+    padding: 10px 12px;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+    color: #334155;
+    white-space: normal;
+}
+.dx-help-panel ul {
+    margin: 0;
+    padding-left: 18px;
+    line-height: 1.55;
+}
+.dx-help-panel li + li { margin-top: 4px; }
+.dx-help-subitems {
+    margin-top: 4px !important;
+    padding-left: 14px !important;
+    color: #475569;
+    font-size: 0.96em;
+}
+.dx-help-subitems li + li { margin-top: 2px; }
 /* 병명 그룹 자동 추론 배지 */
 .dx-grp-badges { display: inline-flex; gap: 4px; vertical-align: middle; }
 .dx-grp-badge { padding: 1px 8px; border-radius: 9px; font-size: 0.7em;
@@ -1475,6 +1565,31 @@
     border-radius: 12px; background: #f8fafc; font-size: 0.78em;
     cursor: pointer; font-family: inherit; color: #334155; }
 .hosp-quick-btn:hover { background: #e0e7ff; border-color: #818cf8; }
+.age-helper {
+    display: grid;
+    grid-template-columns: minmax(82px, 0.7fr) minmax(110px, 1fr);
+    gap: 4px;
+    margin-top: 5px;
+}
+.age-helper select,
+.age-helper input {
+    width: 100%;
+    min-width: 0;
+    padding: 5px 7px;
+    border: 1px solid #dbe3ee;
+    border-radius: 6px;
+    background: #fff;
+    font-size: 0.82em;
+    font-family: inherit;
+}
+.age-hint {
+    min-height: 16px;
+    margin-top: 3px;
+    color: #64748b;
+    font-size: 0.76em;
+    line-height: 1.35;
+}
+.age-hint.warn { color: #b45309; }
 </style>
 {% endblock %}
 {% block scripts %}

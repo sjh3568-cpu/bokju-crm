@@ -79,17 +79,99 @@
         });
     }
 
+    // 나이 보조 입력 — 보호자가 "44년생", "만 79세"처럼 말해도 저장용 나이로 환산
+    const ageInput = form.querySelector('#patient-age');
+    const ageMode = form.querySelector('#age-input-mode');
+    const ageRawInput = form.querySelector('#age-raw-input');
+    const ageHint = form.querySelector('#age-hint');
+    const consultDateInput = form.querySelector('#consult-date-real');
+    if (ageInput && ageMode && ageRawInput && ageHint) {
+        const currentYear = () => {
+            const raw = consultDateInput && consultDateInput.value ? consultDateInput.value.slice(0, 4) : '';
+            const y = Number(raw);
+            return y >= 1900 ? y : new Date().getFullYear();
+        };
+        const setAgeHint = (text, tone = '') => {
+            ageHint.textContent = text || '';
+            ageHint.className = 'age-hint' + (tone ? ' ' + tone : '');
+        };
+        const readAgeNumber = (value) => {
+            const match = String(value || '').match(/\d{1,4}/);
+            return match ? Number(match[0]) : null;
+        };
+        const normalizeBirthYear = (value, year) => {
+            const raw = String(value || '').trim();
+            const match = raw.match(/\d{1,4}/);
+            if (!match) return null;
+            const digits = match[0];
+            let birthYear = Number(digits);
+            if (digits.length <= 2) {
+                birthYear = 1900 + birthYear;
+            }
+            if (birthYear > year) return null;
+            return birthYear;
+        };
+        const applyAgeHelper = () => {
+            const mode = ageMode.value;
+            const raw = ageRawInput.value.trim();
+            if (!raw) {
+                setAgeHint('');
+                return;
+            }
+            const year = currentYear();
+            if (mode === 'birth_year') {
+                const birthYear = normalizeBirthYear(raw, year);
+                if (!birthYear) {
+                    setAgeHint('출생년도를 확인하세요. 예: 1944 또는 44', 'warn');
+                    return;
+                }
+                const age = year - birthYear;
+                if (age < 0 || age > 120) {
+                    setAgeHint('계산된 나이가 범위를 벗어났습니다.', 'warn');
+                    return;
+                }
+                ageInput.value = age;
+                const fullAgeMin = Math.max(age - 1, 0);
+                const yyHint = raw.match(/^\D*\d{1,2}\D*$/)
+                    ? ' 두 자리 연도는 1900년대로 계산합니다.'
+                    : '';
+                setAgeHint(`${birthYear}년생 → 저장 나이 ${age}세 (만 ${fullAgeMin}~${age}세 추정).${yyHint}`);
+                return;
+            }
+            const value = readAgeNumber(raw);
+            if (value === null || value < 0 || value > 120) {
+                setAgeHint('나이를 0~120 사이로 입력하세요.', 'warn');
+                return;
+            }
+            ageInput.value = value;
+            if (mode === 'full_age') {
+                setAgeHint(`만 ${value}세로 들음 → 저장 나이 ${value}세`);
+            } else {
+                setAgeHint(`${value}세로 저장`);
+            }
+        };
+        ageMode.addEventListener('change', applyAgeHelper);
+        ageRawInput.addEventListener('input', applyAgeHelper);
+        if (consultDateInput) consultDateInput.addEventListener('change', applyAgeHelper);
+    }
+
     // 자동완성: 환자명, 모병원, 질환
     document.querySelectorAll('input[data-ac]').forEach(setupAutocomplete);
 
-    // 모병원 정식명 강제 — blur 시 마스터 매칭. 자동완성 클릭으로 인한 blur는
-    // pickItem이 먼저 dataset.hospVerified를 세팅하므로 setTimeout으로 우선순위 보장.
-    const hospInputForEnforce = form.querySelector('[name="consultation.current_location_name"]');
-    if (hospInputForEnforce) {
-        hospInputForEnforce.addEventListener('blur', () => {
-            setTimeout(() => enforceHospitalOfficial(hospInputForEnforce), 150);
+    // 병원명 정식명 강제 — 모병원·추천기관 두 칸 모두 blur 시 마스터 매칭.
+    // 자동완성 클릭으로 인한 blur는 pickItem이 먼저 dataset.hospVerified를 세팅하므로
+    // setTimeout으로 우선순위 보장.
+    const HOSPITAL_NAME_INPUTS = [
+        'consultation.current_location_name',
+        'consultation.referrer_institution',
+    ];
+    HOSPITAL_NAME_INPUTS.forEach(nm => {
+        const inp = form.querySelector(`[name="${nm}"]`);
+        if (!inp) return;
+        inp.addEventListener('blur', () => {
+            setTimeout(() => enforceHospitalOfficial(inp), 150);
         });
-    }
+    });
 
     // 신규 상담 — 환자명 blur 시 동명이인 사전 경고 (수정 모드 / 기존 환자 선택 후엔 스킵)
     if (!isEdit) setupHomonymPreWarning();
@@ -222,7 +304,11 @@
 
     function setupAutocomplete(input) {
         const kind = input.dataset.ac; // patient | hospital | diagnosis
-        const list = document.getElementById('ac-' + kind);
+        // input의 부모 안에 .ac-list가 있으면 그걸 우선 사용 (한 페이지에 같은 kind가
+        // 여러 칸인 경우 — 모병원·추천기관 둘 다 hospital — dropdown 충돌 방지).
+        // 없으면 글로벌 #ac-{kind} fallback.
+        const list = input.parentElement.querySelector(':scope > .ac-list')
+                  || document.getElementById('ac-' + kind);
         if (!list) return;
         let timer = null;
         let activeIdx = -1;
@@ -426,13 +512,19 @@
                 btn.disabled = false; return;
             }
         }
-        // 모병원 정식명 최종 강제 — 자유 입력 후 blur 없이 바로 submit한 케이스 대응
-        const hospInputFinal = form.querySelector('[name="consultation.current_location_name"]');
-        if (hospInputFinal && hospInputFinal.value.trim()) {
-            await enforceHospitalOfficial(hospInputFinal);
-            if (hospInputFinal.classList.contains('hosp-invalid')) {
-                toast('모병원 칸이 마스터에 없습니다. 정식 명칭을 자동완성에서 선택하세요.', 'error');
-                hospInputFinal.focus();
+        // 병원명 정식명 최종 강제 — 모병원·추천기관 두 칸 모두 검증.
+        // 자유 입력 후 blur 없이 바로 submit한 케이스 대응.
+        const HOSP_FIELD_LABELS = {
+            'consultation.current_location_name': '모병원',
+            'consultation.referrer_institution': '추천 기관',
+        };
+        for (const [nm, label] of Object.entries(HOSP_FIELD_LABELS)) {
+            const inp = form.querySelector(`[name="${nm}"]`);
+            if (!inp || !inp.value.trim()) continue;
+            await enforceHospitalOfficial(inp);
+            if (inp.classList.contains('hosp-invalid')) {
+                toast(`${label} 칸이 마스터에 없습니다. 정식 명칭을 자동완성에서 선택하세요.`, 'error');
+                inp.focus();
                 btn.disabled = false; return;
             }
         }

@@ -2182,6 +2182,10 @@ def _consult_fields_from_payload(c: dict) -> dict:
     elif loc_type == "입소중" and out.get("current_nursing_name"):
         out["current_nursing_name"] = models.canonical_hospital_name(out["current_nursing_name"])
         out["source_hospital"] = out["current_nursing_name"]
+    # 추천 기관도 모병원과 동일하게 별칭→공식명 정규화 (마스터 미일치 자유 텍스트는
+    # 클라이언트에서 차단되지만 서버에서도 보수적으로 정규화).
+    if out.get("referrer_institution"):
+        out["referrer_institution"] = models.canonical_hospital_name(out["referrer_institution"])
     # 입원경로(다중) — 선택된 항목들로부터 상위 그룹(온라인/소개/기타)을 중복없이 도출
     detail = out.get("referral_source_detail")
     if isinstance(detail, list) and detail:
