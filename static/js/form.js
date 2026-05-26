@@ -82,6 +82,15 @@
     // 자동완성: 환자명, 모병원, 질환
     document.querySelectorAll('input[data-ac]').forEach(setupAutocomplete);
 
+    // 모병원 정식명 강제 — blur 시 마스터 매칭. 자동완성 클릭으로 인한 blur는
+    // pickItem이 먼저 dataset.hospVerified를 세팅하므로 setTimeout으로 우선순위 보장.
+    const hospInputForEnforce = form.querySelector('[name="consultation.current_location_name"]');
+    if (hospInputForEnforce) {
+        hospInputForEnforce.addEventListener('blur', () => {
+            setTimeout(() => enforceHospitalOfficial(hospInputForEnforce), 150);
+        });
+    }
+
     // 신규 상담 — 환자명 blur 시 동명이인 사전 경고 (수정 모드 / 기존 환자 선택 후엔 스킵)
     if (!isEdit) setupHomonymPreWarning();
 
@@ -275,55 +284,51 @@
         function pickItem(it) {
             input.value = it.name;
             if (kind === 'patient') autoFillPatient(it);
-            else if (kind === 'hospital') maybePrefillResidence(it);
+            else if (kind === 'hospital') markHospitalOfficial(input, it.name);
             hide();
         }
     }
 
-    // 모병원 자동완성 선택 시 — 환자 거주지가 비어 있으면 주소에서 시도/시군구를 추정해 prefill.
-    // 보호자가 환자 거주지를 모를 때 임시 단서. 사용자가 확인 후 수정 가능. toast로 명시.
-    function maybePrefillResidence(it) {
-        if (!it || !it.address) return;
-        const sidoSel = form.querySelector('#patient-sido');
-        const sgInput = form.querySelector('#patient-sigungu');
-        if (!sidoSel || !sgInput) return;
-        // 둘 중 하나라도 이미 채워져 있으면 — 환자 정보 우선, 덮어쓰지 않음
-        if ((sidoSel.value || '').trim() || (sgInput.value || '').trim()) return;
-
-        const parsed = parseHospitalAddress(it.address);
-        if (!parsed.sido && !parsed.sigungu) return;
-
-        // 시도 매칭 — select option과 동일한지 확인 후 세팅
-        if (parsed.sido) {
-            const opt = Array.from(sidoSel.options).find(o => o.value === parsed.sido);
-            if (opt) sidoSel.value = parsed.sido;
-        }
-        if (parsed.sigungu) sgInput.value = parsed.sigungu;
-        // 시군구만 들어왔고 시도가 비었으면 SIGUNGU_INDEX 단일 매칭으로 시도 보강
-        if (!sidoSel.value && parsed.sigungu && window.SIGUNGU_INDEX) {
-            const cands = window.SIGUNGU_INDEX[parsed.sigungu];
-            if (cands && cands.length === 1) sidoSel.value = cands[0];
-        }
-        toast('모병원 주소 기준으로 거주지를 임시 채웠습니다 — 보호자에게 환자 거주지를 확인하세요.', 'info');
+    // 모병원 정식명 강제 — 자동완성에서 선택했거나, 마스터에 정확히 있는 이름만 허용.
+    // 자유 입력(타이핑) 후 blur·submit 시점에 마스터 검증, 매칭 없거나 모호하면 차단.
+    function markHospitalOfficial(input, name) {
+        input.classList.remove('hosp-invalid');
+        input.title = '';
+        input.dataset.hospVerified = name;
     }
-
-    // 한국 주소 첫 2토큰 분리. SIDO_LIST의 풀네임(서울특별시·경기도 등)과 일치하면 사용.
-    function parseHospitalAddress(addr) {
-        const tokens = String(addr || '').trim().split(/\s+/);
-        if (tokens.length < 2) return { sido: '', sigungu: '' };
-        const rawSido = tokens[0];
-        let rawSigungu = tokens[1];
-        // '경기도 성남시 분당구' → 시군구를 '성남시 분당구'로 묶어 보존 (시군구 콤보가 인식하는 표기)
-        if (tokens.length >= 3 && /시$/.test(rawSigungu) && /구$/.test(tokens[2])) {
-            rawSigungu = `${tokens[1]} ${tokens[2]}`;
+    function markHospitalInvalid(input, msg) {
+        input.classList.add('hosp-invalid');
+        input.title = msg;
+        delete input.dataset.hospVerified;
+    }
+    function clearHospitalMark(input) {
+        input.classList.remove('hosp-invalid');
+        input.title = '';
+        delete input.dataset.hospVerified;
+    }
+    async function enforceHospitalOfficial(input) {
+        const raw = (input.value || '').trim();
+        if (!raw) { clearHospitalMark(input); return; }
+        if (input.dataset.hospVerified === raw) return;
+        let items = [];
+        try {
+            const res = await api.get(`/api/autocomplete/hospital?q=${encodeURIComponent(raw)}`);
+            items = res.items || [];
+        } catch (e) { return; /* 네트워크 오류 시 차단 안 함 */ }
+        const exact = items.find(it => it.name === raw);
+        if (exact) { markHospitalOfficial(input, exact.name); return; }
+        if (items.length === 1) {
+            const official = items[0].name;
+            input.value = official;
+            markHospitalOfficial(input, official);
+            toast(`정식 명칭으로 자동 변환: ${raw} → ${official}`, 'info');
+            return;
         }
-        // SIDO_LIST 정식명칭 우선. 약칭(서울/경기/강원 등)이 들어오면 contains 매칭.
-        let sido = '';
-        if (window.SIDO_LIST) {
-            sido = window.SIDO_LIST.find(s => s === rawSido) || '';
-            if (!sido) sido = window.SIDO_LIST.find(s => s.startsWith(rawSido) || rawSido.startsWith(s.slice(0, 2))) || '';
+        if (items.length > 1) {
+            markHospitalInvalid(input, '정식 명칭을 자동완성에서 선택하세요.');
+            return;
         }
-        return { sido, sigungu: rawSigungu };
+        markHospitalInvalid(input, '마스터에 없는 병원입니다. 정확한 이름을 입력하거나 관리자에게 등록을 요청하세요.');
     }
 
     function autoFillPatient(it) {
@@ -418,6 +423,16 @@
             const rd = form.querySelector('input[name="consultation.rejection_reason_detail"]');
             if ((!rr || !rr.value.trim()) && (!rd || !rd.value.trim())) {
                 toast('입원취소 사유를 선택하거나 입력하세요.', 'error');
+                btn.disabled = false; return;
+            }
+        }
+        // 모병원 정식명 최종 강제 — 자유 입력 후 blur 없이 바로 submit한 케이스 대응
+        const hospInputFinal = form.querySelector('[name="consultation.current_location_name"]');
+        if (hospInputFinal && hospInputFinal.value.trim()) {
+            await enforceHospitalOfficial(hospInputFinal);
+            if (hospInputFinal.classList.contains('hosp-invalid')) {
+                toast('모병원 칸이 마스터에 없습니다. 정식 명칭을 자동완성에서 선택하세요.', 'error');
+                hospInputFinal.focus();
                 btn.disabled = false; return;
             }
         }

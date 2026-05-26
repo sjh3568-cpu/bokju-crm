@@ -637,3 +637,10 @@ fieldset.opt-box legend { white-space: nowrap; }
 }
 .dash-action-row.stale:hover { opacity: 1; }
 .dash-action-row.stale .dash-action-meta b { color: #b91c1c; }
+
+/* 모병원 정식명 마스터 미일치 — 빨강 테두리 + title hover로 사유 안내 */
+.boxed-input.hosp-invalid {
+    border-color: #dc2626;
+    background: #fef2f2;
+    box-shadow: 0 0 0 1px #dc2626 inset;
+}
