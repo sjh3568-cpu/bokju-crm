@@ -262,13 +262,68 @@
                     <span class="meta">${it.guardian_phone || ''} ${it.guardian_name ? '· ' + it.guardian_name : ''}</span>
                 </div>`;
             }
+            if (kind === 'hospital') {
+                // 같은 이름·약칭 후보 식별을 위해 region·kind를 함께 표시
+                const meta = [it.region, it.kind].filter(Boolean).join(' · ');
+                return `<div class="ac-item">
+                    <strong>${escHpw(it.name)}</strong>
+                    ${meta ? `<span class="meta">${escHpw(meta)}</span>` : ''}
+                </div>`;
+            }
             return `<div class="ac-item">${it.name}</div>`;
         }
         function pickItem(it) {
             input.value = it.name;
             if (kind === 'patient') autoFillPatient(it);
+            else if (kind === 'hospital') maybePrefillResidence(it);
             hide();
         }
+    }
+
+    // 모병원 자동완성 선택 시 — 환자 거주지가 비어 있으면 주소에서 시도/시군구를 추정해 prefill.
+    // 보호자가 환자 거주지를 모를 때 임시 단서. 사용자가 확인 후 수정 가능. toast로 명시.
+    function maybePrefillResidence(it) {
+        if (!it || !it.address) return;
+        const sidoSel = form.querySelector('#patient-sido');
+        const sgInput = form.querySelector('#patient-sigungu');
+        if (!sidoSel || !sgInput) return;
+        // 둘 중 하나라도 이미 채워져 있으면 — 환자 정보 우선, 덮어쓰지 않음
+        if ((sidoSel.value || '').trim() || (sgInput.value || '').trim()) return;
+
+        const parsed = parseHospitalAddress(it.address);
+        if (!parsed.sido && !parsed.sigungu) return;
+
+        // 시도 매칭 — select option과 동일한지 확인 후 세팅
+        if (parsed.sido) {
+            const opt = Array.from(sidoSel.options).find(o => o.value === parsed.sido);
+            if (opt) sidoSel.value = parsed.sido;
+        }
+        if (parsed.sigungu) sgInput.value = parsed.sigungu;
+        // 시군구만 들어왔고 시도가 비었으면 SIGUNGU_INDEX 단일 매칭으로 시도 보강
+        if (!sidoSel.value && parsed.sigungu && window.SIGUNGU_INDEX) {
+            const cands = window.SIGUNGU_INDEX[parsed.sigungu];
+            if (cands && cands.length === 1) sidoSel.value = cands[0];
+        }
+        toast('모병원 주소 기준으로 거주지를 임시 채웠습니다 — 보호자에게 환자 거주지를 확인하세요.', 'info');
+    }
+
+    // 한국 주소 첫 2토큰 분리. SIDO_LIST의 풀네임(서울특별시·경기도 등)과 일치하면 사용.
+    function parseHospitalAddress(addr) {
+        const tokens = String(addr || '').trim().split(/\s+/);
+        if (tokens.length < 2) return { sido: '', sigungu: '' };
+        const rawSido = tokens[0];
+        let rawSigungu = tokens[1];
+        // '경기도 성남시 분당구' → 시군구를 '성남시 분당구'로 묶어 보존 (시군구 콤보가 인식하는 표기)
+        if (tokens.length >= 3 && /시$/.test(rawSigungu) && /구$/.test(tokens[2])) {
+            rawSigungu = `${tokens[1]} ${tokens[2]}`;
+        }
+        // SIDO_LIST 정식명칭 우선. 약칭(서울/경기/강원 등)이 들어오면 contains 매칭.
+        let sido = '';
+        if (window.SIDO_LIST) {
+            sido = window.SIDO_LIST.find(s => s === rawSido) || '';
+            if (!sido) sido = window.SIDO_LIST.find(s => s.startsWith(rawSido) || rawSido.startsWith(s.slice(0, 2))) || '';
+        }
+        return { sido, sigungu: rawSigungu };
     }
 
     function autoFillPatient(it) {

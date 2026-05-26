@@ -1254,6 +1254,13 @@ def _hospital_match_score(query: str, row: dict) -> int | None:
         return 0
     if q_key in name_key or any(q_key in alias_key for alias_key in alias_keys):
         return 10
+    # 역방향 부분 매칭 — '경북대'(q_key='경북대') ↔ '경북대학교병원'(name_key='경북'.
+    # 접미사 제거로 name_key가 더 짧아져 정방향 in이 실패하는 약칭 케이스를 잡는다.
+    # name_key가 빈 문자열이면 모두 매칭되므로 제외.
+    if name_key and name_key in q_key:
+        return 20
+    if any(ak and ak in q_key for ak in alias_keys):
+        return 20
     # "아산강릉"처럼 핵심 단어 순서가 바뀐 경우: 모든 글자가 이름 안에 있으면 후보로 인정.
     if all(ch in name_key for ch in q_key):
         return 30
