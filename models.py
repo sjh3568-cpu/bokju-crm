@@ -1273,6 +1273,15 @@ def _hospital_match_score(query: str, row: dict) -> int | None:
     if q_raw in name_raw:
         return 5
 
+    # 룰 1b — 입력어 prefix 매칭. 사용자가 '경북대치'(4자)처럼 약칭+카테고리 식으로
+    # 짧게 합쳐 쳐도, 의미 있는 prefix(3자 이상)가 이름에 포함되면 후보로 노출.
+    # '경북대치' → prefix '경북대' → 경북대학교병원·경북대학교치과병원·칠곡경북대학교병원 모두 매칭.
+    if name_raw and len(q_raw) >= 4:
+        for L in range(len(q_raw) - 1, 2, -1):  # 길이 N-1부터 3까지
+            if q_raw[:L] in name_raw:
+                # score는 prefix가 짧을수록(=더 모호) 약해짐: 7 + (q_raw 길이 - L)
+                return 7 + (len(q_raw) - L)
+
     # 룰 2 — 별칭 부분 매칭
     aliases = HOSPITAL_ALIASES.get(name, [])
     for alias in aliases:
