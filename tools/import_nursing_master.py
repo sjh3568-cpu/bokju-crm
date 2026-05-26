@@ -27,6 +27,28 @@ if str(ROOT) not in sys.path:
 import models  # noqa: E402
 
 
+# 풀 시도명 → source_hospitals 표기와 동일한 짧은 명칭. region 일관성 보장.
+SIDO_SHORT = {
+    "서울특별시": "서울", "부산광역시": "부산", "대구광역시": "대구",
+    "인천광역시": "인천", "광주광역시": "광주", "대전광역시": "대전",
+    "울산광역시": "울산", "세종특별자치시": "세종시",
+    "경기도": "경기", "강원특별자치도": "강원", "강원도": "강원",
+    "충청북도": "충북", "충청남도": "충남",
+    "전라북도": "전북", "전북특별자치도": "전북",
+    "전라남도": "전남",
+    "경상북도": "경북", "경상남도": "경남",
+    "제주특별자치도": "제주",
+}
+
+
+def _normalize_sido(region: str) -> str:
+    """풀명·약명 모두 SOURCE_HOSPITAL_SEED와 동일한 짧은 표기로 정규화."""
+    if not region:
+        return ""
+    r = region.strip()
+    return SIDO_SHORT.get(r, r)  # 이미 짧은 명칭이면 그대로
+
+
 def _pick(row: dict, *keys: str) -> str:
     for key in keys:
         if key in row and row[key] not in (None, ""):
@@ -40,17 +62,25 @@ def _pick(row: dict, *keys: str) -> str:
 
 
 def _entry_from_row(row: dict) -> dict:
-    addr = _pick(row, "주소", "소재지주소", "소재지", "address")
+    addr = _pick(row, "주소", "소재지주소", "소재지", "기관별 상세주소", "address")
     region = _pick(row, "시도", "시도명", "지역", "sido")
+    # NHIS 양식: '시도 시군구 법정동명' 한 칸에 풀명. 첫 토큰을 region(시도 약명)으로 사용.
+    if not region:
+        fullname = _pick(row, "시도 시군구 법정동명")
+        if fullname:
+            region = fullname.split()[0] if fullname.split() else ""
     if not region and addr:
-        region = addr.split()[0]
+        region = addr.split()[0] if addr.split() else ""
     return {
-        "name": _pick(row, "시설명", "기관명", "요양원명", "장기요양기관명", "name"),
-        "region": region,
-        "kind": _pick(row, "종별", "시설종류", "시설구분", "구분", "kind"),
+        "name": _pick(row, "시설명", "기관명", "요양원명",
+                      "장기요양기관명", "장기요양기관이름", "name"),
+        "region": _normalize_sido(region),
+        "kind": _pick(row, "종별", "시설종류", "시설구분", "구분",
+                      "급여종류명", "급여종류", "kind"),
         "address": addr,
         "phone": _pick(row, "전화번호", "대표전화", "연락처", "phone"),
-        "official_code": _pick(row, "시설코드", "요양기관기호", "장기요양기관번호", "code"),
+        "official_code": _pick(row, "시설코드", "요양기관기호",
+                               "장기요양기관번호", "장기요양기관코드", "code"),
     }
 
 
