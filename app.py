@@ -319,6 +319,22 @@ def compute_recovery(reference_date, disease_onset, diseases):
     return detail["label"] if detail else None
 
 
+def _purpose_to_category(admission_purpose: str | None) -> str | None:
+    """admission_purpose 저장값 → 정규화된 category 4종.
+    Returns: '회복기' | '비회복기' | '일반재활' | '요양' | None
+    """
+    p = (admission_purpose or "").strip()
+    if p.startswith("비회복기재활") or p == "비회복기":
+        return "비회복기"
+    if p.startswith("회복기재활") or p == "회복기":
+        return "회복기"
+    if p.startswith("일반재활"):
+        return "일반재활"
+    if p.startswith("요양"):
+        return "요양"
+    return None
+
+
 @app.template_filter("recovery_status")
 def _recovery_status(consultation):
     """저장된 admission_purpose 우선, 없으면 발병일 기반 자동 판정.
@@ -2301,6 +2317,16 @@ def _consult_fields_from_payload(c: dict) -> dict:
     # 클라이언트에서 차단되지만 서버에서도 보수적으로 정규화).
     if out.get("referrer_institution"):
         out["referrer_institution"] = models.canonical_hospital_name(out["referrer_institution"])
+    # admission_purpose_category 자동 산출 — admission_purpose 저장값 우선,
+    # 없으면 disease_onset + diseases 기반 자동 판정
+    cat = _purpose_to_category(out.get("admission_purpose"))
+    if cat is None and out.get("disease_onset"):
+        ref = (out.get("actual_admission_date")
+               or out.get("planned_admission_date")
+               or out.get("consult_date"))
+        cat = compute_recovery(ref, out.get("disease_onset"), out.get("diseases"))
+    out["admission_purpose_category"] = cat
+
     # 입원경로(다중) — 선택된 항목들로부터 상위 그룹(온라인/소개/기타)을 중복없이 도출
     detail = out.get("referral_source_detail")
     if isinstance(detail, list) and detail:

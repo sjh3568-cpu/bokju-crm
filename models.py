@@ -759,7 +759,7 @@ CONSULT_FIELDS = (
     "parkinson_new_detail", "gbs_detail",
     "paralysis_detail",
     # 처치/치료
-    "admission_purpose", "diet_types",
+    "admission_purpose", "admission_purpose_category", "diet_types",
     "wound_care", "wound_site", "tracheostomy_detail",
     "wound_op_note", "wound_foley_note", "wound_dmfoot_note", "wound_burn_note",
     "wound_simple_note", "wound_urostomy_note", "wound_colostomy_note",
@@ -966,16 +966,15 @@ def _build_consult_where(*, date_from=None, date_to=None, insurance=None, q=None
     if residence_sido:
         where.append("p.residence_sido = ?"); vals.append(residence_sido)
     if recovery:
-        # 저장값 매핑 (자동 계산값은 SQL로 못 잡으므로 저장값 기준).
-        # 자동 기입값이 '회복기재활 및 간호간병 통합서비스' 형태일 수 있어 접두 LIKE 사용.
+        # admission_purpose_category 우선, 없으면 admission_purpose 폴백
         if recovery == "회복기":
-            where.append("(c.admission_purpose LIKE '회복기재활%' OR c.admission_purpose = '회복기')")
+            where.append("(c.admission_purpose_category = '회복기' OR (c.admission_purpose_category IS NULL AND (c.admission_purpose LIKE '회복기재활%' OR c.admission_purpose = '회복기')))")
         elif recovery == "비회복기":
-            where.append("(c.admission_purpose LIKE '비회복기재활%' OR c.admission_purpose = '비회복기')")
+            where.append("(c.admission_purpose_category = '비회복기' OR (c.admission_purpose_category IS NULL AND (c.admission_purpose LIKE '비회복기재활%' OR c.admission_purpose = '비회복기')))")
         elif recovery == "일반재활":
-            where.append("c.admission_purpose LIKE '일반재활%'")
+            where.append("(c.admission_purpose_category = '일반재활' OR (c.admission_purpose_category IS NULL AND c.admission_purpose LIKE '일반재활%'))")
         elif recovery == "요양":
-            where.append("c.admission_purpose IN ('요양', '요양병원')")
+            where.append("(c.admission_purpose_category = '요양' OR (c.admission_purpose_category IS NULL AND c.admission_purpose IN ('요양', '요양병원')))")
     if consult_channel:
         where.append("c.consult_channel = ?"); vals.append(consult_channel)
     if referral_type:
