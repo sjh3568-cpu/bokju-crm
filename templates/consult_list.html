@@ -44,12 +44,64 @@
     </div>
     <div style="display:flex; gap:6px; align-self:flex-end">
         <button class="btn btn-primary btn-sm" type="submit">검색</button>
+        <button class="btn btn-secondary btn-sm" type="button" id="detail-filter-toggle">상세필터 ▾</button>
         <a class="btn btn-secondary btn-sm" href="/consultations">초기화</a>
     </div>
-    <div style="align-self:flex-end; font-size:0.78em; color:var(--text-light)">
-        ↓ 각 컬럼 헤더 아래 필터를 변경하면 자동 적용됩니다
-    </div>
 </form>
+
+<div class="quick-filter-row" id="quick-filter-row">
+    {% for qf in quick_filters %}
+    <button type="button" class="qf-btn" data-filter='{{ qf.filter|tojson }}'>{{ qf.label }}</button>
+    {% endfor %}
+    <button type="button" class="qf-btn qf-save" data-quick="save-view">현재 보기 저장</button>
+    <button type="button" class="qf-btn" data-quick="saved-view">저장된 보기</button>
+    {% if current_user and current_user.role == 'admin' %}
+    <button type="button" class="qf-btn qf-edit" id="quick-filter-edit">빠른필터 편집</button>
+    {% endif %}
+</div>
+
+{% if current_user and current_user.role == 'admin' %}
+<div class="quick-filter-editor hide" id="quick-filter-editor"
+     data-filters='{{ quick_filter_editor|tojson }}'>
+    <div class="qfe-head">
+        <strong>빠른필터 편집</strong>
+        <div class="qfe-actions">
+            <button type="button" class="btn btn-secondary btn-sm" id="qfe-add">+ 추가</button>
+            <button type="button" class="btn btn-primary btn-sm" id="qfe-save">저장</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="qfe-close">닫기</button>
+        </div>
+    </div>
+    <div class="qfe-note">표시명과 조건을 바꾸면 상담목록 상단 버튼에 바로 반영됩니다.</div>
+    <div class="qfe-table" id="qfe-table"></div>
+</div>
+{% endif %}
+
+{% set active_filters = [] %}
+{% if filters.date_from or filters.date_to %}{% set _ = active_filters.append(('기간', (filters.date_from or '') ~ ' ~ ' ~ (filters.date_to or ''), url_with(**{'from': none, 'to': none, 'page': none}))) %}{% endif %}
+{% if filters.q %}{% set _ = active_filters.append(('검색', filters.q, url_with(q=None, page=None))) %}{% endif %}
+{% if filters.blacklist %}{% set _ = active_filters.append(('블랙리스트', '블랙리스트만', url_with(blacklist=None, page=None))) %}{% endif %}
+{% if filters.gender %}{% set _ = active_filters.append(('성별', '남' if filters.gender == 'M' else '여', url_with(gender=None, page=None))) %}{% endif %}
+{% if filters.age_min is not none or filters.age_max is not none %}{% set _ = active_filters.append(('나이', (filters.age_min if filters.age_min is not none else '') ~ ' ~ ' ~ (filters.age_max if filters.age_max is not none else ''), url_with(age_min=None, age_max=None, page=None))) %}{% endif %}
+{% if filters.residence_sido %}{% set _ = active_filters.append(('거주지', filters.residence_sido|sido_short, url_with(residence_sido=None, page=None))) %}{% endif %}
+{% if filters.insurance %}{% set _ = active_filters.append(('보험', filters.insurance, url_with(insurance=None, page=None))) %}{% endif %}
+{% if filters.guardian %}{% set _ = active_filters.append(('보호자', filters.guardian, url_with(guardian=None, page=None))) %}{% endif %}
+{% if filters.hospital %}{% set _ = active_filters.append(('모병원', filters.hospital, url_with(hospital=None, page=None))) %}{% endif %}
+{% if filters.disease_group %}{% set _ = active_filters.append(('병명', filters.disease_group, url_with(disease_group=None, page=None))) %}{% endif %}
+{% if filters.referral_type %}{% set _ = active_filters.append(('유입경로', filters.referral_type, url_with(referral_type=None, page=None))) %}{% endif %}
+{% if filters.consult_channel %}{% set _ = active_filters.append(('상담방법', filters.consult_channel, url_with(consult_channel=None, page=None))) %}{% endif %}
+{% if filters.recovery %}{% set _ = active_filters.append(('회복기대상', filters.recovery, url_with(recovery=None, page=None))) %}{% endif %}
+{% if filters.consult_result %}{% set _ = active_filters.append(('상담결과', filters.consult_result, url_with(consult_result=None, page=None))) %}{% endif %}
+{% if filters.admission_status %}{% set _ = active_filters.append(('입원진행', filters.admission_status, url_with(admission_status=None, page=None))) %}{% endif %}
+{% if filters.counselor %}{% set _ = active_filters.append(('상담자', filters.counselor, url_with(counselor=None, page=None))) %}{% endif %}
+{% if active_filters %}
+<div class="filter-chip-row">
+    <span class="filter-chip-label">적용된 필터</span>
+    {% for name, value, href in active_filters %}
+    <a class="filter-chip" href="{{ href }}">{{ name }}: {{ value }} <span>×</span></a>
+    {% endfor %}
+    <a class="filter-chip clear" href="/consultations">전체 초기화</a>
+</div>
+{% endif %}
 
 <!-- 일괄 작업 툴바 (선택된 행이 있을 때 활성) -->
 <div id="bulk-toolbar" class="bulk-toolbar hide">
@@ -85,14 +137,16 @@
                 <th>유입경로</th>
                 {{ sort_th('channel', '상담방법') }}
                 <th>회복기대상</th>
-                {{ sort_th('status', '상담결과 / 입원진행') }}
+                <th>상담결과</th>
+                {{ sort_th('status', '입원진행') }}
+                <th>입원완료일</th>
                 <th>입원만료</th>
                 {{ sort_th('counselor', '상담자') }}
             </tr>
-            <tr class="filter-row">
+            <tr class="filter-row{% if not active_filters %} detail-collapsed{% endif %}">
                 <th class="check-col"></th>
-                <th></th>  {# 상담일 — 기간 필터는 상단 검색바 #}
-                <th>{# 환자 — q에 통합 #}<input type="text" form="consult-filter" name="q" value="{{ filters.q or '' }}" placeholder="환자명·모병원" title="환자명·모병원 검색" class="cf-in"></th>
+                <th></th>
+                <th><input type="text" form="consult-filter" name="q" value="{{ filters.q or '' }}" placeholder="환자명·모병원" title="환자명·모병원 검색" class="cf-in"></th>
                 <th><select form="consult-filter" name="gender" class="cf-in cf-sm">
                     <option value="">전체</option>
                     <option value="M" {% if filters.gender == 'M' %}selected{% endif %}>남</option>
@@ -140,23 +194,22 @@
                     <option value="{{ r }}" {% if filters.recovery == r %}selected{% endif %}>{{ r }}</option>
                     {% endfor %}
                 </select></th>
-                <th><div class="cf-range">
-                    <select form="consult-filter" name="consult_result" class="cf-in cf-xs" title="상담 결과">
-                        <option value="">결과▾</option>
-                        {% for r in CONSULT_RESULTS %}
-                        <option value="{{ r }}" {% if filters.consult_result == r %}selected{% endif %}>{{ r }}</option>
-                        {% endfor %}
-                    </select>
-                    <select form="consult-filter" name="admission_status" class="cf-in cf-xs" title="입원 진행">
-                        <option value="">진행▾</option>
-                        <option value="미정" {% if filters.admission_status == '미정' %}selected{% endif %}>미정</option>
-                        {% for s in ADMISSION_STATUSES %}
-                        <option value="{{ s }}" {% if filters.admission_status == s %}selected{% endif %}>{{ s }}</option>
-                        {% endfor %}
-                        <option value="퇴원완료" {% if filters.admission_status == '퇴원완료' %}selected{% endif %}>퇴원완료</option>
-                    </select>
-                </div></th>
-                <th></th>  {# 입원만료 — 계산 필드, 필터 없음 #}
+                <th><select form="consult-filter" name="consult_result" class="cf-in cf-sm" title="상담 결과">
+                    <option value="">전체</option>
+                    {% for r in CONSULT_RESULTS %}
+                    <option value="{{ r }}" {% if filters.consult_result == r %}selected{% endif %}>{{ r }}</option>
+                    {% endfor %}
+                </select></th>
+                <th><select form="consult-filter" name="admission_status" class="cf-in cf-sm" title="입원 진행">
+                    <option value="">전체</option>
+                    <option value="미정" {% if filters.admission_status == '미정' %}selected{% endif %}>미정</option>
+                    {% for s in ADMISSION_STATUSES %}
+                    <option value="{{ s }}" {% if filters.admission_status == s %}selected{% endif %}>{{ s }}</option>
+                    {% endfor %}
+                    <option value="퇴원완료" {% if filters.admission_status == '퇴원완료' %}selected{% endif %}>퇴원완료</option>
+                </select></th>
+                <th></th>
+                <th></th>
                 <th><select form="consult-filter" name="counselor" class="cf-in cf-sm">
                     <option value="">전체</option>
                     {% for c in COUNSELORS %}
@@ -240,12 +293,15 @@
                     {% elif rec.label == '일반재활' %}<span class="badge rh-general" title="일반재활 — 의료법상 회복기/비회복기 구분 대상 아님">일반재활</span>
                     {% elif rec.label == '기타' %}<span class="badge rh-other" title="입력값: {{ purpose }}">기타</span>
                     {% endif %}
-                    {% if rec.label == '회복기' and rec.days_left is not none and rec.days_left >= 0 and rec.days_left <= 14 %}
-                    <span class="rh-dday{% if rec.days_left <= 7 %} rh-dday-urgent{% endif %}" title="회복기 인정기간 잔여 {{ rec.days_left }}일 — 이 기간 안에 입원해야 회복기로 인정됩니다">{% if rec.days_left == 0 %}D-day{% else %}↓{{ rec.days_left }}일{% endif %}</span>
+                    {% if rec.days_left is not none %}
+                        {% if rec.days_left >= 0 and rec.days_left <= 14 %}
+                        <span class="rh-dday{% if rec.days_left <= 7 %} rh-dday-urgent{% endif %}" title="회복기 인정기간 잔여 {{ rec.days_left }}일 — 이 기간 안에 입원해야 회복기로 인정됩니다">{% if rec.days_left == 0 %}D-0{% else %}D-{{ rec.days_left }}{% endif %}</span>
+                        {% elif rec.days_left < 0 %}
+                        <span class="rh-dday rh-dday-over" title="회복기 입원시기 {{ -rec.days_left }}일 초과">D+{{ -rec.days_left }}</span>
+                        {% endif %}
                     {% endif %}
                 </td>
-                <td class="status-cell">
-                    {# ① 상담 결과 — 인라인 변경 #}
+                <td class="consult-result-cell">
                     <select class="result-select badge-select cr-{{ {'상담완료':'done','재입원 상담':'readm','상담요청':'req','상담보류':'hold','상담취소':'cancel'}.get(cresult,'done') }}"
                             data-cid="{{ r.id }}" data-current="{{ cresult }}" title="상담 결과 인라인 변경">
                         {% for cr in CONSULT_RESULTS %}
@@ -253,11 +309,10 @@
                         {% endfor %}
                     </select>
                     {% if r.consult_result_reason %}<span class="cr-reason" title="{{ r.consult_result_reason }}">{{ r.consult_result_reason }}</span>{% endif %}
-                    {# ② 입원 진행 — 인라인 변경 #}
-                    <div class="adm-line">
+                </td>
+                <td class="status-cell">
                     {% if status == '퇴원완료' %}
                         <span class="badge st-discharge-done">퇴원완료</span>
-                        {% if r.discharge_date %}<span class="muted-sm">{{ r.discharge_date|krdate_wd }}</span>{% endif %}
                     {% else %}
                         <select class="status-select badge-select st-{{ {'미정':'pending','입원보류':'hold','입원취소':'cancelled','입원완료':'completed'}.get(status,'pending') }}"
                                 data-cid="{{ r.id }}" data-current="{{ status }}" title="입원 진행 인라인 변경">
@@ -267,8 +322,6 @@
                             {% endfor %}
                         </select>
                         {% if status == '입원완료' %}
-                            {% set actual = r.actual_admission_date or r.admission_date %}
-                            {% if actual %}<span class="muted-sm">{{ actual|krdate_wd }}</span>{% endif %}
                             {% set dw = r|discharge_watch %}
                             {% if dw and dw.state %}
                             <div class="discharge-watch">
@@ -279,7 +332,11 @@
                             {% endif %}
                         {% endif %}
                     {% endif %}
-                    </div>
+                </td>
+                <td class="nowrap admission-date-cell">
+                    {% set actual = r.actual_admission_date or r.admission_date %}
+                    {% if actual %}{{ actual|krdate_wd }}{% endif %}
+                    {% if status == '퇴원완료' and r.discharge_date %}<span class="muted-sm">퇴원 {{ r.discharge_date|krdate_wd }}</span>{% endif %}
                 </td>
                 <td class="nowrap admexp-cell">
                     {% set ax = r|admission_expiry %}
@@ -368,8 +425,10 @@ body .container { max-width: none; padding: 0 12px; }
     white-space: nowrap;  /* 기본 한 줄 */
 }
 .tbl-compact th { font-weight: 600; background: #f8fafc; border-bottom: 2px solid #e2e8f0; }
+.tbl-compact thead th { position: sticky; top: 0; z-index: 5; }
+.tbl-compact thead tr.filter-row th { top: 31px; z-index: 4; }
 .tbl-compact tbody tr { border-bottom: 1px solid #f1f5f9; }
-.tbl-compact tbody tr:hover { background: #fafbfc; }
+.tbl-compact tbody tr:hover { background: #fafbfc; cursor: pointer; }
 .tbl-compact tr.selected, .tbl-compact tr.selected:hover { background: #fef9c3; }
 .tbl-compact .muted-sm { color: var(--text-light); font-size: 0.92em; }
 
@@ -395,6 +454,7 @@ body .container { max-width: none; padding: 0 12px; }
     background: #fefce8; border-bottom: 1px solid #fde047;
     padding: 3px 4px; font-weight: 400;
 }
+.tbl-compact tr.filter-row.detail-collapsed { display: none; }
 .cf-in { width: 100%; padding: 2px 4px; border: 1px solid #d1d5db; border-radius: 4px;
     font-size: 0.85em; font-family: inherit; background: #fff; }
 .cf-in:focus { outline: 1px solid var(--primary); border-color: var(--primary); }
@@ -525,7 +585,7 @@ body .container { max-width: none; padding: 0 12px; }
 .rh-auto  { box-shadow: inset 0 0 0 1px rgba(100,116,139,0.4); font-style: italic; }
 
 /* 상담상태 select-as-badge */
-.status-cell { white-space: nowrap; }
+.status-cell, .consult-result-cell { white-space: nowrap; }
 .badge-select { padding: 2px 22px 2px 9px; border-radius: 10px; font-size: 0.78em; font-weight: 600; line-height: 1.4; border: 1px solid transparent; cursor: pointer; appearance: none; background-position: right 4px center; background-repeat: no-repeat; background-size: 12px; }
 .badge-select.st-pending   { background-color: #f1f5f9; color: #475569; }
 .badge-select.st-hold      { background-color: #fef3c7; color: #92400e; }
@@ -534,6 +594,7 @@ body .container { max-width: none; padding: 0 12px; }
 .badge-select.flash-ok { box-shadow: 0 0 0 2px #16a34a; }
 .badge-select.flash-err { box-shadow: 0 0 0 2px #dc2626; }
 .status-cell .muted-sm { display: block; margin-top: 2px; font-size: 0.78em; }
+.admission-date-cell .muted-sm { display: block; margin-top: 2px; font-size: 0.78em; }
 
 /* ① 상담 결과 select-as-badge (7번 요청 2단계 중 첫째) */
 .badge-select.cr-done   { background-color: #f1f5f9; color: #475569; }
@@ -574,6 +635,55 @@ body .container { max-width: none; padding: 0 12px; }
 .filter-bar .date-range { display: flex; gap: 4px; align-items: center; }
 .filter-bar .date-range input { width: 130px; }
 .filter-bar .dr-sep { color: var(--text-light); font-size: 0.85em; }
+.quick-filter-row {
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    margin: 6px 0 8px; padding: 0 12px;
+}
+.qf-btn {
+    border: 1px solid #cbd5e1; border-radius: 999px; background: #fff;
+    color: #334155; padding: 4px 10px; font-size: 0.8em;
+    font-family: inherit; cursor: pointer;
+}
+.qf-btn:hover { border-color: var(--primary); color: var(--primary); background: #f8fafc; }
+.qf-save { margin-left: auto; }
+.qf-edit { border-style: dashed; }
+.quick-filter-editor {
+    margin: 0 12px 10px; padding: 10px; border: 1px solid var(--border);
+    border-radius: 8px; background: #f8fafc;
+}
+.quick-filter-editor.hide { display: none; }
+.qfe-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.qfe-actions { display: flex; gap: 6px; align-items: center; }
+.qfe-note { margin-top: 4px; color: var(--text-light); font-size: 0.8em; }
+.qfe-table { display: grid; gap: 6px; margin-top: 8px; }
+.qfe-row {
+    display: grid; grid-template-columns: 32px 1.15fr 1.15fr 1.4fr 72px 62px;
+    gap: 6px; align-items: center;
+}
+.qfe-row.qfe-header { color: var(--text-light); font-size: 0.74em; }
+.qfe-row input, .qfe-row select {
+    width: 100%; min-width: 0; padding: 4px 6px; border: 1px solid var(--border);
+    border-radius: 4px; background: #fff; font-family: inherit; font-size: 0.85em;
+}
+.qfe-row .qfe-order { text-align: center; color: var(--text-light); font-size: 0.8em; }
+.qfe-del {
+    border: 1px solid #fecaca; color: #b91c1c; background: #fff;
+    border-radius: 4px; padding: 4px 6px; cursor: pointer;
+}
+.qfe-del:hover { background: #fee2e2; }
+.filter-chip-row {
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    margin: 4px 0 10px; padding: 0 12px;
+}
+.filter-chip-label { color: var(--text-light); font-size: 0.78em; }
+.filter-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    border: 1px solid #bfdbfe; border-radius: 999px;
+    background: #eff6ff; color: #1e40af;
+    padding: 3px 9px; font-size: 0.78em; text-decoration: none;
+}
+.filter-chip:hover { background: #dbeafe; text-decoration: none; }
+.filter-chip.clear { border-color: #e2e8f0; background: #f8fafc; color: #64748b; }
 
 /* 일괄 작업 툴바 */
 .bulk-toolbar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; background: #fef9c3; border: 1px solid #fde047; border-radius: 6px; margin: 8px 0; font-size: 0.88em; }
@@ -601,6 +711,7 @@ body .container { max-width: none; padding: 0 12px; }
            background: #fef3c7; color: #92400e; font-size: 0.72em; font-weight: 700;
            vertical-align: middle; cursor: help; }
 .rh-dday-urgent { background: #fee2e2; color: #b91c1c; animation: rh-pulse 1.6s ease-in-out infinite; }
+.rh-dday-over { background: #fee2e2; color: #991b1b; }
 @keyframes rh-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
 /* 입원 만료 컬럼 */
@@ -1275,6 +1386,217 @@ body .container { max-width: none; padding: 0 12px; }
     // select 변경 시 즉시 submit, text/number는 Enter 또는 blur 300ms 디바운스
     const filterForm = document.getElementById('consult-filter');
     if (filterForm) {
+        const filterRow = document.querySelector('.filter-row');
+        const detailToggle = document.getElementById('detail-filter-toggle');
+        const todayStr = () => {
+            const d = new Date();
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
+        };
+        function applyParams(mutator) {
+            const params = new URLSearchParams(window.location.search);
+            params.delete('page');
+            mutator(params);
+            const qs = params.toString();
+            window.location.href = '/consultations' + (qs ? '?' + qs : '');
+        }
+        function setDetailOpen(open) {
+            if (!filterRow) return;
+            filterRow.classList.toggle('detail-collapsed', !open);
+            if (detailToggle) detailToggle.textContent = open ? '상세필터 ▴' : '상세필터 ▾';
+            localStorage.setItem('consultListDetailFilterOpen', open ? '1' : '0');
+        }
+        if (filterRow && detailToggle) {
+            const hasServerFilters = {{ 'true' if active_filters else 'false' }};
+            const savedOpen = localStorage.getItem('consultListDetailFilterOpen') === '1';
+            setDetailOpen(hasServerFilters || savedOpen);
+            detailToggle.addEventListener('click', () => {
+                setDetailOpen(filterRow.classList.contains('detail-collapsed'));
+            });
+        }
+        function applyQuickFilter(filterDef) {
+            applyParams(params => {
+                if (filterDef.preset === 'today') {
+                    const t = todayStr();
+                    params.set('from', t); params.set('to', t);
+                }
+                Object.entries(filterDef.params || {}).forEach(([key, value]) => {
+                    if (value === null || value === undefined || value === '') params.delete(key);
+                    else params.set(key, value);
+                });
+            });
+        }
+        document.querySelectorAll('.qf-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const key = btn.dataset.quick;
+                if (key === 'save-view') {
+                    localStorage.setItem('consultListSavedView', window.location.search || '');
+                    btn.textContent = '저장됨';
+                    setTimeout(() => { btn.textContent = '현재 보기 저장'; }, 1200);
+                    return;
+                }
+                if (key === 'saved-view') {
+                    const saved = localStorage.getItem('consultListSavedView') || '';
+                    window.location.href = '/consultations' + saved;
+                    return;
+                }
+                if (key === 'edit') return;
+                if (btn.dataset.filter) applyQuickFilter(JSON.parse(btn.dataset.filter));
+            });
+        });
+
+        const qfe = document.getElementById('quick-filter-editor');
+        const qfeOpen = document.getElementById('quick-filter-edit');
+        const qfeClose = document.getElementById('qfe-close');
+        const qfeAdd = document.getElementById('qfe-add');
+        const qfeSave = document.getElementById('qfe-save');
+        const qfeTable = document.getElementById('qfe-table');
+        const qfeValueOptions = {
+            admission_status: ['입원예정', '입원완료', '입원보류', '입원취소', '퇴원완료', '미정'],
+            consult_result: {{ CONSULT_RESULTS|tojson }},
+            recovery: {{ RECOVERY_OPTIONS|tojson }},
+            blacklist: [['1', '블랙리스트만']],
+            consult_channel: {{ CONSULT_CHANNELS|tojson }},
+            referral_type: {{ REFERRAL_TYPES|tojson }},
+            insurance: {{ INSURANCE_TYPES|tojson }},
+            counselor: {{ COUNSELORS|tojson }},
+            gender: [['M', '남자'], ['F', '여자']],
+            disease_group: {{ DISEASE_GROUPS|tojson }},
+            residence_sido: {{ SIDO_LIST|tojson }}
+        };
+        const filterFields = [
+            ['__today', '오늘 상담일'],
+            ['admission_status', '입원진행'],
+            ['consult_result', '상담결과'],
+            ['recovery', '회복기여부'],
+            ['blacklist', '블랙리스트'],
+            ['consult_channel', '상담방법'],
+            ['referral_type', '유입경로'],
+            ['insurance', '보험'],
+            ['counselor', '상담자'],
+            ['gender', '성별'],
+            ['disease_group', '병명그룹'],
+            ['residence_sido', '거주지'],
+            ['q', '검색어']
+        ];
+        function qfeFieldOf(item) {
+            if (item.filter?.preset === 'today') return '__today';
+            return Object.keys(item.filter?.params || {})[0] || 'admission_status';
+        }
+        function qfeValueOf(item) {
+            const field = qfeFieldOf(item);
+            if (field === '__today') return '';
+            return item.filter?.params?.[field] || '';
+        }
+        function qfeValueControl(field, value = '') {
+            if (field === '__today') {
+                return '<input type="text" data-qfe-value value="" placeholder="오늘 날짜 자동 적용" disabled>';
+            }
+            const options = qfeValueOptions[field];
+            if (!options) {
+                return `<input type="text" data-qfe-value value="${escapeHtml(value)}" placeholder="검색어 또는 값 입력">`;
+            }
+            const normalized = options.map(opt => Array.isArray(opt) ? opt : [opt, opt]);
+            if (value && !normalized.some(([v]) => String(v) === String(value))) {
+                normalized.unshift([value, `${value} (현재값)`]);
+            }
+            return `<select data-qfe-value>
+                <option value="">선택</option>
+                ${normalized.map(([v, label]) =>
+                    `<option value="${escapeHtml(v)}" ${String(v) === String(value) ? 'selected' : ''}>${escapeHtml(label)}</option>`
+                ).join('')}
+            </select>`;
+        }
+        function qfeRow(item = {label: '', filter: {params: {admission_status: ''}}, active: true}, index = 0) {
+            const field = qfeFieldOf(item);
+            const options = filterFields.map(([value, label]) =>
+                `<option value="${value}" ${value === field ? 'selected' : ''}>${label}</option>`
+            ).join('');
+            return `<div class="qfe-row" data-row>
+                <div class="qfe-order">${index + 1}</div>
+                <input type="text" data-qfe-label value="${escapeHtml(item.label || '')}" placeholder="버튼명">
+                <select data-qfe-field>${options}</select>
+                <div data-qfe-value-cell>${qfeValueControl(field, qfeValueOf(item))}</div>
+                <label style="display:flex;align-items:center;gap:4px;font-size:0.82em">
+                    <input type="checkbox" data-qfe-active ${item.active ? 'checked' : ''}> 사용
+                </label>
+                <button type="button" class="qfe-del" data-qfe-del>삭제</button>
+            </div>`;
+        }
+        function escapeHtml(value) {
+            return String(value).replace(/[&<>"']/g, ch => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[ch]));
+        }
+        function renderQfe(items) {
+            if (!qfeTable) return;
+            qfeTable.innerHTML = `<div class="qfe-row qfe-header">
+                <div>순서</div><div>표시명</div><div>조건</div><div>값</div><div>사용</div><div></div>
+            </div>` + items.map(qfeRow).join('');
+        }
+        function collectQfe() {
+            return [...qfeTable.querySelectorAll('[data-row]')].map(row => {
+                const label = row.querySelector('[data-qfe-label]').value.trim();
+                const field = row.querySelector('[data-qfe-field]').value;
+                const value = row.querySelector('[data-qfe-value]').value.trim();
+                const active = row.querySelector('[data-qfe-active]').checked;
+                const filter = field === '__today'
+                    ? {preset: 'today'}
+                    : {params: {[field]: value}};
+                return {label, filter, active};
+            }).filter(item => item.label && (item.filter.preset || Object.values(item.filter.params || {})[0]));
+        }
+        if (qfe && qfeOpen) {
+            renderQfe(JSON.parse(qfe.dataset.filters || '[]'));
+            qfeOpen.addEventListener('click', () => qfe.classList.toggle('hide'));
+            qfeClose?.addEventListener('click', () => qfe.classList.add('hide'));
+            qfeAdd?.addEventListener('click', () => {
+                const items = collectQfe();
+                items.push({label: '', filter: {params: {admission_status: ''}}, active: true});
+                renderQfe(items);
+            });
+            qfeTable.addEventListener('click', e => {
+                const del = e.target.closest('[data-qfe-del]');
+                if (!del) return;
+                del.closest('[data-row]').remove();
+                renderQfe(collectQfe());
+            });
+            qfeTable.addEventListener('change', e => {
+                const field = e.target.closest('[data-qfe-field]');
+                if (!field) return;
+                const row = field.closest('[data-row]');
+                row.querySelector('[data-qfe-value-cell]').innerHTML = qfeValueControl(field.value, '');
+            });
+            qfeSave?.addEventListener('click', async () => {
+                const filters = collectQfe();
+                if (!filters.length) {
+                    alert('저장할 빠른필터를 1개 이상 입력해 주세요.');
+                    return;
+                }
+                qfeSave.disabled = true;
+                try {
+                    const resp = await fetch('/api/quick-filters', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({filters})
+                    });
+                    const data = await resp.json();
+                    if (!resp.ok) throw new Error(data.error || '저장에 실패했습니다.');
+                    location.reload();
+                } catch (err) {
+                    alert(err.message || err);
+                    qfeSave.disabled = false;
+                }
+            });
+        }
+        document.querySelectorAll('.tbl-compact tbody tr[data-cid]').forEach(tr => {
+            tr.addEventListener('dblclick', e => {
+                if (e.target.closest('a, button, input, select, textarea, label')) return;
+                window.location.href = `/consult/${tr.dataset.cid}`;
+            });
+        });
         const colInputs = document.querySelectorAll('.cf-in');
         let debounce;
         colInputs.forEach(el => {

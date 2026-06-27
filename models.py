@@ -266,6 +266,16 @@ def init_db():
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
         CREATE INDEX IF NOT EXISTS idx_admevent_consult ON admission_events(consultation_id);
+
+        CREATE TABLE IF NOT EXISTS quick_filters (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            label TEXT NOT NULL,
+            filter_json TEXT NOT NULL,
+            sort_order INTEGER DEFAULT 0,
+            active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
     """)
 
     # ─── 마이그레이션: 종이 상담일지 항목 매핑 ───
@@ -510,6 +520,16 @@ def init_db():
                 (name, grp, body),
             )
 
+    if conn.execute("SELECT COUNT(*) FROM quick_filters").fetchone()[0] == 0:
+        for idx, item in enumerate(_QUICK_FILTER_SEED, start=1):
+            conn.execute(
+                """
+                INSERT INTO quick_filters (label, filter_json, sort_order, active)
+                VALUES (?, ?, ?, 1)
+                """,
+                (item["label"], json.dumps(item["filter"], ensure_ascii=False), idx),
+            )
+
     conn.commit()
     conn.close()
 
@@ -529,6 +549,58 @@ _SMS_TEMPLATE_SEED = [
      "[복주회복병원] {환자명} 환자분 재활 입원 상담 안내드립니다. "
      "입원 예정 {입원예정일}. 준비 서류 문의는 상담실로 연락 주세요."),
 ]
+
+
+_QUICK_FILTER_SEED = [
+    {"label": "오늘 상담", "filter": {"preset": "today"}},
+    {"label": "입원예정", "filter": {"params": {"admission_status": "입원예정"}}},
+    {"label": "입원완료", "filter": {"params": {"admission_status": "입원완료"}}},
+    {"label": "입원보류", "filter": {"params": {"admission_status": "입원보류"}}},
+    {"label": "입원취소", "filter": {"params": {"admission_status": "입원취소"}}},
+    {"label": "퇴원완료", "filter": {"params": {"admission_status": "퇴원완료"}}},
+    {"label": "회복기", "filter": {"params": {"recovery": "회복기"}}},
+    {"label": "블랙리스트", "filter": {"params": {"blacklist": "1"}}},
+    {"label": "상담요청", "filter": {"params": {"consult_result": "상담요청"}}},
+]
+
+
+def list_quick_filters(include_inactive: bool = False):
+    conn = get_db()
+    sql = "SELECT * FROM quick_filters"
+    if not include_inactive:
+        sql += " WHERE active = 1"
+    sql += " ORDER BY sort_order ASC, id ASC"
+    rows = conn.execute(sql).fetchall()
+    conn.close()
+    out = []
+    for row in rows:
+        item = dict(row)
+        try:
+            item["filter"] = json.loads(item.get("filter_json") or "{}")
+        except (json.JSONDecodeError, TypeError):
+            item["filter"] = {}
+        out.append(item)
+    return out
+
+
+def replace_quick_filters(items):
+    conn = get_db()
+    conn.execute("DELETE FROM quick_filters")
+    for idx, item in enumerate(items, start=1):
+        conn.execute(
+            """
+            INSERT INTO quick_filters (label, filter_json, sort_order, active)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                item["label"],
+                json.dumps(item["filter"], ensure_ascii=False),
+                item.get("sort_order") or idx,
+                1 if item.get("active", True) else 0,
+            ),
+        )
+    conn.commit()
+    conn.close()
 
 
 # ─── 사용자 / 감사 로그 ───

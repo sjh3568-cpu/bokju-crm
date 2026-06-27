@@ -106,7 +106,7 @@
                     </tr>
                     <tr>
                         <td><input type="radio" name="elig-dx" value="하지절단" data-period="60" data-stay="60일" data-overflow="불가" data-warn="족부절단은 제외 — 골반·대퇴·하퇴 절단만 대상"></td>
-                        <td>절단 <span class="elig-sub">- 하지부위 절단</span> <span class="elig-warn-mark">⚠</span></td>
+                        <td>하지부위절단 <span class="elig-warn-mark">⚠</span></td>
                         <td class="num">60일</td>
                         <td class="num">60일</td>
                         <td class="elig-note"><strong>족부절단 제외</strong> — 골반·대퇴·하퇴 부위 절단만 대상 · 초과 시 입원 불가</td>
@@ -117,13 +117,6 @@
                         <td class="num">60일</td>
                         <td class="num">60일</td>
                         <td class="elig-note">호흡·심장·신생물·파킨슨·길랑바레 등 · 다제내성균만으로 비사용 여부 검토 필요</td>
-                    </tr>
-                    <tr>
-                        <td><input type="radio" name="elig-dx" value="파킨슨" data-period="60" data-stay="60일" data-overflow="비회복기" data-overflow-stay="비회복기 180일"></td>
-                        <td>비사용 증후군 예외 적용 <span class="elig-sub">- 파킨슨병</span></td>
-                        <td class="num">60일</td>
-                        <td class="num">60일</td>
-                        <td class="elig-note">신규 진단 기준 · 초과 시 비회복기 180일 입원 가능</td>
                     </tr>
                     <tr>
                         <td><input type="radio" name="elig-dx" value="기타" data-period="0" data-stay="" data-overflow="불가"></td>
@@ -304,11 +297,38 @@
             tr.classList.toggle('elig-sel', !!radio && radio.checked);
         });
     }
-    function daysSince(dateStr) {
+    function parseEligDate(dateStr) {
         if (!dateStr) return null;
-        const d = new Date(dateStr);
+        const d = new Date(dateStr + 'T00:00:00');
         if (isNaN(d)) return null;
-        return Math.floor((Date.now() - d.getTime()) / 86400000);
+        return d;
+    }
+    function formatEligDate(date) {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }
+    function addEligDays(date, days) {
+        const d = new Date(date.getTime());
+        d.setDate(d.getDate() + days);
+        return d;
+    }
+    function getEligRefDate() {
+        const planned = document.querySelector('[name="consultation.planned_admission_date"]');
+        const consult = document.querySelector('[name="consultation.consult_date"]');
+        return (planned && planned.value) || (consult && consult.value) || '';
+    }
+    function calcEligTiming(onset, period) {
+        const od = parseEligDate(onset);
+        const rd = parseEligDate(getEligRefDate());
+        if (!od || !rd) return null;
+        const elapsed = Math.floor((rd - od) / 86400000);
+        if (elapsed < 0) return null;
+        const left = period - elapsed;
+        const dueDate = formatEligDate(addEligDays(od, period));
+        const dday = left >= 0 ? `D-${left} 남음` : `D+${Math.abs(left)} 초과`;
+        return { elapsed, left, dueDate, dday };
     }
     function judge() {
         const dx = getDx();
@@ -351,19 +371,21 @@
                 detail:`병명(${dx.group}) 인정 기간: 발병/수술 후 ${dx.period}일 이내. 발병일을 입력하세요.`,
                 extras };
         }
-        const elapsed = daysSince(onset);
-        if (elapsed === null) {
+        const timing = calcEligTiming(onset, dx.period);
+        if (!timing) {
             return { cls:'pending', badge:'⏸ 발병일 형식 확인',
-                detail:'발병/수술일을 다시 확인해주세요.', extras };
+                detail:'발병/수술일 또는 기준일(입원예정일/상담일)을 다시 확인해주세요.', extras };
         }
+        const elapsed = timing.elapsed;
+        const left = timing.left;
+        const timingLine = `입원시기 기준일 ${timing.dueDate}까지 · ${timing.dday} / 발병·수술 후 ${elapsed}일 경과 / 인정 기간 ${dx.period}일`;
         // 입원 기간 정보를 별도 행으로 안내
         if (dx.stay) extras.push('🛏 입원 기간: ' + dx.stay);
         // 카테고리별 특별 안내 (양측슬관절치환술 등)
         if (dx.warn) extras.push('⚠ ' + dx.warn);
-        const left = dx.period - elapsed;
         if (left >= 0) {
             return { cls:'ok', badge:'✅ 회복기 가능',
-                detail:`발병 후 ${elapsed}일 경과 — 인정 기간 ${dx.period}일 중 ${left}일 남음.`,
+                detail: timingLine,
                 extras };
         }
         // 중추신경계 초과 — 지연된 회복기(S044) + 비회복기(S006) 연속 적용 안내
@@ -373,7 +395,7 @@
                 const totalDays = s044Days + 180;
                 return { cls:'soso',
                     badge:'🟡 지연 회복기(S044) + 비회복기(S006) 가능',
-                    detail:`발병 후 ${elapsed}일 경과 — 회복기 인정 90일을 ${-left}일 초과.<br>`
+                    detail:`${timingLine}<br>`
                         + `▶ <strong>지연된 회복기(S044)</strong>: 급성기 병원 치료로 지연된 경우 한정. `
                         + `회복기 혜택 <strong>${s044Days}일</strong> (270 − 발병 ${elapsed}일)<br>`
                         + `▶ 이후 <strong>비회복기(S006) 180일</strong> 추가 가능<br>`
@@ -383,7 +405,7 @@
             // S044 한도 도달 (발병 270일 이상) — S006만 가능
             return { cls:'soso',
                 badge:'🟡 비회복기(S006) 180일만 가능',
-                detail:`발병 후 ${elapsed}일 경과 — S044 지연 회복기 한도(발병 270일) 초과. `
+                detail:`${timingLine}<br>S044 지연 회복기 한도(발병 270일) 초과. `
                     + `비회복기 180일만 적용 가능.`,
                 extras };
         }
@@ -391,13 +413,13 @@
         if (dx.overflow === '비회복기') {
             return { cls:'soso',
                 badge:'🟡 회복기(S005) 불가 — 비회복기(S006) 입원 가능',
-                detail:`발병 후 ${elapsed}일 경과 — 회복기 인정 ${dx.period}일을 ${-left}일 초과.`
+                detail: timingLine
                        + (dx.overflowStay ? ` ${dx.overflowStay} 적용 가능.` : ''),
                 extras };
         }
         // 입원 자체 불가 — 같은 재단의 경도요양병원·복주요양원 안내
         return { cls:'no', badge:'❌ 입원 불가 (입원 시기 초과)',
-            detail:`발병/수술 후 ${elapsed}일 경과 — 인정 기간 ${dx.period}일을 ${-left}일 초과. `
+            detail:`${timingLine}<br>`
                    + `해당 카테고리는 시기 초과 시 회복·비회복기 모두 불가. `
                    + `▶ <strong>같은 재단의 경도요양병원 또는 복주요양원</strong> 연계 안내.`,
             extras };
@@ -419,6 +441,11 @@
     onsetInput.addEventListener('change', render);
     onsetInput.addEventListener('input', render);
     insSelect.addEventListener('change', render);
+    document.addEventListener('change', (e) => {
+        if (e.target && e.target.matches('[name="consultation.planned_admission_date"], [name="consultation.consult_date"]')) {
+            render();
+        }
+    });
     render();
 
     // 접기/펼치기 — 헤더 전체 클릭 가능
@@ -450,7 +477,6 @@
     const DISEASE_MAP = {
         '양측슬관절치환술': ['양측슬관절치환술'],
         '하지절단': ['하지 부위 절단'],
-        '파킨슨': ['파킨슨(신규)'],
         '골유합지연_내고정전치환술': ['골유합 지연', '내고정술', '전치환술'],
         '근골격계_다발': ['다발부위', '다발부위-골반 골절'],
         // 모호한 카테고리(중추신경계·근골격계_단일·비사용증후군)는 폼 메모로만 표시
@@ -470,7 +496,6 @@
         '골유합지연_내고정전치환술': '골유합지연 + 내고정술/전치환술 (위저드 판정)',
         '양측슬관절치환술': '양측슬관절치환술 (위저드 판정)',
         '하지절단': '하지부위절단 (위저드 판정 — 족부절단 제외)',
-        '파킨슨': '파킨슨(신규) (위저드 판정)',
     };
 
     // 폼에 채우기 — 발병일·보험·병명·연계를 본 폼의 해당 필드에 복사 + 위저드 자동 접기

@@ -5,6 +5,7 @@
 """
 import csv
 import io
+import json
 import logging
 import os
 import secrets
@@ -1139,6 +1140,8 @@ CONSULT_PAGE_SIZE = 100  # 상담 목록 페이지당 행 수
 @login_required
 def consult_list():
     filters = _list_filters_from_request()
+    quick_filters = models.list_quick_filters()
+    quick_filter_editor = models.list_quick_filters(include_inactive=True)
     sort = request.args.get("sort") or "date"
     sort_dir = "asc" if (request.args.get("dir") or "").lower() == "asc" else "desc"
     try:
@@ -1164,8 +1167,75 @@ def consult_list():
         SIDO_LIST=SIDO_LIST,
         REFERRAL_TYPES=REFERRAL_TYPES,
         CONSULT_CHANNELS=CONSULT_CHANNELS,
+        quick_filters=quick_filters,
+        quick_filter_editor=quick_filter_editor,
         RECOVERY_OPTIONS=["회복기", "비회복기", "일반재활", "요양"],
     )
+
+
+@app.route("/api/quick-filters", methods=["POST"])
+@admin_required
+def api_quick_filters():
+    payload = request.get_json(silent=True) or {}
+    items = payload.get("filters") or []
+    if not isinstance(items, list):
+        return jsonify({"error": "filters must be a list"}), 400
+
+    allowed_keys = {
+        "from", "to", "q", "insurance", "counselor", "admission_status",
+        "consult_result", "blacklist", "disease_group", "residence_sido",
+        "recovery", "consult_channel", "referral_type", "gender", "age_min",
+        "age_max", "guardian", "hospital",
+    }
+    cleaned = []
+    for idx, item in enumerate(items, start=1):
+        if not isinstance(item, dict):
+            continue
+        label = (item.get("label") or "").strip()
+        if not label:
+            continue
+        filter_def = item.get("filter") or {}
+        if not isinstance(filter_def, dict):
+            continue
+        clean_filter = {}
+        preset = (filter_def.get("preset") or "").strip()
+        if preset:
+            if preset != "today":
+                return jsonify({"error": f"지원하지 않는 preset: {preset}"}), 400
+            clean_filter["preset"] = preset
+        params = filter_def.get("params") or {}
+        if params:
+            if not isinstance(params, dict):
+                return jsonify({"error": "params must be an object"}), 400
+            clean_params = {}
+            for key, value in params.items():
+                key = (key or "").strip()
+                if key not in allowed_keys:
+                    return jsonify({"error": f"지원하지 않는 필터 항목: {key}"}), 400
+                value = str(value or "").strip()
+                if value:
+                    clean_params[key] = value
+            if clean_params:
+                clean_filter["params"] = clean_params
+        if not clean_filter:
+            continue
+        cleaned.append({
+            "label": label[:40],
+            "filter": clean_filter,
+            "sort_order": idx,
+            "active": bool(item.get("active", True)),
+        })
+
+    if not cleaned:
+        return jsonify({"error": "저장할 빠른필터가 없습니다."}), 400
+    models.replace_quick_filters(cleaned)
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="quick_filters_update", target_type="quick_filters",
+        detail=json.dumps({"count": len(cleaned)}, ensure_ascii=False),
+        ip=request.remote_addr,
+    )
+    return jsonify({"ok": True, "filters": models.list_quick_filters(include_inactive=True)})
 
 
 @app.route("/consultations.csv")
