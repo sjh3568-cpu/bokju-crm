@@ -20,6 +20,7 @@
                     <a href="/consultations" {% if request.path.startswith('/consultations') %}class="active"{% endif %}>상담 목록</a>
                     <a href="/lifecycle" {% if request.path.startswith('/lifecycle') or request.path.startswith('/patients') %}class="active"{% endif %}>생애주기</a>
                     <a href="/sms" {% if request.path.startswith('/sms') %}class="active"{% endif %}>문자</a>
+                    <a href="/tools/period-calc" {% if request.path.startswith('/tools/period-calc') %}class="active"{% endif %}>기간 계산기</a>
                     <a href="/stats" {% if request.path.startswith('/stats') %}class="active"{% endif %}>통계</a>
                     <a href="/report/monthly" {% if request.path.startswith('/report') %}class="active"{% endif %}>월간보고서</a>
                     <a href="/help" {% if request.path.startswith('/help') %}class="active"{% endif %} title="사용 매뉴얼" style="margin-left:auto; opacity:0.7">❓</a>

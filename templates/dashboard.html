@@ -139,12 +139,19 @@
 {% macro discharge_table(rows) %}
 <div class="tbl-wrap">
     <table class="tbl dash-table">
-        <thead><tr><th>D-day</th><th>환자</th><th>병명</th><th>병동</th><th>주치의</th><th>퇴원예정</th><th>병동 면담</th><th>액션</th></tr></thead>
+        <thead><tr><th>D-day</th><th>유형</th><th>환자</th><th>병명</th><th>병동</th><th>주치의</th><th>퇴원예정</th><th>병동 면담</th><th>액션</th></tr></thead>
         <tbody>
             {% for d in rows %}
             {% set interviewed = d.con.discharge_interview_at %}
             <tr{% if interviewed %} class="follow-up-done"{% endif %}>
                 <td class="nowrap">{% if d.watch.days_left < 0 %}<span class="danger-text">{{ -d.watch.days_left }}일 초과</span>{% else %}D-{{ d.watch.days_left }}{% endif %}</td>
+                <td class="nowrap">
+                    {% if d.watch.mandatory %}
+                    <span class="badge badge-must" title="비중추신경계 — S005 재원 기간 안에 반드시 퇴원">필수 퇴원</span>
+                    {% else %}
+                    <span class="muted-sm">연장 가능</span>
+                    {% endif %}
+                </td>
                 <td class="nowrap">{% if d.con.blacklist %}<span class="bl-mark" title="블랙리스트">⚠</span> {% endif %}<a href="/consult/{{ d.con.id }}">{{ d.con.patient_name }}</a></td>
                 <td class="dash-dx" title="{{ d.con.disease_summary }}">{{ d.con.disease_summary or '-' }}</td>
                 <td class="nowrap">{{ d.con.ward or '-' }}</td>
@@ -318,41 +325,54 @@
 {% set admission_group_planned = admission_groups_by_status['planned'] %}
 {% set admission_group_completed = admission_groups_by_status['completed'] %}
 
-<div class="stat-grid dash-stat-grid">
-    <a class="stat-card danger" href="#action-queue">
-        <div class="label">처리 필요</div>
-        <div class="value">{{ summary.action_total or 0 }}</div>
-        <div class="sub">긴급 {{ summary.action_danger or 0 }}건{% if summary.action_stale %} · 방치 {{ summary.action_stale }}건{% endif %}</div>
+{# KPI 1행: 오늘 할 일(액션 + 종류별 내역). 2행: 현황 6칸 — 오늘 2 · 기한 2 · 대기 2. #}
+<div class="dash-kpi">
+    <a class="dash-kpi-hero" href="#action-queue">
+        <div class="dash-kpi-hero-main">
+            <div class="label">오늘 할 일 <span class="hero-hint">최근 7일</span></div>
+            <div class="value">{{ summary.action_total or 0 }}</div>
+            <div class="sub">긴급 {{ action_queue.danger or 0 }} · 주의 {{ action_queue.warn or 0 }}{% if summary.action_stale %} · <b class="hero-stale">방치 {{ summary.action_stale }}</b>{% endif %}</div>
+        </div>
+        <div class="dash-kpi-breakdown">
+            {% for g in action_queue.groups %}
+            <div class="dash-kpi-chip band-{{ g.band }}{% if not g.count and not g.stale %} zero{% elif g.danger %} danger{% endif %}">
+                <span class="chip-label">{{ g.label }}</span>
+                <span class="chip-count">{{ g.count }}</span>
+                <span class="chip-stale">{% if g.stale %}방치 {{ g.stale }}{% endif %}</span>
+            </div>
+            {% endfor %}
+        </div>
     </a>
-    <a class="stat-card accent" href="#admission-schedule">
-        <div class="label">오늘 입원 현황</div>
+
+    <a class="stat-card g-today{% if not summary.admission_today %} is-zero{% endif %}" href="#admission-schedule">
+        <div class="label">오늘 입원</div>
         <div class="value">{{ summary.admission_today or 0 }}</div>
         <div class="sub">15일 예정 {{ summary.admission_planned_week or 0 }} · 완료 {{ summary.admission_completed_week or 0 }}</div>
     </a>
-    <a class="stat-card" href="#today-consults">
+    <a class="stat-card g-today{% if not summary.today_consults %} is-zero{% endif %}" href="#today-consults">
         <div class="label">오늘 상담</div>
         <div class="value">{{ summary.today_consults or 0 }}</div>
         <div class="sub">상담사 {{ counselor_today|length }}명</div>
     </a>
-    <a class="stat-card warn" href="#recovery-transition">
-        <div class="label">비회복기 전환 D-15</div>
+    <a class="stat-card g-due warn{% if not summary.recovery_transition_due %} is-zero{% endif %}" href="#recovery-transition">
+        <div class="label">회복기 만료 D-15</div>
         <div class="value">{{ summary.recovery_transition_due or 0 }}</div>
-        <div class="sub">회복기 산정 만료 임박</div>
+        <div class="sub">비회복기 전환 대상</div>
     </a>
-    <a class="stat-card danger" href="#discharge-due">
+    <a class="stat-card g-due warn{% if not summary.discharge_pending %} is-zero{% endif %}" href="#discharge-due">
         <div class="label">퇴원 예정 D-30</div>
         <div class="value">{{ summary.discharge_pending or 0 }}</div>
-        <div class="sub">초과 포함</div>
+        <div class="sub">{% if summary.discharge_mandatory %}필수 퇴원 {{ summary.discharge_mandatory }}명 · {% endif %}기한 초과 포함</div>
     </a>
-    <a class="stat-card" href="#inbound">
-        <div class="label">미처리 인바운드</div>
+    <a class="stat-card g-wait{% if not summary.open_inbound %} is-zero{% endif %}" href="#inbound">
+        <div class="label">미처리 문의</div>
         <div class="value">{{ summary.open_inbound or 0 }}</div>
         <div class="sub">재연락 {{ summary.callbacks or 0 }}건</div>
     </a>
-    <a class="stat-card warn" href="#holds">
-        <div class="label">상담/입원보류</div>
+    <a class="stat-card g-wait{% if not summary.holds %} is-zero{% endif %}" href="#holds">
+        <div class="label">보류 (상담·입원)</div>
         <div class="value">{{ summary.holds or 0 }}</div>
-        <div class="sub">최근 보류 건</div>
+        <div class="sub">사유 확인 필요</div>
     </a>
 </div>
 
@@ -644,17 +664,64 @@
 <style>
 .dash-head { align-items:flex-start; }
 .dash-actions { display:flex; gap:6px; align-items:center; }
-/* KPI 카드 정렬 — 동일 행 카드 동일 높이, 내부 3분할 (label / value / sub) */
-.dash-stat-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    grid-auto-rows: 1fr; align-items: stretch; }
-.dash-stat-grid .stat-card { text-decoration:none; color:inherit;
+/* KPI — 1행: 액션 히어로(전체 폭), 2행: 현황 6칸. 6열 그리드로 상하좌우 정렬을 맞춘다. */
+.dash-kpi { display:grid; grid-template-columns:repeat(6, 1fr); gap:12px;
+    align-items:stretch; margin-bottom:16px; }
+.dash-kpi .stat-card { text-decoration:none; color:inherit;
     display:flex; flex-direction:column; justify-content:space-between;
-    height:108px; padding:12px 14px; }
-.dash-stat-grid .stat-card .label { margin:0; line-height:1.3;
+    height:104px; padding:12px 14px; border-top:3px solid var(--border); }
+.dash-kpi .stat-card .label { margin:0; line-height:1.3;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.dash-stat-grid .stat-card .value { margin:0; }
-.dash-stat-grid .stat-card .sub { margin:0; line-height:1.3;
+.dash-kpi .stat-card .value { margin:0; }
+.dash-kpi .stat-card .sub { margin:0; line-height:1.3;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* 성격별 상단 띠 — 오늘(파랑) / 기한(주황) / 대기(회색) */
+.dash-kpi .stat-card.g-today { border-top-color:var(--accent); }
+.dash-kpi .stat-card.g-due { border-top-color:var(--warning); }
+.dash-kpi .stat-card.g-wait { border-top-color:var(--text-light); }
+.dash-kpi .stat-card.is-zero .value { color:var(--text-light); }
+
+.dash-kpi-hero { grid-column:1 / -1; display:flex; align-items:stretch; gap:18px;
+    background:var(--card-bg); border:1px solid var(--border);
+    border-top:3px solid var(--danger); border-radius:var(--radius);
+    padding:14px 18px; text-decoration:none; color:inherit; }
+.dash-kpi-hero:hover { box-shadow:0 2px 8px rgba(0,0,0,0.07); }
+.dash-kpi-hero-main { flex:0 0 200px; display:flex; flex-direction:column; justify-content:center; }
+.dash-kpi-hero-main .label { font-size:0.9em; color:var(--text-light); margin-bottom:2px; }
+.dash-kpi-hero-main .label .hero-hint { font-size:0.82em; opacity:0.75; }
+.dash-kpi-hero-main .value { font-size:2.6em; font-weight:700; color:var(--danger); line-height:1.05; }
+.dash-kpi-hero-main .sub { font-size:0.84em; color:var(--text-light); margin-top:2px; }
+.dash-kpi-hero-main .hero-stale { color:var(--warning); font-weight:600; }
+.dash-kpi-breakdown { flex:1; display:grid; grid-template-columns:repeat(8, 1fr); gap:8px; }
+.dash-kpi-chip { display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:2px; padding:8px 4px; border:1px solid var(--border); border-radius:8px;
+    background:#f8fafc; text-align:center; }
+.dash-kpi-chip .chip-label { font-size:0.76em; color:var(--text-light);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+.dash-kpi-chip .chip-count { font-size:1.25em; font-weight:700; color:var(--primary); line-height:1.1; }
+.dash-kpi-chip .chip-stale { font-size:0.7em; color:var(--warning); min-height:1em; line-height:1; }
+/* 칩 좌측 띠 = 아래 카드 상단 띠와 같은 성격 색 (오늘/기한/대기) */
+.badge-must { background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; }
+.dash-kpi-chip.band-today { border-left:3px solid var(--accent); }
+.dash-kpi-chip.band-due { border-left:3px solid var(--warning); }
+.dash-kpi-chip.band-wait { border-left:3px solid var(--text-light); }
+.dash-kpi-chip.danger { border-color:var(--danger); background:#fef2f2; }
+.dash-kpi-chip.danger .chip-count { color:var(--danger); }
+.dash-kpi-chip.zero { opacity:0.45; }
+.dash-kpi-chip.zero .chip-count { color:var(--text-light); font-weight:600; }
+
+@media (max-width:1180px) {
+    .dash-kpi { grid-template-columns:repeat(3, 1fr); }
+    .dash-kpi-hero { flex-direction:column; gap:12px; }
+    .dash-kpi-hero-main { flex:none; }
+}
+@media (max-width:950px) {
+    .dash-kpi-breakdown { grid-template-columns:repeat(4, 1fr); }
+}
+@media (max-width:680px) {
+    .dash-kpi { grid-template-columns:repeat(2, 1fr); }
+    .dash-kpi-breakdown { grid-template-columns:repeat(2, 1fr); }
+}
 .dash-section-head { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px; }
 .dash-section-head h3 { margin-bottom:0; }
 .dash-filter-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:4px 0 10px; }

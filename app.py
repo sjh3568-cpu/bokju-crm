@@ -9,7 +9,8 @@ import json
 import logging
 import os
 import secrets
-from datetime import datetime, timedelta
+import calendar
+from datetime import date, datetime, timedelta
 from urllib.parse import urlencode, urlsplit
 
 from dotenv import load_dotenv
@@ -274,6 +275,22 @@ _RECOVERY_RULES = [
 ]
 
 
+def recovery_window_days(diseases):
+    """진단군별 회복기 인정 기간(일). 매칭 없으면 0.
+    중추신경계 90 / 비사용증후군·골유합 지연 60 / 근골격계·절단 30.
+    """
+    matched = 0
+    for d in diseases or []:
+        if not d:
+            continue
+        d_str = str(d)
+        for kws, period in _RECOVERY_RULES:
+            if any(kw in d_str for kw in kws):
+                matched = max(matched, period)
+                break
+    return matched
+
+
 def compute_recovery_detail(reference_date, disease_onset, diseases):
     """입원(예정)일/상담일 - 발병일 → 회복기 판정 상세.
     Returns: dict(label, days, period, days_left) 또는 None(판정 불가).
@@ -291,16 +308,7 @@ def compute_recovery_detail(reference_date, disease_onset, diseases):
     days = (rd - od).days
     if days < 0:
         return None
-    matched = 0
-    for d in diseases or []:
-        if not d:
-            continue
-        d_str = str(d)
-        for kws, period in _RECOVERY_RULES:
-            if any(kw in d_str for kw in kws):
-                if period > matched:
-                    matched = period
-                break
+    matched = recovery_window_days(diseases)
     if matched == 0:
         return None
     return {
@@ -375,54 +383,70 @@ def _recovery_status(consultation):
 
 
 # ── 입원 기간(입원 후 재원 가능 일수) ──
-# 중추신경계: 회복기 360일(s005 180 + s006 180) / 비회복기 180일(s006)
-# 비사용증후군·하지 부위 절단·골유합 지연: 60일
-# 근골격계 골절: 단일부위 30일 / 내고정술·전치환술·다발부위 60일
-_ADM_CNS_KW = ("뇌출혈", "뇌경색", "뇌손상", "척수손상", "뇌성마비",
-               "마비", "편마비", "사지마비", "중추신경계")
-_ADM_DISUSE_KW = ("호흡질환", "폐질환", "심장질환", "신생물", "폐렴", "폐수종",
-                  "패혈증", "농양", "다제내성", "CRE", "VRE", "신부전",
-                  "동정맥루", "복부대동맥류", "급성복막염", "장폐색",
-                  "파킨슨(신규)", "길랑바레증후군", "비사용증후군")
-_ADM_MSK_KW = ("고관절", "대퇴", "골반", "근골격계", "슬관절",
-               "내고정술", "치환술", "다발")
-_ADM_MSK_LONG_KW = ("내고정술", "치환술", "다발")  # 근골격계 단일부위 → 60일 가산
+# 2026-08-21 사용자 확인 — 중추신경계와 그 외가 완전히 다른 구조다.
+#   중추신경계: S005 회복기 180일 → S006 비회복기 → 입원일 + 1년(365일)
+#               (90일을 넘겨 입원해도 급성기 치료 사유면 S044로 일부 인정)
+#   그 외     : S005 밖에 없다. 재원 기간이 진단군별로 고정되어 있고
+#               그 기간 안에 반드시 퇴원해야 한다 (S006 연장 구간 없음).
+#               근골격계 단일 30일 / 다발·내고정술·치환술 60일 /
+#               비사용증후군군·골유합 지연·하지 부위 절단 60일
+RECOVERY_STAY_DAYS = 180   # 중추신경계 S005 산정 일수
+TOTAL_STAY_DAYS = 365      # 중추신경계 총 재원 = 입원일 + 1년
+
+_CNS_KW = ("뇌출혈", "뇌경색", "뇌손상", "척수손상", "뇌성마비",
+           "마비", "편마비", "사지마비", "중추신경계")
+# 비중추신경계 재원 일수 — 여러 개 매칭되면 가장 긴 값 적용
+_NONCNS_STAY_RULES = [
+    (("내고정술", "치환술", "다발"), 60),
+    (("호흡질환", "폐질환", "심장질환", "신생물", "폐렴", "폐수종",
+      "패혈증", "농양", "다제내성", "CRE", "VRE", "신부전",
+      "동정맥루", "복부대동맥류", "급성복막염", "장폐색",
+      "파킨슨(신규)", "길랑바레증후군", "비사용증후군"), 60),
+    (("골유합 지연", "골유합지연"), 60),
+    (("하지 부위 절단", "절단"), 60),
+    (("고관절", "대퇴", "골반", "근골격계", "슬관절"), 30),
+]
+
+
+def is_cns_diseases(diseases):
+    """중추신경계 진단군인지."""
+    return any(any(kw in str(d) for kw in _CNS_KW) for d in (diseases or []) if d)
+
+
+def noncns_stay_days(diseases):
+    """비중추신경계 재원 일수. 매칭 없으면 0."""
+    days = 0
+    for d in (diseases or []):
+        if not d:
+            continue
+        for kws, n in _NONCNS_STAY_RULES:
+            if any(kw in str(d) for kw in kws):
+                days = max(days, n)
+                break
+    return days
 
 
 def compute_admission_period(diseases, recovery_label):
     """질환군 + 회복기/비회복기 → 입원 기간(입원 후 재원 가능 일수).
-    Returns: dict(total, billing) 또는 None(산정 불가).
-      total   = 전체 입원 가능 일수
-      billing = 회복기 수가(s005) 인정 기간 — 중추신경계 회복기만 180, 그 외 None
-    여러 질환군 중복 시 가장 긴 입원 기간을 적용한다.
+    Returns: dict(total, billing, mandatory) 또는 None(산정 불가).
+      total     = 전체 입원 가능 일수
+      billing   = 회복기 수가(S005) 인정 기간 — 중추신경계 회복기만 180, 그 외 None
+      mandatory = 이 기간 안에 반드시 퇴원해야 하는지 (비중추신경계는 True)
     """
-    ds = [str(d) for d in (diseases or []) if d]
-    if not ds:
-        return None
-
-    def has(kws):
-        return any(any(kw in d for kw in kws) for d in ds)
-
-    total = 0
-    billing = None
-    if has(_ADM_CNS_KW):
+    if is_cns_diseases(diseases):
         if recovery_label == "회복기":
-            total = max(total, 360)
-            billing = 180
-        elif recovery_label == "비회복기":
-            total = max(total, 180)
-        # 회복기/비회복기 미상이면 중추신경계 입원 기간 산정 불가 → 기여 안 함
-    if has(_ADM_DISUSE_KW):
-        total = max(total, 60)
-    if has(("하지 부위 절단",)):
-        total = max(total, 60)
-    if has(("골유합 지연", "골유합지연")):
-        total = max(total, 60)
-    if has(_ADM_MSK_KW):
-        total = max(total, 60 if has(_ADM_MSK_LONG_KW) else 30)
-    if total == 0:
+            return {"total": TOTAL_STAY_DAYS, "billing": RECOVERY_STAY_DAYS,
+                    "mandatory": False}
+        if recovery_label == "비회복기":
+            return {"total": TOTAL_STAY_DAYS, "billing": None, "mandatory": False}
+        # 회복기/비회복기 미상이면 중추신경계 입원 기간 산정 불가
         return None
-    return {"total": total, "billing": billing}
+    days = noncns_stay_days(diseases)
+    if not days:
+        return None
+    # 비중추신경계는 전원 S005. 수가 구간 = 재원 기간 전체라 '전환' 개념이 없어
+    # billing(전환 임박 경고용)은 비워두고 mandatory로 필수 퇴원을 알린다.
+    return {"total": days, "billing": None, "mandatory": True}
 
 
 @app.template_filter("admission_expiry")
@@ -456,6 +480,7 @@ def _admission_expiry(consultation):
     total_d = ad + timedelta(days=period["total"])
     out = {
         "basis": "actual" if actual else "planned",
+        "mandatory": period.get("mandatory", False),
         "total_days": period["total"],
         "total_date": total_d.isoformat(),
         "total_left": (total_d - today).days,
@@ -494,7 +519,9 @@ def _discharge_watch(consultation):
     except (ValueError, TypeError):
         return None
     days_left = (dd - datetime.now().date()).days
+    ax_flag = _admission_expiry(consultation) or {}
     return {
+        "mandatory": bool(ax_flag.get("mandatory")),
         "state": "퇴원예정" if days_left <= 30 else None,
         "due_date": dd.isoformat(),
         "days_left": days_left,
@@ -601,6 +628,32 @@ def _dashboard_days_since(value):
     return (datetime.now().date() - dt.date()).days
 
 
+# 액션큐 카드 종류 → KPI 히어로에 표시할 묶음. 인바운드는 채널명이 그대로 kind로
+# 들어오므로(카카오채널/홈페이지/기타) 아래 표에 없는 kind는 전부 '문의'로 본다.
+_ACTION_GROUP_MAP = {
+    "재연락": "재연락",
+    "입원준비": "입원준비",
+    "담당자": "담당자",
+    "전환체크": "전환체크",
+    "퇴원예정": "퇴원예정",
+    "입원보류": "보류",
+    "상담보류": "보류",
+    "보류": "보류",
+    "입원예정": "입원예정일",
+}
+# 순서·묶음은 아래 KPI 카드 줄과 맞춘다 — 오늘(파랑) → 기한(주황) → 대기(회색).
+_ACTION_GROUP_ORDER = ("입원준비", "담당자", "전환체크", "퇴원예정",
+                       "문의", "재연락", "보류", "입원예정일")
+_ACTION_GROUP_BAND = {
+    "입원준비": "today", "담당자": "today",
+    "전환체크": "due", "퇴원예정": "due",
+}
+
+
+def _dashboard_action_group(kind):
+    return _ACTION_GROUP_MAP.get(kind, "문의")
+
+
 def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge_due,
                             planned_missing_date=None):
     """대시보드 액션큐 — 처리 필요 카드 목록.
@@ -698,7 +751,7 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
                 age_days=0,
             )
 
-    for d in recovery_due[:6]:
+    for d in recovery_due:
         left = d["watch"].get("billing_left")
         # left가 음수면 만료 후 경과일수 → 방치 판단 기준
         age = -left if (left is not None and left < 0) else 0
@@ -713,7 +766,7 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
             age_days=age,
         )
 
-    for d in discharge_due[:6]:
+    for d in discharge_due:
         left = d["watch"].get("days_left")
         age = -left if (left is not None and left < 0) else 0
         add(
@@ -727,7 +780,7 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
             age_days=age,
         )
 
-    for h in data.get("holds", [])[:8]:
+    for h in data.get("holds", []):
         days = _dashboard_days_since(h.get("updated_at") or h.get("consult_date")) or 0
         add(
             h.get("hold_kind") or "보류",
@@ -742,7 +795,7 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
 
     # 입원예정 상태인데 planned_admission_date가 비어 있는 상담 — 날짜 지정 필요.
     # 오래 방치될수록 우선순위 상승 (consult_date 기준 경과일).
-    for r in planned_missing_date[:8]:
+    for r in planned_missing_date:
         days = _dashboard_days_since(r.get("consult_date")) or 0
         meta = f"{days}일 경과" if days > 0 else "오늘 등록"
         add(
@@ -764,9 +817,21 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
         [x for x in items if x["is_stale"]],
         key=lambda x: (-x["age_days"], tone_rank.get(x["tone"], 9), x["title"]),
     )
+    groups = []
+    for label in _ACTION_GROUP_ORDER:
+        rows = [x for x in today_items if _dashboard_action_group(x["kind"]) == label]
+        groups.append({
+            "label": label,
+            "band": _ACTION_GROUP_BAND.get(label, "wait"),
+            "count": len(rows),
+            "danger": sum(1 for x in rows if x["tone"] == "danger"),
+            "stale": sum(1 for x in stale_items if _dashboard_action_group(x["kind"]) == label),
+        })
+
     return {
         "items": today_items[:14],
         "stale_items": stale_items[:30],
+        "groups": groups,
         "today_total": len(today_items),
         "stale_total": len(stale_items),
         "total": len(items),
@@ -953,6 +1018,10 @@ def dashboard():
     data["summary"]["callbacks"] = len(callbacks)
     data["summary"]["recovery_transition_due"] = len(recovery_transition_due)
     data["summary"]["discharge_pending"] = len(discharge_due)
+    # 비중추신경계 — S005 재원 기간 안에 반드시 퇴원해야 하는 건수
+    data["summary"]["discharge_mandatory"] = sum(
+        1 for d in discharge_due if d["watch"].get("mandatory")
+    )
     # KPI 카운터 — "처리 필요"는 오늘 큐 기준 (8일+ stale은 별도 표시).
     data["summary"]["action_total"] = action_queue["today_total"]
     data["summary"]["action_danger"] = action_queue["danger"]
@@ -1067,6 +1136,193 @@ def api_stats_insight():
 
 
 # ───────────────────── 상담 ─────────────────────
+
+# ── 기간 계산기 ──
+# 상담 중 "이 환자, 회복기 되나? 언제까지 있을 수 있나?"를 즉답하기 위한 도구.
+# 판정 규칙은 상담일지와 같은 함수(recovery_window_days / noncns_stay_days)를 쓰고,
+# 계산기는 진단군 → 대표 병명값 변환만 담당한다.
+# 진단군: (표시명, 대표 병명값, 설명)
+PERIOD_CALC_GROUPS = [
+    ("중추신경계", ["뇌출혈"], "뇌출혈·뇌경색·뇌손상·척수손상·뇌성마비·마비 — 90일 이내 입원 시 S005"),
+    ("근골격계 (단일부위)", ["고관절 골절"], "고관절·대퇴부·골반 골절 중 한 부위 — 재원 30일"),
+    ("근골격계 (다발·내고정술·치환술)", ["다발부위-고관절 골절"], "두 부위 이상 또는 내고정술·전치환술 — 재원 60일"),
+    ("비사용증후군군", ["비사용증후군"], "호흡·심장·신생물·패혈증·신부전·파킨슨(신규)·길랑바레 등 — 재원 60일"),
+    ("골유합 지연", ["골유합 지연"], "골절 후 골유합이 지연된 경우 — 재원 60일"),
+    ("하지 부위 절단", ["하지 부위 절단"], "재원 60일"),
+]
+PERIOD_CALC_GROUP_MAP = {name: diseases for name, diseases, _d in PERIOD_CALC_GROUPS}
+
+# 발병일/수술일 기준 최대 재활 인정 한도. 입원 가능 일수를 다 채우지 못하는 상한.
+PERIOD_CALC_CAP_YEARS = 2
+
+
+def _add_months(d, months):
+    """date + 개월. 말일 보정(1/31 + 1개월 = 2/28)."""
+    y, m = divmod((d.month - 1) + months, 12)
+    y, m = d.year + y, m + 1
+    day = min(d.day, calendar.monthrange(y, m)[1])
+    return date(y, m, day)
+
+
+def _parse_date(value):
+    try:
+        return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
+
+
+def _cns_stay_plan(elapsed, window, delayed):
+    """중추신경계 — 경과일 → S005 / S044 / S006 판정과 회복기 일수.
+    S044 회복기 일수 = (인정 기간 + 180) − 경과일수. 0 이하면 대상 아님.
+    """
+    if elapsed <= window:
+        return {"code": "S005", "label": "회복기",
+                "recovery_days": RECOVERY_STAY_DAYS, "note": ""}
+    limit = window + RECOVERY_STAY_DAYS
+    over = elapsed - window
+    if delayed:
+        remain = limit - elapsed
+        if remain > 0:
+            return {"code": "S044", "label": "지연된 회복기", "recovery_days": remain,
+                    "note": f"{window}일을 {over}일 초과 → {limit} − {elapsed} = {remain}일"}
+        return {"code": "S006", "label": "비회복기", "recovery_days": 0,
+                "note": (f"발병/수술 후 {elapsed}일째 — {limit}일을 넘겨 "
+                         f"지연된 회복기(S044) 인정 불가")}
+    return {"code": "S006", "label": "비회복기", "recovery_days": 0,
+            "note": f"{window}일을 {over}일 초과"}
+
+
+def compute_period_plan(onset, planned, group_name, delayed=False):
+    """발병일/수술일 + 입원예정일 + 진단군 → 회복기 여부·기간·도래 일자.
+    delayed: 급성기 치료로 입원이 지연됨(S044 검토 대상) 체크 여부.
+    Returns: dict(ok=False, error=...) 또는 계산 결과 dict.
+    """
+    od, pd = _parse_date(onset), _parse_date(planned)
+    diseases = PERIOD_CALC_GROUP_MAP.get(group_name)
+    if not od or not pd:
+        return {"ok": False, "error": "발병일/수술일과 입원예정일을 모두 입력해주세요."}
+    if not diseases:
+        return {"ok": False, "error": "진단군을 선택해주세요."}
+    if pd < od:
+        return {"ok": False, "error": "입원예정일이 발병일/수술일보다 빠릅니다."}
+
+    elapsed = (pd - od).days
+    window = recovery_window_days(diseases)
+    if not window:
+        return {"ok": False, "error": "이 진단군은 회복기 판정 기준이 없습니다."}
+    is_cns = is_cns_diseases(diseases)
+
+    if is_cns:
+        stay = _cns_stay_plan(elapsed, window, delayed)
+        code, label, code_note = stay["code"], stay["label"], stay["note"]
+        recovery_days = stay["recovery_days"]
+        delayed_limit = window + RECOVERY_STAY_DAYS
+        delayed_deadline = od + timedelta(days=delayed_limit)
+        # 체크 안 했지만 S044로 인정될 수 있는 구간이면 안내
+        delayed_hint = not delayed and window < elapsed < delayed_limit
+        total = TOTAL_STAY_DAYS
+        mandatory = False
+    else:
+        # 비중추신경계는 S005 하나뿐 — S044(지연)도 S006(연장)도 없다.
+        # 재원 기간이 진단군별로 고정이고 그 안에 반드시 퇴원해야 한다.
+        delayed_limit = delayed_deadline = None
+        delayed_hint = False
+        mandatory = True
+        stay_days = noncns_stay_days(diseases)
+        if elapsed <= window:
+            code, label = "S005", "회복기"
+            recovery_days = total = stay_days
+            code_note = f"재원 {stay_days}일 — 이 기간 안에 반드시 퇴원"
+        else:
+            code, label = None, "대상 아님"
+            recovery_days = total = 0
+            code_note = (f"{window}일을 {elapsed - window}일 초과 — "
+                         f"이 진단군은 S005만 가능해 수가 산정 불가")
+
+    noncovered_days = max(total - recovery_days, 0)
+    recovery_end = pd + timedelta(days=recovery_days) if recovery_days else None
+    admission_end = pd + timedelta(days=total) if total else None
+    # 회복기(S005) 인정 마감일 — 이 날짜까지 입원해야 S005
+    recovery_deadline = od + timedelta(days=window)
+
+    if not total:
+        segments = []
+    elif not is_cns:
+        segments = [{"kind": "rec", "name": "회복기(S005) 재원", "days": total,
+                     "start": pd, "end": admission_end}]
+    elif recovery_days:
+        segments = [
+            {"kind": "rec", "name": f"{label}({code})", "days": recovery_days,
+             "start": pd, "end": recovery_end},
+            {"kind": "non", "name": "비회복기(S006)", "days": noncovered_days,
+             "start": recovery_end, "end": admission_end},
+        ]
+    else:
+        segments = [{"kind": "non", "name": "비회복기(S006)", "days": total,
+                     "start": pd, "end": admission_end}]
+    segments = [x for x in segments if x["days"]]
+
+    cap_date = _add_months(od, 12 * PERIOD_CALC_CAP_YEARS)
+    milestones = [
+        {"label": "1년 도래", "basis": "입원예정일", "date": _add_months(pd, 12)},
+        {"label": "1년 6개월 도래", "basis": "입원예정일", "date": _add_months(pd, 18)},
+        {"label": f"{PERIOD_CALC_CAP_YEARS}년 도래", "basis": "발병일/수술일",
+         "date": cap_date},
+    ]
+    for m in milestones:
+        m["over_cap"] = m["date"] > cap_date
+        m["days_from_planned"] = (m["date"] - pd).days
+
+    # 실제 종료일 — 입원 가능 일수를 다 못 채우는 경우가 많아 상한과 비교한다.
+    effective_end = min(admission_end, cap_date) if admission_end else None
+    return {
+        "ok": True,
+        "onset": od, "planned": pd,
+        "group": group_name, "diseases": diseases,
+        "is_cns": is_cns, "mandatory": mandatory,
+        "label": label, "code": code, "code_note": code_note,
+        "delayed": bool(delayed), "delayed_hint": delayed_hint,
+        "delayed_deadline": delayed_deadline, "delayed_limit_days": delayed_limit,
+        "elapsed_days": elapsed,
+        "recovery_period": window,
+        "recovery_days_left": window - elapsed,
+        "recovery_deadline": recovery_deadline,
+        "total_days": total,
+        "recovery_stay_days": recovery_days,
+        "noncovered_stay_days": noncovered_days,
+        "recovery_end": recovery_end,
+        "segments": segments,
+        "billing_applies": bool(recovery_days),
+        "admission_end": admission_end,
+        "cap_date": cap_date,
+        "cap_years": PERIOD_CALC_CAP_YEARS,
+        "effective_end": effective_end,
+        "capped": bool(admission_end and admission_end > cap_date),
+        "capped_lost_days": (max((admission_end - cap_date).days, 0)
+                             if admission_end else 0),
+        "milestones": milestones,
+    }
+
+
+@app.route("/tools/period-calc")
+@login_required
+def period_calc():
+    """발병일/수술일 + 입원예정일 → 회복기 여부·기간·도래 일자 계산기."""
+    onset = (request.args.get("onset") or "").strip()
+    planned = (request.args.get("planned") or "").strip()
+    group = (request.args.get("group") or "").strip()
+    delayed = request.args.get("delayed") == "1"
+    plan = None
+    if onset or planned or group:
+        plan = compute_period_plan(onset, planned, group, delayed=delayed)
+    return render_template(
+        "period_calc.html",
+        groups=PERIOD_CALC_GROUPS,
+        onset=onset, planned=planned, group=group, delayed=delayed,
+        plan=plan,
+        today=datetime.now().strftime("%Y-%m-%d"),
+    )
+
 
 @app.route("/consult/new")
 @login_required
