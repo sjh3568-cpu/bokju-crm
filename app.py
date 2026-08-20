@@ -305,8 +305,9 @@ def compute_recovery_detail(reference_date, disease_onset, diseases):
         od = datetime.strptime(str(disease_onset)[:10], "%Y-%m-%d").date()
     except (ValueError, TypeError):
         return None
-    days = (rd - od).days
-    if days < 0:
+    # 발병일이 1일째 (입원 당일 포함)
+    days = (rd - od).days + 1
+    if days < 1:
         return None
     matched = recovery_window_days(diseases)
     if matched == 0:
@@ -477,7 +478,7 @@ def _admission_expiry(consultation):
     except (ValueError, TypeError):
         return None
     today = datetime.now().date()
-    total_d = ad + timedelta(days=period["total"])
+    total_d = _day_of(ad, period["total"])
     out = {
         "basis": "actual" if actual else "planned",
         "mandatory": period.get("mandatory", False),
@@ -489,7 +490,7 @@ def _admission_expiry(consultation):
         "billing_left": None,
     }
     if period["billing"]:
-        bd = ad + timedelta(days=period["billing"])
+        bd = _day_of(ad, period["billing"])
         out["billing_date"] = bd.isoformat()
         out["billing_left"] = (bd - today).days
     return out
@@ -1164,6 +1165,11 @@ def _add_months(d, months):
     return date(y, m, day)
 
 
+def _day_of(base, n):
+    """base를 1일째로 셀 때 n일째에 해당하는 날짜. (n일 기간의 종료일)"""
+    return base + timedelta(days=n - 1)
+
+
 def _parse_date(value):
     try:
         return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
@@ -1206,7 +1212,8 @@ def compute_period_plan(onset, planned, group_name, delayed=False):
     if pd < od:
         return {"ok": False, "error": "입원예정일이 발병일/수술일보다 빠릅니다."}
 
-    elapsed = (pd - od).days
+    # 발병/수술일을 1일째로 세어 입원일이 며칠째인지 (입원 당일 포함)
+    elapsed = (pd - od).days + 1
     window = recovery_window_days(diseases)
     if not window:
         return {"ok": False, "error": "이 진단군은 회복기 판정 기준이 없습니다."}
@@ -1217,7 +1224,8 @@ def compute_period_plan(onset, planned, group_name, delayed=False):
         code, label, code_note = stay["code"], stay["label"], stay["note"]
         recovery_days = stay["recovery_days"]
         delayed_limit = window + RECOVERY_STAY_DAYS
-        delayed_deadline = od + timedelta(days=delayed_limit)
+        # S044는 차감 후 1일이라도 남아야 하므로 마지막 인정일은 (한계 - 1)일째
+        delayed_deadline = _day_of(od, delayed_limit - 1)
         # 체크 안 했지만 S044로 인정될 수 있는 구간이면 안내
         delayed_hint = not delayed and window < elapsed < delayed_limit
         total = TOTAL_STAY_DAYS
@@ -1240,10 +1248,10 @@ def compute_period_plan(onset, planned, group_name, delayed=False):
                          f"이 진단군은 S005만 가능해 수가 산정 불가")
 
     noncovered_days = max(total - recovery_days, 0)
-    recovery_end = pd + timedelta(days=recovery_days) if recovery_days else None
-    admission_end = pd + timedelta(days=total) if total else None
-    # 회복기(S005) 인정 마감일 — 이 날짜까지 입원해야 S005
-    recovery_deadline = od + timedelta(days=window)
+    recovery_end = _day_of(pd, recovery_days) if recovery_days else None
+    admission_end = _day_of(pd, total) if total else None
+    # 회복기(S005) 인정 마감일 — 이 날짜까지 입원해야 S005 (발병일이 1일째)
+    recovery_deadline = _day_of(od, window)
 
     if not total:
         segments = []
@@ -1287,18 +1295,22 @@ def compute_period_plan(onset, planned, group_name, delayed=False):
                               "pct": round(days / total * 100, 2)})
         bar = {"unit": unit, "ticks": ticks, "total": total}
 
-    cap_date = _add_months(od, 12 * PERIOD_CALC_CAP_YEARS)
+    # 도래일 = 달력 n개월째의 마지막 날 (시작일이 1일째이므로 하루 뺀다)
+    cap_date = _add_months(od, 12 * PERIOD_CALC_CAP_YEARS) - timedelta(days=1)
     milestones = [
-        {"label": "1년 도래", "basis": "입원예정일", "date": _add_months(pd, 12)},
-        {"label": "1년 6개월 도래", "basis": "입원예정일", "date": _add_months(pd, 18)},
-        {"label": f"{PERIOD_CALC_CAP_YEARS}년 도래", "basis": "발병일/수술일",
+        {"label": "1년", "basis": "입원예정일",
+         "date": _add_months(pd, 12) - timedelta(days=1)},
+        {"label": "1년 6개월", "basis": "입원예정일",
+         "date": _add_months(pd, 18) - timedelta(days=1)},
+        {"label": f"{PERIOD_CALC_CAP_YEARS}년", "basis": "발병일/수술일",
          "date": cap_date},
     ]
     for m in milestones:
         m["over_cap"] = m["date"] > cap_date
         m["days_from_planned"] = (m["date"] - pd).days
 
-    # 일정 — 같은 날짜에 겹치는 항목이 많아(입원 만료 = 1년 도래 등) 날짜별로 묶는다.
+    # 일정 — 입원 후 항목은 회복기 종료 / 1년 / 1년 6개월 / 2년 네 가지.
+    # 같은 날짜에 겹치면(중추신경계는 재원 종료 = 1년) 한 줄로 묶는다.
     events = {}
 
     def add_event(d, text, note="", kind="main"):
@@ -1309,25 +1321,25 @@ def compute_period_plan(onset, planned, group_name, delayed=False):
         if kind == "main":
             row["kind"] = "main"
 
-    add_event(pd, "입원", "입원예정일")
-    add_event(recovery_deadline, "회복기(S005) 인정 마감", f"발병/수술일 + {window}일")
-    if is_cns:
-        add_event(delayed_deadline, "지연된 회복기(S044) 마감",
-                  f"발병/수술일 + {delayed_limit}일")
-    # 비중추신경계는 회복기 종료 = 입원 만료라 한 줄로만 적는다.
-    if recovery_end and recovery_end != admission_end:
-        add_event(recovery_end, "회복기 종료 → 비회복기(S006) 시작",
-                  f"입원일 + {recovery_days}일")
-    if admission_end:
-        add_event(admission_end,
-                  "입원 만료" + ("" if is_cns else " — 반드시 퇴원"),
-                  f"입원일 + {total}일")
+    add_event(pd, "입원", f"발병/수술 {elapsed}일째")
+    if recovery_end:
+        add_event(recovery_end,
+                  "회복기 종료" + ("" if is_cns else " — 반드시 퇴원"),
+                  f"입원 {recovery_days}일째"
+                  + ("" if is_cns else " · 재원 종료"))
+    elif admission_end:
+        add_event(admission_end, "재원 종료", f"입원 {total}일째")
     if is_cns:
         for m in milestones:
-            add_event(m["date"], m["label"], f"{m['basis']} 기준", kind="ref")
+            note = f"{m['basis']} 기준"
+            if m["label"] == "1년":
+                note += " · 입원 만료"
+            add_event(m["date"], m["label"], note,
+                      kind="main" if m["label"] == "1년" else "ref")
     timeline = sorted(events.values(), key=lambda x: x["date"])
     for row in timeline:
-        row["days_from_planned"] = (row["date"] - pd).days
+        # 입원 당일이 1일째
+        row["day_index"] = (row["date"] - pd).days + 1
         row["over_cap"] = row["date"] > cap_date
 
     # 실제 종료일 — 입원 가능 일수를 다 못 채우는 경우가 많아 상한과 비교한다.

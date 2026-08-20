@@ -86,12 +86,12 @@
 
     <div class="tbl-wrap">
         <table class="tbl tbl-compact calc-timeline">
-            <thead><tr><th>일자</th><th>입원 후</th><th>내용</th></tr></thead>
+            <thead><tr><th>일자</th><th>입원 기준</th><th>내용</th></tr></thead>
             <tbody>
                 {% for row in plan.timeline %}
                 <tr class="{{ row.kind }}{% if row.over_cap %} calc-over{% endif %}">
                     <td class="nowrap"><b>{{ row.date }}</b></td>
-                    <td class="nowrap muted-sm">{% if row.days_from_planned > 0 %}{{ row.days_from_planned }}일{% elif row.days_from_planned == 0 %}당일{% else %}{{ -row.days_from_planned }}일 전{% endif %}</td>
+                    <td class="nowrap muted-sm">{% if row.day_index >= 1 %}{{ row.day_index }}일째{% else %}입원 {{ 1 - row.day_index }}일 전{% endif %}</td>
                     <td>
                         {% for it in row['items'] %}
                         <div class="calc-tl-item">
