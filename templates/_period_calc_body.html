@@ -33,7 +33,7 @@
 
 {% if plan and plan.ok %}
 <div class="card calc-result">
-    <div class="calc-verdict {% if plan.code == 'S005' or plan.label == '회복기' %}yes{% elif plan.code == 'S044' %}mid{% else %}no{% endif %}">
+    <div class="calc-verdict {% if plan.code == 'S005' %}yes{% elif plan.code == 'S044' %}mid{% else %}no{% endif %}">
         <div class="calc-verdict-label">{{ plan.label }}{% if plan.code %} <span class="calc-code">{{ plan.code }}</span>{% endif %}</div>
         <div class="calc-verdict-detail">
             입원예정일이 발병/수술 후 <b>{{ plan.elapsed_days }}일째</b> ·
@@ -46,6 +46,7 @@
             {% if plan.code_note %}<br><span class="muted-sm">{{ plan.code_note }}</span>{% endif %}
         </div>
     </div>
+
     {% if plan.delayed_hint %}
     <div class="calc-note warn">
         급성기 치료(종합병원 등)로 입원이 늦어진 경우라면 <b>지연된 회복기(S044)</b> 대상일 수 있습니다 —
@@ -53,57 +54,52 @@
     </div>
     {% endif %}
 
-    {% if not plan.segments %}
+    {% if plan.bar %}
+    {# 재원 구간 — 폭이 실제 일수 비율, 눈금은 개월(90일 미만이면 주) #}
+    <div class="calc-chart">
+        <div class="calc-track">
+            {% for seg in plan.segments %}
+            <div class="calc-seg {{ seg.kind }}" style="width:{{ seg.pct }}%"
+                 title="{{ seg.name }} {{ seg.days }}일 · {{ seg.start }} ~ {{ seg.end }}">
+                <b>{{ seg.name }}</b>
+                <span>{{ seg.days }}일 · {{ seg.pct|round|int }}%</span>
+            </div>
+            {% endfor %}
+            {% for t in plan.bar.ticks %}
+            <span class="calc-tick" style="left:{{ t.pct }}%" title="{{ t.n }}{{ plan.bar.unit }} — {{ t.date }}"></span>
+            {% endfor %}
+        </div>
+        <div class="calc-axis">
+            {% for t in plan.bar.ticks %}
+            <span class="calc-axis-mark" style="left:{{ t.pct }}%"><i></i>{{ t.n }}</span>
+            {% endfor %}
+        </div>
+        <div class="calc-chart-ends">
+            <span>{{ plan.planned }} 입원</span>
+            <span class="calc-axis-unit">눈금 1칸 = 1{{ plan.bar.unit }}</span>
+            <span>{{ plan.admission_end }} 만료 · 총 {{ plan.total_days }}일</span>
+        </div>
+    </div>
+    {% else %}
     <div class="calc-note warn">산정 가능한 재원 기간이 없습니다 — 아래 마감일을 확인하세요.</div>
     {% endif %}
-    <div class="calc-bars">
-        {% for seg in plan.segments %}
-        <div class="calc-bar {{ seg.kind }}" style="flex:{{ seg.days }}">
-            <b>{{ seg.name }} {{ seg.days }}일</b>
-            <span>{{ seg.start }} ~ {{ seg.end }}</span>
-        </div>
-        {% endfor %}
-    </div>
 
     <div class="tbl-wrap">
-        <table class="tbl tbl-compact">
-            <thead><tr><th>항목</th><th>기준</th><th>일자</th><th>비고</th></tr></thead>
+        <table class="tbl tbl-compact calc-timeline">
+            <thead><tr><th>일자</th><th>입원 후</th><th>내용</th></tr></thead>
             <tbody>
-                <tr>
-                    <td>회복기 인정 마감</td>
-                    <td class="muted-sm">발병일/수술일 + {{ plan.recovery_period }}일</td>
-                    <td><b>{{ plan.recovery_deadline }}</b></td>
-                    <td class="muted-sm">이 날짜까지 입원해야 회복기</td>
-                </tr>
-                {% if plan.delayed_deadline %}
-                <tr>
-                    <td>지연된 회복기(S044) 마감</td>
-                    <td class="muted-sm">발병일/수술일 + {{ plan.delayed_limit_days }}일</td>
-                    <td><b>{{ plan.delayed_deadline }}</b></td>
-                    <td class="muted-sm">이 날짜를 넘기면 S044도 불가</td>
-                </tr>
-                {% endif %}
-                {% if plan.recovery_end %}
-                <tr>
-                    <td>{{ plan.label }}{% if plan.code %}({{ plan.code }}){% endif %} 종료</td>
-                    <td class="muted-sm">입원예정일 + {{ plan.recovery_stay_days }}일</td>
-                    <td><b>{{ plan.recovery_end }}</b></td>
-                    <td class="muted-sm">{% if plan.mandatory %}이 날짜까지 <b>반드시 퇴원</b>{% else %}이후 비회복기(S006) {{ plan.noncovered_stay_days }}일{% endif %}</td>
-                </tr>
-                {% endif %}
-                <tr>
-                    <td>입원 만료</td>
-                    <td class="muted-sm">입원예정일 + {{ plan.total_days }}일{% if plan.is_cns %} (1년){% endif %}</td>
-                    <td><b>{{ plan.admission_end }}</b></td>
-                    <td class="muted-sm">산정 가능한 총 재원 일수</td>
-                </tr>
-                {% for m in plan.milestones if plan.is_cns %}
-                <tr {% if m.over_cap %}class="calc-over"{% endif %}>
-                    <td>{{ m.label }}</td>
-                    <td class="muted-sm">{{ m.basis }} 기준</td>
-                    <td><b>{{ m.date }}</b></td>
-                    <td class="muted-sm">
-                        {% if m.over_cap %}발병 {{ plan.cap_years }}년 상한 초과 — 도달 불가{% else %}입원 후 {{ m.days_from_planned }}일{% endif %}
+                {% for row in plan.timeline %}
+                <tr class="{{ row.kind }}{% if row.over_cap %} calc-over{% endif %}">
+                    <td class="nowrap"><b>{{ row.date }}</b></td>
+                    <td class="nowrap muted-sm">{% if row.days_from_planned > 0 %}{{ row.days_from_planned }}일{% elif row.days_from_planned == 0 %}당일{% else %}{{ -row.days_from_planned }}일 전{% endif %}</td>
+                    <td>
+                        {% for it in row['items'] %}
+                        <div class="calc-tl-item">
+                            <span class="calc-tl-text">{{ it.text }}</span>
+                            <span class="muted-sm">{{ it.note }}</span>
+                        </div>
+                        {% endfor %}
+                        {% if row.over_cap %}<div class="muted-sm danger-text">발병 {{ plan.cap_years }}년 상한 초과 — 도달 불가</div>{% endif %}
                     </td>
                 </tr>
                 {% endfor %}
@@ -136,34 +132,56 @@
     border-radius:6px; font-size:0.95rem; color:var(--text); background:#fff; }
 .calc-form .calc-group { flex:1; min-width:320px; }
 .calc-form .calc-group select { width:100%; }
+.calc-check { flex-direction:row !important; align-items:center; gap:6px;
+    padding-bottom:8px; color:var(--text); }
 .calc-verdict { display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;
     padding:12px 14px; border-radius:8px; margin-bottom:14px; }
 .calc-verdict.yes { background:#ecfdf5; border:1px solid #6ee7b7; }
 .calc-verdict.mid { background:#eff6ff; border:1px solid #93c5fd; }
-.calc-verdict.mid .calc-verdict-label { color:#1d4ed8; }
 .calc-verdict.no { background:#fff7ed; border:1px solid #fdba74; }
-.calc-code { font-size:0.62em; font-weight:600; padding:2px 6px; border-radius:4px;
-    background:rgba(0,0,0,0.07); vertical-align:middle; }
-.calc-check { flex-direction:row !important; align-items:center; gap:6px;
-    padding-bottom:8px; color:var(--text); }
 .calc-verdict-label { font-size:1.5em; font-weight:700; }
 .calc-verdict.yes .calc-verdict-label { color:#047857; }
+.calc-verdict.mid .calc-verdict-label { color:#1d4ed8; }
 .calc-verdict.no .calc-verdict-label { color:#c2410c; }
 .calc-verdict-detail { font-size:0.9em; color:var(--text); }
-.calc-bars { display:flex; gap:4px; margin-bottom:14px; }
-.calc-bar { padding:10px 12px; border-radius:6px; min-width:150px;
-    display:flex; flex-direction:column; gap:2px; }
-.calc-bar b { font-size:0.95em; }
-.calc-bar span { font-size:0.78em; opacity:0.85; }
-.calc-bar.rec { background:#d1fae5; color:#065f46; }
-.calc-bar.non { background:#e2e8f0; color:#334155; }
-.calc-bar.stay { background:#dbeafe; color:#1e40af; }
-.calc-result tr.calc-over td { background:#fef2f2; }
+.calc-code { font-size:0.62em; font-weight:600; padding:2px 6px; border-radius:4px;
+    background:rgba(0,0,0,0.07); vertical-align:middle; }
+
+/* 재원 구간 막대 — width가 곧 일수 비율 */
+.calc-chart { margin-bottom:16px; }
+.calc-track { position:relative; display:flex; height:64px; border-radius:8px;
+    overflow:hidden; background:#f1f5f9; }
+.calc-seg { position:relative; display:flex; flex-direction:column; justify-content:center;
+    gap:2px; padding:0 12px; min-width:0; overflow:hidden; }
+.calc-seg b { font-size:0.92em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.calc-seg span { font-size:0.76em; opacity:0.85; white-space:nowrap; }
+.calc-seg.rec { background:#d1fae5; color:#065f46; }
+.calc-seg.non { background:#e2e8f0; color:#334155; }
+.calc-seg.stay { background:#dbeafe; color:#1e40af; }
+.calc-tick { position:absolute; top:0; bottom:0; width:1px;
+    background:rgba(15,23,42,0.16); pointer-events:none; }
+.calc-axis { position:relative; height:22px; margin-top:3px; }
+.calc-axis-mark { position:absolute; transform:translateX(-50%); font-size:0.7em;
+    color:var(--text-light); text-align:center; }
+.calc-axis-mark i { display:block; width:1px; height:4px; margin:0 auto 1px; background:var(--border); }
+.calc-axis-unit { opacity:0.8; }
+.calc-chart-ends { display:flex; justify-content:space-between; font-size:0.78em;
+    color:var(--text-light); }
+
+/* 일정 — 같은 날짜 항목은 한 줄로 합쳐 표시 */
+.calc-timeline td { vertical-align:top; }
+.calc-timeline tr.ref td { background:#fafafa; }
+.calc-timeline tr.ref .calc-tl-text { font-weight:500; color:var(--text-light); }
+.calc-timeline tr.calc-over td { background:#fef2f2; }
+.calc-tl-item { display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; padding:1px 0; }
+.calc-tl-text { font-weight:600; }
 .calc-note { margin-top:12px; font-size:0.88em; color:var(--text-light);
     padding:10px 12px; background:#f8fafc; border-radius:6px; }
 .calc-note.warn { background:#fff7ed; color:#9a3412; }
 @media (max-width:680px) {
     .calc-form .calc-group { min-width:100%; }
-    .calc-bars { flex-direction:column; }
+    .calc-seg { padding:0 6px; }
+    .calc-seg b { font-size:0.78em; }
+    .calc-seg span { font-size:0.68em; }
 }
 </style>

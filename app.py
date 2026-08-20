@@ -1262,6 +1262,31 @@ def compute_period_plan(onset, planned, group_name, delayed=False):
                      "start": pd, "end": admission_end}]
     segments = [x for x in segments if x["days"]]
 
+    # 막대 눈금 — 90일 이상이면 개월, 그 미만이면 주 단위로 촘촘하게
+    bar = None
+    if total and admission_end:
+        for seg in segments:
+            seg["pct"] = round(seg["days"] / total * 100, 2)
+        ticks = []
+        if total >= 90:
+            unit = "개월"
+            n = 1
+            while True:
+                d = _add_months(pd, n)
+                days = (d - pd).days
+                if days > total:
+                    break
+                ticks.append({"n": n, "date": d, "days": days,
+                              "pct": round(days / total * 100, 2)})
+                n += 1
+        else:
+            unit = "주"
+            for n in range(1, total // 7 + 1):
+                days = n * 7
+                ticks.append({"n": n, "date": pd + timedelta(days=days), "days": days,
+                              "pct": round(days / total * 100, 2)})
+        bar = {"unit": unit, "ticks": ticks, "total": total}
+
     cap_date = _add_months(od, 12 * PERIOD_CALC_CAP_YEARS)
     milestones = [
         {"label": "1년 도래", "basis": "입원예정일", "date": _add_months(pd, 12)},
@@ -1272,6 +1297,38 @@ def compute_period_plan(onset, planned, group_name, delayed=False):
     for m in milestones:
         m["over_cap"] = m["date"] > cap_date
         m["days_from_planned"] = (m["date"] - pd).days
+
+    # 일정 — 같은 날짜에 겹치는 항목이 많아(입원 만료 = 1년 도래 등) 날짜별로 묶는다.
+    events = {}
+
+    def add_event(d, text, note="", kind="main"):
+        if not d:
+            return
+        row = events.setdefault(d, {"date": d, "items": [], "kind": kind})
+        row["items"].append({"text": text, "note": note})
+        if kind == "main":
+            row["kind"] = "main"
+
+    add_event(pd, "입원", "입원예정일")
+    add_event(recovery_deadline, "회복기(S005) 인정 마감", f"발병/수술일 + {window}일")
+    if is_cns:
+        add_event(delayed_deadline, "지연된 회복기(S044) 마감",
+                  f"발병/수술일 + {delayed_limit}일")
+    # 비중추신경계는 회복기 종료 = 입원 만료라 한 줄로만 적는다.
+    if recovery_end and recovery_end != admission_end:
+        add_event(recovery_end, "회복기 종료 → 비회복기(S006) 시작",
+                  f"입원일 + {recovery_days}일")
+    if admission_end:
+        add_event(admission_end,
+                  "입원 만료" + ("" if is_cns else " — 반드시 퇴원"),
+                  f"입원일 + {total}일")
+    if is_cns:
+        for m in milestones:
+            add_event(m["date"], m["label"], f"{m['basis']} 기준", kind="ref")
+    timeline = sorted(events.values(), key=lambda x: x["date"])
+    for row in timeline:
+        row["days_from_planned"] = (row["date"] - pd).days
+        row["over_cap"] = row["date"] > cap_date
 
     # 실제 종료일 — 입원 가능 일수를 다 못 채우는 경우가 많아 상한과 비교한다.
     effective_end = min(admission_end, cap_date) if admission_end else None
@@ -1291,7 +1348,7 @@ def compute_period_plan(onset, planned, group_name, delayed=False):
         "recovery_stay_days": recovery_days,
         "noncovered_stay_days": noncovered_days,
         "recovery_end": recovery_end,
-        "segments": segments,
+        "segments": segments, "bar": bar, "timeline": timeline,
         "billing_applies": bool(recovery_days),
         "admission_end": admission_end,
         "cap_date": cap_date,
