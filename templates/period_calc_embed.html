@@ -1,0 +1,21 @@
+{# 팝업(iframe)용 기간 계산기 — base.html의 헤더/네비 없이 본문만 #}
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>기간 계산기</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        body { background: transparent; padding: 0; }
+        .embed-wrap { padding: 4px 2px 8px; }
+        .embed-wrap .card { margin-bottom: 12px; }
+        .embed-wrap .card:last-child { margin-bottom: 0; }
+    </style>
+</head>
+<body>
+<div class="embed-wrap">
+    {% include "_period_calc_body.html" %}
+</div>
+</body>
+</html>

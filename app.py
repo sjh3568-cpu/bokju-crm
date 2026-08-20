@@ -1315,8 +1315,11 @@ def period_calc():
     plan = None
     if onset or planned or group:
         plan = compute_period_plan(onset, planned, group, delayed=delayed)
+    # embed=1 — 어느 페이지에서든 띄우는 팝업(iframe)용. 헤더/네비 없이 본문만.
+    template = ("period_calc_embed.html" if request.args.get("embed") == "1"
+                else "period_calc.html")
     return render_template(
-        "period_calc.html",
+        template,
         groups=PERIOD_CALC_GROUPS,
         onset=onset, planned=planned, group=group, delayed=delayed,
         plan=plan,
