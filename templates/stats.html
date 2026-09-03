@@ -45,8 +45,7 @@
     <div class="stat-card"><div class="label">총 상담건수</div><div class="value" data-kpi="total">-</div><div class="sub" data-kpi="total-sub"></div></div>
     <div class="stat-card accent"><div class="label">입원 완료</div><div class="value" data-kpi="completed">-</div><div class="sub" data-kpi="completed-sub">실제 입원</div></div>
     <div class="stat-card"><div class="label">입원 전환율</div><div class="value" data-kpi="conv-rate">-</div><div class="sub">입원완료 ÷ 총 상담</div></div>
-    <div class="stat-card warn"><div class="label">입원 보류</div><div class="value" data-kpi="pending">-</div><div class="sub">미정+입원보류</div></div>
-    <div class="stat-card danger"><div class="label">입원 취소</div><div class="value" data-kpi="cancelled">-</div><div class="sub" data-kpi="cancelled-sub"></div></div>
+    <div class="stat-card warn"><div class="label">입원 보류 · 취소</div><div class="value split-value"><span data-kpi="pending">-</span><i>/</i><span data-kpi="cancelled">-</span></div><div class="sub"><span>보류</span><span>취소</span></div></div>
     <div class="stat-card"><div class="label">일평균 상담</div><div class="value" data-kpi="daily-avg">-</div><div class="sub">기간 내 평균</div></div>
     <div class="stat-card"><div class="label">비사용증후군 발굴</div><div class="value" data-kpi="disuse">-</div><div class="sub">발굴 대상 기재 건수</div></div>
 </div>
@@ -183,16 +182,19 @@
 
 /* KPI: 6장 한 줄, 컴팩트 */
 .kpi-row { grid-template-columns: repeat(6, 1fr); gap:8px; margin-bottom:10px; }
-.kpi-row .stat-card { padding:8px 10px; }
+.kpi-row .stat-card { padding:8px 10px; margin:0; min-width:0; height:84px; display:flex; flex-direction:column; justify-content:center; }
 .kpi-row .stat-card .label { font-size:0.72em; margin-bottom:2px; }
 .kpi-row .stat-card .value { font-size:1.35em; line-height:1.15; }
 .kpi-row .stat-card .value.sm { font-size:0.95em; line-height:1.25; word-break:keep-all; }
 .kpi-row .stat-card .sub { font-size:0.7em; margin-top:2px; }
+.kpi-row .split-value { display:flex; align-items:center; justify-content:center; gap:8px; }
+.kpi-row .split-value i { color:#94a3b8; font-size:.7em; font-style:normal; }
+.kpi-row .split-value + .sub { display:flex; justify-content:center; gap:22px; }
 @media (max-width: 1100px) { .kpi-row { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 600px)  { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
 
 /* 차트 그리드: 변형들 */
-.chart-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; }
+.chart-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; align-items:stretch; }
 .chart-grid.g-2-1 { grid-template-columns: 2fr 1fr; }
 .chart-grid.g-1-2 { grid-template-columns: 1fr 2fr; }
 .chart-grid.five  { grid-template-columns: repeat(5, 1fr); }
@@ -200,10 +202,11 @@
 @media (max-width: 900px)  { .chart-grid, .chart-grid.g-2-1, .chart-grid.g-1-2 { grid-template-columns:1fr; } }
 @media (max-width: 600px)  { .chart-grid.five { grid-template-columns:1fr 1fr; } }
 
-.chart-card { display:flex; flex-direction:column; padding:10px 12px; }
+.chart-card { display:flex; flex-direction:column; padding:10px 12px; margin:0; height:230px; min-width:0; box-sizing:border-box; }
 .chart-card h3 { font-size:0.88em; margin-bottom:6px; color:var(--text); font-weight:600; }
-.chart-box { position:relative; height:200px; }
-.chart-box.sm { height:150px; }
+.chart-box { position:relative; flex:1; min-height:0; height:auto; }
+.chart-box.sm { height:auto; }
+.chart-grid.five .chart-card { height:190px; }
 
 .insight-card { margin-top:10px; padding:12px; }
 .insight-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
@@ -219,7 +222,7 @@
     .stats-report-sheet { display:grid; grid-template-columns:repeat(3,1fr); gap:3mm; height:190mm; overflow:hidden; }
     .stats-print-title { display:block; grid-column:1/-1; text-align:center; height:12mm; }
     .stats-print-title h2 { margin:0; font-size:15pt; }.stats-print-title p { margin:1mm 0 0; font-size:8pt; }
-    .kpi-row { grid-column:1/-1; display:grid !important; grid-template-columns:repeat(7,1fr) !important; gap:2mm; margin:0; }
+    .kpi-row { grid-column:1/-1; display:grid !important; grid-template-columns:repeat(6,1fr) !important; gap:2mm; margin:0; }
     .kpi-row .stat-card { min-height:15mm; padding:2mm; border:1px solid #d1d5db; box-shadow:none; break-inside:avoid; }
     .kpi-row .stat-card .label { font-size:7pt; }.kpi-row .stat-card .value { font-size:13pt; }
     .kpi-row .stat-card .sub { font-size:6pt; }
