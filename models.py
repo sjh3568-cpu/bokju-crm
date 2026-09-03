@@ -2472,28 +2472,6 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
     referral_capture_rate = (round(100.0 * no_admit_with_referral / no_admit_total, 1)
                              if no_admit_total else 0.0)
 
-    # 문자 발송 현황 (제안 3) — sms_log를 기간(created_at)으로 집계
-    sms_where, sms_vals = [], []
-    if date_from:
-        sms_where.append("date(s.created_at) >= ?"); sms_vals.append(date_from)
-    if date_to:
-        sms_where.append("date(s.created_at) <= ?"); sms_vals.append(date_to)
-    sms_where_sql = ("WHERE " + " AND ".join(sms_where)) if sms_where else ""
-    conn2 = get_db()
-    sms_rows = conn2.execute(
-        f"SELECT s.status, t.template_group FROM sms_log s "
-        f"LEFT JOIN sms_templates t ON t.id = s.template_id {sms_where_sql}",
-        sms_vals,
-    ).fetchall()
-    conn2.close()
-    _SMS_STATUS_LABEL = {"sent": "발송", "manual": "수동(문자앱)", "failed": "실패"}
-    sms_status, sms_group = {}, {}
-    for r in sms_rows:
-        sl = _SMS_STATUS_LABEL.get(r["status"] or "manual", "수동(문자앱)")
-        sms_status[sl] = sms_status.get(sl, 0) + 1
-        gl = r["template_group"] or "기타"
-        sms_group[gl] = sms_group.get(gl, 0) + 1
-
     return {
         "summary": {
             "total": total,
@@ -2536,11 +2514,6 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
                        for name in weekday_names],
         "by_phone_hour": [{"label": name, "count": count}
                           for name, count in phone_hour_counts.items() if count],
-        "sms": {
-            "total": len(sms_rows),
-            "by_status": _sort_desc(sms_status),
-            "by_group": _sort_desc(sms_group),
-        },
     }
 
 

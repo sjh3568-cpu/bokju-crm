@@ -128,18 +128,6 @@
 </div>
 </div>{# /stats-report-sheet #}
 
-<!-- 문자 발송 현황 -->
-<div class="chart-grid">
-    <div class="card chart-card">
-        <h3>문자 발송 상태별 <span class="muted" id="sms-total" style="font-weight:400"></span></h3>
-        <div class="chart-box sm"><canvas id="chart-sms-status"></canvas></div>
-    </div>
-    <div class="card chart-card">
-        <h3>문자 발송 환자군별</h3>
-        <div class="chart-box sm"><canvas id="chart-sms-group"></canvas></div>
-    </div>
-</div>
-
 <!-- 회복기 불가 → 외부 시설 연계 (수요 캡처) -->
 <div class="chart-grid">
     <div class="card chart-card">
@@ -584,12 +572,6 @@
         makeDoughnut('chart-channel', d.by_channel);
         makeVBar('chart-counselor', d.by_counselor, '#14532d');
         makeDoughnut('chart-gender', d.by_gender);
-        // 문자 발송 현황 (제안 3)
-        const sms = d.sms || { total: 0, by_status: [], by_group: [] };
-        const smsTotalEl = document.getElementById('sms-total');
-        if (smsTotalEl) smsTotalEl.textContent = '· 총 ' + (sms.total || 0) + '건';
-        makeDoughnut('chart-sms-status', sms.by_status);
-        makeDoughnut('chart-sms-group', sms.by_group);
         // 회복기 불가 → 외부 시설 연계 (수요 캡처)
         makeDoughnut('chart-external-referral', d.by_external_referral || []);
         const rc = d.referral_capture || { no_admit_total: 0, with_referral: 0, rate: 0 };
