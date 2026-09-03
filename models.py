@@ -2345,7 +2345,7 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
 
     sql = f"""
         SELECT
-          c.consult_date, c.consult_channel, c.counselor, c.patient_age,
+          c.consult_date, c.consult_time, c.consult_channel, c.counselor, c.patient_age,
           c.referral_source_type, c.referral_source_detail, c.diseases,
           c.planned_admission_date, c.admission_status, c.admission_date,
           c.consult_result, c.admission_type,
@@ -2415,6 +2415,30 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
     by_age = [{"label": k, "count": by_age_raw.get(k, 0)} for k in age_order if by_age_raw.get(k)]
 
     sigungu_top = _sort_desc(_count_simple(rows, "residence_sigungu"))[:10]
+
+    # 요일별 상담량과 전화상담 시간대. 시간 미입력도 누락 현황으로 표시한다.
+    weekday_names = ["월", "화", "수", "목", "금", "토", "일"]
+    weekday_counts = {name: 0 for name in weekday_names}
+    phone_hour_counts = {f"{hour:02d}시": 0 for hour in range(8, 19)}
+    phone_hour_counts["기타 시간"] = 0
+    phone_hour_counts["시간 미지정"] = 0
+    from datetime import datetime as _datetime
+    for r in rows:
+        raw_date = (r["consult_date"] or "")[:10]
+        try:
+            weekday_counts[weekday_names[_datetime.strptime(raw_date, "%Y-%m-%d").weekday()]] += 1
+        except (ValueError, TypeError):
+            pass
+        if (r["consult_channel"] or "").strip() != "전화상담":
+            continue
+        raw_time = (r["consult_time"] or "").strip()
+        try:
+            hour = int(raw_time.split(":", 1)[0])
+        except (ValueError, TypeError):
+            phone_hour_counts["시간 미지정"] += 1
+            continue
+        key = f"{hour:02d}시" if 8 <= hour <= 18 else "기타 시간"
+        phone_hour_counts[key] += 1
 
     # 모병원 — 빈값/None 제외 (자택 거주 환자는 모병원 없음)
     hospital_counts = {}
@@ -2508,6 +2532,10 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
         "by_age": by_age,
         "by_gender": _sort_desc(_count_simple(rows, "gender")),
         "daily_trend": _daily_trend(rows),
+        "by_weekday": [{"label": name, "count": weekday_counts[name]}
+                       for name in weekday_names],
+        "by_phone_hour": [{"label": name, "count": count}
+                          for name, count in phone_hour_counts.items() if count],
         "sms": {
             "total": len(sms_rows),
             "by_status": _sort_desc(sms_status),

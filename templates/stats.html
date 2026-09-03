@@ -62,15 +62,21 @@
     </div>
 </div>
 
-<!-- 입원경로: 그룹(도넛 1) + 세부(수평 막대 2) -->
-<div class="chart-grid g-1-2">
-    <div class="card chart-card">
-        <h3>입원경로 그룹</h3>
-        <div class="chart-box"><canvas id="chart-referral-type"></canvas></div>
+<!-- 상위 분류와 세부 항목을 한 카드에서 비교 -->
+<div class="chart-grid">
+    <div class="card chart-card chart-card-combined print-primary">
+        <h3>입원경로 통합</h3>
+        <div class="combined-chart-box">
+            <div><span>경로 그룹</span><div class="chart-box"><canvas id="chart-referral-type"></canvas></div></div>
+            <div><span>세부 경로</span><div class="chart-box"><canvas id="chart-referral-detail"></canvas></div></div>
+        </div>
     </div>
-    <div class="card chart-card print-primary">
-        <h3>입원경로 세부</h3>
-        <div class="chart-box"><canvas id="chart-referral-detail"></canvas></div>
+    <div class="card chart-card chart-card-combined print-primary">
+        <h3>거주지 통합</h3>
+        <div class="combined-chart-box">
+            <div><span>시·도</span><div class="chart-box"><canvas id="chart-sido"></canvas></div></div>
+            <div><span>시·군·구 Top 10</span><div class="chart-box"><canvas id="chart-sigungu"></canvas></div></div>
+        </div>
     </div>
 </div>
 
@@ -86,15 +92,14 @@
     </div>
 </div>
 
-<!-- 거주지: 시도 + 시군구 Top10 -->
+<!-- 상담 수요가 집중되는 요일과 전화 유입 시간 -->
 <div class="chart-grid">
-    <div class="card chart-card">
-        <h3>거주지 시·도</h3>
-        <div class="chart-box"><canvas id="chart-sido"></canvas></div>
-    </div>
-    <div class="card chart-card print-primary">
-        <h3>거주지 시·군·구 Top 10</h3>
-        <div class="chart-box"><canvas id="chart-sigungu"></canvas></div>
+    <div class="card chart-card chart-card-combined chart-card-wide print-primary">
+        <h3>상담 집중 요일 · 전화 유입 시간</h3>
+        <div class="combined-chart-box equal">
+            <div><span>요일별 전체 상담</span><div class="chart-box"><canvas id="chart-weekday"></canvas></div></div>
+            <div><span>시간대별 전화상담</span><div class="chart-box"><canvas id="chart-phone-hour"></canvas></div></div>
+        </div>
     </div>
 </div>
 
@@ -112,7 +117,7 @@
         <h3>상담 방법</h3>
         <div class="chart-box sm"><canvas id="chart-channel"></canvas></div>
     </div>
-    <div class="card chart-card print-primary">
+    <div class="card chart-card">
         <h3>상담자별</h3>
         <div class="chart-box sm"><canvas id="chart-counselor"></canvas></div>
     </div>
@@ -207,6 +212,16 @@
 .chart-box { position:relative; flex:1; min-height:0; height:auto; }
 .chart-box.sm { height:auto; }
 .chart-grid.five .chart-card { height:190px; }
+.chart-card-combined { height:250px; }
+.combined-chart-box { display:grid; grid-template-columns:0.8fr 1.2fr; gap:10px; flex:1; min-height:0; }
+.combined-chart-box.equal { grid-template-columns:1fr 1fr; }
+.chart-card-wide { grid-column:1/-1; }
+.combined-chart-box > div { display:flex; flex-direction:column; min-width:0; min-height:0; }
+.combined-chart-box span { color:var(--text-light); font-size:.72em; text-align:center; margin-bottom:2px; }
+@media (max-width: 700px) {
+    .chart-card-combined { height:440px; }
+    .combined-chart-box, .combined-chart-box.equal { grid-template-columns:1fr; }
+}
 
 .insight-card { margin-top:10px; padding:12px; }
 .insight-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
@@ -229,6 +244,7 @@
     .stats-report-sheet > .chart-grid { display:contents !important; }
     .stats-report-sheet .chart-card { display:none !important; }
     .stats-report-sheet .chart-card.print-primary { display:flex !important; height:68mm; padding:2mm; margin:0; box-shadow:none; border:1px solid #d1d5db; break-inside:avoid; }
+    .stats-report-sheet .chart-card-wide { grid-column:auto; }
     .stats-report-sheet .chart-card h3 { font-size:8pt; margin:0 0 1mm; }
     .stats-report-sheet .chart-box, .stats-report-sheet .chart-box.sm { height:59mm !important; }
     canvas { max-width:100% !important; }
@@ -561,6 +577,8 @@
         makeHBar('chart-disease', d.by_disease, '#2563eb');
         makeHBar('chart-sido', d.by_sido, '#9333ea');
         makeHBar('chart-sigungu', d.by_sigungu_top, '#0891b2');
+        makeVBar('chart-weekday', d.by_weekday || [], '#2563eb');
+        makeVBar('chart-phone-hour', d.by_phone_hour || [], '#0d9488');
         makeDoughnut('chart-insurance', d.by_insurance);
         makeVBar('chart-age', d.by_age, '#f59e0b');
         makeDoughnut('chart-channel', d.by_channel);
