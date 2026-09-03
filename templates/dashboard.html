@@ -325,25 +325,8 @@
 {% set admission_group_planned = admission_groups_by_status['planned'] %}
 {% set admission_group_completed = admission_groups_by_status['completed'] %}
 
-{# KPI 1행: 오늘 할 일(액션 + 종류별 내역). 2행: 현황 6칸 — 오늘 2 · 기한 2 · 대기 2. #}
+{# KPI 현황 6칸 — 오늘 2 · 기한 2 · 대기 2. 상세 액션은 바로 아래 '오늘 처리 필요'에서 확인. #}
 <div class="dash-kpi">
-    <a class="dash-kpi-hero" href="#action-queue">
-        <div class="dash-kpi-hero-main">
-            <div class="label">오늘 할 일 <span class="hero-hint">최근 7일</span></div>
-            <div class="value">{{ summary.action_total or 0 }}</div>
-            <div class="sub">긴급 {{ action_queue.danger or 0 }} · 주의 {{ action_queue.warn or 0 }}{% if summary.action_stale %} · <b class="hero-stale">방치 {{ summary.action_stale }}</b>{% endif %}</div>
-        </div>
-        <div class="dash-kpi-breakdown">
-            {% for g in action_queue.groups %}
-            <div class="dash-kpi-chip band-{{ g.band }}{% if not g.count and not g.stale %} zero{% elif g.danger %} danger{% endif %}">
-                <span class="chip-label">{{ g.label }}</span>
-                <span class="chip-count">{{ g.count }}</span>
-                <span class="chip-stale">{% if g.stale %}방치 {{ g.stale }}{% endif %}</span>
-            </div>
-            {% endfor %}
-        </div>
-    </a>
-
     <a class="stat-card g-today{% if not summary.admission_today %} is-zero{% endif %}" href="#admission-schedule">
         <div class="label">오늘 입원</div>
         <div class="value">{{ summary.admission_today or 0 }}</div>
