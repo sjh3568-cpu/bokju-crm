@@ -583,54 +583,47 @@
     </div>
 </div>
 
-<div class="card">
-    <h3>최근 7일 상담/입원 흐름</h3>
-    {% if week_flow_summary.total %}
-    <div class="week-flow-summary">
-        <div><span>상담</span><strong>{{ week_flow_summary.total }}</strong></div>
-        <div><span>입원예정</span><strong>{{ week_flow_summary.planned }}</strong></div>
-        <div><span>입원완료</span><strong>{{ week_flow_summary.admitted }}</strong></div>
-        <div><span>보류</span><strong>{{ week_flow_summary.hold }}</strong></div>
-        <div><span>재연락</span><strong>{{ week_flow_summary.callback }}</strong></div>
-        <div><span>입원 연결률</span><strong>{{ week_flow_summary.conversion_rate }}%</strong></div>
-    </div>
-    <div class="week-flow-list">
-        {% for d in week_trend %}
-        {% set active = d.planned + d.admitted %}
-        {% set pending = d.hold + d.callback %}
-        <div class="week-flow-row">
-            <div class="week-flow-date">
-                <span>{{ d.label }}</span>
-                <strong>{{ d.n }}건</strong>
-            </div>
-            <div class="week-flow-track" title="{{ d.d }} 상담 {{ d.n }}건 · 입원연결 {{ active }}건 · 보류/재연락 {{ pending }}건">
-                {% if d.n %}
-                <span class="week-flow-seg planned" style="width:{{ (d.planned / d.n * 100)|round(1) }}%"></span>
-                <span class="week-flow-seg admitted" style="width:{{ (d.admitted / d.n * 100)|round(1) }}%"></span>
-                <span class="week-flow-seg hold" style="width:{{ (d.hold / d.n * 100)|round(1) }}%"></span>
-                <span class="week-flow-seg callback" style="width:{{ (d.callback / d.n * 100)|round(1) }}%"></span>
-                <span class="week-flow-seg canceled" style="width:{{ (d.canceled / d.n * 100)|round(1) }}%"></span>
-                {% endif %}
-            </div>
-            <div class="week-flow-values">
-                <span class="positive">입원 {{ active }}</span>
-                <span class="warn">보류 {{ d.hold }}</span>
-                <span class="info">재연락 {{ d.callback }}</span>
-                <span>{{ d.conversion_rate }}%</span>
-            </div>
+<div class="card weekly-report-card">
+    <div class="dash-section-head">
+        <div><h3>주간 상담 현황</h3><span class="muted-sm">{{ weekly_report.period_label }} · 월요일~일요일</span></div>
+        <div class="weekly-share-actions" data-export-ignore>
+            <button type="button" class="btn btn-secondary btn-xs" id="weekly-copy-text">요약문 복사</button>
+            <button type="button" class="btn btn-secondary btn-xs" id="weekly-copy-image">이미지 복사</button>
+            <button type="button" class="btn btn-primary btn-xs" id="weekly-download-image">PNG 저장</button>
         </div>
-        {% endfor %}
     </div>
-    <div class="week-flow-legend">
-        <span><i class="planned"></i>입원예정</span>
-        <span><i class="admitted"></i>입원완료</span>
-        <span><i class="hold"></i>보류</span>
-        <span><i class="callback"></i>재연락</span>
-        <span><i class="canceled"></i>취소</span>
+    <div id="weekly-report-export" class="weekly-report-export">
+        <h2>복주회복병원 주간 상담 현황</h2>
+        <p>{{ weekly_report.period_label }}</p>
+        <div class="weekly-compare-grid">
+            {% for c in weekly_report.comparisons %}
+            <div class="weekly-compare-card" data-label="{{ c.label }}" data-current="{{ c.current }}" data-prev-diff="{{ c.previous_diff }}" data-year-diff="{{ c.year_diff }}">
+                <span>{{ c.label }}</span><strong>{{ c.current }}{% if c.key == 'admission_rate' %}%{% else %}건{% endif %}</strong>
+                <small>지난주 <b class="{{ 'up' if c.previous_diff > 0 else 'down' if c.previous_diff < 0 else '' }}">{{ '+' if c.previous_diff > 0 else '' }}{{ c.previous_diff }}{% if c.key == 'admission_rate' %}%p{% else %}건{% endif %}</b>{% if c.previous_rate is not none %} ({{ '+' if c.previous_rate > 0 else '' }}{{ c.previous_rate }}%){% else %} (비교 불가){% endif %}</small>
+                <small>전년 <b class="{{ 'up' if c.year_diff > 0 else 'down' if c.year_diff < 0 else '' }}">{{ '+' if c.year_diff > 0 else '' }}{{ c.year_diff }}{% if c.key == 'admission_rate' %}%p{% else %}건{% endif %}</b>{% if c.year_rate is not none %} ({{ '+' if c.year_rate > 0 else '' }}{{ c.year_rate }}%){% else %} (비교 불가){% endif %}</small>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="tbl-wrap weekly-report-wrap">
+            <table class="weekly-report-table">
+                <thead>
+                    <tr><th rowspan="3">날짜</th><th colspan="8" class="grp-source">상담 유입경로(최초 병원 인지)</th><th colspan="8" class="grp-resistant">내성균(CRE·VRE) 상담 경로</th><th colspan="2" class="grp-region">지역</th><th colspan="3" class="grp-type">상담유형</th><th rowspan="3">입원<br>건수</th><th rowspan="3">입원율</th></tr>
+                    <tr><th colspan="4">온라인 검색</th><th colspan="3">소개</th><th>기타</th><th colspan="4">온라인 검색</th><th colspan="3">소개</th><th>기타</th><th rowspan="2">안동</th><th rowspan="2">관외</th><th rowspan="2">전화</th><th rowspan="2">방문</th><th rowspan="2">홈·채널</th></tr>
+                    <tr>{% for repeat in range(2) %}{% for key in weekly_report.source_keys %}<th>{{ key }}</th>{% endfor %}{% endfor %}</tr>
+                </thead>
+                <tbody>
+                    {% for d in weekly_report.current.days + [weekly_report.current.totals] %}
+                    <tr class="{% if d.label == '소계' %}total-row{% endif %}">
+                        <th>{{ d.label }}{% if d.weekday %}({{ d.weekday }}){% endif %}</th>
+                        {% for key in weekly_report.source_keys %}<td>{{ d.sources[key] or '' }}</td>{% endfor %}
+                        {% for key in weekly_report.source_keys %}<td>{{ d.resistant[key] or '' }}</td>{% endfor %}
+                        <td>{{ d.andong or '' }}</td><td>{{ d.outside or '' }}</td><td>{{ d.phone or '' }}</td><td>{{ d.visit or '' }}</td><td>{{ d.home_channel or '' }}</td><td>{{ d.admitted or '' }}</td><td>{{ d.admission_rate }}%</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
-    {% else %}
-    <div class="empty">최근 7일 상담 기록이 없습니다.</div>
-    {% endif %}
 </div>
 
 <style>
@@ -831,6 +824,26 @@
 .ib-row-bl:hover { background:#fee2e2; }
 .ib-matched { color:#9333ea; }
 .ib-matched::after { content:" (연락처 매칭)"; font-size:0.78em; color:#a78bfa; }
+.weekly-report-card { margin-top:16px; }
+.weekly-report-export { background:#fff; padding:14px; color:#172033; }
+.weekly-report-export > h2 { margin:0; text-align:center; font-size:1.25em; }
+.weekly-report-export > p { margin:3px 0 12px; text-align:center; color:#64748b; }
+.weekly-share-actions { display:flex; gap:5px; flex-wrap:wrap; justify-content:flex-end; }
+.weekly-compare-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-bottom:12px; }
+.weekly-compare-card { border:1px solid #dbe3ee; border-radius:8px; padding:9px 11px; display:grid; grid-template-columns:auto 1fr; gap:2px 8px; }
+.weekly-compare-card > span { color:#64748b; font-size:.8em; }
+.weekly-compare-card > strong { grid-row:span 3; font-size:1.35em; text-align:right; }
+.weekly-compare-card small { font-size:.75em; color:#64748b; }
+.weekly-compare-card b.up { color:#dc2626; }.weekly-compare-card b.down { color:#2563eb; }
+.weekly-report-wrap { overflow-x:auto; }
+.weekly-report-table { width:100%; min-width:1500px; border-collapse:collapse; table-layout:fixed; font-size:11px; text-align:center; }
+.weekly-report-table th,.weekly-report-table td { border:1px solid #64748b; padding:4px 3px; vertical-align:middle; }
+.weekly-report-table thead th { background:#e2efd9; font-weight:700; }
+.weekly-report-table .grp-source { background:#a9d08e; }.weekly-report-table .grp-resistant { background:#f8cbad; }
+.weekly-report-table .grp-region,.weekly-report-table .grp-type { background:#bdd7ee; }
+.weekly-report-table tbody th { background:#f8fafc; white-space:nowrap; }
+.weekly-report-table .total-row th,.weekly-report-table .total-row td { background:#fce4d6; font-weight:700; }
+@media (max-width:760px) { .weekly-compare-grid { grid-template-columns:1fr; } }
 </style>
 <script>
 function syncAdmissionPanels() {
@@ -1008,6 +1021,48 @@ document.querySelectorAll('.adm-status-btn').forEach(btn => {
             btn.disabled = false;
         }
     });
+});
+
+async function weeklyReportPngBlob() {
+    const source = document.getElementById('weekly-report-export');
+    const clone = source.cloneNode(true);
+    const originals = [source, ...source.querySelectorAll('*')];
+    const copies = [clone, ...clone.querySelectorAll('*')];
+    originals.forEach((node, i) => {
+        const computed = getComputedStyle(node);
+        let css = '';
+        for (const prop of computed) css += `${prop}:${computed.getPropertyValue(prop)};`;
+        copies[i].setAttribute('style', css);
+    });
+    clone.style.width = '1560px';
+    clone.style.boxSizing = 'border-box';
+    const holder = document.createElement('div');
+    holder.style.cssText = 'position:fixed;left:-9999px;top:0;width:1560px;background:#fff';
+    holder.appendChild(clone); document.body.appendChild(holder);
+    const width = 1560, height = Math.ceil(clone.getBoundingClientRect().height);
+    const xml = new XMLSerializer().serializeToString(clone);
+    holder.remove();
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml">${xml}</div></foreignObject></svg>`;
+    const url = URL.createObjectURL(new Blob([svg], {type:'image/svg+xml;charset=utf-8'}));
+    try {
+        const img = await new Promise((resolve, reject) => { const el = new Image(); el.onload=()=>resolve(el); el.onerror=reject; el.src=url; });
+        const canvas = document.createElement('canvas'); canvas.width=width*2; canvas.height=height*2;
+        const ctx=canvas.getContext('2d'); ctx.scale(2,2); ctx.fillStyle='#fff'; ctx.fillRect(0,0,width,height); ctx.drawImage(img,0,0);
+        return await new Promise(resolve => canvas.toBlob(resolve,'image/png'));
+    } finally { URL.revokeObjectURL(url); }
+}
+document.getElementById('weekly-copy-text')?.addEventListener('click', async () => {
+    const cards=[...document.querySelectorAll('.weekly-compare-card')];
+    const lines=['복주회복병원 주간 상담 현황', '{{ weekly_report.period_label }}', ...cards.map(c => `${c.dataset.label} ${c.dataset.current}${c.dataset.label==='입원율'?'%':'건'} · 지난주 대비 ${Number(c.dataset.prevDiff)>0?'+':''}${c.dataset.prevDiff} · 전년 대비 ${Number(c.dataset.yearDiff)>0?'+':''}${c.dataset.yearDiff}`)];
+    await navigator.clipboard.writeText(lines.join('\n')); alert('카카오톡용 요약문을 복사했습니다.');
+});
+document.getElementById('weekly-copy-image')?.addEventListener('click', async () => {
+    try { const blob=await weeklyReportPngBlob(); await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]); alert('주간 보고 이미지를 복사했습니다. 카카오톡에서 붙여넣으세요.'); }
+    catch(e) { alert('브라우저가 이미지 복사를 허용하지 않습니다. PNG 저장을 이용해주세요.'); }
+});
+document.getElementById('weekly-download-image')?.addEventListener('click', async () => {
+    try { const blob=await weeklyReportPngBlob(); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='주간상담현황-{{ weekly_report.current.days[0].date }}.png'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
+    catch(e) { alert('이미지 저장에 실패했습니다.'); }
 });
 </script>
 {% endblock %}

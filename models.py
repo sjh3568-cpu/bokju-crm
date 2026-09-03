@@ -1875,6 +1875,26 @@ def dashboard_summary():
         (today, today),
     ).fetchall()
 
+    report_week_start_d = today_d - timedelta(days=today_d.weekday())
+    report_ranges = {
+        "current": (report_week_start_d, report_week_start_d + timedelta(days=6)),
+        "previous": (report_week_start_d - timedelta(days=7), report_week_start_d - timedelta(days=1)),
+        "year_ago": (report_week_start_d - timedelta(days=364), report_week_start_d - timedelta(days=358)),
+    }
+    report_from = report_ranges["year_ago"][0].isoformat()
+    report_to = report_ranges["current"][1].isoformat()
+    weekly_report_rows = conn.execute(
+        """
+        SELECT c.consult_date, c.consult_channel, c.referral_source_detail,
+               c.special_care, c.special_vre_note, c.special_cre_note,
+               c.admission_status,
+               p.residence_sido, p.residence_sigungu
+        FROM consultations c JOIN patients p ON p.id = c.patient_id
+        WHERE date(c.consult_date) BETWEEN date(?) AND date(?)
+        """,
+        (report_from, report_to),
+    ).fetchall()
+
     conn.close()
     summary = dict(row) if row else {}
     total = summary.get("total") or 0
@@ -1914,6 +1934,90 @@ def dashboard_summary():
         if week_flow_summary["total"]
         else 0.0
     )
+
+    report_source_keys = ["카페", "검색(블로그)", "유튜브", "SNS", "지인추천", "직원소개", "기관연계", "지역민"]
+
+    def _empty_report_day(day_value):
+        return {
+            "date": day_value.isoformat(), "label": day_value.strftime("%m/%d"),
+            "weekday": "월화수목금토일"[day_value.weekday()], "total": 0,
+            "sources": {key: 0 for key in report_source_keys},
+            "resistant": {key: 0 for key in report_source_keys},
+            "andong": 0, "outside": 0, "phone": 0, "visit": 0,
+            "home_channel": 0, "admitted": 0, "admission_rate": 0.0,
+        }
+
+    def _report_period(start_d, end_d):
+        days = [_empty_report_day(start_d + timedelta(days=i)) for i in range(7)]
+        by_date = {item["date"]: item for item in days}
+        for raw in weekly_report_rows:
+            if not (start_d.isoformat() <= (raw["consult_date"] or "")[:10] <= end_d.isoformat()):
+                continue
+            item = by_date.get((raw["consult_date"] or "")[:10])
+            if not item:
+                continue
+            item["total"] += 1
+            try:
+                details = json.loads(raw["referral_source_detail"] or "[]")
+            except (TypeError, json.JSONDecodeError):
+                details = []
+            try:
+                special = json.loads(raw["special_care"] or "[]")
+            except (TypeError, json.JSONDecodeError):
+                special = []
+            is_resistant = ("CRE" in special or "VRE" in special
+                            or bool((raw["special_cre_note"] or "").strip())
+                            or bool((raw["special_vre_note"] or "").strip()))
+            for detail in details:
+                if detail in item["sources"]:
+                    item["sources"][detail] += 1
+                    if is_resistant:
+                        item["resistant"][detail] += 1
+            if "안동" in (raw["residence_sigungu"] or ""):
+                item["andong"] += 1
+            else:
+                item["outside"] += 1
+            channel = (raw["consult_channel"] or "").strip()
+            if channel == "전화상담":
+                item["phone"] += 1
+            elif channel == "내원상담":
+                item["visit"] += 1
+            else:
+                item["home_channel"] += 1
+            if (raw["admission_status"] or "").strip() == "입원완료":
+                item["admitted"] += 1
+        for item in days:
+            item["admission_rate"] = round(100.0 * item["admitted"] / item["total"], 1) if item["total"] else 0.0
+        totals = _empty_report_day(start_d)
+        totals["label"], totals["weekday"] = "소계", ""
+        for item in days:
+            totals["total"] += item["total"]
+            totals["andong"] += item["andong"]
+            totals["outside"] += item["outside"]
+            totals["phone"] += item["phone"]
+            totals["visit"] += item["visit"]
+            totals["home_channel"] += item["home_channel"]
+            totals["admitted"] += item["admitted"]
+            for key in report_source_keys:
+                totals["sources"][key] += item["sources"][key]
+                totals["resistant"][key] += item["resistant"][key]
+        totals["admission_rate"] = round(100.0 * totals["admitted"] / totals["total"], 1) if totals["total"] else 0.0
+        return {"days": days, "totals": totals}
+
+    weekly_report = {key: _report_period(*dates) for key, dates in report_ranges.items()}
+    current_total = weekly_report["current"]["totals"]
+    weekly_report["period_label"] = f"{report_ranges['current'][0].strftime('%Y.%m.%d')} ~ {report_ranges['current'][1].strftime('%Y.%m.%d')}"
+    weekly_report["source_keys"] = report_source_keys
+    weekly_report["comparisons"] = []
+    for key, label in (("total", "상담"), ("admitted", "입원"), ("admission_rate", "입원율")):
+        current_value = current_total[key]
+        row = {"key": key, "label": label, "current": current_value}
+        for period_key, prefix in (("previous", "previous"), ("year_ago", "year")):
+            base = weekly_report[period_key]["totals"][key]
+            row[prefix] = base
+            row[prefix + "_diff"] = round(current_value - base, 1)
+            row[prefix + "_rate"] = (round(100.0 * (current_value - base) / base, 1) if base else None)
+        weekly_report["comparisons"].append(row)
 
     def _day_label(value):
         if not value:
@@ -2150,6 +2254,7 @@ def dashboard_summary():
         "holds": hold_list,
         "week_trend": week_trend,
         "week_flow_summary": week_flow_summary,
+        "weekly_report": weekly_report,
     }
 
 
