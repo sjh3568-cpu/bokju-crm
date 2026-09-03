@@ -1781,7 +1781,9 @@ def dashboard_summary():
                c.planned_admission_date, c.planned_admission_time,
                c.actual_admission_date, c.admission_date, c.admission_status,
                c.attending_doctor, c.room_number, c.patient_age,
-               c.diseases, c.disease_detail, c.disease_onset,
+               c.primary_diagnosis, c.secondary_diagnosis,
+               c.diseases, c.disease_detail, c.disease_onset, c.special_care,
+               c.special_mrsa_note, c.special_vre_note, c.special_cre_note,
                c.admission_purpose, c.external_referral_note,
                p.id AS patient_id, p.name AS patient_name, p.gender,
                p.insurance_type,
@@ -1996,6 +1998,27 @@ def dashboard_summary():
             return f"{digits}병동"
         return room
 
+    def _admission_disease_summary(item):
+        """입원 현황에는 대표 질환 한 건과 감염균 표지만 간결하게 표시한다."""
+        main_disease = (item.get("primary_diagnosis") or "").strip()
+        if not main_disease:
+            main_disease = next(iter(_consult_disease_labels(item)), "")
+
+        special_care = item.get("special_care") or []
+        if isinstance(special_care, str):
+            special_care = [special_care]
+        special_text = " ".join(str(value).upper() for value in special_care)
+        organisms = []
+        for organism, note_key in (
+            ("MRSA", "special_mrsa_note"),
+            ("VRE", "special_vre_note"),
+            ("CRE", "special_cre_note"),
+        ):
+            if organism in special_text or (item.get(note_key) or "").strip():
+                organisms.append(organism)
+
+        return " · ".join(value for value in [main_disease, *organisms] if value)
+
     admission_schedule = []
     for r in admission_schedule_rows:
         d = _deserialize_consultation(dict(r))
@@ -2012,6 +2035,7 @@ def dashboard_summary():
         d["admission_display_date"] = display_date
         d["day_label"] = _day_label(display_date)
         d["admission_time"] = d.get("planned_admission_time") or ""
+        d["admission_disease_summary"] = _admission_disease_summary(d)
         d["other_note"] = (
             d.get("external_referral_note")
             or d.get("disease_detail")

@@ -5,7 +5,7 @@
         <thead>
             <tr>
                 <th>일자</th>
-                <th>시간</th>
+                <th>도착 예정 시간</th>
                 <th>상태</th>
                 <th>환자</th>
                 <th>보험</th>
@@ -23,21 +23,18 @@
             {% for r in rows %}
             {% set rec = r|recovery_status %}
             <tr>
-                <td class="nowrap"><strong>{{ r.day_label }}</strong><br><span class="muted-sm">{{ r.admission_display_date|krdate_wd }}</span></td>
-                <td class="nowrap">{{ r.admission_time or '-' }}</td>
+                <td class="nowrap">{{ r.admission_display_date|krdate }}</td>
+                <td class="nowrap">{{ r.planned_admission_time or '-' }}</td>
                 <td class="nowrap dash-adm-state">
-                    <span class="badge {% if r.admission_bucket == 'completed' %}adm-completed{% else %}adm-planned{% endif %}">{{ r.admission_bucket_label }}</span>
-                    <span class="muted-sm">{{ r.admission_date_kind }}</span>
+                    <span class="badge adm-planned">입원예정</span>
                 </td>
                 <td class="nowrap">
                     {% if r.blacklist %}<span class="bl-mark">블랙</span> {% endif %}
                     <a href="/consult/{{ r.id }}">{{ r.patient_name }}</a>
-                    <span class="muted-sm">{% if r.patient_age is not none %}{{ r.patient_age }}{% endif %}{% if r.gender == 'M' %}·남{% elif r.gender == 'F' %}·여{% endif %}</span>
+                    <span class="muted-sm">({% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% else %}-{% endif %}/{% if r.patient_age is not none %}{{ r.patient_age }}세{% else %}-{% endif %})</span>
                 </td>
                 <td class="nowrap">{{ r.insurance_type or '-' }}</td>
-                <td class="dash-dx" title="{{ r.diseases|join(', ') if r.diseases else '' }}">
-                    {% if r.diseases %}{{ r.diseases[:3]|join(', ') }}{% if r.diseases|length > 3 %} 외{% endif %}{% else %}-{% endif %}
-                </td>
+                <td class="dash-dx" title="{{ r.admission_disease_summary }}">{{ r.admission_disease_summary or '-' }}</td>
                 <td class="nowrap">{{ r.disease_onset or '-' }}</td>
                 <td class="nowrap">{{ r.room_number or '-' }}</td>
                 <td class="nowrap">
@@ -318,12 +315,8 @@
     </div>
 </div>
 
-{% set admission_all = admission_by_status['all'] %}
 {% set admission_planned = admission_by_status['planned'] %}
-{% set admission_completed = admission_by_status['completed'] %}
-{% set admission_group_all = admission_groups_by_status['all'] %}
 {% set admission_group_planned = admission_groups_by_status['planned'] %}
-{% set admission_group_completed = admission_groups_by_status['completed'] %}
 
 {# KPI 현황 6칸 — 오늘 2 · 기한 2 · 대기 2. 상세 액션은 바로 아래 '오늘 처리 필요'에서 확인. #}
 <div class="dash-kpi">
@@ -364,24 +357,20 @@
 <div class="card" id="admission-schedule">
     <div class="dash-section-head">
         <h3>입원 환자 현황</h3>
-        <span class="muted">입원예정 · 입원완료 · 15일</span>
+        <span class="muted">15일 내 입원예정</span>
     </div>
     <div class="dash-filter-row">
         <div class="dash-view-tabs" role="tablist" aria-label="입원 환자 현황 보기">
-            <button type="button" class="dash-view-btn active" data-view="all" aria-pressed="true">전체 <span>{{ summary.admission_week or 0 }}</span></button>
-            <button type="button" class="dash-view-btn" data-view="planned" aria-pressed="false">입원예정 <span>{{ summary.admission_planned_week or 0 }}</span></button>
-            <button type="button" class="dash-view-btn" data-view="completed" aria-pressed="false">입원완료 <span>{{ summary.admission_completed_week or 0 }}</span></button>
+            <button type="button" class="dash-view-btn active" data-view="planned" aria-pressed="true">입원예정 <span>{{ summary.admission_planned_week or 0 }}</span></button>
             <button type="button" class="dash-view-btn" data-view="counselor" aria-pressed="false">상담사별</button>
             <button type="button" class="dash-view-btn" data-view="ward" aria-pressed="false">병동별</button>
             <button type="button" class="dash-view-btn" data-view="doctor" aria-pressed="false">주치의별</button>
         </div>
     </div>
-    {{ admission_flat_panel('all', admission_all, '15일 내 입원 예정/완료 환자가 없습니다.', True) }}
-    {{ admission_flat_panel('planned', admission_planned, '15일 내 입원 예정 환자가 없습니다.') }}
-    {{ admission_flat_panel('completed', admission_completed, '15일 내 입원 완료 환자가 없습니다.') }}
-    {{ admission_group_panel('counselor', admission_group_all['counselor'], '상담사별로 볼 입원 환자가 없습니다.') }}
-    {{ admission_group_panel('ward', admission_group_all['ward'], '병동별로 볼 입원 환자가 없습니다.') }}
-    {{ admission_group_panel('doctor', admission_group_all['doctor'], '주치의별로 볼 입원 환자가 없습니다.') }}
+    {{ admission_flat_panel('planned', admission_planned, '15일 내 입원 예정 환자가 없습니다.', True) }}
+    {{ admission_group_panel('counselor', admission_group_planned['counselor'], '상담사별로 볼 입원 예정 환자가 없습니다.') }}
+    {{ admission_group_panel('ward', admission_group_planned['ward'], '병동별로 볼 입원 예정 환자가 없습니다.') }}
+    {{ admission_group_panel('doctor', admission_group_planned['doctor'], '주치의별로 볼 입원 예정 환자가 없습니다.') }}
 </div>
 
 <div class="dash-two-col" id="today-consults">
