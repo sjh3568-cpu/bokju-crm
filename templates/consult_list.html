@@ -225,7 +225,7 @@
             {% set purpose = (r.admission_purpose or '').strip() %}
             <tr data-cid="{{ r.id }}"{% if r.blacklist %} class="bl-row"{% endif %}>
                 <td class="check-col"><input type="checkbox" class="row-check" value="{{ r.id }}"></td>
-                <td class="nowrap">{{ r.consult_date|krdate_wd }}</td>
+                <td class="nowrap">{{ r.consult_date|krdate_wd_full }}</td>
                 <td class="patient-cell">
                     {% if r.blacklist %}<button type="button" class="bl-mark blacklist-btn"
                         data-pid="{{ r.patient_id }}"
