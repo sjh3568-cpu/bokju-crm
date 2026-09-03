@@ -206,6 +206,20 @@ def _krdate_wd_full(value):
     return f"{value.strftime('%Y-%m-%d')}({wd})"
 
 
+@app.template_filter("krdate_short_wd")
+def _krdate_short_wd(value):
+    """'2026-09-03' → '26.09.03(목)' (목록용 한 줄 축약 날짜)."""
+    if not value:
+        return ""
+    if isinstance(value, str):
+        try:
+            value = datetime.strptime(value[:10], "%Y-%m-%d")
+        except ValueError:
+            return value
+    wd = "월화수목금토일"[value.weekday()]
+    return f"{value.strftime('%y.%m.%d')}({wd})"
+
+
 _SIDO_SHORT = {
     "서울특별시": "서울", "부산광역시": "부산", "대구광역시": "대구",
     "인천광역시": "인천", "광주광역시": "광주", "대전광역시": "대전",

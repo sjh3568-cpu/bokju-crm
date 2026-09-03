@@ -229,7 +229,7 @@
             {% set purpose = (r.admission_purpose or '').strip() %}
             <tr data-cid="{{ r.id }}"{% if r.blacklist %} class="bl-row"{% endif %}>
                 <td class="check-col"><input type="checkbox" class="row-check" value="{{ r.id }}"></td>
-                <td class="date-cell"><span>{{ r.consult_date[:4] }}</span><span>{{ r.consult_date|krdate_wd }}</span></td>
+                <td class="date-cell">{{ r.consult_date|krdate_short_wd }}</td>
                 <td class="patient-cell">
                     {% if r.blacklist %}<button type="button" class="bl-mark blacklist-btn"
                         data-pid="{{ r.patient_id }}"
@@ -339,8 +339,8 @@
                 </td>
                 <td class="nowrap admission-date-cell">
                     {% set actual = r.actual_admission_date or r.admission_date %}
-                    {% if actual %}<span>{{ actual[:4] }}</span><span>{{ actual|krdate_wd }}</span>{% endif %}
-                    {% if status == '퇴원완료' and r.discharge_date %}<span class="muted-sm">퇴원 {{ r.discharge_date|krdate_wd_full }}</span>{% endif %}
+                    {% if actual %}{{ actual|krdate_short_wd }}{% endif %}
+                    {% if status == '퇴원완료' and r.discharge_date %}<span class="muted-sm">퇴원 {{ r.discharge_date|krdate_short_wd }}</span>{% endif %}
                 </td>
                 <td class="nowrap admexp-cell">
                     {% set ax = r|admission_expiry %}
@@ -444,16 +444,16 @@ body .container { max-width: none; padding: 0 12px; }
 .tbl-compact td.referral-cell { overflow-wrap:anywhere; }
 .tbl-compact td.disease-cell { overflow:hidden; }
 .tbl-compact td.patient-cell { width:72px; overflow-wrap:anywhere; }
-.tbl-compact th:nth-child(2), .tbl-compact td:nth-child(2) { width:72px; }
+.tbl-compact th:nth-child(2), .tbl-compact td:nth-child(2) { width:80px; }
 .tbl-compact th:nth-child(3), .tbl-compact td:nth-child(3) { width:72px; }
 .tbl-compact th:nth-child(4), .tbl-compact td:nth-child(4),
 .tbl-compact th:nth-child(5), .tbl-compact td:nth-child(5) { width:34px; }
 .tbl-compact th:nth-child(8), .tbl-compact td:nth-child(8) { width:128px; }
 .tbl-compact th:nth-child(9), .tbl-compact td:nth-child(9) { width:105px; }
-.tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:82px; }
+.tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:86px; }
 .tbl-compact th:nth-child(17), .tbl-compact td:nth-child(17) { width:145px; }
 .tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:50px; }
-.date-cell > span, .admission-date-cell > span { display:block; }
+.date-cell, .admission-date-cell { white-space:nowrap !important; }
 .guardian-cell .phone { display:block; white-space:nowrap; }
 /* 1400px 이하에선 더 작게 */
 @media (max-width: 1400px) {
