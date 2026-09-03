@@ -845,6 +845,7 @@
 .weekly-report-table .total-row th,.weekly-report-table .total-row td { background:#fce4d6; font-weight:700; }
 @media (max-width:760px) { .weekly-compare-grid { grid-template-columns:1fr; } }
 </style>
+<script src="/static/js/html2canvas.min.js?v=1.4.1"></script>
 <script>
 function syncAdmissionPanels() {
     const view = document.querySelector('.dash-view-btn.active')?.dataset.view || 'all';
@@ -1025,31 +1026,28 @@ document.querySelectorAll('.adm-status-btn').forEach(btn => {
 
 async function weeklyReportPngBlob() {
     const source = document.getElementById('weekly-report-export');
-    const clone = source.cloneNode(true);
-    const originals = [source, ...source.querySelectorAll('*')];
-    const copies = [clone, ...clone.querySelectorAll('*')];
-    originals.forEach((node, i) => {
-        const computed = getComputedStyle(node);
-        let css = '';
-        for (const prop of computed) css += `${prop}:${computed.getPropertyValue(prop)};`;
-        copies[i].setAttribute('style', css);
+    if (!source || typeof html2canvas !== 'function') throw new Error('이미지 변환 모듈을 불러오지 못했습니다.');
+    const table = source.querySelector('.weekly-report-table');
+    const width = Math.max(1560, (table?.scrollWidth || 0) + 28);
+    const canvas = await html2canvas(source, {
+        scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false,
+        width, windowWidth: width,
+        onclone: doc => {
+            const exported = doc.getElementById('weekly-report-export');
+            exported.style.width = `${width}px`;
+            exported.style.maxWidth = 'none';
+            exported.querySelector('.weekly-report-wrap').style.overflow = 'visible';
+        },
     });
-    clone.style.width = '1560px';
-    clone.style.boxSizing = 'border-box';
-    const holder = document.createElement('div');
-    holder.style.cssText = 'position:fixed;left:-9999px;top:0;width:1560px;background:#fff';
-    holder.appendChild(clone); document.body.appendChild(holder);
-    const width = 1560, height = Math.ceil(clone.getBoundingClientRect().height);
-    const xml = new XMLSerializer().serializeToString(clone);
-    holder.remove();
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml">${xml}</div></foreignObject></svg>`;
-    const url = URL.createObjectURL(new Blob([svg], {type:'image/svg+xml;charset=utf-8'}));
-    try {
-        const img = await new Promise((resolve, reject) => { const el = new Image(); el.onload=()=>resolve(el); el.onerror=reject; el.src=url; });
-        const canvas = document.createElement('canvas'); canvas.width=width*2; canvas.height=height*2;
-        const ctx=canvas.getContext('2d'); ctx.scale(2,2); ctx.fillStyle='#fff'; ctx.fillRect(0,0,width,height); ctx.drawImage(img,0,0);
-        return await new Promise(resolve => canvas.toBlob(resolve,'image/png'));
-    } finally { URL.revokeObjectURL(url); }
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) throw new Error('PNG 파일을 만들지 못했습니다.');
+    return blob;
+}
+function downloadWeeklyReportBlob(blob) {
+    const url=URL.createObjectURL(blob), a=document.createElement('a');
+    a.href=url; a.download='주간상담현황-{{ weekly_report.current.days[0].date }}.png';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 document.getElementById('weekly-copy-text')?.addEventListener('click', async () => {
     const cards=[...document.querySelectorAll('.weekly-compare-card')];
@@ -1057,12 +1055,16 @@ document.getElementById('weekly-copy-text')?.addEventListener('click', async () 
     await navigator.clipboard.writeText(lines.join('\n')); alert('카카오톡용 요약문을 복사했습니다.');
 });
 document.getElementById('weekly-copy-image')?.addEventListener('click', async () => {
-    try { const blob=await weeklyReportPngBlob(); await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]); alert('주간 보고 이미지를 복사했습니다. 카카오톡에서 붙여넣으세요.'); }
-    catch(e) { alert('브라우저가 이미지 복사를 허용하지 않습니다. PNG 저장을 이용해주세요.'); }
+    try {
+        const blob=await weeklyReportPngBlob();
+        if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') throw new Error('이 브라우저는 이미지 클립보드를 지원하지 않습니다.');
+        await navigator.clipboard.write([new ClipboardItem({'image/png':blob})]);
+        alert('주간 보고 이미지를 복사했습니다. 카카오톡에서 붙여넣으세요.');
+    } catch(e) { console.error(e); alert(`이미지 복사 실패: ${e.message}\nPNG 저장 버튼을 이용해주세요.`); }
 });
 document.getElementById('weekly-download-image')?.addEventListener('click', async () => {
-    try { const blob=await weeklyReportPngBlob(); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='주간상담현황-{{ weekly_report.current.days[0].date }}.png'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
-    catch(e) { alert('이미지 저장에 실패했습니다.'); }
+    try { downloadWeeklyReportBlob(await weeklyReportPngBlob()); }
+    catch(e) { console.error(e); alert(`이미지 저장 실패: ${e.message}`); }
 });
 </script>
 {% endblock %}
