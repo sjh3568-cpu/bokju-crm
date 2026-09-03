@@ -244,11 +244,11 @@
                 </td>
                 <td class="nowrap">{% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% endif %}</td>
                 <td class="nowrap">{% if r.patient_age is not none %}{{ r.patient_age }}{% endif %}</td>
-                <td class="muted-sm">
+                <td class="info-cell residence-cell">
                     {% if r.residence_sido %}{{ r.residence_sido|sido_short }}{% endif %}
                     {% if r.residence_sigungu %} {{ r.residence_sigungu }}{% endif %}
                 </td>
-                <td class="nowrap muted-sm">{{ r.insurance_type or '' }}</td>
+                <td class="info-cell insurance-cell">{{ r.insurance_type or '' }}</td>
                 <td class="guardian-cell" title="{% if r.guardian_name %}{{ r.guardian_name }}{% endif %}{% if r.guardian_relation %} ({{ r.guardian_relation }}){% endif %}{% if r.guardian_phone %} {{ r.guardian_phone }}{% endif %}">
                     {% if r.guardian_name or r.guardian_relation or r.guardian_phone %}
                         {% if r.guardian_name %}{{ r.guardian_name }}{% endif %}{% if r.guardian_relation %} <span class="muted-sm">({{ r.guardian_relation }})</span>{% endif %}{% if r.guardian_phone %} <span class="phone">{{ r.guardian_phone }}</span>{% endif %}
@@ -426,8 +426,8 @@ body .container { max-width: none; padding: 0 12px; }
 /* 한 줄 표기 + 시인성 — 더 컴팩트하게 */
 .tbl-compact { table-layout: fixed; width: 100%; }
 .tbl-compact th, .tbl-compact td {
-    padding: 3px 3px; font-size: 0.71em; vertical-align: middle;
-    white-space: normal; overflow-wrap: anywhere;
+    padding: 3px 2px; font-size:0.71em; line-height:1.25; vertical-align:middle;
+    white-space:normal; overflow-wrap:anywhere;
 }
 .tbl-compact th { font-weight: 600; background: #f8fafc; border-bottom: 2px solid #e2e8f0; }
 .tbl-compact thead th { position: sticky; top: 0; z-index: 5; }
@@ -444,6 +444,8 @@ body .container { max-width: none; padding: 0 12px; }
 .tbl-compact td.referral-cell { overflow-wrap:anywhere; }
 .tbl-compact td.disease-cell { overflow:hidden; }
 .tbl-compact td.patient-cell { width:72px; overflow-wrap:anywhere; }
+.tbl-compact td.info-cell { font-size:0.71em; color:var(--text-light); line-height:1.2; }
+.tbl-compact td.insurance-cell { white-space:normal; text-align:center; }
 .tbl-compact th:nth-child(2), .tbl-compact td:nth-child(2) { width:80px; }
 .tbl-compact th:nth-child(3), .tbl-compact td:nth-child(3) { width:72px; }
 .tbl-compact th:nth-child(4), .tbl-compact td:nth-child(4),
@@ -457,7 +459,8 @@ body .container { max-width: none; padding: 0 12px; }
 .guardian-cell .phone { display:block; white-space:nowrap; }
 /* 1400px 이하에선 더 작게 */
 @media (max-width: 1400px) {
-    .tbl-compact th, .tbl-compact td { padding:2px; font-size:0.68em; }
+    .tbl-compact th, .tbl-compact td { padding:2px 1px; font-size:0.68em; }
+    .tbl-compact td.info-cell { font-size:0.68em; }
 }
 
 .check-col { width: 26px; text-align: center; padding: 2px !important; }
