@@ -93,6 +93,7 @@
 {% if filters.consult_result %}{% set _ = active_filters.append(('상담결과', filters.consult_result, url_with(consult_result=None, page=None))) %}{% endif %}
 {% if filters.admission_status %}{% set _ = active_filters.append(('입원진행', filters.admission_status, url_with(admission_status=None, page=None))) %}{% endif %}
 {% if filters.counselor %}{% set _ = active_filters.append(('상담자', filters.counselor, url_with(counselor=None, page=None))) %}{% endif %}
+{% if filters.stay_period %}{% set _ = active_filters.append(('입원기간', '6개월 연장 중', url_with(stay_period=None, page=None))) %}{% endif %}
 {% if active_filters %}
 <div class="filter-chip-row">
     <span class="filter-chip-label">적용된 필터</span>
@@ -131,7 +132,7 @@
                 <th>나이</th>
                 {{ sort_th('residence', '거주지') }}
                 <th>보험</th>
-                <th>보호자</th>
+                <th>관계자·연락처</th>
                 {{ sort_th('hospital', '모병원') }}
                 <th>병명</th>
                 <th>유입경로</th>
@@ -140,7 +141,7 @@
                 <th>상담결과</th>
                 {{ sort_th('status', '입원진행') }}
                 <th>입원완료일</th>
-                <th>입원만료</th>
+                <th>입원기간 만료일</th>
                 {{ sort_th('counselor', '상담자') }}
             </tr>
             <tr class="filter-row{% if not active_filters %} detail-collapsed{% endif %}">
@@ -209,7 +210,10 @@
                     <option value="퇴원완료" {% if filters.admission_status == '퇴원완료' %}selected{% endif %}>퇴원완료</option>
                 </select></th>
                 <th></th>
-                <th></th>
+                <th><select form="consult-filter" name="stay_period" class="cf-in cf-sm" title="입원기간 상태">
+                    <option value="">전체</option>
+                    <option value="extended_6m" {% if filters.stay_period == 'extended_6m' %}selected{% endif %}>6개월 연장 중</option>
+                </select></th>
                 <th><select form="consult-filter" name="counselor" class="cf-in cf-sm">
                     <option value="">전체</option>
                     {% for c in COUNSELORS %}
@@ -250,7 +254,7 @@
                         {% if r.guardian_name %}{{ r.guardian_name }}{% endif %}{% if r.guardian_relation %} <span class="muted-sm">({{ r.guardian_relation }})</span>{% endif %}{% if r.guardian_phone %} <span class="phone">{{ r.guardian_phone }}</span>{% endif %}
                     {% endif %}
                 </td>
-                <td class="muted-sm" title="{{ r.source_hospital or '' }}">{{ r.source_hospital or '' }}</td>
+                <td class="hospital-cell" title="{{ r.source_hospital or '' }}">{{ r.source_hospital or '' }}</td>
                 <td class="disease-cell">
                     {% set dx_raw = (r.diseases or [])|hide_chronic %}
                     {% set dx = [] %}
@@ -308,7 +312,7 @@
                         <option value="{{ cr }}" {% if cresult == cr %}selected{% endif %}>{{ cr }}</option>
                         {% endfor %}
                     </select>
-                    {% if r.consult_result_reason %}<span class="cr-reason" title="{{ r.consult_result_reason }}">{{ r.consult_result_reason }}</span>{% endif %}
+                    {% if r.consult_result_reason and cresult != '상담보류' %}<span class="cr-reason" title="{{ r.consult_result_reason }}">{{ r.consult_result_reason }}</span>{% endif %}
                 </td>
                 <td class="status-cell">
                     {% if status == '퇴원완료' %}
@@ -335,16 +339,17 @@
                 </td>
                 <td class="nowrap admission-date-cell">
                     {% set actual = r.actual_admission_date or r.admission_date %}
-                    {% if actual %}{{ actual|krdate_wd }}{% endif %}
-                    {% if status == '퇴원완료' and r.discharge_date %}<span class="muted-sm">퇴원 {{ r.discharge_date|krdate_wd }}</span>{% endif %}
+                    {% if actual %}{{ actual|krdate_wd_full }}{% endif %}
+                    {% if status == '퇴원완료' and r.discharge_date %}<span class="muted-sm">퇴원 {{ r.discharge_date|krdate_wd_full }}</span>{% endif %}
                 </td>
                 <td class="nowrap admexp-cell">
                     {% set ax = r|admission_expiry %}
                     {% if ax %}
                         {% if ax.billing_date %}
-                        <span class="admexp-sub" title="회복기 수가(s005) 만료 · 입원 후 {{ ax.billing_days }}일">수가 {{ ax.billing_date|krdate }}{% if ax.billing_left is not none and ax.billing_left >= 0 and ax.billing_left <= 30 %} <span class="admexp-dday urgent">D-{{ ax.billing_left }}</span>{% endif %}</span>
+                        <span class="admexp-sub" title="회복기 수가(s005) 종료 · 입원 후 {{ ax.billing_days }}일">회복기 종료 {{ ax.billing_date|krdate }}{% if ax.billing_left is not none and ax.billing_left >= 0 and ax.billing_left <= 30 %} <span class="admexp-dday urgent">D-{{ ax.billing_left }}</span>{% endif %}</span>
                         {% endif %}
-                        <span class="admexp-main" title="전체 입원 만료 · 입원 후 {{ ax.total_days }}일{% if ax.basis == 'planned' %} · 입원예정일 기준 추정{% endif %}">{% if ax.billing_date %}만료 {% endif %}{{ ax.total_date|krdate }}{% if ax.basis == 'planned' %} <span class="admexp-est">예정</span>{% endif %}{% if ax.total_left is not none %}{% if ax.total_left < 0 %} <span class="admexp-dday over">{{ -ax.total_left }}일초과</span>{% elif ax.total_left <= 30 %} <span class="admexp-dday urgent">D-{{ ax.total_left }}</span>{% endif %}{% endif %}</span>
+                        <span class="admexp-main" title="전체 입원 만료 · 입원 후 {{ ax.total_days }}일{% if ax.basis == 'planned' %} · 입원예정일 기준 추정{% endif %}">{% if ax.total_days == 365 %}1년 만기{% else %}입원 만료{% endif %} {{ ax.total_date|krdate }}{% if ax.basis == 'planned' %} <span class="admexp-est">예정</span>{% endif %}{% if ax.total_left is not none %}{% if ax.total_left < 0 %} <span class="admexp-dday over">{{ -ax.total_left }}일초과</span>{% elif ax.total_left <= 30 %} <span class="admexp-dday urgent">D-{{ ax.total_left }}</span>{% endif %}{% endif %}</span>
+                        {% if ax.is_extended_6m %}<span class="admexp-extension" title="6개월 연장 종료일 {{ ax.extension_date }}">6개월 연장 중 · {{ ax.extension_date|krdate }}</span>{% endif %}
                     {% endif %}
                 </td>
                 <td class="nowrap">{{ r.counselor or '' }}</td>
@@ -421,7 +426,7 @@ body .container { max-width: none; padding: 0 12px; }
 /* 한 줄 표기 + 시인성 — 더 컴팩트하게 */
 .tbl-compact { table-layout: auto; width: 100%; }
 .tbl-compact th, .tbl-compact td {
-    padding: 4px 5px; font-size: 0.8em; vertical-align: middle;
+    padding: 3px 4px; font-size: 0.76em; vertical-align: middle;
     white-space: nowrap;  /* 기본 한 줄 */
 }
 .tbl-compact th { font-weight: 600; background: #f8fafc; border-bottom: 2px solid #e2e8f0; }
@@ -433,16 +438,17 @@ body .container { max-width: none; padding: 0 12px; }
 .tbl-compact .muted-sm { color: var(--text-light); font-size: 0.92em; }
 
 /* 너비 제한 + 말줄임 — 가급적 좁게 (hover나 클릭으로 전체 정보 확인) */
-.tbl-compact td.guardian-cell { max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
-.tbl-compact td.muted-sm { max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+.tbl-compact td.guardian-cell { min-width: 170px; }
+.tbl-compact td.muted-sm { max-width: 180px; }
+.tbl-compact td.hospital-cell { min-width: 150px; max-width: 220px; white-space: normal; line-height: 1.25; }
 .tbl-compact td.referral-cell { max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
 .tbl-compact td.disease-cell { max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
 .tbl-compact td.patient-cell { max-width: 130px; }
 /* 1400px 이하에선 더 작게 */
 @media (max-width: 1400px) {
     .tbl-compact th, .tbl-compact td { padding: 3px 4px; font-size: 0.76em; }
-    .tbl-compact td.guardian-cell { max-width: 110px; }
-    .tbl-compact td.muted-sm { max-width: 90px; }
+    .tbl-compact td.guardian-cell { min-width: 160px; }
+    .tbl-compact td.muted-sm { max-width: 150px; }
 }
 
 .check-col { width: 26px; text-align: center; padding: 2px !important; }
@@ -722,6 +728,8 @@ body .container { max-width: none; padding: 0 12px; }
 .admexp-dday { display: inline-block; padding: 0 5px; border-radius: 7px; font-size: 0.92em; font-weight: 700; }
 .admexp-dday.urgent { background: #fef3c7; color: #92400e; }
 .admexp-dday.over { background: #fee2e2; color: #b91c1c; }
+.admexp-extension { display:block; margin-top:2px; padding:1px 5px; border-radius:7px;
+    background:#ede9fe; color:#5b21b6; font-weight:700; }
 
 /* 페이지네이션 */
 .pagination { display: flex; flex-wrap: wrap; gap: 4px; align-items: center;

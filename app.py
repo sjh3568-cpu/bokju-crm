@@ -493,6 +493,18 @@ def _admission_expiry(consultation):
         bd = _day_of(ad, period["billing"])
         out["billing_date"] = bd.isoformat()
         out["billing_left"] = (bd - today).days
+    extension_d = (total_d + timedelta(days=180)
+                   if period["total"] == TOTAL_STAY_DAYS else None)
+    out["extension_date"] = extension_d.isoformat() if extension_d else None
+    out["extension_left"] = (extension_d - today).days if extension_d else None
+    out["is_extended_6m"] = bool(
+        period["total"] == TOTAL_STAY_DAYS
+        and out["total_left"] < 0
+        and out["extension_left"] is not None
+        and out["extension_left"] >= 0
+        and (consultation.get("admission_status") or "").strip() == "입원완료"
+        and not (consultation.get("discharge_date") or "").strip()
+    )
     return out
 
 
@@ -2537,6 +2549,7 @@ def _list_filters_from_request():
         "age_max": _int_or_none(request.args.get("age_max")),
         "guardian": request.args.get("guardian") or None,
         "hospital": request.args.get("hospital") or None,
+        "stay_period": request.args.get("stay_period") or None,
     }
 
 

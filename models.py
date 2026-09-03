@@ -27,6 +27,10 @@ _CHRONIC_DISEASE_PREFIXES = (
     "치매", "인지기능저하", "이상행동", "탈출", "암",
     "마비-편마비", "편마비",
 )
+_CNS_DISEASE_FILTER_TERMS = (
+    "뇌출혈", "뇌경색", "뇌손상", "척수손상", "뇌성마비",
+    "마비", "편마비", "사지마비", "중추신경계",
+)
 
 
 def _hide_chronic_disease_labels(labels):
@@ -923,7 +927,8 @@ def _build_consult_where(*, date_from=None, date_to=None, insurance=None, q=None
                          consult_channel=None, referral_type=None,
                          admission_type=None, consult_result=None, blacklist=None,
                          gender=None, age_min=None, age_max=None,
-                         guardian=None, hospital=None):
+                         guardian=None, hospital=None,
+                         stay_period=None):
     """list_consultations / count_consultations 공용 WHERE 절 빌더 → (where_sql, vals)."""
     where, vals = [], []
     if date_from:
@@ -998,6 +1003,16 @@ def _build_consult_where(*, date_from=None, date_to=None, insurance=None, q=None
         vals.extend([like, like])
     if hospital:
         where.append("c.source_hospital LIKE ?"); vals.append(f"%{hospital}%")
+    if stay_period == "extended_6m":
+        cns_clause = " OR ".join("c.diseases LIKE ?" for _ in _CNS_DISEASE_FILTER_TERMS)
+        where.append(
+            "(c.admission_status = '입원완료' "
+            "AND (c.discharge_date IS NULL OR c.discharge_date = '') "
+            "AND date(COALESCE(NULLIF(c.actual_admission_date, ''), NULLIF(c.admission_date, '')), '+364 days') < date('now', 'localtime') "
+            "AND date('now', 'localtime') <= date(COALESCE(NULLIF(c.actual_admission_date, ''), NULLIF(c.admission_date, '')), '+544 days') "
+            f"AND ({cns_clause}))"
+        )
+        vals.extend(f"%{term}%" for term in _CNS_DISEASE_FILTER_TERMS)
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
     return where_sql, vals
 
@@ -1023,6 +1038,7 @@ def list_consultations(*, date_from=None, date_to=None,
                        admission_type=None, consult_result=None, blacklist=None,
                        gender=None, age_min=None, age_max=None,
                        guardian=None, hospital=None,
+                       stay_period=None,
                        sort=None, sort_dir=None,
                        limit=200, offset=0):
     """상담 목록.
@@ -1038,6 +1054,7 @@ def list_consultations(*, date_from=None, date_to=None,
         consult_result=consult_result, blacklist=blacklist,
         gender=gender, age_min=age_min, age_max=age_max,
         guardian=guardian, hospital=hospital,
+        stay_period=stay_period,
     )
     sort_col = _SORT_COLUMNS.get(sort or "date", "c.consult_date")
     direction = "ASC" if str(sort_dir or "").lower() == "asc" else "DESC"
