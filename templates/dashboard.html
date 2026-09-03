@@ -331,7 +331,7 @@
         <div class="sub">상담사 {{ counselor_today|length }}명</div>
     </a>
     <a class="stat-card g-due warn{% if not summary.recovery_transition_due %} is-zero{% endif %}" href="#recovery-transition">
-        <div class="label">회복기 만료 D-15</div>
+        <div class="label">회복기 만료 D-30</div>
         <div class="value">{{ summary.recovery_transition_due or 0 }}</div>
         <div class="sub">비회복기 전환 대상</div>
     </a>
@@ -465,7 +465,7 @@
             </table>
         </div>
         {% else %}
-        <div class="empty">D-15 이내 전환 체크 대상이 없습니다.</div>
+        <div class="empty">D-30 이내 전환 체크 대상이 없습니다.</div>
         {% endif %}
     </div>
 

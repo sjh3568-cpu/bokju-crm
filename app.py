@@ -983,7 +983,7 @@ def dashboard():
         if not (c.get("planned_admission_date") or "").strip()
     ]
 
-    # 입원완료 환자 중 회복기→비회복기 전환 D-15, 퇴원예정 D-30.
+    # 입원완료 환자 중 회복기→비회복기 전환 D-30, 퇴원예정 D-30.
     admitted = models.list_consultations(admission_status="입원완료", limit=10000)
     recovery_transition_due = []
     discharge_due = []
@@ -992,7 +992,7 @@ def dashboard():
         con["disease_summary"] = "" if disease_labels == ["병명 미지정"] else ", ".join(disease_labels[:3])
         con["ward"] = _dashboard_ward_label(con.get("room_number"))
         ax = _admission_expiry(con)
-        if ax and ax.get("billing_left") is not None and ax["billing_left"] <= 15:
+        if ax and ax.get("billing_left") is not None and ax["billing_left"] <= 30:
             recovery_transition_due.append({"con": con, "watch": ax})
         dw = _discharge_watch(con)
         if dw and dw.get("days_left") is not None and dw["days_left"] <= 30:
