@@ -229,7 +229,7 @@
             {% set purpose = (r.admission_purpose or '').strip() %}
             <tr data-cid="{{ r.id }}"{% if r.blacklist %} class="bl-row"{% endif %}>
                 <td class="check-col"><input type="checkbox" class="row-check" value="{{ r.id }}"></td>
-                <td class="nowrap">{{ r.consult_date|krdate_wd_full }}</td>
+                <td class="date-cell"><span>{{ r.consult_date[:4] }}</span><span>{{ r.consult_date|krdate_wd }}</span></td>
                 <td class="patient-cell">
                     {% if r.blacklist %}<button type="button" class="bl-mark blacklist-btn"
                         data-pid="{{ r.patient_id }}"
@@ -339,16 +339,16 @@
                 </td>
                 <td class="nowrap admission-date-cell">
                     {% set actual = r.actual_admission_date or r.admission_date %}
-                    {% if actual %}{{ actual|krdate_wd_full }}{% endif %}
+                    {% if actual %}<span>{{ actual[:4] }}</span><span>{{ actual|krdate_wd }}</span>{% endif %}
                     {% if status == '퇴원완료' and r.discharge_date %}<span class="muted-sm">퇴원 {{ r.discharge_date|krdate_wd_full }}</span>{% endif %}
                 </td>
                 <td class="nowrap admexp-cell">
                     {% set ax = r|admission_expiry %}
                     {% if ax %}
                         {% if ax.billing_date %}
-                        <span class="admexp-sub" title="회복기 수가(s005) 종료 · 입원 후 {{ ax.billing_days }}일">회복기 종료 {{ ax.billing_date|krdate }}{% if ax.billing_left is not none and ax.billing_left >= 0 and ax.billing_left <= 30 %} <span class="admexp-dday urgent">D-{{ ax.billing_left }}</span>{% endif %}</span>
+                        <span class="admexp-row" title="회복기 수가(s005) 종료 · 입원 후 {{ ax.billing_days }}일"><span class="admexp-kind billing">회복기 종료</span><span>{{ ax.billing_date|krdate }}</span>{% if ax.billing_left is not none and ax.billing_left >= 0 and ax.billing_left <= 30 %} <span class="admexp-dday urgent">D-{{ ax.billing_left }}</span>{% endif %}</span>
                         {% endif %}
-                        <span class="admexp-main" title="전체 입원 만료 · 입원 후 {{ ax.total_days }}일{% if ax.basis == 'planned' %} · 입원예정일 기준 추정{% endif %}">{% if ax.total_days == 365 %}1년 만기{% else %}입원 만료{% endif %} {{ ax.total_date|krdate }}{% if ax.basis == 'planned' %} <span class="admexp-est">예정</span>{% endif %}{% if ax.total_left is not none %}{% if ax.total_left < 0 %} <span class="admexp-dday over">{{ -ax.total_left }}일초과</span>{% elif ax.total_left <= 30 %} <span class="admexp-dday urgent">D-{{ ax.total_left }}</span>{% endif %}{% endif %}</span>
+                        <span class="admexp-row" title="전체 입원 만료 · 입원 후 {{ ax.total_days }}일{% if ax.basis == 'planned' %} · 입원예정일 기준 추정{% endif %}"><span class="admexp-kind total">{% if ax.total_days == 365 %}1년 만기{% else %}입원 만료{% endif %}</span><span>{{ ax.total_date|krdate }}</span>{% if ax.basis == 'planned' %} <span class="admexp-est">예정</span>{% endif %}{% if ax.total_left is not none %}{% if ax.total_left < 0 %} <span class="admexp-dday over">{{ -ax.total_left }}일초과</span>{% elif ax.total_left <= 30 %} <span class="admexp-dday urgent">D-{{ ax.total_left }}</span>{% endif %}{% endif %}</span>
                         {% if ax.is_extended_6m %}<span class="admexp-extension" title="6개월 연장 종료일 {{ ax.extension_date }}">6개월 연장 중 · {{ ax.extension_date|krdate }}</span>{% endif %}
                     {% endif %}
                 </td>
@@ -424,10 +424,10 @@ body .container { max-width: none; padding: 0 12px; }
 .tbl-wrap { overflow-x: auto; }
 
 /* 한 줄 표기 + 시인성 — 더 컴팩트하게 */
-.tbl-compact { table-layout: auto; width: 100%; }
+.tbl-compact { table-layout: fixed; width: 100%; }
 .tbl-compact th, .tbl-compact td {
-    padding: 3px 4px; font-size: 0.76em; vertical-align: middle;
-    white-space: nowrap;  /* 기본 한 줄 */
+    padding: 3px 3px; font-size: 0.71em; vertical-align: middle;
+    white-space: normal; overflow-wrap: anywhere;
 }
 .tbl-compact th { font-weight: 600; background: #f8fafc; border-bottom: 2px solid #e2e8f0; }
 .tbl-compact thead th { position: sticky; top: 0; z-index: 5; }
@@ -438,17 +438,26 @@ body .container { max-width: none; padding: 0 12px; }
 .tbl-compact .muted-sm { color: var(--text-light); font-size: 0.92em; }
 
 /* 너비 제한 + 말줄임 — 가급적 좁게 (hover나 클릭으로 전체 정보 확인) */
-.tbl-compact td.guardian-cell { min-width: 170px; }
-.tbl-compact td.muted-sm { max-width: 180px; }
-.tbl-compact td.hospital-cell { min-width: 150px; max-width: 220px; white-space: normal; line-height: 1.25; }
-.tbl-compact td.referral-cell { max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
-.tbl-compact td.disease-cell { max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
-.tbl-compact td.patient-cell { max-width: 130px; }
+.tbl-compact td.guardian-cell { width: 10%; line-height:1.25; }
+.tbl-compact td.muted-sm { max-width:none; }
+.tbl-compact td.hospital-cell { width: 9%; line-height: 1.25; }
+.tbl-compact td.referral-cell { overflow-wrap:anywhere; }
+.tbl-compact td.disease-cell { overflow:hidden; }
+.tbl-compact td.patient-cell { width:72px; overflow-wrap:anywhere; }
+.tbl-compact th:nth-child(2), .tbl-compact td:nth-child(2) { width:72px; }
+.tbl-compact th:nth-child(3), .tbl-compact td:nth-child(3) { width:72px; }
+.tbl-compact th:nth-child(4), .tbl-compact td:nth-child(4),
+.tbl-compact th:nth-child(5), .tbl-compact td:nth-child(5) { width:34px; }
+.tbl-compact th:nth-child(8), .tbl-compact td:nth-child(8) { width:128px; }
+.tbl-compact th:nth-child(9), .tbl-compact td:nth-child(9) { width:105px; }
+.tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:82px; }
+.tbl-compact th:nth-child(17), .tbl-compact td:nth-child(17) { width:145px; }
+.tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:50px; }
+.date-cell > span, .admission-date-cell > span { display:block; }
+.guardian-cell .phone { display:block; white-space:nowrap; }
 /* 1400px 이하에선 더 작게 */
 @media (max-width: 1400px) {
-    .tbl-compact th, .tbl-compact td { padding: 3px 4px; font-size: 0.76em; }
-    .tbl-compact td.guardian-cell { min-width: 160px; }
-    .tbl-compact td.muted-sm { max-width: 150px; }
+    .tbl-compact th, .tbl-compact td { padding:2px; font-size:0.68em; }
 }
 
 .check-col { width: 26px; text-align: center; padding: 2px !important; }
@@ -721,9 +730,11 @@ body .container { max-width: none; padding: 0 12px; }
 @keyframes rh-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
 /* 입원 만료 컬럼 */
-.admexp-cell { font-size: 0.82em; line-height: 1.45; }
-.admexp-sub { display: block; color: var(--text-light); }
-.admexp-main { display: block; }
+.admexp-cell { font-size:0.8em; line-height:1.35; }
+.admexp-row { display:flex; align-items:center; gap:3px; margin:2px 0; flex-wrap:wrap; }
+.admexp-kind { display:inline-block; padding:1px 5px; border-radius:7px; font-weight:700; white-space:nowrap; }
+.admexp-kind.billing { background:#dcfce7; color:#166534; }
+.admexp-kind.total { background:#dbeafe; color:#1e40af; }
 .admexp-est { color: #92400e; font-weight: 600; font-size: 0.92em; }
 .admexp-dday { display: inline-block; padding: 0 5px; border-radius: 7px; font-size: 0.92em; font-weight: 700; }
 .admexp-dday.urgent { background: #fef3c7; color: #92400e; }
