@@ -42,6 +42,14 @@
         <label class="bl-filter"><input type="checkbox" name="blacklist" value="1"
                {% if filters.blacklist %}checked{% endif %}> ⚠ 블랙리스트만</label>
     </div>
+    <div class="field page-size-field">
+        <label for="page-size">보기 개수</label>
+        <select id="page-size" name="page_size" onchange="this.form.submit()">
+            {% for size in page_size_options %}
+            <option value="{{ size }}" {% if page_size == size %}selected{% endif %}>{{ size }}개</option>
+            {% endfor %}
+        </select>
+    </div>
     <div style="display:flex; gap:6px; align-self:flex-end">
         <button class="btn btn-primary btn-sm" type="submit">검색</button>
         <button class="btn btn-secondary btn-sm" type="button" id="detail-filter-toggle">상세필터 ▾</button>

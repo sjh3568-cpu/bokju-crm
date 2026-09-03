@@ -1504,6 +1504,7 @@ def consult_edit(cid):
 
 
 CONSULT_PAGE_SIZE = 100  # 상담 목록 페이지당 행 수
+CONSULT_PAGE_SIZE_OPTIONS = (30, 50, 100, 200)
 
 
 @app.route("/consultations")
@@ -1518,19 +1519,26 @@ def consult_list():
         page = max(1, int(request.args.get("page") or 1))
     except (ValueError, TypeError):
         page = 1
+    try:
+        requested_page_size = int(request.args.get("page_size") or CONSULT_PAGE_SIZE)
+    except (ValueError, TypeError):
+        requested_page_size = CONSULT_PAGE_SIZE
+    page_size = (requested_page_size if requested_page_size in CONSULT_PAGE_SIZE_OPTIONS
+                 else CONSULT_PAGE_SIZE)
     total = models.count_consultations(**filters)
-    total_pages = max(1, (total + CONSULT_PAGE_SIZE - 1) // CONSULT_PAGE_SIZE)
+    total_pages = max(1, (total + page_size - 1) // page_size)
     page = min(page, total_pages)
-    offset = (page - 1) * CONSULT_PAGE_SIZE
+    offset = (page - 1) * page_size
     rows = models.list_consultations(
         **filters, sort=sort, sort_dir=sort_dir,
-        limit=CONSULT_PAGE_SIZE, offset=offset,
+        limit=page_size, offset=offset,
     )
     return render_template(
         "consult_list.html", rows=rows, filters=filters,
         sort=sort, sort_dir=sort_dir,
         page=page, total_pages=total_pages, total=total,
-        page_size=CONSULT_PAGE_SIZE, page_start=offset,
+        page_size=page_size, page_size_options=CONSULT_PAGE_SIZE_OPTIONS,
+        page_start=offset,
         COUNSELORS=COUNSELORS,
         ADMISSION_STATUSES=ADMISSION_STATUSES,
         DISEASE_GROUPS=list(DISEASES_GROUPS.keys()),
