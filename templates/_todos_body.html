@@ -45,10 +45,10 @@
         <label class="tf-field"><span>담당자</span>
             <input type="text" value="{{ current_user.display_name }}" disabled></label>
         <div class="tf-row">
-            <label class="tf-field"><span>시작일</span>
-                <input type="date" name="due_date"></label>
-            <label class="tf-field"><span>종료일</span>
-                <input type="date" name="end_date"></label>
+            <label class="tf-field"><span>시작 (날짜·시간)</span>
+                <span class="tf-datetime"><input type="date" name="due_date"><input type="time" name="start_time"></span></label>
+            <label class="tf-field"><span>종료 (날짜·시간)</span>
+                <span class="tf-datetime"><input type="date" name="end_date"><input type="time" name="end_time"></span></label>
         </div>
         <div class="tf-row">
             <label class="tf-field"><span>진행률</span>
@@ -70,7 +70,8 @@
 
 {% macro todo_data(t) -%}
 data-id="{{ t.id }}" data-title="{{ t.title }}" data-due="{{ t.due_date }}"
-data-end="{{ t.end_date or '' }}" data-progress="{{ t.progress or 0 }}"
+data-end="{{ t.end_date or '' }}" data-stime="{{ t.start_time or '' }}" data-etime="{{ t.end_time or '' }}"
+data-progress="{{ t.progress or 0 }}"
 data-dday="{{ t.dday or 0 }}" data-remind="{{ t.remind_at or '' }}" data-note="{{ t.note or '' }}"
 {%- endmacro %}
 
@@ -93,6 +94,7 @@ data-dday="{{ t.dday or 0 }}" data-remind="{{ t.remind_at or '' }}" data-note="{
                 {% for t in c.todos %}
                 <div class="tc-todo{% if t.done %} done{% endif %}" {{ todo_data(t) }}>
                     {% if t.dday_label %}<span class="tc-dday">{{ t.dday_label }}</span>{% endif %}
+                    {% if t.start_time %}<span class="tc-time">{{ t.start_time }}</span>{% endif %}
                     <span class="tc-title">{{ t.title }}</span>
                     {% if t.progress and not t.done %}<span class="tc-prog">{{ t.progress }}%</span>{% endif %}
                 </div>
@@ -116,7 +118,7 @@ data-dday="{{ t.dday or 0 }}" data-remind="{{ t.remind_at or '' }}" data-note="{
         <li class="todo-item" {{ todo_data(t) }}>
             <button type="button" class="todo-check" data-toggle title="완료 처리"></button>
             <div class="todo-body todo-openedit">
-                <span class="todo-title">{{ t.title }}</span>
+                <span class="todo-title">{% if t.start_time %}<span class="todo-time">{{ t.start_time }}</span> {% endif %}{{ t.title }}{% if t.end_time %} <span class="todo-time">~{{ t.end_time }}</span>{% endif %}</span>
                 <span class="todo-meta">
                     <span class="badge badge-rejected">{{ t.due_date|krdate_short_wd }}</span>
                     {% if t.dday_label %}<span class="todo-ddaybadge">{{ t.dday_label }}</span>{% endif %}
@@ -143,7 +145,7 @@ data-dday="{{ t.dday or 0 }}" data-remind="{{ t.remind_at or '' }}" data-note="{
             <button type="button" class="todo-check{% if t.done %} checked{% endif %}" data-toggle
                     title="{{ '완료 취소' if t.done else '완료 처리' }}">{% if t.done %}✓{% endif %}</button>
             <div class="todo-body todo-openedit">
-                <span class="todo-title">{{ t.title }}</span>
+                <span class="todo-title">{% if t.start_time %}<span class="todo-time">{{ t.start_time }}</span> {% endif %}{{ t.title }}{% if t.end_time %} <span class="todo-time">~{{ t.end_time }}</span>{% endif %}</span>
                 <span class="todo-meta">
                     {% if t.end_date %}<span class="badge badge-confirmed">~ {{ t.end_date|krdate_short_wd }}</span>{% endif %}
                     {% if t.dday_label %}<span class="todo-ddaybadge">{{ t.dday_label }}</span>{% endif %}

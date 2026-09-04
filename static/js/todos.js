@@ -45,6 +45,8 @@
         form.dataset.id = '';
         form.due_date.value = dateStr || today || '';
         form.end_date.value = '';
+        form.start_time.value = '';
+        form.end_time.value = '';
         form.progress.value = 0;
         form.dday.checked = false;
         if (formTitle) formTitle.textContent = 'ToDo 추가';
@@ -60,6 +62,8 @@
         form.title.value = d.title || '';
         form.due_date.value = d.due || '';
         form.end_date.value = d.end || '';
+        form.start_time.value = d.stime || '';
+        form.end_time.value = d.etime || '';
         form.progress.value = d.progress || 0;
         form.dday.checked = (d.dday === '1');
         form.remind_at.value = (d.remind || '').slice(0, 16);
@@ -87,6 +91,8 @@
             title: title,
             due_date: form.due_date.value || today,
             end_date: form.end_date.value || '',
+            start_time: form.start_time.value || '',
+            end_time: form.end_time.value || '',
             progress: form.progress.value || 0,
             dday: form.dday.checked ? '1' : '0',
             remind_at: form.remind_at.value || '',

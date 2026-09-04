@@ -1670,6 +1670,14 @@ def _valid_date(s, default=None):
         return default
 
 
+def _valid_time(s, default=None):
+    """'HH:MM' 만 허용. 빈 값/형식 오류면 default(기본 None)."""
+    try:
+        return datetime.strptime((s or "").strip(), "%H:%M").strftime("%H:%M")
+    except (ValueError, AttributeError):
+        return default
+
+
 def _annotate_todos(todos, today):
     """할 일에 dday_label(마감까지 D-표기)을 붙인다 (dday 사용 항목만)."""
     for t in todos:
@@ -1771,6 +1779,8 @@ def api_todo_create():
     tid = models.create_todo(
         g.user["id"], title, day,
         end_date=end,
+        start_time=_valid_time(data.get("start_time")),
+        end_time=_valid_time(data.get("end_time")),
         note=(data.get("note") or "").strip(),
         remind_at=(data.get("remind_at") or "").strip() or None,
         progress=data.get("progress") or 0,
@@ -1799,6 +1809,10 @@ def api_todo_update(tid):
         fields["due_date"] = _valid_date(data.get("due_date"))
     if "end_date" in data:
         fields["end_date"] = _valid_date(data.get("end_date")) or ""
+    if "start_time" in data:
+        fields["start_time"] = _valid_time(data.get("start_time")) or ""
+    if "end_time" in data:
+        fields["end_time"] = _valid_time(data.get("end_time")) or ""
     if "progress" in data:
         fields["progress"] = data.get("progress") or 0
     if "dday" in data:
@@ -2215,11 +2229,13 @@ def krpg_lookup():
 def api_krpg_search():
     query = (request.args.get("q") or "").strip()
     scope = (request.args.get("scope") or "business").strip()
+    try:
+        page = max(int(request.args.get("page") or 1), 1)
+    except (TypeError, ValueError):
+        page = 1
+    page_size = 100
     if scope not in ("business", "all", "changes"):
         scope = "business"
-    if not query:
-        return jsonify({"query": "", "scope": scope, "eligible": False,
-                        "exact": False, "items": [], "counts": _krpg_data()["counts"]})
     normalized = _normalize_kcd(query)
     lowered = query.casefold()
     data = _krpg_data()
@@ -2236,30 +2252,37 @@ def api_krpg_search():
     exact, prefix, text_matches = [], [], []
     looks_like_code = bool(normalized) and any(ch.isdigit() for ch in normalized) \
         and not any("가" <= ch <= "힣" for ch in query)
-    for item in items:
-        item_code = _normalize_kcd(item["kcd"])
-        if looks_like_code and item_code == normalized:
-            exact.append(item)
-        elif looks_like_code and item_code.startswith(normalized):
-            prefix.append(item)
-        elif (lowered in item["name_ko"].casefold()
-              or lowered in item["name_en"].casefold()):
-            text_matches.append(item)
-
-    matched = exact + prefix + text_matches
+    if query:
+        for item in items:
+            item_code = _normalize_kcd(item["kcd"])
+            if looks_like_code and item_code == normalized:
+                exact.append(item)
+            elif looks_like_code and item_code.startswith(normalized):
+                prefix.append(item)
+            elif (lowered in item["name_ko"].casefold()
+                  or lowered in item["name_en"].casefold()):
+                text_matches.append(item)
+        matched = exact + prefix + text_matches
+    else:
+        matched = items
     # 같은 KRIC·KCD 조합은 한 번만 보여준다. 동일 KCD의 다른 KRIC 분류는 유지한다.
     unique, seen = [], set()
     for item in matched:
         display_key = (item["kric"], item["kcd"])
-        lookup_key = (_normalize_kcd(item["kcd"]), item["kric"])
         if display_key not in seen:
             seen.add(display_key)
-            enriched = dict(item)
-            enriched["business_target"] = lookup_key in business_keys
-            enriched["change"] = change_by_key.get(lookup_key, "")
-            unique.append(enriched)
-        if len(unique) >= 60:
-            break
+            unique.append(item)
+    total_matches = len(unique)
+    total_pages = max((total_matches + page_size - 1) // page_size, 1)
+    page = min(page, total_pages)
+    start = (page - 1) * page_size
+    page_items = []
+    for item in unique[start:start + page_size]:
+        lookup_key = (_normalize_kcd(item["kcd"]), item["kric"])
+        enriched = dict(item)
+        enriched["business_target"] = lookup_key in business_keys
+        enriched["change"] = change_by_key.get(lookup_key, "")
+        page_items.append(enriched)
     return jsonify({
         "query": query,
         "scope": scope,
@@ -2267,8 +2290,11 @@ def api_krpg_search():
         "eligible": bool(looks_like_code and normalized in business_codes),
         "exact": bool(exact),
         "exact_count": len(exact),
-        "total_matches": len(matched),
-        "items": unique,
+        "total_matches": total_matches,
+        "items": page_items,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
         "version": data["version"],
         "counts": data["counts"],
     })

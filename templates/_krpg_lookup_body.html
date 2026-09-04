@@ -16,6 +16,11 @@
         KCD 코드 또는 진단명을 입력하면 사업대상 목록 포함 여부를 확인합니다.
     </div>
     <div id="krpg-list" class="krpg-list"></div>
+    <div id="krpg-pager" class="krpg-pager" hidden>
+        <button type="button" data-page-action="prev">이전</button>
+        <span id="krpg-page-info"></span>
+        <button type="button" data-page-action="next">다음</button>
+    </div>
 </div>
 <div class="krpg-caution">
     <strong>판정 시 주의</strong>
@@ -25,6 +30,7 @@
 </div>
 <style>
 .krpg-card{margin:0}.krpg-search-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.krpg-search-head strong{display:block;font-size:1.05em}.krpg-search-head span:not(.krpg-version){display:block;color:var(--text-light);font-size:.8em;margin-top:3px}.krpg-version{background:#dcfce7;color:#166534;border-radius:999px;padding:4px 9px;font-size:.75em;font-weight:800;white-space:nowrap}.krpg-tabs{display:flex;gap:5px;margin:13px 0 0;padding-bottom:9px;border-bottom:1px solid var(--border)}.krpg-tabs button{border:1px solid var(--border);border-radius:999px;background:#fff;color:#475569;padding:6px 11px;font:inherit;font-size:.78em;cursor:pointer}.krpg-tabs button.on{background:#1d4ed8;border-color:#1d4ed8;color:#fff}.krpg-tabs b{font-size:.9em}.krpg-search-row{display:flex;gap:7px;margin:10px 0 14px}.krpg-search-row input{flex:1;min-width:0;padding:11px 13px;border:2px solid #86a994;border-radius:8px;font:inherit;font-size:1em}.krpg-search-row input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(22,101,52,.12)}.krpg-result{padding:12px 14px;border-radius:9px;font-size:.91em;font-weight:700}.krpg-result.initial{background:#f1f5f9;color:#64748b}.krpg-result.yes{background:#dcfce7;color:#14532d;border:1px solid #86efac}.krpg-result.no{background:#fee2e2;color:#991b1b;border:1px solid #fecaca}.krpg-result.maybe{background:#fef3c7;color:#92400e;border:1px solid #fde68a}.krpg-list{margin-top:10px;max-height:390px;overflow:auto}.krpg-item{display:grid;grid-template-columns:74px 58px 1fr auto;gap:8px;align-items:start;padding:9px 8px;border-bottom:1px solid var(--border)}.krpg-item:hover{background:#f8fafc}.krpg-code{font-weight:850;color:#1d4ed8;font-feature-settings:'tnum'}.krpg-kric{font-size:.75em;background:#e2e8f0;color:#475569;border-radius:5px;padding:2px 5px;text-align:center}.krpg-name strong{display:block;font-size:.88em}.krpg-name small{display:block;color:var(--text-light);font-size:.72em;margin-top:2px}.krpg-flags{display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end}.krpg-flag{padding:2px 5px;border-radius:5px;font-size:.67em;font-weight:850;white-space:nowrap}.krpg-flag.target{background:#dcfce7;color:#166534}.krpg-flag.add{background:#dbeafe;color:#1d4ed8}.krpg-flag.delete{background:#fee2e2;color:#b91c1c}.krpg-more{text-align:center;padding:8px;color:var(--text-light);font-size:.78em}.krpg-caution{margin-top:9px;padding:10px 12px;border-radius:8px;background:#fff7ed;color:#9a3412;font-size:.75em;line-height:1.55}.krpg-caution strong{display:block;margin-bottom:2px}@media(max-width:560px){.krpg-item{grid-template-columns:68px 50px 1fr}.krpg-flags{grid-column:3}.krpg-tabs{overflow:auto}.krpg-search-row{align-items:stretch}}
+.krpg-pager{display:flex;justify-content:center;align-items:center;gap:12px;padding:10px 0 2px}.krpg-pager button{border:1px solid var(--border);background:#fff;border-radius:7px;padding:6px 13px;cursor:pointer}.krpg-pager button:disabled{opacity:.4;cursor:default}.krpg-pager span{font-size:.8em;color:var(--text-light);font-weight:700}
 </style>
 <script>
 (function(){
@@ -32,20 +38,26 @@
     const button=document.getElementById('krpg-search');
     const result=document.getElementById('krpg-result');
     const list=document.getElementById('krpg-list');
+    const pager=document.getElementById('krpg-pager');
+    const pageInfo=document.getElementById('krpg-page-info');
     const tabs=[...document.querySelectorAll('.krpg-tabs [data-scope]')];
     let scope='business';
+    let page=1;
     let timer;
     const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    async function search(){
+    async function search(resetPage=false){
+        if(resetPage) page=1;
         const q=input.value.trim();
-        if(!q){result.className='krpg-result initial';result.textContent='KCD 코드 또는 진단명을 입력하세요.';list.innerHTML='';return;}
         result.className='krpg-result initial';result.textContent='조회 중...';
         try{
-            const r=await fetch('/api/krpg/search?q='+encodeURIComponent(q)+'&scope='+scope);
+            const r=await fetch('/api/krpg/search?q='+encodeURIComponent(q)+'&scope='+scope+'&page='+page);
             if(!r.ok) throw new Error(r.status);
             const d=await r.json();
             const codeLike=!!d.normalized;
-            if(d.eligible){
+            if(!q){
+                result.className='krpg-result initial';
+                result.textContent=`전체 ${d.total_matches.toLocaleString()}건 중 ${(d.page-1)*d.page_size+1}-${Math.min(d.page*d.page_size,d.total_matches)}건을 표시합니다.`;
+            }else if(d.eligible){
                 result.className='krpg-result yes';
                 result.innerHTML=`✓ <b>${esc(d.normalized)}</b>는 KRPG 2.2 사업대상 KCD 목록에 포함됩니다.`;
             }else if(d.items.length){
@@ -55,12 +67,20 @@
                 result.className='krpg-result no';
                 result.textContent='사업대상 1,477개 목록에서 일치하는 항목을 찾지 못했습니다.';
             }
-            list.innerHTML=d.items.map(x=>`<div class="krpg-item"><span class="krpg-code">${esc(x.kcd)}</span><span class="krpg-kric">KRIC ${esc(x.kric)}</span><span class="krpg-name"><strong>${esc(x.name_ko)}</strong><small>${esc(x.name_en)}</small></span><span class="krpg-flags">${x.business_target?'<i class="krpg-flag target">사업대상</i>':''}${x.change?`<i class="krpg-flag ${x.change==='삭제'?'delete':'add'}">${esc(x.change)}</i>`:''}</span></div>`).join('')+(d.total_matches>d.items.length?`<div class="krpg-more">검색 결과 ${d.total_matches}건 중 상위 ${d.items.length}건 표시</div>`:'');
+            list.innerHTML=d.items.map(x=>`<div class="krpg-item"><span class="krpg-code">${esc(x.kcd)}</span><span class="krpg-kric">KRIC ${esc(x.kric)}</span><span class="krpg-name"><strong>${esc(x.name_ko)}</strong><small>${esc(x.name_en)}</small></span><span class="krpg-flags">${x.business_target?'<i class="krpg-flag target">사업대상</i>':''}${x.change?`<i class="krpg-flag ${x.change==='삭제'?'delete':'add'}">${esc(x.change)}</i>`:''}</span></div>`).join('');
+            page=d.page;
+            pager.hidden=d.total_pages<=1;
+            pageInfo.textContent=`${d.page.toLocaleString()} / ${d.total_pages.toLocaleString()} 페이지 · 총 ${d.total_matches.toLocaleString()}건`;
+            pager.querySelector('[data-page-action="prev"]').disabled=d.page<=1;
+            pager.querySelector('[data-page-action="next"]').disabled=d.page>=d.total_pages;
+            list.scrollTop=0;
         }catch(e){result.className='krpg-result no';result.textContent='조회 중 오류가 발생했습니다.';list.innerHTML='';}
     }
-    button.addEventListener('click',search);
-    input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();search();}});
-    input.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(()=>{if(input.value.trim().length>=2)search();},280);});
-    tabs.forEach(tab=>tab.addEventListener('click',()=>{tabs.forEach(x=>x.classList.toggle('on',x===tab));scope=tab.dataset.scope;if(input.value.trim())search();else{result.className='krpg-result initial';result.textContent=tab.textContent.trim()+' 목록에서 검색합니다.';list.innerHTML='';}}));
+    button.addEventListener('click',()=>search(true));
+    input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();search(true);}});
+    input.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(()=>search(true),280);});
+    pager.addEventListener('click',e=>{const action=e.target.dataset.pageAction;if(!action)return;page+=action==='next'?1:-1;search();});
+    tabs.forEach(tab=>tab.addEventListener('click',()=>{tabs.forEach(x=>x.classList.toggle('on',x===tab));scope=tab.dataset.scope;search(true);}));
+    search(true);
 })();
 </script>

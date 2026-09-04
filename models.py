@@ -581,10 +581,13 @@ def init_db():
         )
     """)
     # 그룹웨어형 확장: 기간(due_date=시작일 ~ end_date=종료일)·진행률·D-day
+    # start_time/end_time = 'HH:MM' (선택). 같은 날 정렬·제목 앞 시간 표시용.
     _ensure_columns(conn, "todos", {
         "end_date": "DATE",
         "progress": "INTEGER DEFAULT 0",
         "dday": "INTEGER DEFAULT 0",
+        "start_time": "TEXT",
+        "end_time": "TEXT",
     })
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_todos_user_date ON todos(user_id, due_date)"
@@ -1171,8 +1174,10 @@ def _clamp_progress(v):
 
 def create_todo(user_id: int, title: str, due_date: str, *, note: str = "",
                 remind_at: str | None = None, end_date: str | None = None,
-                progress: int = 0, dday: bool = False) -> int:
-    """due_date=시작일(기간 시작), end_date=종료일(선택). progress 0~100(100=완료)."""
+                progress: int = 0, dday: bool = False,
+                start_time: str | None = None, end_time: str | None = None) -> int:
+    """due_date=시작일(기간 시작), end_date=종료일(선택). start_time/end_time='HH:MM'(선택).
+    progress 0~100(100=완료)."""
     conn = get_db()
     nxt = conn.execute(
         "SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM todos WHERE user_id = ? AND due_date = ?",
@@ -1181,10 +1186,11 @@ def create_todo(user_id: int, title: str, due_date: str, *, note: str = "",
     progress = _clamp_progress(progress)
     done = 1 if progress >= 100 else 0
     cur = conn.execute(
-        "INSERT INTO todos (user_id, due_date, end_date, title, note, remind_at, "
-        "progress, dday, done, done_at, sort_order) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (user_id, due_date, end_date or None, title, note or None, remind_at or None,
+        "INSERT INTO todos (user_id, due_date, end_date, start_time, end_time, title, note, "
+        "remind_at, progress, dday, done, done_at, sort_order) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (user_id, due_date, end_date or None, start_time or None, end_time or None,
+         title, note or None, remind_at or None,
          progress, 1 if dday else 0, done,
          datetime.now().isoformat(timespec="seconds") if done else None, nxt),
     )
@@ -1205,8 +1211,8 @@ def get_todo(todo_id: int, user_id: int):
 
 def update_todo(todo_id: int, user_id: int, *, title=None, note=None,
                 due_date=None, end_date=None, remind_at=None,
-                progress=None, dday=None) -> bool:
-    """전달된 필드만 수정. note/end_date/remind_at은 빈 문자열이면 비운다(None).
+                progress=None, dday=None, start_time=None, end_time=None) -> bool:
+    """전달된 필드만 수정. note/end_date/remind_at/시간은 빈 문자열이면 비운다(None).
     progress를 주면 done/done_at도 함께 동기화(100=완료)."""
     sets, vals = [], []
     if title is not None:
@@ -1217,6 +1223,10 @@ def update_todo(todo_id: int, user_id: int, *, title=None, note=None,
         sets.append("due_date = ?"); vals.append(due_date)
     if end_date is not None:
         sets.append("end_date = ?"); vals.append(end_date or None)
+    if start_time is not None:
+        sets.append("start_time = ?"); vals.append(start_time or None)
+    if end_time is not None:
+        sets.append("end_time = ?"); vals.append(end_time or None)
     if remind_at is not None:
         sets.append("remind_at = ?"); vals.append(remind_at or None)
     if dday is not None:
@@ -1282,11 +1292,11 @@ def carry_todo_to(todo_id: int, user_id: int, due_date: str) -> bool:
 
 
 def list_todos(user_id: int, due_date: str):
-    """특정 날짜의 할 일 (미완료 먼저, 정렬순)."""
+    """특정 날짜의 할 일 (미완료 먼저, 시작시간 순, 시간없는 항목은 뒤로)."""
     conn = get_db()
     rows = conn.execute(
         "SELECT * FROM todos WHERE user_id = ? AND due_date = ? "
-        "ORDER BY done ASC, sort_order ASC, id ASC",
+        "ORDER BY done ASC, (start_time IS NULL) ASC, start_time ASC, sort_order ASC, id ASC",
         (user_id, due_date),
     ).fetchall()
     conn.close()
@@ -1298,7 +1308,7 @@ def list_overdue_todos(user_id: int, before_date: str):
     conn = get_db()
     rows = conn.execute(
         "SELECT * FROM todos WHERE user_id = ? AND done = 0 AND due_date < ? "
-        "ORDER BY due_date ASC, sort_order ASC, id ASC",
+        "ORDER BY due_date ASC, (start_time IS NULL) ASC, start_time ASC, sort_order ASC, id ASC",
         (user_id, before_date),
     ).fetchall()
     conn.close()
@@ -1336,7 +1346,7 @@ def list_todos_range(user_id: int, first_day: str, last_day: str):
     rows = conn.execute(
         "SELECT * FROM todos WHERE user_id = ? "
         "AND due_date <= ? AND COALESCE(end_date, due_date) >= ? "
-        "ORDER BY due_date ASC, sort_order ASC, id ASC",
+        "ORDER BY due_date ASC, (start_time IS NULL) ASC, start_time ASC, sort_order ASC, id ASC",
         (user_id, last_day, first_day),
     ).fetchall()
     conn.close()
