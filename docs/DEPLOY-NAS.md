@@ -20,7 +20,7 @@ NAS에서 앱 컨테이너 1개만 돌고, DB는 그 안에서만 열린다.
 |---|---|---|
 | CPU | Intel Celeron J4125 4코어 (x86_64) | `python:3.12-slim` 이미지가 그대로 돌아간다 (ARM 에뮬레이션 불필요) |
 | RAM | 2GB DDR4 (최대 6GB) | 앱 컨테이너는 약 150~200MB. 이 앱 하나면 충분 |
-| 컨테이너 | Container Manager 지원 | DSM 7.2+ 기준 이름. DSM 7.0/7.1이면 **Docker** 패키지 |
+| 컨테이너 | **Docker 20.10.3-0554 설치 완료** (볼륨 1) | DSM 7.0/7.1 계열. 7.2+에서는 같은 것이 **Container Manager**로 이름만 바뀐다 |
 
 상담사 4명 + SQLite 규모에서 J4125는 여유가 많다. 다만 **RAM 2GB에서 DSM이
 이미 1GB 가까이 쓰므로**, 나중에 다른 컨테이너(STT·OCR 등)를 얹을 계획이면
@@ -28,8 +28,8 @@ SODIMM 슬롯에 4GB를 추가해 6GB로 올려두는 편이 낫다. 지금 이 
 
 ## 사전 준비
 
-- DSM 7.x + **Container Manager** 패키지 설치 (패키지 센터에서 설치.
-  DSM 7.0/7.1이면 **Docker**로 표시되며 동작은 같다)
+- **Docker 패키지 설치 완료** — 패키지 센터에서 확인함(20.10.3-0554, 볼륨 1).
+  추가 설치 불필요. DSM 7.2+로 올리면 Container Manager로 표시된다
 - NAS 고정 IP (예: `172.16.1.250`) — DHCP로 주소가 바뀌면 상담사 즐겨찾기가 끊긴다
 - DSM **제어판 > 보안 > 방화벽**에서 사내망 대역의 TCP **8003** 인바운드 허용
 - 저장소는 **로컬 볼륨** `/volume1/docker/...` 에 둘 것 (SMB 공유폴더 아님)
@@ -71,7 +71,11 @@ python -c "import secrets; print(secrets.token_hex(32))"
 
 ### 3. 컨테이너 생성
 
-Container Manager → **프로젝트** → **생성**
+**Docker**(또는 Container Manager) 앱 → **프로젝트** → **생성**
+
+구형 Docker 패키지(20.10.3)의 프로젝트 기능도 docker-compose를 지원한다. 단
+`docker-compose.yml`에 `version` 키가 반드시 있어야 한다 — 없으면 구형(v1) 포맷으로
+해석해 실패하므로 `version: "3.8"`을 명시해 두었다.
 
 | 항목 | 값 |
 |---|---|
