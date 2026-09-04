@@ -1830,6 +1830,7 @@ def todos_view():
                    if u.get("active") and u["id"] != uid
                    and u.get("role") in ("admin", "staff")]
     ctx = {"view": view, "embed": embed, "today": today.isoformat(),
+           "auto_new": request.args.get("new") == "1",
            "share_users": share_users}
     if view == "list":
         day = _valid_date(request.args.get("date"), today.isoformat())

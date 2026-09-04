@@ -29,7 +29,9 @@
     </div>
     {% endif %}
 
-    <button type="button" class="btn btn-primary btn-sm" id="todo-new-btn" data-today="{{ today }}">＋ 새 ToDo</button>
+    <button type="button" class="btn btn-primary btn-sm" id="todo-new-btn"
+            data-today="{{ today }}" data-selected-date="{{ day|default(today) }}"
+            data-auto-open="{{ '1' if auto_new|default(false) else '0' }}">＋ 새 ToDo</button>
 </div>
 
 {# 추가/수정 공용 폼 — 우측 슬라이드 드로어 (달력을 가리지 않고 옆에서 기입) #}

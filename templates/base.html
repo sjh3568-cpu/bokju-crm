@@ -210,9 +210,9 @@
         const modal = document.getElementById('todo-modal');
         const frame = document.getElementById('todo-frame');
         if (!fab || !modal || !frame) return;
-        function open() {
+        function open(url) {
             // 열 때마다 최신 목록을 다시 로드 (다른 화면에서 추가했을 수 있으므로)
-            frame.src = frame.dataset.src;
+            frame.src = typeof url === 'string' ? url : frame.dataset.src;
             modal.hidden = false;
         }
         function close() { modal.hidden = true; }
@@ -221,7 +221,12 @@
             // Alt+T — 어느 화면에서든 키보드로 바로 열기
             if (e.altKey && (e.key === 't' || e.key === 'T')) { e.preventDefault(); open(); }
         }
-        fab.addEventListener('click', open);
+        fab.addEventListener('click', function () { open(); });
+        document.addEventListener('bokju:todo-open', function (e) {
+            const date = e.detail && e.detail.date;
+            if (!date) return;
+            open('/todos?embed=1&view=list&date=' + encodeURIComponent(date) + '&new=1');
+        });
         modal.addEventListener('click', function (e) {
             if (e.target.closest('[data-todo-close]')) close();
         });

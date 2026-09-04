@@ -80,6 +80,9 @@
     }
 
     if (newBtn) newBtn.addEventListener('click', function () { showAdd(); });
+    if (newBtn && newBtn.dataset.autoOpen === '1') {
+        showAdd(newBtn.dataset.selectedDate || today);
+    }
     ['todo-form-cancel', 'todo-form-cancel2'].forEach(function (id) {
         var el = document.getElementById(id);
         if (el) el.addEventListener('click', closeDrawer);
