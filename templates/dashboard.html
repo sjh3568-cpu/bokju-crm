@@ -632,7 +632,7 @@
 
 <div class="card weekly-report-card">
     <div class="dash-section-head">
-        <div><h3>주간 상담·입원 성과</h3><span class="muted-sm">{{ weekly_marketing.period_label }} · 운영실적과 마케팅 전환성과</span></div>
+        <div><h3>주간 상담 현황</h3><span class="muted-sm">{{ weekly_report.period_label }} · 월요일~일요일</span></div>
         <div class="weekly-share-actions" data-export-ignore>
             <button type="button" class="btn btn-secondary btn-xs" id="weekly-copy-text">요약문 복사</button>
             <button type="button" class="btn btn-secondary btn-xs" id="weekly-copy-image">이미지 복사</button>
@@ -640,28 +640,35 @@
         </div>
     </div>
     <div id="weekly-report-export" class="weekly-report-export">
-        <h2>복주회복병원 주간 상담·입원 성과</h2>
-        <p>{{ weekly_marketing.period_label }}</p>
+        <h2>복주회복병원 주간 상담 현황</h2>
+        <p>{{ weekly_report.period_label }}</p>
         <div class="weekly-compare-grid">
-            {% for c in weekly_marketing.kpis %}
-            <div class="weekly-compare-card" data-label="{{ c.label }}" data-current="{{ c.value }}" data-suffix="{{ c.suffix }}" data-prev-diff="{{ c.previous_diff or 0 }}" data-year-diff="0">
-                <span>{{ c.label }}</span><strong>{{ c.value }}{{ c.suffix }}</strong>
-                {% if c.previous_diff is not none %}<small>지난주 <b class="{{ 'up' if c.previous_diff > 0 else 'down' if c.previous_diff < 0 else '' }}">{{ '+' if c.previous_diff > 0 else '' }}{{ c.previous_diff }}건</b></small>{% endif %}
-                {% if c.four_week_avg is not none %}<small>최근 4주 평균 {{ c.four_week_avg }}건 <b class="{{ 'up' if c.average_diff > 0 else 'down' if c.average_diff < 0 else '' }}">({{ '+' if c.average_diff > 0 else '' }}{{ c.average_diff }})</b></small>{% endif %}
+            {% for c in weekly_report.comparisons %}
+            <div class="weekly-compare-card" data-label="{{ c.label }}" data-current="{{ c.current }}" data-prev-diff="{{ c.previous_diff }}" data-year-diff="{{ c.year_diff }}">
+                <span>{{ c.label }}</span><strong>{{ c.current }}{% if c.key == 'admission_rate' %}%{% else %}건{% endif %}</strong>
+                <small>지난주 <b class="{{ 'up' if c.previous_diff > 0 else 'down' if c.previous_diff < 0 else '' }}">{{ '+' if c.previous_diff > 0 else '' }}{{ c.previous_diff }}{% if c.key == 'admission_rate' %}%p{% else %}건{% endif %}</b>{% if c.previous_rate is not none %} ({{ '+' if c.previous_rate > 0 else '' }}{{ c.previous_rate }}%){% else %} (비교 불가){% endif %}</small>
+                <small>전년 <b class="{{ 'up' if c.year_diff > 0 else 'down' if c.year_diff < 0 else '' }}">{{ '+' if c.year_diff > 0 else '' }}{{ c.year_diff }}{% if c.key == 'admission_rate' %}%p{% else %}건{% endif %}</b>{% if c.year_rate is not none %} ({{ '+' if c.year_rate > 0 else '' }}{{ c.year_rate }}%){% else %} (비교 불가){% endif %}</small>
             </div>
             {% endfor %}
         </div>
-        <div class="weekly-cohort-note"><b>확정 전환율 {{ weekly_marketing.cohort_converted }}/{{ weekly_marketing.cohort_total }}건</b> · {{ weekly_marketing.cohort_label }} 상담군의 14일 이내 실제 입원 기준 · 최근 상담 {{ weekly_marketing.observing }}건은 관찰 중</div>
-        <div class="weekly-performance-grid">
-            {% for title, rows in [('상담 유입경로별 성과', weekly_marketing.sources), ('지역별 성과', weekly_marketing.regions)] %}
-            <div class="weekly-performance-block">
-                <h3>{{ title }}</h3>
-                <div class="tbl-wrap"><table class="weekly-report-table compact">
-                    <thead><tr><th>{{ '유입경로' if loop.index == 1 else '지역' }}</th><th>이번 주 상담</th><th>실제 입원</th><th>재입원</th><th>14일 확정 전환율</th></tr></thead>
-                    <tbody>{% for r in rows %}<tr><th>{{ r.label }}</th><td>{{ r.consultations }}</td><td>{{ r.admissions }}</td><td>{{ r.readmissions }}</td><td>{% if r.conversion_rate is not none %}{{ r.converted }}/{{ r.cohort }} ({{ r.conversion_rate }}%){% else %}-{% endif %}</td></tr>{% else %}<tr><td colspan="5">해당 기간 자료가 없습니다.</td></tr>{% endfor %}</tbody>
-                </table></div>
-            </div>
-            {% endfor %}
+        <div class="tbl-wrap weekly-report-wrap">
+            <table class="weekly-report-table">
+                <thead>
+                    <tr><th rowspan="3">날짜</th><th colspan="8" class="grp-source">상담 유입경로(최초 병원 인지)</th><th colspan="8" class="grp-resistant">내성균(CRE·VRE) 상담 경로</th><th colspan="2" class="grp-region">지역</th><th colspan="3" class="grp-type">상담유형</th><th rowspan="3">입원<br>건수</th><th rowspan="3">입원율</th></tr>
+                    <tr><th colspan="4">온라인 검색</th><th colspan="3">소개</th><th>기타</th><th colspan="4">온라인 검색</th><th colspan="3">소개</th><th>기타</th><th rowspan="2">안동</th><th rowspan="2">관외</th><th rowspan="2">전화</th><th rowspan="2">방문</th><th rowspan="2">홈·채널</th></tr>
+                    <tr>{% for repeat in range(2) %}{% for key in weekly_report.source_keys %}<th>{{ key }}</th>{% endfor %}{% endfor %}</tr>
+                </thead>
+                <tbody>
+                    {% for d in weekly_report.current.days + [weekly_report.current.totals] %}
+                    <tr class="{% if d.label == '소계' %}total-row{% endif %}">
+                        <th>{{ d.label }}{% if d.weekday %}({{ d.weekday }}){% endif %}</th>
+                        {% for key in weekly_report.source_keys %}<td>{{ d.sources[key] or '' }}</td>{% endfor %}
+                        {% for key in weekly_report.source_keys %}<td>{{ d.resistant[key] or '' }}</td>{% endfor %}
+                        <td>{{ d.andong or '' }}</td><td>{{ d.outside or '' }}</td><td>{{ d.phone or '' }}</td><td>{{ d.visit or '' }}</td><td>{{ d.home_channel or '' }}</td><td>{{ d.admitted or '' }}</td><td>{{ d.admission_rate }}%</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
 </div>
@@ -888,8 +895,7 @@
 .weekly-report-table .grp-region,.weekly-report-table .grp-type { background:#bdd7ee; }
 .weekly-report-table tbody th { background:#f8fafc; white-space:nowrap; }
 .weekly-report-table .total-row th,.weekly-report-table .total-row td { background:#fce4d6; font-weight:700; }
-.weekly-cohort-note{margin:0 0 10px;padding:9px 11px;border-radius:8px;background:#eff6ff;color:#1e3a8a;font-size:.78em}.weekly-performance-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.weekly-performance-block{min-width:0}.weekly-performance-block h3{margin:0 0 6px;font-size:.9rem}.weekly-report-table.compact{min-width:600px;font-size:11px}.weekly-report-table.compact tbody th{text-align:left;padding-left:7px}
-@media (max-width:760px) { .weekly-compare-grid,.weekly-performance-grid { grid-template-columns:1fr; } }
+@media (max-width:760px) { .weekly-compare-grid { grid-template-columns:1fr; } }
 .dash-calendar td{height:132px}.dash-calendar td.holiday{background:#fff7f7}.dash-calendar td.today{background:#ecfdf5}.dash-cal-dayrow{display:flex;align-items:baseline;gap:5px;min-height:18px}.dash-cal-day{margin-bottom:0}.dash-cal-lunar{color:#94a3b8;font-size:.65rem}.dash-cal-holiday{margin:0 0 3px;color:#dc2626;font-size:.66rem;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 </style>
 <script src="/static/js/html2canvas.min.js?v=1.4.1"></script>
@@ -1074,8 +1080,8 @@ document.querySelectorAll('.adm-status-btn').forEach(btn => {
 async function weeklyReportPngBlob() {
     const source = document.getElementById('weekly-report-export');
     if (!source || typeof html2canvas !== 'function') throw new Error('이미지 변환 모듈을 불러오지 못했습니다.');
-    const tables = [...source.querySelectorAll('.weekly-report-table')];
-    const width = Math.max(1100, ...tables.map(t => t.scrollWidth + 28));
+    const table = source.querySelector('.weekly-report-table');
+    const width = Math.max(1560, (table?.scrollWidth || 0) + 28);
     const canvas = await html2canvas(source, {
         scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false,
         width, windowWidth: width,
@@ -1083,7 +1089,7 @@ async function weeklyReportPngBlob() {
             const exported = doc.getElementById('weekly-report-export');
             exported.style.width = `${width}px`;
             exported.style.maxWidth = 'none';
-            exported.querySelectorAll('.tbl-wrap').forEach(el => el.style.overflow = 'visible');
+            exported.querySelector('.weekly-report-wrap').style.overflow = 'visible';
         },
     });
     const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
@@ -1092,13 +1098,13 @@ async function weeklyReportPngBlob() {
 }
 function downloadWeeklyReportBlob(blob) {
     const url=URL.createObjectURL(blob), a=document.createElement('a');
-    a.href=url; a.download='주간상담입원성과-{{ weekly_marketing.period_label[:10] }}.png';
+    a.href=url; a.download='주간상담현황-{{ weekly_report.current.days[0].date }}.png';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 document.getElementById('weekly-copy-text')?.addEventListener('click', async () => {
     const cards=[...document.querySelectorAll('.weekly-compare-card')];
-    const lines=['복주회복병원 주간 상담·입원 성과', '{{ weekly_marketing.period_label }}', ...cards.map(c => `${c.dataset.label} ${c.dataset.current}${c.dataset.suffix}${c.querySelector('small') ? ' · ' + [...c.querySelectorAll('small')].map(x=>x.textContent.trim()).join(' · ') : ''}`)];
+    const lines=['복주회복병원 주간 상담 현황', '{{ weekly_report.period_label }}', ...cards.map(c => `${c.dataset.label} ${c.dataset.current}${c.dataset.label==='입원율'?'%':'건'} · 지난주 대비 ${Number(c.dataset.prevDiff)>0?'+':''}${c.dataset.prevDiff} · 전년 대비 ${Number(c.dataset.yearDiff)>0?'+':''}${c.dataset.yearDiff}`)];
     await navigator.clipboard.writeText(lines.join('\n')); alert('카카오톡용 요약문을 복사했습니다.');
 });
 document.getElementById('weekly-copy-image')?.addEventListener('click', async () => {

@@ -1726,7 +1726,6 @@ def dashboard():
     except (TypeError, ValueError):
         cal_year, cal_month = date.today().year, date.today().month
     data.update(_dashboard_calendar_context(g.user["id"], cal_year, cal_month))
-    data["weekly_marketing"] = models.weekly_marketing_report(date.today())
     return render_template("dashboard.html", **data)
 
 
