@@ -50,54 +50,56 @@
     <div class="stat-card tone-rose"><div class="label">입원 불가 연계율</div><div class="value" data-kpi="capture-rate">-</div><div class="sub" data-kpi="capture-sub">재단·외부시설 안내</div></div>
 </div>
 
-<div class="section-heading"><span>상담량과 입원 흐름</span><small>언제 상담이 몰리고 어디에서 정체되는지 확인합니다</small></div>
+<div class="section-heading priority"><b>1</b><span>일별 상담 추이</span><small>상담량 변화와 입원 진행 단계를 가장 먼저 확인합니다</small></div>
 <div class="chart-grid g-2-1">
     <div class="card chart-card print-primary">
         <h3>일별 상담 추이 <small>건수</small></h3>
         <div class="chart-box"><canvas id="chart-daily"></canvas></div>
     </div>
-    <div class="card chart-card print-primary">
+    <div class="card chart-card">
         <h3>입원 진행 단계 <small>건수·비율</small></h3>
         <div class="chart-box"><canvas id="chart-status"></canvas></div>
     </div>
 </div>
 
+<div class="section-heading priority"><b>2</b><span>질환별 상담·입원 성과</span><small>질환군별 상담 건수, 입원 건수와 전환율</small></div>
 <div class="chart-grid">
-    <div class="card chart-card chart-card-combined print-primary">
-        <h3>요일·시간대 상담 집중도 <small>원의 크기 = 전화 건수</small></h3>
-        <div class="combined-chart-box equal">
-            <div><span>요일별 전체 상담</span><div class="chart-box"><canvas id="chart-weekday"></canvas></div></div>
-            <div><span>요일 × 시간대 전화상담</span><div class="chart-box"><canvas id="chart-weekday-hour"></canvas></div></div>
-        </div>
-    </div>
-    <div class="card chart-card chart-card-combined">
-        <h3>거주지 수요 <small>건수·비율</small></h3>
+    <div class="card chart-card chart-card-combined chart-card-wide print-primary">
+        <h3>질환군별 상담·입원 현황 <small>입원완료/상담 · 전환율</small></h3>
         <div class="combined-chart-box">
-            <div><span>시·도</span><div class="chart-box"><canvas id="chart-sido"></canvas></div></div>
-            <div><span>시·군·구 Top 10</span><div class="chart-box"><canvas id="chart-sigungu"></canvas></div></div>
+            <div><span>질환별 상담 분포</span><div class="chart-box"><canvas id="chart-disease-group"></canvas></div></div>
+            <div><span>질환별 입원 전환율</span><div class="chart-box"><canvas id="chart-disease-performance"></canvas></div></div>
         </div>
     </div>
 </div>
 
-<div class="section-heading"><span>전환 성과와 이탈 원인</span><small>상담 건수가 아닌 실제 입원 성과를 비교합니다</small></div>
+<div class="section-heading priority"><b>3</b><span>유입경로별 상담·입원 성과</span><small>어떤 경로가 실제 입원으로 연결되는지 비교합니다</small></div>
 <div class="chart-grid">
-    <div class="card chart-card chart-card-combined print-primary">
+    <div class="card chart-card chart-card-combined chart-card-wide print-primary">
         <h3>입원경로별 성과 <small>입원완료/상담 · 전환율</small></h3>
         <div class="combined-chart-box">
             <div><span>경로 그룹 분포</span><div class="chart-box"><canvas id="chart-referral-type"></canvas></div></div>
             <div><span>세부 경로 전환율</span><div class="chart-box"><canvas id="chart-referral-performance"></canvas></div></div>
         </div>
     </div>
-    <div class="card chart-card print-primary">
-        <h3>입원 취소 사유 <small>건수·비율</small></h3>
-        <div class="chart-box"><canvas id="chart-rejection"></canvas></div>
+</div>
+
+<div class="section-heading priority"><b>4</b><span>지역별 상담·입원 성과</span><small>지역별 수요와 실제 입원 전환율</small></div>
+<div class="chart-grid">
+    <div class="card chart-card chart-card-combined chart-card-wide print-primary">
+        <h3>지역별 상담·입원 현황 <small>입원완료/상담 · 전환율</small></h3>
+        <div class="combined-chart-box">
+            <div><span>시·도 상담 분포</span><div class="chart-box"><canvas id="chart-sido"></canvas></div></div>
+            <div><span>시·군·구 입원 전환율</span><div class="chart-box"><canvas id="chart-region-performance"></canvas></div></div>
+        </div>
     </div>
 </div>
 
+<div class="section-heading priority"><b>5</b><span>입원 취소 사유 분석</span><small>이탈 원인과 입원까지의 소요기간을 확인합니다</small></div>
 <div class="chart-grid">
     <div class="card chart-card print-primary">
-        <h3>모병원별 입원 성과 <small>입원완료/상담 · 전환율</small></h3>
-        <div class="chart-box"><canvas id="chart-hospital-performance"></canvas></div>
+        <h3>입원 취소 사유 <small>건수·비율</small></h3>
+        <div class="chart-box"><canvas id="chart-rejection"></canvas></div>
     </div>
     <div class="card chart-card">
         <h3>상담 후 입원까지 소요일 <small>입원완료 기준</small></h3>
@@ -105,22 +107,36 @@
     </div>
 </div>
 
-<div class="section-heading"><span>운영 품질과 환자 특성</span><small>담당자 성과와 입력 누락을 함께 점검합니다</small></div>
+<div class="section-heading priority"><b>6</b><span>요일별 상담 분석</span><small>상담 인력을 배치할 요일과 전화 집중시간</small></div>
 <div class="chart-grid">
-    <div class="card chart-card">
-        <h3>상담자별 입원 성과 <small>입원완료/상담 · 전환율</small></h3>
-        <div class="chart-box"><canvas id="chart-counselor-performance"></canvas></div>
-    </div>
-    <div class="card chart-card">
-        <h3>필수 데이터 누락률 <small>낮을수록 좋음</small></h3>
-        <div class="chart-box"><canvas id="chart-missing"></canvas></div>
+    <div class="card chart-card chart-card-combined chart-card-wide print-primary">
+        <h3>요일·시간대 상담 집중도 <small>원의 크기 = 전화 건수</small></h3>
+        <div class="combined-chart-box equal">
+            <div><span>요일별 전체 상담</span><div class="chart-box"><canvas id="chart-weekday"></canvas></div></div>
+            <div><span>요일 × 시간대 전화상담</span><div class="chart-box"><canvas id="chart-weekday-hour"></canvas></div></div>
+        </div>
     </div>
 </div>
+
+<div class="section-heading priority"><b>7</b><span>상담사별 상담·입원 성과</span><small>상담량과 입원 전환 결과를 함께 비교합니다</small></div>
 <div class="chart-grid">
-    <div class="card chart-card">
-        <h3>주요 질환군 <small>건수·비율</small></h3>
-        <div class="chart-box"><canvas id="chart-disease-group"></canvas></div>
+    <div class="card chart-card chart-card-wide">
+        <h3>상담사별 입원 성과 <small>입원완료/상담 · 전환율</small></h3>
+        <div class="chart-box"><canvas id="chart-counselor-performance"></canvas></div>
     </div>
+</div>
+
+<div class="section-heading priority"><b>8</b><span>환자 구성</span><small>성별·보험·연령대 분포</small></div>
+<div class="chart-grid three">
+    <div class="card chart-card"><h3>성별 <small>건수·비율</small></h3><div class="chart-box"><canvas id="chart-gender"></canvas></div></div>
+    <div class="card chart-card"><h3>보험 유형 <small>건수·비율</small></h3><div class="chart-box"><canvas id="chart-insurance"></canvas></div></div>
+    <div class="card chart-card"><h3>연령대 <small>건수·비율</small></h3><div class="chart-box"><canvas id="chart-age"></canvas></div></div>
+</div>
+
+<div class="section-heading"><span>추가 운영지표</span><small>모병원 성과, 데이터 품질과 입원 불가 환자 연계</small></div>
+<div class="chart-grid three">
+    <div class="card chart-card"><h3>모병원별 입원 성과</h3><div class="chart-box"><canvas id="chart-hospital-performance"></canvas></div></div>
+    <div class="card chart-card"><h3>필수 데이터 누락률</h3><div class="chart-box"><canvas id="chart-missing"></canvas></div></div>
     <div class="card chart-card">
         <h3>입원 불가 환자 연계 <small id="referral-capture-rate"></small></h3>
         <div class="chart-box"><canvas id="chart-referral-capture"></canvas></div>
@@ -161,6 +177,7 @@
 .section-heading { display:flex; align-items:baseline; gap:10px; margin:15px 2px 7px; }
 .section-heading span { color:#0f172a; font-size:.95em; font-weight:800; }
 .section-heading small { color:#64748b; font-size:.72em; }
+.section-heading.priority b { display:inline-grid; place-items:center; width:22px; height:22px; border-radius:7px; color:#fff; background:linear-gradient(145deg,#166534,#16a34a); box-shadow:0 3px 7px rgba(22,101,52,.22); font-size:.72em; }
 .kpi-row { grid-template-columns: repeat(6, 1fr); gap:8px; margin-bottom:10px; }
 .kpi-row .stat-card { position:relative; overflow:hidden; padding:10px 12px; margin:0; min-width:0; height:94px; display:flex; flex-direction:column; justify-content:center; border:1px solid rgba(148,163,184,.24); box-shadow:0 6px 16px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.85); }
 .kpi-row .stat-card::after { content:""; position:absolute; right:-18px; bottom:-25px; width:72px; height:72px; border-radius:50%; background:currentColor; opacity:.07; }
@@ -183,7 +200,9 @@
 .chart-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; align-items:stretch; }
 .chart-grid.g-2-1 { grid-template-columns: 2fr 1fr; }
 .chart-grid.g-1-2 { grid-template-columns: 1fr 2fr; }
+.chart-grid.three { grid-template-columns:repeat(3,1fr); }
 @media (max-width: 900px)  { .chart-grid, .chart-grid.g-2-1, .chart-grid.g-1-2 { grid-template-columns:1fr; } }
+@media (max-width: 1100px) { .chart-grid.three { grid-template-columns:1fr; } }
 
 .chart-card { display:flex; flex-direction:column; padding:12px 14px; margin:0; height:270px; min-width:0; box-sizing:border-box; border:1px solid rgba(148,163,184,.22); box-shadow:0 7px 20px rgba(15,23,42,.07), inset 0 1px 0 #fff; background:linear-gradient(145deg,#fff 0%,#fbfdff 100%); }
 .chart-card h3 { font-size:0.88em; margin-bottom:6px; color:#0f172a; font-weight:750; }
@@ -644,9 +663,10 @@
         makeStatusDoughnut('chart-status', statusItems, STATUS_COLORS);
         makeDoughnut('chart-referral-type', d.by_referral_type);
         makeRateBar('chart-referral-performance', d.by_referral_conversion, '#16a34a');
-        makeDoughnut('chart-disease-group', d.by_disease_group);
+        makeDoughnut('chart-disease-group', (d.by_disease_group_performance || []).map(x => ({label:x.label, count:x.total})));
+        makeRateBar('chart-disease-performance', d.by_disease_group_performance || [], '#0f766e');
         makeHBar('chart-sido', d.by_sido, '#9333ea');
-        makeHBar('chart-sigungu', d.by_sigungu_top, '#0891b2');
+        makeRateBar('chart-region-performance', d.by_region_performance || [], '#0891b2');
         makeVBar('chart-weekday', d.by_weekday || [], '#2563eb');
         makeBubbleHeat('chart-weekday-hour', d.weekday_hour || []);
         makeHBar('chart-rejection', d.by_rejection_reason || [], '#dc2626');
@@ -654,6 +674,9 @@
         makePolar('chart-admission-lead', d.by_admission_lead || []);
         makeRateBar('chart-counselor-performance', d.by_counselor_performance || [], '#7c3aed');
         makeMissingBar('chart-missing', d.by_missing_field || []);
+        makeDoughnut('chart-gender', d.by_gender || []);
+        makeDoughnut('chart-insurance', d.by_insurance || []);
+        makeVBar('chart-age', d.by_age || [], '#f59e0b');
         // 회복기 불가 → 외부 시설 연계 (수요 캡처)
         const rc = d.referral_capture || { no_admit_total: 0, with_referral: 0, rate: 0 };
         const rcEl = document.getElementById('referral-capture-rate');

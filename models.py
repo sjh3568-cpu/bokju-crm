@@ -2483,6 +2483,30 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
                   for label, count in totals.items()]
         return sorted(result, key=lambda x: (-x["total"], -x["rate"], x["label"]))[:limit]
 
+    def _disease_group_performance():
+        totals = {group: 0 for group in DISEASES_GROUPS}
+        completes = {group: 0 for group in DISEASES_GROUPS}
+        for row in rows:
+            try:
+                labels = json.loads(row["diseases"] or "[]")
+            except (json.JSONDecodeError, TypeError):
+                labels = []
+            matched_groups = set()
+            for label in labels or []:
+                for group, members in DISEASES_GROUPS.items():
+                    if label == group or label in members:
+                        matched_groups.add(group)
+                        break
+            is_completed = (row["admission_status"] or "").strip() in ("입원완료", "퇴원완료")
+            for group in matched_groups:
+                totals[group] += 1
+                if is_completed:
+                    completes[group] += 1
+        result = [{"label": group, "total": totals[group], "completed": completes[group],
+                   "rate": round(100.0 * completes[group] / totals[group], 1)}
+                  for group in DISEASES_GROUPS if totals[group]]
+        return sorted(result, key=lambda x: (-x["total"], -x["rate"], x["label"]))
+
     # 상담일부터 실제 입원일까지 걸린 기간
     lead_buckets = {"당일": 0, "1~3일": 0, "4~7일": 0, "8~14일": 0, "15일 이상": 0}
     for r in rows:
@@ -2543,6 +2567,8 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
         "by_source_hospital": by_hospital,
         "by_rejection_reason": by_reason,
         "by_referral_conversion": _channel_conversion_table(rows)["details"][:10],
+        "by_disease_group_performance": _disease_group_performance(),
+        "by_region_performance": _performance("residence_sigungu"),
         "by_hospital_performance": _performance("source_hospital"),
         "by_counselor_performance": _performance("counselor"),
         "by_admission_lead": [{"label": label, "count": count}
