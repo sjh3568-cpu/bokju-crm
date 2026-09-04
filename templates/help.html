@@ -24,7 +24,7 @@
     <a href="#inbox">📥 인박스</a> ·
     <a href="#consult-new">✍️ 새 상담</a> ·
     <a href="#consult-list">📋 상담 목록</a> ·
-    <a href="#lifecycle">🚶 생애주기</a> ·
+    <a href="#lifecycle">🏥 재원 관리</a> ·
     <a href="#sms">💬 문자</a> ·
     <a href="#stats">📊 통계</a> ·
     <a href="#report">📈 월간보고서</a> ·
@@ -155,7 +155,7 @@
             <tr><td><a href="/">🏠 대시보드</a></td><td>오늘 처리 To-Do + 우리 팀 컨디션 한곳에</td><td>출근 직후 + 수시</td></tr>
             <tr><td><a href="/consult/new">✍️ 새 상담</a></td><td>통화 끝나고 한 화면에 다 채워서 저장</td><td>통화 직후</td></tr>
             <tr><td><a href="/consultations">📋 상담 목록</a></td><td>과거 상담 검색용 백과사전</td><td>이전 상담 확인</td></tr>
-            <tr><td><a href="/lifecycle">🚶 생애주기</a></td><td>환자별 여정 지도</td><td>환자 케이스 추적</td></tr>
+            <tr><td><a href="/ward">🏥 재원 관리</a></td><td>재원·외진 환자 명부</td><td>매일 아침 외진 확인</td></tr>
             <tr><td><a href="/sms">💬 문자</a></td><td>환자군별 정형 문구 1-click 발송</td><td>입원/퇴원 안내</td></tr>
             <tr><td><a href="/stats">📊 통계</a></td><td>자유 기간 깊은 분석 차트</td><td>분기/월 분석</td></tr>
             <tr><td><a href="/report/monthly">📈 월간보고서</a></td><td>임원 회의용 A4 1페이지 자동 보고서</td><td>월초 임원 보고</td></tr>
@@ -257,23 +257,33 @@
 </div>
 
 <div class="card help-card" id="lifecycle">
-    <h2>🚶 생애주기 <a href="/lifecycle" class="help-go">메뉴 열기 →</a></h2>
-    <p class="help-lead">"환자 한 명 한 명의 여정 지도. 지금 어느 단계에 있고, 다음에 뭘 해야 하는지."</p>
-    <h4>보드 — Kanban 7단계</h4>
-    <p>상담 → 입원대기 → 입원 → 응급치료 → 회복기 → 비회복기 → 퇴원</p>
-    <h4>환자 상세 페이지</h4>
+    <h2>🏥 재원 관리 <a href="/ward" class="help-go">메뉴 열기 →</a></h2>
+    <p class="help-lead">"지금 병원 안에 누가 있고, 누가 외진 나가 있는가."</p>
+    <h4>3섹션</h4>
+    <ol>
+        <li><strong>🚑 외진 중</strong> — 복귀 기록이 없는 환자. 경과일·간 곳·보호자 연락처가 한 줄에.
+            <strong>[↩ 복귀]</strong> 1클릭으로 처리합니다. 이 화면이 만들어진 이유라 항상 최상단입니다.</li>
+        <li><strong>🏥 재원 환자</strong> — <strong>[🛏 병실]</strong> 배치도와 <strong>[☰ 목록]</strong> 표 두 가지 보기.
+            병실 뷰는 병동 → 호실(4인실 기준) → 침상 구조로, 침상마다 환자명·주요 병명·수가 구간 D-day·
+            주치의·입원일(재원 N일)·퇴원 예정·외진 이력이 담기고 빈 자리는 '빈 침상'으로 보입니다.
+            호실이 없는 환자는 아래 <strong>호실 미지정</strong>에 모여 있고 [호실 지정] 1클릭으로 배치됩니다.</li>
+        <li><strong>⚠ 입원일 미확정</strong> — 입원완료로 기록됐지만 실제 입원일이 없어 명부에 못 오른 건.
+            <strong>[입원 확정]</strong>을 누르면 재원 명부로 올라가고 D-day가 시작됩니다.</li>
+    </ol>
+    <h4>상태를 따로 관리하지 않습니다</h4>
     <ul>
-        <li>통합 타임라인 — 상담·문자·생애주기 이벤트·커뮤니케이션 4개 소스 시간순 병합</li>
-        <li>생애주기 이벤트 추가 — 응급치료/복귀/회복기·비회복기 전환/요구사항/퇴원 등</li>
-        <li>커뮤니케이션 기록 — 전화·문자·카톡 부재중 등 수동 기록</li>
+        <li>재원 = 입원완료 + 실제 입원일 있음 + 퇴원일 없음</li>
+        <li>외진 중 = 그 중 복귀 기록이 없는 건</li>
+        <li>따로 유지할 단계값이 없어 <strong>아무도 손대지 않아도 명부가 어긋나지 않습니다</strong></li>
+        <li>외진 중에는 퇴원 처리가 막힙니다 — 미복귀 기록이 영구히 남기 때문. 복귀 후 퇴원하세요</li>
+        <li>미복귀 경고: 모병원 외래치료 <strong>1일</strong> · 응급전원 <strong>3일</strong> 초과</li>
+        <li><strong>외진 기간은 재원 기간에서 빼지 않습니다</strong> — 병상을 유지한 채 나갔다 오는 것이라
+            회복기·비회복기 수가 기간과 입원 경과일이 그대로 흘러갑니다.
+            침상의 <code>🚑 외진 N회 · 누적 M일</code>은 참고용 이력입니다</li>
     </ul>
-    <h4>자동 전진</h4>
-    <ul>
-        <li>입원완료 → <strong>입원</strong> 단계 자동</li>
-        <li>입원보류 → <strong>입원대기</strong> 단계 자동</li>
-        <li>퇴원완료 → <strong>퇴원</strong> 단계 자동</li>
-        <li>후진은 없음, 수동으로만 가능</li>
-    </ul>
+    <h4>입원 전 단계는?</h4>
+    <p class="muted-sm">상담 → 입원예정 → 보류·취소는 <a href="/">대시보드</a>와
+        <a href="/consultations">상담 목록</a>이 담당합니다. 이 화면은 <strong>입원 이후</strong>만 다룹니다.</p>
 </div>
 
 <div class="card help-card" id="sms">
@@ -326,7 +336,7 @@
     ↓ 저장
 [📋 상담 목록] ←─ 회복기·임박 마크 자동
     ↓ admission_status='입원완료'
-[🚶 생애주기 보드 · 자동 전진] ←─ 환자 상세 타임라인 누적
+[🏥 재원 관리 · 입퇴원 현황] ←─ 환자 상담·접촉 이력 누적
     ↓ 입원 만료 30일 이내
 [📥 인박스 · 퇴원 예정] ─→ [💬 문자 발송] ─→ 환자 타임라인
     ↓

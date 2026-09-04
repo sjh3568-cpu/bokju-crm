@@ -216,6 +216,7 @@ LOCATION_TYPE_MAP = {
     "집": "집", "자택": "집", "본인집": "집", "본인 집": "집",
     "급성기병원": "입원중", "병원": "입원중", "재활병원": "입원중",
     "요양병원": "입원중", "회복기병원": "입원중",
+    "한방병원": "입원중",
     # 급성기병원 오타들
     "급성기병운": "입원중", "금성기병원": "입원중",
     "급상기병원": "입원중", "급성기": "입원중",
@@ -252,6 +253,7 @@ ADMISSION_STATUS_MAP = {
     "입원예정": "입원보류",
     "입원확정": "입원보류",
     "입원보류": "입원보류", "보류": "입원보류",
+    "입원대기": "입원보류",
     "입원완료": "입원완료", "입원": "입원완료",
     "퇴원완료": "퇴원완료", "퇴원": "퇴원완료",
     "입원취소": "입원취소", "취소": "입원취소",
@@ -269,7 +271,9 @@ def normalize_admission_status(v):
 #   다재내성균/다제내셩균 → 다제내성균(원문 유지·별도 통계))
 ADMISSION_PURPOSE_MAP = {
     "회복지재활": "회복기재활", "회보기재활": "회복기재활",
+    "회복기재홀": "회복기재활",
     "비회복기": "비회복기재활",
+    "비회복기 재활": "비회복기재활",
     "다재내성균": "다제내성균", "다제내셩균": "다제내성균",
     "요양병원": "요양",
 }
@@ -286,7 +290,7 @@ def normalize_admission_purpose(v):
 # 엑셀 값들의 그룹 분류
 REFERRAL_TYPE_VALUE_MAP = {
     # 온라인 (대분류 자체, 또는 세부값)
-    "온라인검색": "온라인", "온라인": "온라인",
+    "온라인검색": "온라인", "온리인검색": "온라인", "온라인": "온라인",
     "카페": "온라인", "검색": "온라인", "검색(블로그)": "온라인",
     "유튜브": "온라인", "SNS": "온라인", "홈페이지": "온라인",
     # 소개
@@ -417,6 +421,8 @@ def parse_schema_c_row(headers_idx, row):
     name = norm_str(cell("환자이름"))
     if not name:
         return None, ["환자이름 누락"]
+    if name.upper() in ("M", "F"):
+        return None, [f"환자이름 오류: {name}"]
     d["patient_name"] = name
     d["gender"] = normalize_gender(cell("성별"))
     d["patient_age"] = parse_int(cell("나이"))
@@ -494,6 +500,24 @@ def parse_schema_c_row(headers_idx, row):
     return d, issues
 
 
+def normalize_date_for_month_sheet(sheet_name, parsed):
+    """26.7월 같은 월별 시트에서 명백한 연도 오타를 시트 연도로 보정."""
+    m = re.match(r"^(\d{2})\.(\d{1,2})월$", sheet_name)
+    value = parsed.get("consult_date")
+    if not m or not value:
+        return None
+    expected_year, expected_month = 2000 + int(m.group(1)), int(m.group(2))
+    try:
+        dt = datetime.strptime(value, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+    if dt.year == expected_year or dt.month != expected_month:
+        return None
+    old = value
+    parsed["consult_date"] = dt.replace(year=expected_year).isoformat()
+    return old, parsed["consult_date"]
+
+
 # ─────────────────────────────────────────────────────────
 # Dry-run / Apply 실행
 # ─────────────────────────────────────────────────────────
@@ -523,6 +547,7 @@ def import_sheet(wb, sheet_name, *, apply_changes=False, schema_hint=None, skip_
         "rows_total": 0,
         "rows_imported": 0,
         "rows_skipped": 0,
+        "rows_duplicates": 0,
         "issues": Counter(),
         "issue_samples": defaultdict(list),
         "unmapped_values": defaultdict(Counter),
@@ -559,6 +584,11 @@ def import_sheet(wb, sheet_name, *, apply_changes=False, schema_hint=None, skip_
             for it in issues:
                 report["issues"][it] += 1
             continue
+
+        corrected = normalize_date_for_month_sheet(sheet_name, parsed)
+        if corrected:
+            old, new = corrected
+            report["issues"][f"상담일자 자동 보정: {old} → {new}"] += 1
 
         # NOT NULL 필수 — consult_date 없으면 적재 스킵
         if not parsed.get("consult_date"):
@@ -599,6 +629,9 @@ def import_sheet(wb, sheet_name, *, apply_changes=False, schema_hint=None, skip_
         try:
             for ri, parsed in rows_to_apply:
                 pid = _upsert_patient(conn, parsed, report)
+                if _consultation_exists(conn, pid, parsed):
+                    report["rows_duplicates"] += 1
+                    continue
                 _insert_consultation(conn, pid, parsed)
                 report["rows_imported"] += 1
             conn.commit()
@@ -725,6 +758,14 @@ def _insert_consultation(conn, pid, parsed):
     )
 
 
+def _consultation_exists(conn, pid, parsed):
+    """동일 환자의 같은 날짜 상담을 재가져오기하지 않는다."""
+    return conn.execute(
+        "SELECT 1 FROM consultations WHERE patient_id=? AND consult_date=? LIMIT 1",
+        (pid, parsed.get("consult_date")),
+    ).fetchone() is not None
+
+
 def backup_db():
     src = ROOT / "bokju.db"
     dst = ROOT / "backups" / f"pre_excel_import_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
@@ -746,6 +787,7 @@ def render_report(report, apply_mode=False):
     lines.append(f"  데이터 행: {report['rows_total']}")
     lines.append(f"  성공:      {report['rows_imported']}")
     lines.append(f"  스킵:      {report['rows_skipped']}")
+    lines.append(f"  기존 중복: {report['rows_duplicates']}")
     lines.append(f"  환자 신규: {report['patients_new']}")
     lines.append(f"  환자 매칭: {report['patients_matched']}")
 

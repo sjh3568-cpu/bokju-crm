@@ -22,7 +22,7 @@ from flask import (
 import models
 from auth import (
     admin_required, authenticate, current_user, is_locked_out,
-    login_required, login_user, logout_user,
+    login_required, login_user, logout_user, writer_required,
 )
 from config import (
     ACTIVITY_ACTIVE_OPTIONS, ACTIVITY_DIAPER_OPTIONS, ACTIVITY_OTHERS_OPTIONS,
@@ -35,9 +35,10 @@ from config import (
     COST_GUIDANCE_OPTIONS, CURRENT_LOCATION_TYPES, DIET_TYPES, DIET_LAYOUT,
     DISEASES_CHECKLIST, DISEASES_GROUPS, GUARDIAN_RELATION_SUGGESTIONS,
     HEARING_OPTIONS, INFO_PROVIDED_OPTIONS,
-    COUNSELORS, DISEASES_LAYOUT, OTHERS_LAYOUT,
+    COUNSELORS, DISEASES_LAYOUT, OTHERS_LAYOUT, ROOM_CAPACITY,
+    ROLE_LABELS, SEED_USERS,
     INSURANCE_TYPES, OTHERS_CHECKLIST, REFERRAL_SOURCE_GROUPS, REFERRAL_TYPES,
-    LIFECYCLE_STAGES, LIFECYCLE_EVENT_TYPES,
+    LIFECYCLE_STAGES, LIFECYCLE_EVENT_TYPES, LEGACY_STAGE_MAP, CARE_PHASES,
     SIDO_LIST, SIGUNGU_INDEX, SIGUNGU_LIST,
     SMS_TEMPLATE_GROUPS, SMS_PLACEHOLDERS,
     SPECIAL_CARE_OPTIONS, SPECIAL_CARE_NOTE_FIELDS,
@@ -70,8 +71,30 @@ def _bootstrap():
         models.init_db()
         admin_pw = os.getenv("APP_PASSWORD", "").strip()
         if admin_pw:
-            models.ensure_admin_user("admin", admin_pw, display_name="관리자")
+            # 비상용 break-glass 계정 (매 부팅 시 .env 비번으로 동기화)
+            models.ensure_admin_user("admin", admin_pw, display_name="admin(비상)")
+            # 명명된 6개 계정 시드 — 없을 때만 생성, 초기 비번=APP_PASSWORD
+            for username, display_name, role in SEED_USERS:
+                models.ensure_seed_user(username, display_name, role, admin_pw)
         _db_initialized = True
+
+
+@app.before_request
+def _enforce_readonly_viewer():
+    """조회(viewer) 공통 계정은 로그아웃을 제외한 모든 쓰기 요청을 차단.
+    화면은 자유롭게 열람하되 등록·수정·발송·삭제는 전부 막는다 (읽기 전용).
+    """
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return
+    user = current_user()
+    if not user or user.get("role") != "viewer":
+        return
+    if request.path == "/logout":
+        return
+    if request.path.startswith("/api/"):
+        abort(403)
+    flash("조회 전용 계정은 이 작업을 수행할 수 없습니다.", "error")
+    return redirect(request.referrer or url_for("dashboard"))
 
 
 @app.after_request
@@ -115,6 +138,7 @@ def _is_safe_next_url(value):
 def _inject_globals():
     return {
         "current_user": current_user(),
+        "today_str": date.today().isoformat(),   # 날짜 입력 기본값(외진 기록 등)
         "INSURANCE_TYPES": INSURANCE_TYPES,
         "CONSULT_CHANNELS": CONSULT_CHANNELS,
         "ADMISSION_EVENT_TYPES": ADMISSION_EVENT_TYPES,
@@ -123,6 +147,7 @@ def _inject_globals():
         "CONSULT_RESULTS": CONSULT_RESULTS,
         "CONSULT_RESULT_REASON_LABELS": CONSULT_RESULT_REASON_LABELS,
         "LIFECYCLE_STAGES": LIFECYCLE_STAGES,
+        "CARE_PHASES": CARE_PHASES,
         "LIFECYCLE_EVENT_TYPES": LIFECYCLE_EVENT_TYPES,
         "SMS_TEMPLATE_GROUPS": SMS_TEMPLATE_GROUPS,
         "COMM_CHANNELS": COMM_CHANNELS,
@@ -130,6 +155,7 @@ def _inject_globals():
         "REJECTION_REASONS": REJECTION_REASONS,
         "GUARDIAN_RELATION_SUGGESTIONS": GUARDIAN_RELATION_SUGGESTIONS,
         "COUNSELORS": COUNSELORS,
+        "ROLE_LABELS": ROLE_LABELS,
         "CURRENT_LOCATION_TYPES": CURRENT_LOCATION_TYPES,
         "CONSCIOUSNESS_MAIN_OPTIONS": CONSCIOUSNESS_MAIN_OPTIONS,
         "CONVERSATION_LEVEL_OPTIONS": CONVERSATION_LEVEL_OPTIONS,
@@ -467,6 +493,12 @@ def compute_admission_period(diseases, recovery_label):
 @app.template_filter("admission_expiry")
 def _admission_expiry(consultation):
     """입원일 + 입원 기간 → 입원 만료일(퇴원 예정일) 계산.
+
+    ※ 외진(응급전원·모병원 외래치료) 기간은 차감하지 않는다 — 2026-08-25 사용자 확인.
+      병상을 유지한 채 나갔다 오는 것이라 회복기(S005)·비회복기 수가 기간과
+      입원 경과일이 그대로 흘러간다. 여기서 외진 일수를 빼면 실제 만료일보다
+      늦게 계산돼 퇴원 시점을 놓친다.
+
     Returns: dict 또는 None.
       basis        = 'actual'(실제 입원일) | 'planned'(입원예정일 기준 추정)
       total_days   = 전체 입원 가능 일수, total_date/total_left = 만료일/잔여일
@@ -553,6 +585,38 @@ def _discharge_watch(consultation):
         "due_date": dd.isoformat(),
         "days_left": days_left,
     }
+
+
+def _care_phase(consultation):
+    """입원 환자의 수가 구간 — 생애주기 '입원' 컬럼 내부 레인 값.
+    단계(lifecycle_stage)가 아니라 발병일+진단군에서 자동 판정한다(이중 입력 없음).
+    Returns: dict(care_phase, phase_dday, phase_label)
+      care_phase = '회복기' | '비회복기' | '단일구간'(비중추신경계 — 전환 개념 없음)
+                   | '미판정'(발병일 없음 / 입원목적이 일반재활·요양·기타)
+      phase_dday = 회복기는 S005 수가 만료까지, 그 외는 입원 만료까지 남은 일수
+    """
+    rec = _recovery_status(consultation) or {}
+    label = (rec.get("label") or "").strip()
+    ax = _admission_expiry(consultation) or {}
+    if not label:
+        phase = "미판정"
+    elif not is_cns_diseases(consultation.get("diseases")):
+        # 비중추신경계는 S005 하나뿐 — 회복기→비회복기 '전환' 자체가 없다.
+        # 재원 기간이 진단군별로 고정이라 별도 레인(단일구간)으로 묶는다.
+        phase = "단일구간"
+    elif label == "비회복기":
+        phase = "비회복기"
+    elif label == "회복기":
+        phase = "회복기"
+    else:
+        # 일반재활·요양 — 중추신경계라도 회복기/비회복기 '구간' 밖이다.
+        # 회복기로 뭉뚱그리면 재원 카드에 엉뚱한 구간이 찍히고, recovery_due
+        # ('회복기 전환 임박')가 대상 아닌 환자까지 잡아 알림이 부푼다.
+        phase = "미판정"
+    # 외진 기간을 빼지 않은 값 그대로 쓴다 (_admission_expiry 주석 참고)
+    dday = ax.get("billing_left") if phase == "회복기" else ax.get("total_left")
+    return {"care_phase": phase, "phase_dday": dday,
+            "phase_mandatory": bool(ax.get("mandatory"))}
 
 
 def _dashboard_ward_label(room_number):
@@ -920,10 +984,12 @@ def _sync_lifecycle_stage_if_unset(patient_id, target_stage):
 
 
 def _set_lifecycle_stage_clinical(patient_id, target_stage):
-    """임상 이벤트 기반 단계 전환 — 응급치료·복귀·회복기·비회복기·퇴원 등.
-    의료 사건이 발생하면 단계가 뒤로 갈 수도 있으므로(예: 회복기→응급치료)
+    """임상 이벤트 기반 단계 전환 — 복귀·퇴원 등.
+    의료 사건이 발생하면 단계가 뒤로 갈 수도 있으므로(예: 퇴원 취소 → 입원)
     `_sync_lifecycle_stage`의 '앞으로만' 룰을 우회한다. 단, 이미 '퇴원' 상태인
-    환자는 더 이상 변동하지 않는다(완료 케이스 보호)."""
+    환자는 더 이상 변동하지 않는다(완료 케이스 보호).
+    폐지된 단계값(응급치료·회복기·비회복기)이 들어오면 '입원'으로 접어 받는다."""
+    target_stage = LEGACY_STAGE_MAP.get(target_stage, target_stage)
     if target_stage not in LIFECYCLE_STAGES:
         return
     p = models.get_patient(patient_id)
@@ -965,6 +1031,126 @@ def logout_view():
     logout_user()
     flash("로그아웃되었습니다.", "info")
     return redirect(url_for("login_view"))
+
+
+# ───────────────────── 사용자 관리 (어드민 전용) ─────────────────────
+
+_VALID_ROLES = {"admin", "staff", "viewer"}
+_MIN_PW_LEN = 4
+
+
+@app.route("/admin/users")
+@admin_required
+def admin_users():
+    users = models.list_users()
+    return render_template("users.html", users=users)
+
+
+@app.route("/admin/users/create", methods=["POST"])
+@admin_required
+def admin_users_create():
+    username = (request.form.get("username") or "").strip()
+    display_name = (request.form.get("display_name") or "").strip()
+    role = (request.form.get("role") or "staff").strip()
+    password = request.form.get("password") or ""
+    if not username or role not in _VALID_ROLES:
+        flash("아이디와 역할을 올바르게 입력하세요.", "error")
+        return redirect(url_for("admin_users"))
+    if len(password) < _MIN_PW_LEN:
+        flash(f"비밀번호는 최소 {_MIN_PW_LEN}자 이상이어야 합니다.", "error")
+        return redirect(url_for("admin_users"))
+    try:
+        models.create_user(username, display_name, role, password)
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("admin_users"))
+    models.log_audit(user_id=g.user["id"], username=g.user["username"],
+                     action="create_user", target_type="user",
+                     detail=f"{username} ({role})", ip=request.remote_addr)
+    flash(f"'{display_name or username}' 계정을 추가했습니다.", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/<int:uid>/update", methods=["POST"])
+@admin_required
+def admin_users_update(uid):
+    target = models.get_user_by_id(uid)
+    if not target:
+        abort(404)
+    display_name = (request.form.get("display_name") or "").strip() or target["username"]
+    role = (request.form.get("role") or target["role"]).strip()
+    if role not in _VALID_ROLES:
+        flash("올바른 역할이 아닙니다.", "error")
+        return redirect(url_for("admin_users"))
+    # 마지막 어드민의 역할을 강등하지 못하게
+    if target["role"] == "admin" and role != "admin" and models.count_active_admins() <= 1:
+        flash("마지막 어드민의 역할은 변경할 수 없습니다.", "error")
+        return redirect(url_for("admin_users"))
+    models.update_user(uid, display_name, role)
+    models.log_audit(user_id=g.user["id"], username=g.user["username"],
+                     action="update_user", target_type="user", target_id=uid,
+                     detail=f"{target['username']} → {role}", ip=request.remote_addr)
+    flash("계정 정보를 저장했습니다.", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/<int:uid>/password", methods=["POST"])
+@admin_required
+def admin_users_password(uid):
+    target = models.get_user_by_id(uid)
+    if not target:
+        abort(404)
+    password = request.form.get("password") or ""
+    if len(password) < _MIN_PW_LEN:
+        flash(f"비밀번호는 최소 {_MIN_PW_LEN}자 이상이어야 합니다.", "error")
+        return redirect(url_for("admin_users"))
+    models.set_user_password(uid, password)
+    models.log_audit(user_id=g.user["id"], username=g.user["username"],
+                     action="reset_password", target_type="user", target_id=uid,
+                     detail=target["username"], ip=request.remote_addr)
+    flash(f"'{target['display_name'] or target['username']}' 비밀번호를 변경했습니다.", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/<int:uid>/active", methods=["POST"])
+@admin_required
+def admin_users_active(uid):
+    target = models.get_user_by_id(uid)
+    if not target:
+        abort(404)
+    activate = (request.form.get("active") == "1")
+    if not activate and uid == g.user["id"]:
+        flash("본인 계정은 비활성화할 수 없습니다.", "error")
+        return redirect(url_for("admin_users"))
+    if not activate and target["role"] == "admin" and models.count_active_admins() <= 1:
+        flash("마지막 어드민은 비활성화할 수 없습니다.", "error")
+        return redirect(url_for("admin_users"))
+    models.set_user_active(uid, activate)
+    models.log_audit(user_id=g.user["id"], username=g.user["username"],
+                     action="toggle_user_active", target_type="user", target_id=uid,
+                     detail=f"{target['username']} active={activate}", ip=request.remote_addr)
+    flash(("활성화" if activate else "비활성화") + "했습니다.", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/<int:uid>/delete", methods=["POST"])
+@admin_required
+def admin_users_delete(uid):
+    target = models.get_user_by_id(uid)
+    if not target:
+        abort(404)
+    if uid == g.user["id"]:
+        flash("본인 계정은 삭제할 수 없습니다.", "error")
+        return redirect(url_for("admin_users"))
+    if target["role"] == "admin" and models.count_active_admins() <= 1:
+        flash("마지막 어드민은 삭제할 수 없습니다.", "error")
+        return redirect(url_for("admin_users"))
+    models.delete_user(uid)
+    models.log_audit(user_id=g.user["id"], username=g.user["username"],
+                     action="delete_user", target_type="user", target_id=uid,
+                     detail=target["username"], ip=request.remote_addr)
+    flash(f"'{target['display_name'] or target['username']}' 계정을 삭제했습니다.", "success")
+    return redirect(url_for("admin_users"))
 
 
 # ───────────────────── 메인 ─────────────────────
@@ -1439,7 +1625,7 @@ def period_calc():
 
 
 @app.route("/consult/new")
-@login_required
+@writer_required
 def consult_new():
     # 인박스 미처리 인바운드에서 상담 등록을 시작한 경우 — communication 로드 후 prefill
     inbox_comm = None
@@ -1509,7 +1695,7 @@ def consult_detail(cid):
 
 
 @app.route("/consult/<int:cid>/edit")
-@login_required
+@writer_required
 def consult_edit(cid):
     c = models.get_consultation(cid)
     if not c:
@@ -1703,16 +1889,15 @@ def patient_detail(pid):
     if not p:
         abort(404)
     history = models.patient_consultations(pid)
-    timeline = models.patient_timeline(pid)
-    # 생애주기 보드 검색어(q) 보존 — 보드 → 환자상세 → 보드 복귀 시 검색 상태 유지
-    lc_back_q = (request.args.get("q") or "").strip()
+    # 구 생애주기 이벤트는 재원 관리 전환 후 화면에서 제외한다.
+    timeline = [e for e in models.patient_timeline(pid) if e.get("kind") != "lifecycle"]
     models.log_audit(
         user_id=g.user["id"], username=g.user["username"],
         action="view_patient", target_type="patient", target_id=pid,
         ip=request.remote_addr,
     )
     return render_template("patient_detail.html", p=p, history=history,
-                           timeline=timeline, lc_back_q=lc_back_q)
+                           timeline=timeline)
 
 
 # ───────────────────── API: 상담 CRUD ─────────────────────
@@ -1916,7 +2101,10 @@ def api_consult_discharge(cid):
     action = (payload.get("action") or "").strip()
     fields = {}
     if action == "complete":
-        ddate = (payload.get("discharge_date") or "").strip()
+        # 외진 나가 있는 상태에서 퇴원하면 미복귀 기록이 영원히 남는다.
+        if models.open_away_event(cid):
+            return jsonify({"error": "외진 중인 환자입니다. 복귀 처리 후 퇴원하세요."}), 400
+        ddate = (payload.get("discharge_date") or "").strip() or date.today().isoformat()
         if not ddate:
             return jsonify({"error": "퇴원일자를 입력하세요."}), 400
         try:
@@ -2001,10 +2189,20 @@ def api_consult_delete(cid):
 
 @app.route("/lifecycle")
 @login_required
+def lifecycle_board_legacy():
+    """구 생애주기 보드 — 재원 관리(/ward)로 대체됐다. 북마크·외부 링크 보호용 리다이렉트."""
+    return redirect(url_for("ward_view", q=request.args.get("q") or None))
+
+
+@app.route("/lifecycle/board")
+@login_required
 def lifecycle_board():
     """환자 생애주기 관리 보드 — 단계별 컬럼에 환자 카드 배치.
     필터: q(검색) / period(기간) / stages[](단계) / dx(병명그룹) / doctor / archived(아카이브 포함)
     """
+    # 구 주소로 접근해도 새 재원 관리 화면으로 일관되게 연결한다.
+    return redirect(url_for("ward_view", q=request.args.get("q") or None))
+
     q = (request.args.get("q") or "").strip() or None
     # 기간 — 기본 90일, '0'/'all'은 전체
     period_raw = request.args.get("period", "90")
@@ -2025,40 +2223,46 @@ def lifecycle_board():
     stale_only = request.args.get("stale") in ("1", "true", "yes")
     new_30d_only = request.args.get("new30") in ("1", "true", "yes")
     discharge_imminent_only = request.args.get("discharge_imminent") in ("1", "true", "yes")
-    emergency_overdue_only = request.args.get("emergency_overdue") in ("1", "true", "yes")
-    # 기본 보기 — view=all이 아니면 입원·응급치료·입원대기 자동 필터 (시급 환자)
+    away_flag = request.args.get("away") in ("1", "true", "yes")
+    away_overdue_flag = request.args.get("away_overdue") in ("1", "true", "yes")
+    recovery_due_flag = request.args.get("recovery_due") in ("1", "true", "yes")
+    # 기본 보기 — view=all이 아니면 입원·입원대기 자동 필터 (시급 환자)
     view = request.args.get("view") or ""
     any_explicit_filter = (q or stage_filter or dx or doctor or hospital or
                            stale_only or new_30d_only or
-                           discharge_imminent_only or emergency_overdue_only or
-                           include_archived)
+                           discharge_imminent_only or recovery_due_flag or
+                           away_flag or away_overdue_flag or include_archived)
     if view != "all" and not any_explicit_filter:
-        stage_filter = ["입원", "응급치료", "입원대기"]
-    # 액션 필터(퇴원임박·응급복귀)는 단계 무관 (모든 단계에서 적용)
-    if discharge_imminent_only or emergency_overdue_only:
+        stage_filter = ["입원", "입원대기"]
+    # 액션 필터(퇴원임박)는 단계 무관 (모든 단계에서 적용)
+    if discharge_imminent_only:
         stage_filter = None
 
-    patients = models.lifecycle_board(
-        q=q, period_days=period_days, stages=stage_filter,
+    # ── 작업 집합을 한 번만 만든다 ──
+    # 단계·액션 필터를 SQL이 아니라 파이썬에서 걸어, KPI와 현황 스트립이 '무엇을
+    # 보고 있든' 같은 전체 기준으로 계산되게 한다. 필터를 걸 때마다 숫자가
+    # 흔들리면 "상담 0명"처럼 오해를 부른다.
+    all_rows = models.lifecycle_board(
+        q=q, period_days=period_days, stages=None,
         disease_group=dx, doctor=doctor, include_archived=include_archived,
-        stale_only=stale_only, new_30d_only=new_30d_only,
     )
     # 모병원 필터 (post-filter)
     if hospital:
         pid_set = set()
-        if patients:
+        if all_rows:
             conn = models.get_db()
-            placeholders = ",".join("?" * len(patients))
+            placeholders = ",".join("?" * len(all_rows))
             rows = conn.execute(
                 f"SELECT DISTINCT patient_id FROM consultations "
                 f"WHERE patient_id IN ({placeholders}) AND source_hospital = ?",
-                [p["id"] for p in patients] + [hospital],
+                [p["id"] for p in all_rows] + [hospital],
             ).fetchall()
             pid_set = {r["patient_id"] for r in rows}
             conn.close()
-        patients = [p for p in patients if p["id"] in pid_set]
-    # 입원중 단계 환자의 퇴원 D-day 계산 (의료법 입원기간 룰 기반)
-    for pt in patients:
+        all_rows = [p for p in all_rows if p["id"] in pid_set]
+
+    # 입원 환자 부가정보 — 퇴원 D-day(의료법 입원기간 룰) + 수가 구간
+    for pt in all_rows:
         if pt.get("last_admission_status") == "입원완료" and pt.get("last_consult_id"):
             con = models.get_consultation(pt["last_consult_id"])
             if con:
@@ -2066,16 +2270,46 @@ def lifecycle_board():
                 if dw:
                     pt["discharge_dday"] = dw["days_left"]
                     pt["discharge_due_date"] = dw["due_date"]
-    # KPI 계산은 액션 필터 적용 전 patients 기준 (전체 카운트 정확)
-    kpis = models.lifecycle_board_kpis(patients)
-    # 액션 필터 (퇴원 임박·응급 복귀 미기록) — KPI 계산 후 post-filter
+                    pt["discharge_mandatory"] = dw["mandatory"]
+                # 수가 구간 — 발병일+진단군 자동 판정. 컬럼이 아니라 '입원' 안의 레인.
+                pt.update(_care_phase(con))
+                pt["recovery_due"] = (pt.get("care_phase") == "회복기"
+                                      and pt.get("phase_dday") is not None
+                                      and pt["phase_dday"] <= 15)
+    # ── 현재 외진 중(미복귀) 정보 부착 ──
+    # 단계값이 아니라 admission_events.returned_at IS NULL 이 유일한 판정 근거다.
+    away_by_pid = {}
+    for a in models.away_now([p["id"] for p in all_rows]):
+        away_by_pid.setdefault(a["pid"], a)   # 환자당 가장 오래된 미복귀 1건
+    for pt in all_rows:
+        pt["away"] = away_by_pid.get(pt["id"])
+
+    # KPI — 전부 all_rows 기준. 카드에 뜬 숫자와 클릭 후 개수가 항상 일치한다.
+    kpis = models.lifecycle_board_kpis(all_rows)
+    kpis["away_now"] = len(away_by_pid)
+    kpis["away_overdue"] = sum(1 for a in away_by_pid.values() if a.get("overdue"))
+    # 회복기 수가(S005) 만료 D-15 — 비회복기 전환 안내 대상 (초과분 포함)
+    kpis["recovery_due"] = sum(1 for p in all_rows if p.get("recovery_due"))
+
+    # ── 표시 대상 추리기 ──
+    patients = all_rows
+    if stage_filter:
+        patients = [p for p in patients if p.get("lifecycle_stage") in stage_filter]
+    if stale_only:
+        patients = [p for p in patients if p.get("is_stale")]
+    if new_30d_only:
+        patients = [p for p in patients
+                    if p.get("stage_days_int") is not None and p["stage_days_int"] <= 30]
+    if recovery_due_flag:
+        patients = [p for p in patients if p.get("recovery_due")]
+    if away_flag:
+        patients = [p for p in patients if p.get("away")]
+    if away_overdue_flag:
+        patients = [p for p in patients if (p.get("away") or {}).get("overdue")]
     if discharge_imminent_only:
         patients = [p for p in patients
                     if p.get("discharge_dday") is not None and p["discharge_dday"] <= 3]
-    if emergency_overdue_only:
-        patients = [p for p in patients
-                    if p.get("lifecycle_stage") == "응급치료"
-                    and (p.get("stage_days_int") or 0) >= 3]
+
     board = {s: [] for s in LIFECYCLE_STAGES}
     board["기타"] = []
     for pt in patients:
@@ -2083,13 +2317,34 @@ def lifecycle_board():
         board.setdefault(st if st in board else "기타", []).append(pt)
     if not board["기타"]:
         board.pop("기타")
+    # 정렬 — 카드가 수백 장이라 '무엇부터 처리해야 하는가' 순으로 고정한다.
+    #   입원: 기한 임박 순(외진 중 > 구간·퇴원 D-day 작은 순)
+    #   그 외: 오래 방치된 순(단계 진입 후 경과일 내림차순)
+    def _admit_key(p):
+        ddays = [d for d in (p.get("phase_dday"), p.get("discharge_dday"))
+                 if d is not None]
+        return (0 if p.get("away") else 1,
+                min(ddays) if ddays else 10 ** 6,
+                -(p.get("stage_days_int") or 0))
+
+    for stage_name, cards in board.items():
+        if stage_name == "입원":
+            cards.sort(key=_admit_key)
+        else:
+            cards.sort(key=lambda p: -(p.get("stage_days_int") or 0))
     # 단계별 카운트는 KPI 필터 영향 받음 — 카테고리 카드는 전체 환자 기준으로 별도 조회가 필요할 수도 있으나
     # 일단 보드와 동기화된 값으로 표시 (현재 상황 = 활성 단계만)
     # 사이드 패널 데이터 (모병원·응급전원)
-    side = models.lifecycle_board_side(patients)
+    # 사이드(모병원·외진)는 필터와 무관하게 전체 기준 — 드릴다운 입구 역할이라
+    # 필터를 걸 때마다 목록이 사라지면 못 쓴다.
+    side = models.lifecycle_board_side(all_rows)
+    side["away"] = sorted(
+        away_by_pid.values(),
+        key=lambda a: (not a.get("overdue"), -(a.get("days_out") or 0)),
+    )
     # 주치의 옵션 — 최근 상담에서 추출 (config 5명 + 자유 입력 환자가 있을 수 있음)
     doctor_options = sorted(set(filter(None,
-        (p.get("last_doctor") for p in patients))))
+        (p.get("last_doctor") for p in all_rows))))
     return render_template(
         "lifecycle.html", board=board, q=q or "", total=len(patients),
         kpis=kpis, side=side,
@@ -2099,13 +2354,193 @@ def lifecycle_board():
             "archived": include_archived,
             "stale": stale_only, "new30": new_30d_only,
             "discharge_imminent": discharge_imminent_only,
-            "emergency_overdue": emergency_overdue_only,
+            "away": away_flag, "away_overdue": away_overdue_flag,
+            "recovery_due": recovery_due_flag,
             "view": view,
         },
         LIFECYCLE_STAGES=LIFECYCLE_STAGES,
         doctor_options=doctor_options,
         DISEASE_GROUPS=list(DISEASES_GROUPS.keys()),
     )
+
+
+@app.route("/ward")
+@login_required
+def ward_view():
+    """재원 관리 — 지금 병원 안에 누가 있고, 누가 외진 나가 있는가.
+
+    별도의 단계 필드를 두지 않는다. 화면의 모든 구분이 실제 사실에서 파생된다:
+      · 재원      = 입원완료 + 실제 입원일 있음 + 퇴원일 없음
+      · 외진 중   = 그 중 admission_events.returned_at IS NULL 인 건이 있는 환자
+      · 입원 미확정 = 입원완료인데 실제 입원일이 아직 없는 건 (입력 큐)
+    유지해야 할 상태값이 없으므로 아무도 손대지 않아도 명부가 어긋나지 않는다.
+    """
+    q = (request.args.get("q") or "").strip() or None
+    doctor = (request.args.get("doctor") or "").strip() or None
+    sort = request.args.get("sort") or "dday"
+    show_old = request.args.get("old") in ("1", "true", "yes")
+
+    rows = models.list_consultations(admission_status="입원완료", q=q,
+                                     q_scope="ward", limit=10000)
+    if doctor:
+        rows = [c for c in rows if (c.get("attending_doctor") or "") == doctor]
+    # 퇴원 기록이 있으면 명부에서 빠진다
+    rows = [c for c in rows if not (c.get("discharge_date") or "").strip()]
+
+    away_by_cid = {a["consultation_id"]: a for a in models.away_now()}
+    admitted, pending = [], []
+    for c in rows:
+        adm = (c.get("actual_admission_date") or c.get("admission_date") or "").strip()
+        c["admitted_on"] = adm or None
+        if not adm:
+            pending.append(c)
+            continue
+        c["away"] = away_by_cid.get(c["id"])
+        c["stay_days"] = _days_since(adm)
+        c.update(_care_phase(c))
+        c["recovery_due"] = (c.get("care_phase") == "회복기"
+                             and c.get("phase_dday") is not None
+                             and c["phase_dday"] <= 30)
+        dw = _discharge_watch(c)
+        if dw:
+            c["discharge_dday"] = dw["days_left"]
+            c["discharge_due"] = dw["due_date"]
+        admitted.append(c)
+
+    # 외진 이력 — 참고 정보. 재원 경과일·수가 D-day에서 외진 기간을 빼지 않는다.
+    hist = models.away_history([c["id"] for c in admitted])
+    for c in admitted:
+        c["away_hist"] = hist.get(c["id"])
+
+    away = [c for c in admitted if c.get("away")]
+    away.sort(key=lambda c: -((c["away"].get("days_out")) or 0))
+
+    # ── 병실 뷰 — 병동 → 호실 → 침상 ──
+    rooms, unassigned = {}, []
+    for c in admitted:
+        room = (c.get("room_number") or "").strip()
+        if not room:
+            unassigned.append(c)
+            continue
+        ward = _dashboard_ward_label(room)
+        rooms.setdefault(ward, {}).setdefault(room, []).append(c)
+    room_view = []
+    for ward in sorted(rooms, key=lambda w: (_room_sort_key(w), w)):
+        beds = [
+            {"room": r, "patients": sorted(rooms[ward][r],
+                                           key=lambda c: c.get("patient_name") or ""),
+             "empty": max(0, ROOM_CAPACITY - len(rooms[ward][r]))}
+            for r in sorted(rooms[ward], key=_room_sort_key)
+        ]
+        room_view.append({"ward": ward, "rooms": beds,
+                          "n": sum(len(b["patients"]) for b in beds)})
+
+    def _dday(c):
+        vals = [d for d in (c.get("phase_dday"), c.get("discharge_dday")) if d is not None]
+        return min(vals) if vals else 10 ** 6
+    sorters = {
+        "dday": lambda c: (_dday(c), c.get("patient_name") or ""),
+        "room": lambda c: (_room_sort_key(c.get("room_number")), c.get("patient_name") or ""),
+        "stay": lambda c: -(c.get("stay_days") or 0),
+        "name": lambda c: c.get("patient_name") or "",
+    }
+    admitted.sort(key=sorters.get(sort, sorters["dday"]))
+
+    # 입력 큐 — 오래된 건은 접어둔다. 상담사가 기억하는 최근 건부터 채우게 한다.
+    cutoff = (date.today() - timedelta(days=90)).isoformat()
+    def _pend_basis(c):
+        return (c.get("planned_admission_date") or c.get("consult_date") or "")
+    pending.sort(key=_pend_basis, reverse=True)
+    pending_recent = [c for c in pending if _pend_basis(c) >= cutoff]
+    pending_old = [c for c in pending if _pend_basis(c) < cutoff]
+
+    kpis = {
+        "admitted": len(admitted),
+        "away": len(away),
+        "away_overdue": sum(1 for c in away if c["away"].get("overdue")),
+        "discharge_soon": sum(1 for c in admitted
+                              if c.get("discharge_dday") is not None
+                              and c["discharge_dday"] <= 7),
+        "recovery_due": sum(1 for c in admitted if c.get("recovery_due")),
+        "pending": len(pending),
+        "pending_recent": len(pending_recent),
+        "unassigned": len(unassigned),
+    }
+    doctor_options = sorted({c.get("attending_doctor") for c in rows
+                             if (c.get("attending_doctor") or "").strip()})
+    return render_template(
+        "ward.html", away=away, admitted=admitted,
+        room_view=room_view, unassigned=unassigned,
+        view=(request.args.get("view") or "room"),
+        pending=pending_recent, pending_old=pending_old, show_old=show_old,
+        kpis=kpis, q=q or "", doctor=doctor or "", sort=sort,
+        doctor_options=doctor_options,
+    )
+
+
+def _days_since(datestr):
+    try:
+        d = datetime.strptime(str(datestr)[:10], "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
+    return (date.today() - d).days
+
+
+def _room_sort_key(room):
+    """호실 정렬 — '502', '502-1', 'A동 3층' 등 섞여 있어 숫자 우선으로 정렬."""
+    r = (room or "").strip()
+    if not r:
+        return (1, "")
+    digits = "".join(ch for ch in r if ch.isdigit())
+    return (0, int(digits)) if digits else (1, r)
+
+
+@app.route("/api/consult/<int:cid>/room", methods=["POST"])
+@login_required
+def api_consult_room(cid):
+    """호실 지정·변경 — 병실 뷰에서 침상 배치를 바로 잡는다."""
+    if not models.get_consultation(cid):
+        return jsonify({"error": "not found"}), 404
+    payload = request.get_json(silent=True) or {}
+    room = (payload.get("room_number") or "").strip()
+    models.update_consultation(cid, room_number=room or None)
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="update_room", target_type="consultation", target_id=cid,
+        detail=room or "(호실 해제)", ip=request.remote_addr,
+    )
+    return jsonify({"ok": True, "room_number": room or None})
+
+
+@app.route("/api/consult/<int:cid>/admit", methods=["POST"])
+@login_required
+def api_consult_admit(cid):
+    """입원일 확정 — 이 시점부터 재원 명부에 오르고 D-day가 돌기 시작한다."""
+    con = models.get_consultation(cid)
+    if not con:
+        return jsonify({"error": "not found"}), 404
+    payload = request.get_json(silent=True) or {}
+    adate = (payload.get("admission_date") or "").strip()
+    if not adate:
+        adate = (con.get("planned_admission_date") or "").strip()
+    if not adate:
+        return jsonify({"error": "입원일을 입력하세요."}), 400
+    try:
+        datetime.strptime(adate, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"error": "입원일 형식 오류 (YYYY-MM-DD)"}), 400
+    fields = {"actual_admission_date": adate}
+    room = (payload.get("room_number") or "").strip()
+    if room:
+        fields["room_number"] = room
+    models.update_consultation(cid, **fields)
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="confirm_admission", target_type="consultation", target_id=cid,
+        detail=f"입원일 {adate}" + (f" · {room}호" if room else ""),
+        ip=request.remote_addr,
+    )
+    return jsonify({"ok": True, "admission_date": adate, "room_number": room or None})
 
 
 @app.route("/api/patient/<int:pid>/stage", methods=["POST"])
@@ -2148,11 +2583,14 @@ def api_lifecycle_event_add(pid):
         created_by=g.user.get("display_name"),
     )
     # 트리거 ③ — 생애주기 이벤트가 단계 전환 신호인 경우 환자 단계 자동 변경
+    # 회복기·비회복기 전환은 더 이상 단계가 아니다 (발병일+진단군 자동 판정) —
+    # 타임라인 이벤트로만 남기고 단계는 '입원' 유지.
     stage_map = {
-        "회복기 전환": "회복기",
-        "비회복기 전환": "비회복기",
-        "응급치료": "응급치료",
+        "회복기 전환": "입원",
+        "비회복기 전환": "입원",
+        "응급치료": "입원",
         "복귀": "입원",
+        "입원": "입원",
         "퇴원": "퇴원",
     }
     target = stage_map.get(event_type)
@@ -2286,26 +2724,92 @@ def api_admission_event_create(cid):
             datetime.strptime(event_date, "%Y-%m-%d")
         except ValueError:
             return jsonify({"error": "발생일 형식 오류"}), 400
+    con = models.get_consultation(cid)
+    pid = con["patient_id"] if con else None
+    cur_stage = None
+    if pid:
+        p = models.get_patient(pid)
+        cur_stage = (p.get("lifecycle_stage") or "").strip() if p else None
+
+    # ── 복귀는 새 행이 아니라 '나감' 행을 닫는다 (出/歸 페어링) ──
+    if event_type == "복귀":
+        open_ev = models.open_away_event(cid)
+        if open_ev:
+            models.mark_admission_event_returned(
+                open_ev["id"], return_date=event_date or None,
+                returned_by=g.user.get("display_name"),
+            )
+        # 복귀 시 단계는 '입원' 고정이 아니라 나가기 직전 단계로 원상복구
+        # (회복기 환자가 외진 다녀와서 입원으로 강등되던 문제)
+        if pid:
+            back_to = (open_ev or {}).get("stage_before") or "입원"
+            _set_lifecycle_stage_clinical(pid, back_to)
+
+    # 나가기 직전 단계 보존 — 레거시 '응급치료' 값은 복구 대상으로 삼지 않는다
+    stage_before = None
+    if event_type in models.AWAY_EVENT_TYPES:
+        stage_before = cur_stage if cur_stage and cur_stage != "응급치료" else "입원"
     eid = models.create_admission_event(
         consultation_id=cid, event_type=event_type,
         event_date=event_date or None,
         hospital=(payload.get("hospital") or "").strip() or None,
         memo=(payload.get("memo") or "").strip() or None,
         created_by=g.user.get("display_name"),
+        stage_before=stage_before,
     )
-    # 트리거 ② — 입원 중 이벤트가 단계 전환 신호인 경우 환자 단계 자동 변경
-    con = models.get_consultation(cid)
-    if con:
-        stage_map = {"응급전원": "응급치료", "모병원 외래치료": "응급치료", "복귀": "입원"}
-        target = stage_map.get(event_type)
-        if target:
-            _set_lifecycle_stage_clinical(con["patient_id"], target)
+    # 외진은 단계를 바꾸지 않는다 — 병상을 유지한 일시 이탈이므로 '입원'에 그대로
+    # 머물고, 미복귀 플래그(returned_at IS NULL)와 카드 배지로만 표시한다.
     models.log_audit(
         user_id=g.user["id"], username=g.user["username"],
         action="add_admission_event", target_type="consultation", target_id=cid,
         detail=event_type, ip=request.remote_addr,
     )
     return jsonify({"ok": True, "id": eid})
+
+
+@app.route("/api/admission-event/<int:event_id>/return", methods=["POST"])
+@login_required
+def api_admission_event_return(event_id):
+    """외진 복귀 처리 — 나감 이벤트에 복귀일을 찍고 단계를 원래대로 되돌린다.
+    보드 카드의 [↩ 복귀] 1클릭과 상담 상세의 복귀 버튼이 함께 쓴다.
+    """
+    ev = models.get_admission_event(event_id)
+    if not ev:
+        return jsonify({"error": "not found"}), 404
+    if ev.get("returned_at"):
+        return jsonify({"error": "이미 복귀 처리된 외진입니다."}), 400
+    payload = request.get_json(silent=True) or {}
+    return_date = (payload.get("return_date") or "").strip() or None
+    if return_date:
+        try:
+            rd = datetime.strptime(return_date, "%Y-%m-%d").date()
+        except ValueError:
+            return jsonify({"error": "복귀일 형식 오류 (YYYY-MM-DD)"}), 400
+        if rd > date.today():
+            return jsonify({"error": "복귀일이 미래입니다."}), 400
+        out = (ev.get("event_date") or "").strip()
+        if out:
+            try:
+                if rd < datetime.strptime(out[:10], "%Y-%m-%d").date():
+                    return jsonify({"error": f"복귀일이 외진 나간 날({out})보다 빠릅니다."}), 400
+            except ValueError:
+                pass
+    models.mark_admission_event_returned(
+        event_id, return_date=return_date,
+        returned_by=g.user.get("display_name"),
+    )
+    con = models.get_consultation(ev["consultation_id"])
+    back_to = (ev.get("stage_before") or "입원").strip()
+    if con:
+        _set_lifecycle_stage_clinical(con["patient_id"], back_to)
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="return_admission_event", target_type="consultation",
+        target_id=ev["consultation_id"],
+        detail=f"{ev.get('event_type')} 복귀 → {back_to}", ip=request.remote_addr,
+    )
+    return jsonify({"ok": True, "stage": back_to,
+                    "return_date": return_date or date.today().isoformat()})
 
 
 @app.route("/api/admission-event/<int:event_id>", methods=["DELETE"])
@@ -2349,7 +2853,7 @@ def api_webhook_kakao():
 # ───────────────────── 문자 발송 (5번 요청) ─────────────────────
 
 @app.route("/sms")
-@login_required
+@writer_required
 def sms_compose():
     """문자 전송 — 최근 상담에서 보호자 선택 → 환자군 템플릿 → 발송."""
     recent = models.list_consultations(limit=200)
@@ -2377,7 +2881,7 @@ def sms_compose():
 
 
 @app.route("/sms/templates")
-@login_required
+@writer_required
 def sms_templates_view():
     return render_template(
         "sms_templates.html",

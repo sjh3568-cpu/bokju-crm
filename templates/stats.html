@@ -50,10 +50,27 @@
     <div class="stat-card tone-rose"><div class="label">입원 불가 연계율</div><div class="value" data-kpi="capture-rate">-</div><div class="sub" data-kpi="capture-sub">재단·외부시설 안내</div></div>
 </div>
 
-<div class="section-heading priority"><b>1</b><span>일별 상담 추이</span><small>상담량 변화와 입원 진행 단계를 가장 먼저 확인합니다</small></div>
+<div class="section-heading priority"><b>1</b><span>월별·연도별 상담 및 입원 추이</span><small>전체 누적 자료를 상담일 기준으로 비교합니다</small></div>
+<div class="chart-grid overview-trend-grid">
+    <div class="card chart-card trend-overview-card print-primary">
+        <h3>월별 상담·입원 추이 <small>상담 막대 · 입원 추이선 · 전환율</small></h3>
+        <div class="monthly-chart-legend" aria-label="월별 차트 범례">
+            <span><i class="legend-consult"></i>상담 건수</span>
+            <span><i class="legend-admission"></i>입원 건수</span>
+            <span><i class="legend-rate">%</i>입원 전환율</span>
+        </div>
+        <div class="chart-box"><canvas id="chart-monthly"></canvas></div>
+    </div>
+    <div class="card chart-card trend-overview-card print-primary">
+        <h3>연도별 상담·입원 건수 <small>전체 연도</small></h3>
+        <div class="chart-box"><canvas id="chart-yearly"></canvas></div>
+    </div>
+</div>
+
+<div class="section-heading priority"><b>2</b><span>일별 상담 추이</span><small>선택 기간의 상담량 변화와 입원 진행 단계를 확인합니다</small></div>
 <div class="chart-grid g-2-1">
     <div class="card chart-card print-primary">
-        <h3>일별 상담 추이 <small>건수</small></h3>
+        <h3>일별 상담 추이 <small>상담·입원 건수 및 전환율</small></h3>
         <div class="chart-box"><canvas id="chart-daily"></canvas></div>
     </div>
     <div class="card chart-card">
@@ -62,40 +79,40 @@
     </div>
 </div>
 
-<div class="section-heading priority"><b>2</b><span>질환별 상담·입원 성과</span><small>질환군별 상담 건수, 입원 건수와 전환율</small></div>
+<div class="section-heading priority"><b>3</b><span>질환별 상담·입원 성과</span><small>질환군별 상담 건수, 입원 건수와 전환율</small></div>
 <div class="chart-grid">
     <div class="card chart-card chart-card-combined chart-card-wide print-primary">
         <h3>질환군별 상담·입원 현황 <small>입원완료/상담 · 전환율</small></h3>
         <div class="combined-chart-box">
-            <div><span>질환별 상담 분포</span><div class="chart-box"><canvas id="chart-disease-group"></canvas></div></div>
-            <div><span>질환별 입원 전환율</span><div class="chart-box"><canvas id="chart-disease-performance"></canvas></div></div>
+            <div><span>질환군 상담 분포 · 항목을 선택하세요</span><div class="chart-box"><canvas id="chart-disease-group"></canvas></div></div>
+            <div><span id="disease-detail-label">세부 질환별 입원 전환율</span><div class="chart-box"><canvas id="chart-disease-performance"></canvas></div></div>
         </div>
     </div>
 </div>
 
-<div class="section-heading priority"><b>3</b><span>유입경로별 상담·입원 성과</span><small>어떤 경로가 실제 입원으로 연결되는지 비교합니다</small></div>
+<div class="section-heading priority"><b>4</b><span>유입경로별 상담·입원 성과</span><small>어떤 경로가 실제 입원으로 연결되는지 비교합니다</small></div>
 <div class="chart-grid">
     <div class="card chart-card chart-card-combined chart-card-wide print-primary">
         <h3>입원경로별 성과 <small>입원완료/상담 · 전환율</small></h3>
         <div class="combined-chart-box">
-            <div><span>경로 그룹 분포</span><div class="chart-box"><canvas id="chart-referral-type"></canvas></div></div>
-            <div><span>세부 경로 전환율</span><div class="chart-box"><canvas id="chart-referral-performance"></canvas></div></div>
+            <div><span>경로 그룹 분포 · 항목을 선택하세요</span><div class="chart-box"><canvas id="chart-referral-type"></canvas></div></div>
+            <div><span id="referral-detail-label">세부 경로 입원 전환율</span><div class="chart-box"><canvas id="chart-referral-performance"></canvas></div></div>
         </div>
     </div>
 </div>
 
-<div class="section-heading priority"><b>4</b><span>지역별 상담·입원 성과</span><small>지역별 수요와 실제 입원 전환율</small></div>
+<div class="section-heading priority"><b>5</b><span>지역별 상담·입원 성과</span><small>지역별 수요와 실제 입원 전환율</small></div>
 <div class="chart-grid">
     <div class="card chart-card chart-card-combined chart-card-wide print-primary">
         <h3>지역별 상담·입원 현황 <small>입원완료/상담 · 전환율</small></h3>
         <div class="combined-chart-box">
-            <div><span>시·도 상담 분포</span><div class="chart-box"><canvas id="chart-sido"></canvas></div></div>
-            <div><span>시·군·구 입원 전환율</span><div class="chart-box"><canvas id="chart-region-performance"></canvas></div></div>
+            <div><span>시·도 상담 분포 · 막대를 선택하세요</span><div class="chart-box"><canvas id="chart-sido"></canvas></div></div>
+            <div><span id="region-detail-label">시·군·구 입원 전환율</span><div class="chart-box"><canvas id="chart-region-performance"></canvas></div></div>
         </div>
     </div>
 </div>
 
-<div class="section-heading priority"><b>5</b><span>입원 취소 사유 분석</span><small>이탈 원인과 입원까지의 소요기간을 확인합니다</small></div>
+<div class="section-heading priority"><b>6</b><span>입원 취소 사유 분석</span><small>이탈 원인과 입원까지의 소요기간을 확인합니다</small></div>
 <div class="chart-grid">
     <div class="card chart-card print-primary">
         <h3>입원 취소 사유 <small>건수·비율</small></h3>
@@ -107,7 +124,7 @@
     </div>
 </div>
 
-<div class="section-heading priority"><b>6</b><span>요일별 상담 분석</span><small>상담 인력을 배치할 요일과 전화 집중시간</small></div>
+<div class="section-heading priority"><b>7</b><span>요일별 상담 분석</span><small>상담 인력을 배치할 요일과 전화 집중시간</small></div>
 <div class="chart-grid">
     <div class="card chart-card chart-card-combined chart-card-wide print-primary">
         <h3>요일·시간대 상담 집중도 <small>원의 크기 = 전화 건수</small></h3>
@@ -118,7 +135,7 @@
     </div>
 </div>
 
-<div class="section-heading priority"><b>7</b><span>상담사별 상담·입원 성과</span><small>상담량과 입원 전환 결과를 함께 비교합니다</small></div>
+<div class="section-heading priority"><b>8</b><span>상담사별 상담·입원 성과</span><small>상담량과 입원 전환 결과를 함께 비교합니다</small></div>
 <div class="chart-grid">
     <div class="card chart-card chart-card-wide">
         <h3>상담사별 입원 성과 <small>입원완료/상담 · 전환율</small></h3>
@@ -126,10 +143,10 @@
     </div>
 </div>
 
-<div class="section-heading priority"><b>8</b><span>환자 구성</span><small>성별·보험·연령대 분포</small></div>
+<div class="section-heading priority"><b>9</b><span>환자 구성</span><small>성별·보험·연령대 분포</small></div>
 <div class="chart-grid three">
     <div class="card chart-card"><h3>성별 <small>건수·비율</small></h3><div class="chart-box"><canvas id="chart-gender"></canvas></div></div>
-    <div class="card chart-card"><h3>보험 유형 <small>건수·비율</small></h3><div class="chart-box"><canvas id="chart-insurance"></canvas></div></div>
+    <div class="card chart-card"><h3>보험 유형 <small>상담일지 입력값 · 건수·비율</small></h3><div class="chart-box"><canvas id="chart-insurance"></canvas></div></div>
     <div class="card chart-card"><h3>연령대 <small>건수·비율</small></h3><div class="chart-box"><canvas id="chart-age"></canvas></div></div>
 </div>
 
@@ -212,6 +229,15 @@
 .chart-box { position:relative; flex:1; min-height:0; height:auto; }
 .chart-box.sm { height:auto; }
 .chart-grid > .chart-card-combined { height:290px; }
+.chart-grid > .trend-overview-card { height:330px; }
+.trend-overview-card .chart-box { min-height:0; }
+.monthly-chart-legend { display:flex; align-items:center; justify-content:center; gap:16px; min-height:18px; color:#475569; font-size:.67em; font-weight:650; }
+.monthly-chart-legend span { display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
+.monthly-chart-legend i { display:inline-block; flex:0 0 auto; }
+.monthly-chart-legend .legend-consult { width:11px; height:8px; border:1px solid #2563eb; border-radius:2px; background:rgba(37,99,235,.58); }
+.monthly-chart-legend .legend-admission { width:14px; height:0; border-top:3px solid #16a34a; position:relative; }
+.monthly-chart-legend .legend-admission::after { content:""; position:absolute; width:5px; height:5px; border:2px solid #15803d; border-radius:50%; background:#fff; left:4px; top:-5px; }
+.monthly-chart-legend .legend-rate { color:#15803d; font-size:1.05em; font-style:normal; font-weight:850; line-height:1; }
 .combined-chart-box { display:grid; grid-template-columns:0.8fr 1.2fr; gap:10px; flex:1; min-height:0; }
 .combined-chart-box.equal { grid-template-columns:1fr 1fr; }
 .chart-card-wide { grid-column:1/-1; }
@@ -339,13 +365,15 @@
         color: '#14532d',
         font: { weight: '600', size: 9 },
         formatter: v => v,
+        clamp: true,
+        clip: false,
     };
 
     function destroyChart(id) {
         if (charts[id]) { charts[id].destroy(); delete charts[id]; }
     }
 
-    function makeDoughnut(canvasId, items) {
+    function makeDoughnut(canvasId, items, onSelect = null) {
         destroyChart(canvasId);
         const ctx = document.getElementById(canvasId);
         if (!ctx) return;
@@ -364,6 +392,13 @@
             options: {
                 responsive: true, maintainAspectRatio: false,
                 cutout: '55%',
+                onClick: (event, elements) => {
+                    if (onSelect && elements.length) onSelect(items[elements[0].index].label);
+                },
+                onHover: (event, elements) => {
+                    const target = event.native && event.native.target;
+                    if (target) target.style.cursor = onSelect && elements.length ? 'pointer' : 'default';
+                },
                 plugins: {
                     legend: { position: 'bottom', labels: { boxWidth: 10, padding: 5, font: { size: 10 } } },
                     tooltip: { callbacks: { label: ctx => formatPctLabel(ctx) } },
@@ -401,18 +436,19 @@
         });
     }
 
-    function makeHBar(canvasId, items, color) {
+    function makeHBar(canvasId, items, color, onSelect = null) {
         destroyChart(canvasId);
         const ctx = document.getElementById(canvasId);
         if (!ctx) return;
         if (!items || !items.length) { drawEmpty(ctx); return; }
-        const total = items.reduce((s, x) => s + x.count, 0);
+        const sortedItems = [...items].sort((a, b) => (b.count || 0) - (a.count || 0));
+        const total = sortedItems.reduce((s, x) => s + x.count, 0);
         charts[canvasId] = new Chart(ctx, {
             type: 'bar',
             data: {
-                labels: items.map(x => x.label),
+                labels: sortedItems.map(x => x.label),
                 datasets: [{
-                    data: items.map(x => x.count),
+                    data: sortedItems.map(x => x.count),
                     backgroundColor: color || PRIMARY,
                     borderRadius: 4,
                 }],
@@ -420,7 +456,14 @@
             options: {
                 indexAxis: 'y',
                 responsive: true, maintainAspectRatio: false,
-                layout: { padding: { right: 40 } },  // datalabels용 여백
+                onClick: (event, elements) => {
+                    if (onSelect && elements.length) onSelect(sortedItems[elements[0].index].label);
+                },
+                onHover: (event, elements) => {
+                    const target = event.native && event.native.target;
+                    if (target) target.style.cursor = onSelect && elements.length ? 'pointer' : 'default';
+                },
+                layout: { padding: { top: 8, right: 76, bottom: 4 } },
                 plugins: {
                     legend: { display: false },
                     tooltip: { displayColors: false, callbacks: { label: ctx => formatPctLabel(ctx) } },
@@ -455,7 +498,7 @@
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                layout: { padding: { top: 18 } },
+                layout: { padding: { top: 32, right: 8 } },
                 plugins: {
                     legend: { display: false },
                     tooltip: { displayColors: false, callbacks: { label: ctx => formatPctLabel(ctx) } },
@@ -477,21 +520,22 @@
         const ctx = document.getElementById(canvasId);
         if (!ctx) return;
         if (!items || !items.length) { drawEmpty(ctx); return; }
+        const sortedItems = [...items].sort((a, b) => (b.total || 0) - (a.total || 0) || (b.rate || 0) - (a.rate || 0));
         charts[canvasId] = new Chart(ctx, {
             type: 'bar',
             data: {
-                labels: items.map(x => x.label),
-                datasets: [{ data: items.map(x => x.rate), backgroundColor: color || '#2563eb',
-                    borderColor: items.map(() => '#fff'), borderWidth:1, borderRadius:7,
-                    raw: items }],
+                labels: sortedItems.map(x => x.label),
+                datasets: [{ data: sortedItems.map(x => x.rate), backgroundColor: color || '#2563eb',
+                    borderColor: sortedItems.map(() => '#fff'), borderWidth:1, borderRadius:7,
+                    raw: sortedItems }],
             },
             options: {
                 indexAxis:'y', responsive:true, maintainAspectRatio:false,
-                layout:{padding:{right:72}},
+                layout:{padding:{top:8,right:90,bottom:4}},
                 plugins:{ legend:{display:false}, tooltip:{callbacks:{label:c => {
-                    const x=items[c.dataIndex]; return `입원 ${x.completed}/${x.total}건 · ${x.rate}%`;
+                    const x=sortedItems[c.dataIndex]; return `입원 ${x.completed}/${x.total}건 · ${x.rate}%`;
                 }}}, datalabels:{...barDatalabels, formatter:(v,c)=>{
-                    const x=items[c.dataIndex]; return `${x.completed}/${x.total} · ${v}%`;
+                    const x=sortedItems[c.dataIndex]; return `${x.completed}/${x.total}건 · ${v}%`;
                 }}},
                 scales:{x:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%',font:{size:9}}},y:{ticks:{autoSkip:false,font:{size:9}}}},
             },
@@ -503,11 +547,12 @@
         const ctx=document.getElementById(canvasId);
         if (!ctx) return;
         if (!items || !items.length) { drawEmpty(ctx); return; }
-        charts[canvasId]=new Chart(ctx,{type:'bar',data:{labels:items.map(x=>x.label),datasets:[{
-            data:items.map(x=>x.rate),backgroundColor:items.map(x=>x.rate>=20?'#dc2626':x.rate>=10?'#f59e0b':'#16a34a'),borderRadius:7
-        }]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,layout:{padding:{right:58}},plugins:{
-            legend:{display:false},tooltip:{callbacks:{label:c=>`${items[c.dataIndex].count}건 누락 · ${c.raw}%`}},
-            datalabels:{...barDatalabels,formatter:(v,c)=>`${items[c.dataIndex].count}건 · ${v}%`}
+        const sortedItems=[...items].sort((a,b)=>(b.rate||0)-(a.rate||0));
+        charts[canvasId]=new Chart(ctx,{type:'bar',data:{labels:sortedItems.map(x=>x.label),datasets:[{
+            data:sortedItems.map(x=>x.rate),backgroundColor:sortedItems.map(x=>x.rate>=20?'#dc2626':x.rate>=10?'#f59e0b':'#16a34a'),borderRadius:7
+        }]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,layout:{padding:{top:8,right:82,bottom:4}},plugins:{
+            legend:{display:false},tooltip:{callbacks:{label:c=>`${sortedItems[c.dataIndex].count}건 누락 · ${c.raw}%`}},
+            datalabels:{...barDatalabels,formatter:(v,c)=>`${sortedItems[c.dataIndex].count}건 · ${v}%`}
         },scales:{x:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%'}},y:{ticks:{autoSkip:false}}}}});
     }
 
@@ -564,14 +609,126 @@
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                layout: { padding: { top: 16 } },
+                layout: { padding: { top: 46, right: 12 } },
                 plugins: {
                     legend: { display: false },
-                    datalabels: lineDatalabels,
+                    tooltip: { callbacks: { label: ctx => {
+                        const p = points[ctx.dataIndex];
+                        return [`상담 ${p.count}건`, `입원 ${p.admissions || 0}건`, `전환율 ${p.rate || 0}%`];
+                    } } },
+                    datalabels: {
+                        ...lineDatalabels,
+                        display: ctx => points.length <= 18 && points[ctx.dataIndex].count > 0,
+                        textAlign: 'center',
+                        formatter: (v, ctx) => {
+                            const p = points[ctx.dataIndex];
+                            return `입원 ${p.admissions || 0}건 · ${p.rate || 0}%\n상담 ${p.count}건`;
+                        },
+                    },
                 },
                 scales: {
-                    x: { ticks: { font: { size: 10 }, maxRotation: 0 } },
+                    x: { ticks: { autoSkip: true, maxTicksLimit: 18, minRotation: 40, maxRotation: 50, font: { size: 9 } } },
                     y: { beginAtZero: true, ticks: { precision: 0, font: { size: 10 } } },
+                },
+            },
+        });
+    }
+
+    function makePeriodTrend(canvasId, items, showAdmissionLine = false) {
+        destroyChart(canvasId);
+        const ctx = document.getElementById(canvasId);
+        if (!ctx) return;
+        if (!items || !items.length) { drawEmpty(ctx); return; }
+        charts[canvasId] = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: items.map(x => x.label),
+                datasets: [
+                    {
+                        label: '상담',
+                        data: items.map(x => x.consults),
+                    backgroundColor: 'rgba(37, 99, 235, 0.58)',
+                    borderColor: '#2563eb',
+                    borderWidth: 1,
+                    borderRadius: 5,
+                    maxBarThickness: 30,
+                    order: 2,
+                    datalabels: showAdmissionLine ? {
+                        display: ctx => ctx.dataset.data[ctx.dataIndex] > 0,
+                        anchor: 'end', align: 'end', offset: 1,
+                        color: '#1d4ed8',
+                        font: { weight: '800', size: 9 },
+                        formatter: v => `${v}`,
+                        textStrokeColor: '#fff', textStrokeWidth: 4,
+                        clamp: true, clip: false,
+                    } : {},
+                    },
+                    ...(showAdmissionLine ? [{
+                        type: 'line',
+                        label: '입원',
+                        data: items.map(x => x.admissions),
+                        yAxisID: 'admissions',
+                        borderColor: '#16a34a',
+                        backgroundColor: '#ffffff',
+                        borderWidth: 3.5,
+                        pointRadius: 4.5,
+                        pointHoverRadius: 6,
+                        pointBackgroundColor: '#ffffff',
+                        pointBorderColor: '#15803d',
+                        pointBorderWidth: 2.5,
+                        tension: 0.28,
+                        order: 1,
+                        datalabels: {
+                            display: ctx => ctx.dataset.data[ctx.dataIndex] > 0,
+                            anchor: 'center',
+                            align: 'bottom',
+                            offset: 7,
+                            textAlign: 'center',
+                            color: '#166534',
+                            font: { weight: '850', size: 9, lineHeight: 1.15 },
+                            formatter: (v, ctx) => `${v}\n(${items[ctx.dataIndex].rate || 0}%)`,
+                            textStrokeColor: '#fff',
+                            textStrokeWidth: 4,
+                            clamp: true,
+                            clip: false,
+                        },
+                    }] : [{
+                        label: '입원',
+                        data: items.map(x => x.admissions),
+                        backgroundColor: '#16a34a',
+                        borderRadius: 5,
+                        maxBarThickness: 30,
+                    }]),
+                ],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                layout: { padding: { top: showAdmissionLine ? 32 : 28, right: 16, bottom: 6 } },
+                plugins: {
+                    legend: { display: !showAdmissionLine, position: 'top' },
+                    tooltip: { mode: 'index', intersect: false, callbacks: {
+                        afterBody: points => points.length ? `입원 전환율: ${items[points[0].dataIndex].rate || 0}%` : ''
+                    } },
+                    datalabels: {
+                        display: ctx => ctx.dataset.data[ctx.dataIndex] > 0,
+                        anchor: 'end',
+                        align: 'end',
+                        color: '#334155',
+                        font: { weight: '700', size: 9 },
+                        formatter: v => v,
+                        clamp: true,
+                        clip: false,
+                    },
+                },
+                scales: {
+                    x: { stacked: false, ticks: { autoSkip: false, minRotation: showAdmissionLine ? 35 : 0, maxRotation: showAdmissionLine ? 50 : 0, font: { size: 9 } }, grid: { display: false } },
+                    y: { beginAtZero: true, ticks: { precision: 0, font: { size: 9 } } },
+                    admissions: { display: showAdmissionLine, position: 'right', beginAtZero: true,
+                        suggestedMax: Math.max(5, ...items.map(x => x.admissions || 0)) * 1.2,
+                        grid: { drawOnChartArea: false },
+                        ticks: { precision: 0, color: '#15803d', font: { size: 8 } },
+                        title: { display: showAdmissionLine, text: '입원 건수', color: '#15803d', font: { size: 9, weight: '700' } } },
                 },
             },
         });
@@ -660,10 +817,12 @@
         const d = await r.json();
         renderKpi(d);
         renderComparisons(d);
+        makePeriodTrend('chart-monthly', d.monthly_trend || [], true);
+        makePeriodTrend('chart-yearly', d.yearly_trend || []);
         makeLine('chart-daily', d.daily_trend);
         // 진행 단계는 상태별 고정 색상으로 (UX 일관성)
         const STATUS_COLORS = {
-            '미정': '#94a3b8',
+            '상담완료(입원 미정)': '#94a3b8',
             '입원보류': '#f59e0b',
             '입원취소': '#dc2626',
             '입원완료': '#16a34a',
@@ -671,12 +830,37 @@
         };
         const statusItems = (d.by_status || []).filter(x => x.count > 0);
         makeStatusDoughnut('chart-status', statusItems, STATUS_COLORS);
-        makeDoughnut('chart-referral-type', d.by_referral_type);
-        makeRateBar('chart-referral-performance', d.by_referral_conversion, '#16a34a');
-        makeDoughnut('chart-disease-group', (d.by_disease_group_performance || []).map(x => ({label:x.label, count:x.total})));
-        makeRateBar('chart-disease-performance', d.by_disease_group_performance || [], '#0f766e');
-        makeHBar('chart-sido', d.by_sido, '#9333ea');
-        makeRateBar('chart-region-performance', d.by_region_performance || [], '#0891b2');
+        const referralItems = d.by_referral_type || [];
+        const referralMap = d.by_referral_conversion_by_type || {};
+        const renderReferralDetail = type => {
+            const label = document.getElementById('referral-detail-label');
+            if (label) label.textContent = `${type} 세부 경로 입원 전환율`;
+            makeRateBar('chart-referral-performance', referralMap[type] || [], '#16a34a');
+        };
+        makeDoughnut('chart-referral-type', referralItems, renderReferralDetail);
+        if (referralItems.length) renderReferralDetail(referralItems[0].label);
+        else makeRateBar('chart-referral-performance', [], '#16a34a');
+
+        const diseaseItems = (d.by_disease_group_performance || []).map(x => ({label:x.label, count:x.total}));
+        const diseaseMap = d.by_disease_performance_by_group || {};
+        const renderDiseaseDetail = group => {
+            const label = document.getElementById('disease-detail-label');
+            if (label) label.textContent = `${group} 세부 질환 입원 전환율`;
+            makeRateBar('chart-disease-performance', diseaseMap[group] || [], '#0f766e');
+        };
+        makeDoughnut('chart-disease-group', diseaseItems, renderDiseaseDetail);
+        if (diseaseItems.length) renderDiseaseDetail(diseaseItems[0].label);
+        else makeRateBar('chart-disease-performance', [], '#0f766e');
+        const sidoItems = d.by_sido || [];
+        const regionMap = d.by_region_performance_by_sido || {};
+        const renderRegionDetail = sido => {
+            const label = document.getElementById('region-detail-label');
+            if (label) label.textContent = `${sido} 시·군·구 입원 전환율`;
+            makeRateBar('chart-region-performance', regionMap[sido] || [], '#0891b2');
+        };
+        makeHBar('chart-sido', sidoItems, '#9333ea', renderRegionDetail);
+        if (sidoItems.length) renderRegionDetail(sidoItems[0].label);
+        else makeRateBar('chart-region-performance', [], '#0891b2');
         makeVBar('chart-weekday', d.by_weekday || [], '#2563eb');
         makeBubbleHeat('chart-weekday-hour', d.weekday_hour || []);
         makeHBar('chart-rejection', d.by_rejection_reason || [], '#dc2626');

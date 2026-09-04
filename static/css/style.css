@@ -546,9 +546,93 @@ fieldset.opt-box legend { white-space: nowrap; }
 .flash.success { background: #d1fae5; color: #047857; border-color: #a7f3d0; }
 
 /* Login */
-.login-wrap { max-width: 380px; margin: 60px auto; }
-.login-wrap h1 { text-align: center; margin-bottom: 24px; color: var(--primary); }
-.login-wrap .card { padding: 24px; }
+.login-page { min-height: calc(100vh - 220px); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; padding: 40px 16px; gap: 18px; }
+.login-card { width: 100%; max-width: 380px; background: var(--card-bg);
+    border: 1px solid var(--border); border-radius: 14px; padding: 32px 28px;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08); }
+.login-brand { text-align: center; margin-bottom: 26px; }
+.login-mark { width: 56px; height: 56px; margin: 0 auto 14px; border-radius: 16px;
+    background: var(--primary); color: #fff; display: flex; align-items: center;
+    justify-content: center; font-size: 1.15rem; font-weight: 800; letter-spacing: 0.02em;
+    box-shadow: 0 4px 12px rgba(20, 83, 45, 0.28); }
+.login-brand h1 { font-size: 1.28rem; color: var(--text); margin: 0; }
+.login-sub { font-size: 0.84rem; color: var(--text-light); margin: 6px 0 0; }
+.login-form { display: flex; flex-direction: column; gap: 14px; }
+.login-field { display: flex; flex-direction: column; gap: 6px; }
+.login-field span { font-size: 0.82rem; color: var(--text-light); font-weight: 600; }
+.login-field input { width: 100%; padding: 11px 13px; border: 1px solid var(--border);
+    border-radius: 9px; font-size: 0.98rem; background: #fff; box-sizing: border-box; }
+.login-field input:focus { outline: none; border-color: var(--primary-light);
+    box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.12); }
+.login-submit { width: 100%; padding: 12px; font-size: 1rem; margin-top: 4px; }
+.login-note { text-align: center; font-size: 0.82rem; color: var(--text-light);
+    margin: 20px 0 0; padding-top: 18px; border-top: 1px solid var(--border); }
+.login-footnote { font-size: 0.78rem; color: var(--text-light); text-align: center; margin: 0; }
+
+/* 조회(viewer) 전용 계정 — 쓰기 버튼 숨김. 백엔드(_enforce_readonly_viewer)가 실제 차단하고,
+   여기서는 UI에서 등록·수정·삭제·발송 컨트롤을 감춰 혼동을 없앤다. */
+.role-viewer a[href="/consult/new"],
+.role-viewer a[href$="/edit"],
+.role-viewer a[href^="/sms"],
+.role-viewer .pt-actions,
+.role-viewer .bulk-toolbar,
+.role-viewer #bulk-status-apply,
+.role-viewer #bulk-edit,
+.role-viewer #bulk-delete,
+.role-viewer #quick-filter-edit,
+.role-viewer #bl-save,
+.role-viewer #cm-add,
+.role-viewer .tl-del,
+.role-viewer .adm-status-btn,
+.role-viewer .discharge-interview-toggle,
+.role-viewer .recovery-call-toggle,
+.role-viewer .ib-callback-done,
+.role-viewer .ib-done,
+.role-viewer .ib-del,
+.role-viewer .status-tier,
+.role-viewer .status-savebar,
+.role-viewer .ae-add,
+.role-viewer .status-save,
+.role-viewer .ae-back,
+.role-viewer .ae-del,
+.role-viewer .rm-back-btn,
+.role-viewer .rm-away-btn,
+.role-viewer .rm-dis,
+.role-viewer .rm-move,
+.role-viewer .rm-room-save,
+.role-viewer .rm-back-cancel,
+.role-viewer .wd-away-btn,
+.role-viewer .wd-dis,
+.role-viewer .wd-back,
+.role-viewer .wd-af-save,
+.role-viewer .wd-af-cancel,
+.role-viewer .wd-ad-save { display: none !important; }
+
+/* Role chip (header) */
+.role-chip { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 8px;
+    background: rgba(255, 255, 255, 0.18); color: #fff; font-size: 0.72em; font-weight: 600; }
+
+/* User management */
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
+.badge-ok { background: #d1fae5; color: #047857; }
+.badge-off { background: #f1f5f9; color: var(--text-light); }
+.users-add { margin-bottom: 18px; }
+.users-add h3 { margin: 0 0 12px; font-size: 1rem; }
+.users-add-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.users-add-form label { display: flex; flex-direction: column; gap: 5px; font-size: 0.8rem;
+    color: var(--text-light); font-weight: 600; }
+.users-add-form input, .users-add-form select { padding: 8px 10px; border: 1px solid var(--border);
+    border-radius: 7px; font-size: 0.92rem; }
+.users-tbl td { vertical-align: middle; }
+.users-tbl .cell-form { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
+.users-tbl .cell-form input[type=text] { padding: 6px 9px; border: 1px solid var(--border);
+    border-radius: 7px; font-size: 0.9em; max-width: 130px; }
+.users-tbl .cell-form select { padding: 6px 8px; border: 1px solid var(--border);
+    border-radius: 7px; font-size: 0.9em; }
+.users-tbl .user-actions { white-space: nowrap; }
+.users-tbl .user-actions .cell-form { margin-right: 6px; }
+.user-inactive { opacity: 0.55; }
 
 /* Empty / Note */
 .empty { padding: 28px 12px; text-align: center; color: var(--text-light); }

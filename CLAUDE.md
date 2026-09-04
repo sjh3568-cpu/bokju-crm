@@ -25,14 +25,26 @@ cp .env.example .env       # APP_PASSWORD, SECRET_KEY 입력
 python app.py              # http://127.0.0.1:8003
 ```
 
-기본 계정: ID `admin` / PW = `.env`의 `APP_PASSWORD`
+계정: 최초 부팅 시 `config.SEED_USERS` 6명 자동 생성 (어드민·관리자 + 상담사 4명).
+초기 비밀번호는 `.env`의 `APP_PASSWORD`, 이후 어드민이 `/admin/users`에서 개별 변경.
+`admin`은 비번 분실 대비 break-glass 계정 (매 부팅 시 `APP_PASSWORD`로 동기화).
+
+**역할 3단계** — viewer(조회) < staff(상담사) < admin(어드민):
+- **어드민**: 전권 (사용자 관리·CSV 내보내기·환자 병합·빠른필터 편집)
+- **상담사**: 상담 입력·수정·조회 + 재원·문자 + 통계·월간보고서 (계정 관리 불가)
+- **조회**: 읽기 전용 공통 계정 (병동 등 타 부서용). 대시보드·재원·상담·환자·통계·보고서
+  열람 O, 모든 등록·수정·발송·삭제는 차단.
+
+데코레이터: `auth.writer_required`(상담사↑, 쓰기 폼) / `auth.admin_required`(어드민 전용).
+조회 계정의 모든 쓰기는 `app._enforce_readonly_viewer`(before_request)에서 일괄 403.
+UI 쓰기 버튼은 `<body class="role-viewer">` + style.css의 `.role-viewer …{display:none}`로 숨김.
 
 ## 구조
 
 ```
 app.py             Flask 진입점, 모든 라우트, API
 models.py          SQLite 스키마 + 마이그레이션 (_ensure_columns) + JSON 직렬화
-auth.py            인증 + @login_required / @admin_required
+auth.py            인증 + @login_required / @writer_required / @admin_required (역할 3단계)
 config.py          상수 (보험·시도/시군구·병명 LAYOUT·입원경로 등)
 templates/         base.html, login, dashboard, consult_form/list/detail, patient_detail, error
 static/css/        style.css (Pretendard, 4 그룹 박스, dx-stretch 등)
@@ -47,16 +59,21 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
 | 경로 | 동작 |
 |---|---|
 | `GET /login` `POST /login` | 인증 |
+| `GET /admin/users` (+ create/update/password/active/delete POST) | **사용자 관리** (어드민 전용) — 계정 추가·비번·역할·활성/삭제 |
 | `GET /` | 대시보드 (이번달 카드 + 오늘 등록 + 7일 추이) |
 | `GET /consult/new` `POST /api/consult` | 상담일지 등록 |
 | `GET /consult/<id>` `GET /consult/<id>/edit` `POST /api/consult/<id>` | 상세 / 수정 |
 | `GET /consultations` `GET /consultations.csv` | 목록 / CSV (admin) |
 | `GET /patients/<id>` | 환자 상세 + 생애주기 타임라인 |
-| `GET /lifecycle` | 환자 생애주기 보드 (단계별 컬럼) |
+| `GET /ward` | **재원 관리** — 외진 중 · 재원 환자 · 입원일 미확정 3섹션 |
+| `POST /api/consult/<id>/admit` | 입원일 확정 (이 시점부터 재원 명부 + D-day 시작) |
+| `GET /lifecycle` | → `/ward` 리다이렉트 (구 생애주기 보드는 `/lifecycle/board`) |
 | `GET /inbox` | 통합 인박스 (재연락·인바운드·입원/퇴원 임박) |
 | `GET /sms` `GET /sms/templates` | 문자 전송 / 템플릿 관리 |
 | `POST /api/communication` `POST /api/webhook/kakao` | 커뮤니케이션 기록 / 카카오 인바운드 |
 | `POST /api/patient/<id>/{stage,blacklist}` `POST /api/patient/<id>/lifecycle/event` | 생애주기·블랙리스트 |
+| `POST /api/consult/<id>/admission-event` `POST /api/admission-event/<id>/return` | 외진 나감·복귀 (出/歸 페어링) |
+| `POST /api/consult/<id>/discharge` | 퇴원완료·입원연장 (외진 중이면 거부) |
 | `POST /api/sms/{send,template}` | 문자 발송·템플릿 |
 | `GET /api/autocomplete/{patient,hospital,diagnosis}` | 자동완성 |
 | `GET /healthz` | `{"ok": true}` |

@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="/static/css/style.css">
     {% block head_extra %}{% endblock %}
 </head>
-<body>
+<body class="{% if current_user and current_user.role == 'viewer' %}role-viewer{% endif %}">
     <header>
         <div class="container">
             <div class="header-inner">
@@ -16,16 +16,23 @@
                 {% if current_user %}
                 <nav>
                     <a href="/" {% if request.path == '/' %}class="active"{% endif %}>대시보드</a>
+                    {% if current_user.role != 'viewer' %}
                     <a href="/consult/new" {% if request.path == '/consult/new' %}class="active"{% endif %}>새 상담</a>
+                    {% endif %}
                     <a href="/consultations" {% if request.path.startswith('/consultations') %}class="active"{% endif %}>상담 목록</a>
-                    <a href="/lifecycle" {% if request.path.startswith('/lifecycle') or request.path.startswith('/patients') %}class="active"{% endif %}>생애주기</a>
+                    <a href="/ward" {% if request.path.startswith('/ward') or request.path.startswith('/patients') %}class="active"{% endif %}>재원 관리</a>
+                    {% if current_user.role != 'viewer' %}
                     <a href="/sms" {% if request.path.startswith('/sms') %}class="active"{% endif %}>문자</a>
+                    {% endif %}
                     <a href="/stats" {% if request.path.startswith('/stats') %}class="active"{% endif %}>통계</a>
                     <a href="/report/monthly" {% if request.path.startswith('/report') %}class="active"{% endif %}>월간보고서</a>
+                    {% if current_user.role == 'admin' %}
+                    <a href="/admin/users" {% if request.path.startswith('/admin/users') %}class="active"{% endif %}>사용자 관리</a>
+                    {% endif %}
                     <a href="/help" {% if request.path.startswith('/help') %}class="active"{% endif %} title="사용 매뉴얼" style="margin-left:auto; opacity:0.7">❓</a>
                 </nav>
                 <span class="user-tag">
-                    {{ current_user.display_name }}
+                    {{ current_user.display_name }}<small class="role-chip">{{ ROLE_LABELS.get(current_user.role, current_user.role) }}</small>
                     <form action="/logout" method="post" style="display:inline">
                         <button class="logout-btn" type="submit">로그아웃</button>
                     </form>

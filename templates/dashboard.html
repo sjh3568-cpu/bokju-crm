@@ -714,7 +714,11 @@
     margin-bottom:6px; padding:6px 8px; background:#f8fafc; border-radius:6px; }
 .dash-group-title strong { color:var(--primary); }
 .dash-group-title span { color:var(--text-light); font-size:0.84em; font-weight:600; }
-.dash-two-col { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); gap:12px; margin-top:12px; }
+.dash-two-col { display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1fr); gap:12px;
+    margin-top:12px; align-items:stretch; }
+/* 그리드 안에서는 .card + .card 의 세로 마진이 오른쪽 칼럼만 밀어내므로 해제 —
+   좌우 카드가 같은 행 높이로 늘어나 상하단이 정확히 맞는다. */
+.dash-two-col > .card { margin-top:0; height:100%; }
 .dash-table th, .dash-table td { padding:7px 9px; font-size:0.84em; }
 .dash-dx { max-width:210px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .dash-note { max-width:260px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#475569; }

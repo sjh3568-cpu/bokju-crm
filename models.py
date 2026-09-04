@@ -14,12 +14,14 @@ JSON_FIELDS는 다중 체크박스 결과를 JSON 배열 텍스트로 저장. �
 """
 import json
 import os
+import re
 import sqlite3
 from datetime import date, datetime, timedelta
 
 from werkzeug.security import generate_password_hash
 
-from config import DIAGNOSIS_SEED, HOSPITAL_ALIASES, SOURCE_HOSPITAL_SEED
+from config import (DIAGNOSIS_SEED, HOSPITAL_ALIASES, SOURCE_HOSPITAL_SEED,
+                    STAGE_STALE_DAYS)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "bokju.db")
 _CHRONIC_DISEASE_PREFIXES = (
@@ -73,9 +75,72 @@ def _ensure_columns(conn, table: str, columns: dict[str, str]):
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
 
 
+def _migration_done(conn, key: str) -> bool:
+    """1회성 마이그레이션 실행 여부. app_meta에 표식이 남으면 다시 돌지 않는다."""
+    row = conn.execute("SELECT 1 FROM app_meta WHERE key = ?", (key,)).fetchone()
+    return row is not None
+
+
+def _mark_migration_done(conn, key: str):
+    conn.execute(
+        "INSERT OR REPLACE INTO app_meta (key, value, updated_at) "
+        "VALUES (?, '1', CURRENT_TIMESTAMP)", (key,),
+    )
+
+
+def _migrate_legacy_stages(conn):
+    """폐지된 생애주기 단계값(응급치료·회복기·비회복기) → '입원'으로 이관 (1회성).
+    lifecycle_stage_changed_at은 건드리지 않는다 — 단계 진입일(재원 시작)이 곧
+    정체·평균 재원일 계산의 기준이라 여기서 리셋되면 통계가 망가진다.
+    """
+    from config import LEGACY_STAGE_MAP
+    for old_stage, new_stage in LEGACY_STAGE_MAP.items():
+        conn.execute(
+            "UPDATE patients SET lifecycle_stage = ? WHERE lifecycle_stage = ?",
+            (new_stage, old_stage),
+        )
+
+
+def _migrate_pair_legacy_returns(conn):
+    """기존 '복귀' 이벤트 행 → 직전 나감 이벤트의 returned_at으로 이관 (1회성).
+    과거 데이터도 '미복귀' 판정에 바로 쓰이게 한다. 복귀 행 자체는 이력으로 보존.
+
+    ※ 반드시 1회만 돈다 — 복귀 처리는 지금도 이력용 '복귀' 행을 계속 남기므로
+      매번 돌면 대상 집합이 무한히 늘고, 날짜 없이 기록한 외진 건이 몇 달 전
+      복귀 행과 짝지어져 조용히 닫힌다(외진 중 목록·퇴원 차단에서 사라짐).
+    """
+    if _migration_done(conn, "pair_legacy_returns"):
+        return
+    rows = conn.execute(
+        "SELECT id, consultation_id, event_date, created_by FROM admission_events "
+        "WHERE event_type = '복귀' ORDER BY consultation_id, "
+        "(event_date IS NULL OR event_date = '') ASC, event_date ASC, id ASC"
+    ).fetchall()
+    for r in rows:
+        conn.execute(
+            """UPDATE admission_events SET returned_at = ?, returned_by = ?
+               WHERE id = (
+                 SELECT id FROM admission_events
+                 WHERE consultation_id = ?
+                   AND event_type IN ('응급전원', '모병원 외래치료')
+                   AND returned_at IS NULL
+                   AND (event_date IS NULL OR ? IS NULL OR event_date <= ?)
+                 ORDER BY (event_date IS NULL OR event_date = '') ASC,
+                          event_date DESC, id DESC LIMIT 1)""",
+            (r["event_date"], r["created_by"], r["consultation_id"],
+             r["event_date"], r["event_date"]),
+        )
+    _mark_migration_done(conn, "pair_legacy_returns")
+
+
 def init_db():
     conn = get_db()
     conn.executescript("""
+        CREATE TABLE IF NOT EXISTS app_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
         CREATE TABLE IF NOT EXISTS patients (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
@@ -421,11 +486,21 @@ def init_db():
         "external_referral": "TEXT",      # JSON 배열 (경도요양병원/복주요양원/타 요양병원/타 요양원/기타)
         "external_referral_note": "TEXT", # 연계 자유 메모
         # ── 대시보드 follow-up 추적 (2026-05-26) ──
-        # 회복기→비회복기 전환 D-15 알림에 대한 보호자 전화 완료 시각.
+        # 회복기→비회복기 전환 D-30 알림에 대한 보호자 전화 완료 시각.
         "recovery_call_at": "DATETIME",
         # 퇴원예정 D-30 환자의 1차 병동 면담 완료 시각.
         "discharge_interview_at": "DATETIME",
     })
+    # ─── 외진(응급전원·모병원 외래치료) 出/歸 페어링 ───
+    # 나감 이벤트 1행이 복귀일까지 들고 있는다 → '지금 나가 있는 환자'를
+    # returned_at IS NULL 한 조건으로 판정. 별도 '복귀' 행에 의존하지 않는다.
+    _ensure_columns(conn, "admission_events", {
+        "returned_at": "DATE",      # 복귀일 (NULL = 아직 병원 밖)
+        "returned_by": "TEXT",      # 복귀 처리한 상담사
+        "stage_before": "TEXT",     # 나가기 직전 생애주기 단계 → 복귀 시 원상복구
+    })
+    _migrate_pair_legacy_returns(conn)
+    _migrate_legacy_stages(conn)
     _ensure_columns(conn, "source_hospitals", {
         "kind": "TEXT",           # 종별: 상급종합/종합병원/병원/요양병원 등
         "address": "TEXT",
@@ -625,6 +700,103 @@ def ensure_admin_user(username: str, password: str, display_name: str | None = N
     )
     conn.commit()
     conn.close()
+
+
+def ensure_seed_user(username: str, display_name: str, role: str, password: str):
+    """시드 계정을 없을 때만 생성. 이미 있으면 건드리지 않아 설정된 비번·역할이 보존된다."""
+    conn = get_db()
+    exists = conn.execute(
+        "SELECT 1 FROM users WHERE username = ?", (username,)
+    ).fetchone()
+    if not exists:
+        conn.execute(
+            "INSERT INTO users (username, display_name, password_hash, role) "
+            "VALUES (?, ?, ?, ?)",
+            (username, display_name, generate_password_hash(password), role),
+        )
+        conn.commit()
+    conn.close()
+
+
+def list_users():
+    """전체 계정 목록 (역할 서열 내림차순 → 이름 순)."""
+    conn = get_db()
+    rows = conn.execute(
+        """
+        SELECT * FROM users
+        ORDER BY CASE role WHEN 'admin' THEN 3 WHEN 'manager' THEN 2 ELSE 1 END DESC,
+                 display_name COLLATE NOCASE
+        """
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_user_by_id(user_id: int):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def create_user(username: str, display_name: str, role: str, password: str):
+    """새 계정 생성. 중복 아이디면 ValueError."""
+    conn = get_db()
+    if conn.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone():
+        conn.close()
+        raise ValueError("이미 존재하는 아이디입니다.")
+    conn.execute(
+        "INSERT INTO users (username, display_name, password_hash, role) "
+        "VALUES (?, ?, ?, ?)",
+        (username, display_name or username, generate_password_hash(password), role),
+    )
+    conn.commit()
+    conn.close()
+
+
+def set_user_password(user_id: int, password: str):
+    conn = get_db()
+    conn.execute(
+        "UPDATE users SET password_hash = ? WHERE id = ?",
+        (generate_password_hash(password), user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_user(user_id: int, display_name: str, role: str):
+    conn = get_db()
+    conn.execute(
+        "UPDATE users SET display_name = ?, role = ? WHERE id = ?",
+        (display_name, role, user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def set_user_active(user_id: int, active: bool):
+    conn = get_db()
+    conn.execute(
+        "UPDATE users SET active = ? WHERE id = ?", (1 if active else 0, user_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def delete_user(user_id: int):
+    conn = get_db()
+    conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+
+
+def count_active_admins() -> int:
+    conn = get_db()
+    n = conn.execute(
+        "SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND active = 1"
+    ).fetchone()["n"]
+    conn.close()
+    return n
 
 
 def get_user(username: str):
@@ -927,7 +1099,7 @@ def _build_consult_where(*, date_from=None, date_to=None, insurance=None, q=None
                          consult_channel=None, referral_type=None,
                          admission_type=None, consult_result=None, blacklist=None,
                          gender=None, age_min=None, age_max=None,
-                         guardian=None, hospital=None,
+                         guardian=None, hospital=None, q_scope=None,
                          stay_period=None):
     """list_consultations / count_consultations 공용 WHERE 절 빌더 → (where_sql, vals)."""
     where, vals = [], []
@@ -987,9 +1159,23 @@ def _build_consult_where(*, date_from=None, date_to=None, insurance=None, q=None
         where.append("c.referral_source_type LIKE ?")
         vals.append(f'%"{referral_type}"%')
     if q:
-        where.append("(p.name LIKE ? OR c.source_hospital LIKE ?)")
+        # 기본(상담목록)은 환자명·모병원 — 목록 화면에서 이 입력칸은 환자명 컬럼
+        # 헤더에 붙어 있어 의미를 넓히면 컬럼 필터가 어긋난다.
+        # 재원 관리(q_scope='ward')만 검색창 안내대로 호실·연락처까지 넓힌다.
         like = f"%{q}%"
-        vals.extend([like, like])
+        if q_scope == "ward":
+            digits = re.sub(r"\D", "", q)
+            cols = ["p.name LIKE ?", "c.room_number LIKE ?", "p.guardian_phone LIKE ?"]
+            qvals = [like, like, like]
+            if digits:
+                # 하이픈 없이 친 번호도 잡는다 (01012345678 → 010-1234-5678)
+                cols.append("REPLACE(REPLACE(p.guardian_phone, '-', ''), ' ', '') LIKE ?")
+                qvals.append(f"%{digits}%")
+            where.append("(" + " OR ".join(cols) + ")")
+            vals.extend(qvals)
+        else:
+            where.append("(p.name LIKE ? OR c.source_hospital LIKE ?)")
+            vals.extend([like, like])
     # 컬럼별 필터 — 성별·나이 범위·보호자·모병원
     if gender:
         where.append("p.gender = ?"); vals.append(gender)
@@ -1037,7 +1223,7 @@ def list_consultations(*, date_from=None, date_to=None,
                        consult_channel=None, referral_type=None,
                        admission_type=None, consult_result=None, blacklist=None,
                        gender=None, age_min=None, age_max=None,
-                       guardian=None, hospital=None,
+                       guardian=None, hospital=None, q_scope=None,
                        stay_period=None,
                        sort=None, sort_dir=None,
                        limit=200, offset=0):
@@ -1053,7 +1239,7 @@ def list_consultations(*, date_from=None, date_to=None,
         referral_type=referral_type, admission_type=admission_type,
         consult_result=consult_result, blacklist=blacklist,
         gender=gender, age_min=age_min, age_max=age_max,
-        guardian=guardian, hospital=hospital,
+        guardian=guardian, hospital=hospital, q_scope=q_scope,
         stay_period=stay_period,
     )
     sort_col = _SORT_COLUMNS.get(sort or "date", "c.consult_date")
@@ -2318,14 +2504,59 @@ def _sort_desc(d: dict) -> list[dict]:
 
 
 def _daily_trend(rows):
-    """consult_date별 건수. 이미 SQL에서 정렬되어 들어옴."""
+    """상담일별 상담·입원 건수와 전환율."""
     by_day = {}
     for r in rows:
         d = (r["consult_date"] or "")[:10]
         if not d:
             continue
-        by_day[d] = by_day.get(d, 0) + 1
-    return [{"date": d, "count": n} for d, n in sorted(by_day.items())]
+        item = by_day.setdefault(d, {"count": 0, "admissions": 0})
+        item["count"] += 1
+        if (r["admission_status"] or "").strip() in ("입원완료", "퇴원완료"):
+            item["admissions"] += 1
+    return [{
+        "date": d,
+        "count": item["count"],
+        "admissions": item["admissions"],
+        "rate": round(100.0 * item["admissions"] / item["count"], 1) if item["count"] else 0.0,
+    } for d, item in sorted(by_day.items())]
+
+
+def _consult_admission_trend(rows, period="month", limit=None):
+    """상담일 기준 상담 건수와 최종 입원 성사 건수를 월/연도별로 집계."""
+    buckets = {}
+    key_len = 7 if period == "month" else 4
+    for row in rows:
+        key = (row["consult_date"] or "")[:key_len]
+        if len(key) != key_len:
+            continue
+        item = buckets.setdefault(key, {"label": key, "consults": 0, "admissions": 0})
+        item["consults"] += 1
+        if (row["admission_status"] or "").strip() in ("입원완료", "퇴원완료"):
+            item["admissions"] += 1
+    if not buckets:
+        return []
+
+    keys = sorted(buckets)
+    if period == "month":
+        start_year, start_month = map(int, keys[0].split("-"))
+        end_year, end_month = map(int, keys[-1].split("-"))
+        continuous = []
+        year, month = start_year, start_month
+        while (year, month) <= (end_year, end_month):
+            continuous.append(f"{year:04d}-{month:02d}")
+            year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+        keys = continuous[-limit:] if limit else continuous
+    else:
+        start_year, end_year = int(keys[0]), int(keys[-1])
+        keys = [str(year) for year in range(start_year, end_year + 1)]
+
+    result = []
+    for key in keys:
+        item = buckets.get(key, {"label": key, "consults": 0, "admissions": 0})
+        item["rate"] = round(100.0 * item["admissions"] / item["consults"], 1) if item["consults"] else 0.0
+        result.append(item)
+    return result
 
 
 def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
@@ -2358,6 +2589,10 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
     """
     conn = get_db()
     rows = conn.execute(sql, vals).fetchall()
+    all_period_rows = conn.execute(
+        "SELECT consult_date, admission_status FROM consultations "
+        "WHERE consult_date IS NOT NULL AND TRIM(consult_date) != ''"
+    ).fetchall()
     conn.close()
 
     from config import ADMISSION_STATUS_ALL, CONSULT_RESULTS
@@ -2366,16 +2601,17 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
     planned = sum(1 for r in rows if (r["planned_admission_date"] or "").strip())
 
     # 입원 진행 단계 — NULL/빈값('미정')은 입원 단계 미진입. 퇴원완료 포함.
+    undecided_status = "상담완료(입원 미정)"
     status_counts = {s: 0 for s in ADMISSION_STATUS_ALL}
-    status_counts["미정"] = 0
+    status_counts[undecided_status] = 0
     for r in rows:
         s = (r["admission_status"] or "").strip()
-        status_counts[s if s in ADMISSION_STATUS_ALL else "미정"] += 1
+        status_counts[s if s in ADMISSION_STATUS_ALL else undecided_status] += 1
     # 입원완료 + 퇴원완료 = 입원 성사
     completed = status_counts["입원완료"] + status_counts["퇴원완료"]
     cancelled = status_counts["입원취소"]
     # 진행중 = 미정 + 입원보류 (입원/취소로 미확정)
-    pending = status_counts["미정"] + status_counts["입원보류"]
+    pending = status_counts[undecided_status] + status_counts["입원보류"]
     conversion_rate = round(100.0 * completed / total, 1) if total else 0.0
     active_days = len({(r["consult_date"] or "")[:10] for r in rows
                        if (r["consult_date"] or "")[:10]})
@@ -2415,6 +2651,20 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
     # 정해진 순서대로
     age_order = [name for name, _ in _AGE_BUCKETS] + ["미상"]
     by_age = [{"label": k, "count": by_age_raw.get(k, 0)} for k in age_order if by_age_raw.get(k)]
+
+    insurance_counts = {}
+    for row in rows:
+        label = (row["insurance_type"] or "").strip()
+        if not label:
+            continue
+        normalized = "건강보험" if label in ("보험", "건강보험") else label
+        insurance_counts[normalized] = insurance_counts.get(normalized, 0) + 1
+
+    gender_counts = {
+        "남": sum(1 for r in rows if (r["gender"] or "").strip() == "M"),
+        "여": sum(1 for r in rows if (r["gender"] or "").strip() == "F"),
+        "미상": sum(1 for r in rows if (r["gender"] or "").strip() not in ("M", "F")),
+    }
 
     sigungu_top = _sort_desc(_count_simple(rows, "residence_sigungu"))[:10]
 
@@ -2483,6 +2733,80 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
                   for label, count in totals.items()]
         return sorted(result, key=lambda x: (-x["total"], -x["rate"], x["label"]))[:limit]
 
+    def _region_performance_by_sido():
+        grouped = {}
+        for row in rows:
+            sido = (row["residence_sido"] or "").strip()
+            sigungu = (row["residence_sigungu"] or "").strip()
+            if not sido or not sigungu:
+                continue
+            item = grouped.setdefault(sido, {}).setdefault(sigungu, {"total": 0, "completed": 0})
+            item["total"] += 1
+            if (row["admission_status"] or "").strip() in ("입원완료", "퇴원완료"):
+                item["completed"] += 1
+        result = {}
+        for sido, items in grouped.items():
+            values = [{
+                "label": sigungu,
+                "total": counts["total"],
+                "completed": counts["completed"],
+                "rate": round(100.0 * counts["completed"] / counts["total"], 1),
+            } for sigungu, counts in items.items()]
+            result[sido] = sorted(values, key=lambda x: (-x["total"], -x["rate"], x["label"]))
+        return result
+
+    def _referral_performance_by_type():
+        grouped = {}
+        for row in rows:
+            try:
+                types = json.loads(row["referral_source_type"] or "[]")
+                details = json.loads(row["referral_source_detail"] or "[]")
+            except (json.JSONDecodeError, TypeError):
+                continue
+            is_completed = (row["admission_status"] or "").strip() in ("입원완료", "퇴원완료")
+            for type_label in types or []:
+                if not type_label:
+                    continue
+                for detail in (details or ["세부경로 미입력"]):
+                    if not detail:
+                        continue
+                    item = grouped.setdefault(type_label, {}).setdefault(detail, {"total": 0, "completed": 0})
+                    item["total"] += 1
+                    if is_completed:
+                        item["completed"] += 1
+        return _nested_performance(grouped)
+
+    def _disease_performance_by_group():
+        grouped = {}
+        for row in rows:
+            try:
+                labels = json.loads(row["diseases"] or "[]")
+            except (json.JSONDecodeError, TypeError):
+                labels = []
+            is_completed = (row["admission_status"] or "").strip() in ("입원완료", "퇴원완료")
+            for label in labels or []:
+                for group, members in DISEASES_GROUPS.items():
+                    if label == group or label in members:
+                        detail = "세부질환 미입력" if label == group else label
+                        item = grouped.setdefault(group, {}).setdefault(detail, {"total": 0, "completed": 0})
+                        item["total"] += 1
+                        if is_completed:
+                            item["completed"] += 1
+                        break
+        return _nested_performance(grouped)
+
+    def _nested_performance(grouped):
+        result = {}
+        for parent, children in grouped.items():
+            items = [{
+                "label": label,
+                "total": counts["total"],
+                "completed": counts["completed"],
+                "rate": round(100.0 * counts["completed"] / counts["total"], 1),
+            } for label, counts in children.items()]
+            result[parent] = sorted(items, key=lambda x: (-x["total"], -x["rate"], x["label"]))
+        return result
+
     def _disease_group_performance():
         totals = {group: 0 for group in DISEASES_GROUPS}
         completes = {group: 0 for group in DISEASES_GROUPS}
@@ -2528,6 +2852,7 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
         "질환명": sum(1 for r in rows if (r["diseases"] or "").strip() in ("", "[]")),
     }
 
+
     # 회복기 불가 → 외부 시설 연계 (수요 캡처율 KPI)
     # "입원 불가/일반재활 안내" 상태 = 입원취소 OR 상담취소 (회복기 입원으로 안 이어진 케이스)
     # 그 중 external_referral 기록된 비율 = 같은 재단·외부 시설로 안내한 비율
@@ -2561,14 +2886,17 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
         },
         # 진행 단계는 정해진 순서 그대로 유지 (도넛/막대 안정 표기). 퇴원완료 포함.
         "by_status": [{"label": s, "count": status_counts[s]}
-                      for s in (["미정"] + ADMISSION_STATUS_ALL)],
+                      for s in ([undecided_status] + ADMISSION_STATUS_ALL)],
         # 상담 진행 단계 (Tier 1)
         "by_consult_result": [{"label": s, "count": result_counts[s]} for s in CONSULT_RESULTS],
         "by_source_hospital": by_hospital,
         "by_rejection_reason": by_reason,
         "by_referral_conversion": _channel_conversion_table(rows)["details"][:10],
+        "by_referral_conversion_by_type": _referral_performance_by_type(),
         "by_disease_group_performance": _disease_group_performance(),
+        "by_disease_performance_by_group": _disease_performance_by_group(),
         "by_region_performance": _performance("residence_sigungu"),
+        "by_region_performance_by_sido": _region_performance_by_sido(),
         "by_hospital_performance": _performance("source_hospital"),
         "by_counselor_performance": _performance("counselor"),
         "by_admission_lead": [{"label": label, "count": count}
@@ -2588,12 +2916,15 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
         "by_sigungu_top": sigungu_top,
         "by_disease": _sort_desc(by_disease_individual)[:15],
         "by_disease_group": [{"label": k, "count": v} for k, v in by_group.items() if v],
-        "by_insurance": _sort_desc(_count_simple(rows, "insurance_type")),
+        "by_insurance": _sort_desc(insurance_counts),
         "by_channel": _sort_desc(_count_simple(rows, "consult_channel")),
         "by_counselor": _sort_desc(_count_simple(rows, "counselor")),
         "by_age": by_age,
-        "by_gender": _sort_desc(_count_simple(rows, "gender")),
+        "by_gender": _sort_desc({label: count for label, count in gender_counts.items() if count}),
         "daily_trend": _daily_trend(rows),
+        # 기본 조회가 한 달이어도 장기 흐름을 볼 수 있도록 전체 누적 데이터를 사용한다.
+        "monthly_trend": _consult_admission_trend(all_period_rows, "month", limit=18),
+        "yearly_trend": _consult_admission_trend(all_period_rows, "year"),
         "by_weekday": [{"label": name, "count": weekday_counts[name]}
                        for name in weekday_names],
         "by_phone_hour": [{"label": name, "count": count}
@@ -2924,13 +3255,13 @@ def lifecycle_board(*, q=None, period_days=None, stages=None, disease_group=None
         where.append(f"p.lifecycle_stage IN ({placeholders})")
         vals += list(stages)
     if stale_only:
-        # 정체 90일+ (퇴원 단계는 종료 케이스라 제외)
-        where.append(
-            "(p.lifecycle_stage_changed_at IS NOT NULL "
-            " AND p.lifecycle_stage_changed_at < datetime('now', '-90 days') "
-            " AND p.lifecycle_stage != ?)"
-        )
-        vals.append("퇴원")
+        # 정체 = 단계별 기준일 초과 (상담 7일·입원대기 14일). 입원·퇴원은 대상 아님.
+        parts = []
+        for stg, days in STAGE_STALE_DAYS.items():
+            parts.append("(p.lifecycle_stage = ? AND p.lifecycle_stage_changed_at IS NOT NULL "
+                         " AND p.lifecycle_stage_changed_at < datetime('now', ?))")
+            vals += [stg, f"-{int(days)} days"]
+        where.append("(" + " OR ".join(parts) + ")" if parts else "0")
     if new_30d_only:
         # 최근 30일 이내 단계 진입 (changed_at 기준)
         where.append(
@@ -2938,9 +3269,12 @@ def lifecycle_board(*, q=None, period_days=None, stages=None, disease_group=None
             "AND p.lifecycle_stage_changed_at >= datetime('now', '-30 days')"
         )
     if period_days and period_days > 0:
-        # 최근 N일 이내 단계 변경 OR 최근 상담 (보호: 변경 시점 없는 레거시는 포함)
+        # 최근 N일 이내 단계 변경 OR 최근 상담 (보호: 변경 시점 없는 레거시는 포함).
+        # '입원'은 기간 필터에서 제외한다 — 반년 전에 입원했어도 지금 병상에 있는
+        # 환자다. 기간 필터의 목적은 오래된 상담 케이스 정리이지 재원자 숨기기가 아니다.
         where.append(
-            "(p.lifecycle_stage_changed_at IS NULL "
+            "(p.lifecycle_stage = '입원' "
+            " OR p.lifecycle_stage_changed_at IS NULL "
             " OR p.lifecycle_stage_changed_at >= datetime('now', ?) "
             " OR EXISTS (SELECT 1 FROM consultations c2 WHERE c2.patient_id = p.id "
             "            AND c2.consult_date >= date('now', ?)))"
@@ -2994,9 +3328,16 @@ def lifecycle_board(*, q=None, period_days=None, stages=None, disease_group=None
             LIMIT 1
         )
         {where_sql}
-        ORDER BY (lc.consult_date IS NULL OR lc.consult_date = '') ASC,
+        -- 단계 우선순위를 1차 정렬키로 둔다. 보드 카드는 app.py에서 단계별로
+        -- 다시 정렬하므로 화면 순서는 그대로이고, LIMIT에 걸려 잘려나가는 쪽이
+        -- 항상 '퇴원·기타'가 되게 만드는 안전장치다. (이게 없으면 마지막 상담이
+        -- 오래된 장기재원 환자가 보드와 KPI에서 통째로 사라진다.)
+        ORDER BY CASE p.lifecycle_stage
+                     WHEN '입원' THEN 0 WHEN '입원대기' THEN 1
+                     WHEN '상담' THEN 2 ELSE 3 END ASC,
+                 (lc.consult_date IS NULL OR lc.consult_date = '') ASC,
                  lc.consult_date DESC, lc.id DESC, p.id DESC
-        LIMIT 2000
+        LIMIT 5000
     """, vals).fetchall()
     conn.close()
     out = []
@@ -3009,8 +3350,13 @@ def lifecycle_board(*, q=None, period_days=None, stages=None, disease_group=None
         # 정체 일수 계산 — 단계 진입 후 N일
         sd = d.get("stage_days")
         d["stage_days_int"] = int(sd) if sd is not None else None
-        d["is_stale"] = (d["stage_days_int"] is not None and d["stage_days_int"] >= 90
-                        and d.get("lifecycle_stage") not in ("퇴원",))
+        # 정체 기준은 단계마다 다르다 — 상담 7일·입원대기 14일.
+        # 입원은 재원 자체가 수개월이라 일수 정체가 무의미(퇴원 D-day로 관리),
+        # 퇴원은 종료 케이스라 둘 다 정체 판정에서 제외한다.
+        limit = STAGE_STALE_DAYS.get((d.get("lifecycle_stage") or "").strip())
+        d["stale_limit"] = limit
+        d["is_stale"] = (limit is not None and d["stage_days_int"] is not None
+                         and d["stage_days_int"] >= limit)
         out.append(d)
     return out
 
@@ -3023,9 +3369,9 @@ def lifecycle_board_kpis(board_rows):
     new_30d = 0
     stale = 0
     discharge_imminent = 0   # 입원완료 + 퇴원 D-3 이내
-    emergency_overdue = 0    # 응급치료 단계 + 복귀 미기록 3일+
     stage_days_acc = {}  # stage -> [days, ...]
     stage_counts = {}    # stage -> count (카테고리 카드용)
+    phase_counts = {}    # 입원 컬럼 내 수가 구간(회복기/비회복기/단일구간) 카운트
     for r in board_rows:
         sd = r.get("stage_days_int")
         if sd is not None and sd <= 30:
@@ -3034,13 +3380,12 @@ def lifecycle_board_kpis(board_rows):
         dd = r.get("discharge_dday")
         if dd is not None and dd <= 3:
             discharge_imminent += 1
-        # 응급 복귀 미기록 — 응급치료 단계 3일+
-        if r.get("lifecycle_stage") == "응급치료" and sd is not None and sd >= 3:
-            emergency_overdue += 1
         if r.get("is_stale"):
             stale += 1
         stg = r.get("lifecycle_stage") or "기타"
         stage_counts[stg] = stage_counts.get(stg, 0) + 1
+        if stg == "입원" and r.get("care_phase"):
+            phase_counts[r["care_phase"]] = phase_counts.get(r["care_phase"], 0) + 1
         if sd is not None:
             stage_days_acc.setdefault(stg, []).append(sd)
     avg_by_stage = {
@@ -3050,9 +3395,9 @@ def lifecycle_board_kpis(board_rows):
     return {
         "active": active, "new_30d": new_30d, "stale": stale,
         "discharge_imminent": discharge_imminent,
-        "emergency_overdue": emergency_overdue,
         "avg_by_stage": avg_by_stage,
         "stage_counts": stage_counts,
+        "phase_counts": phase_counts,
     }
 
 
@@ -3239,14 +3584,20 @@ def delete_communication(comm_id):
 
 # ─── 입원 중 이벤트 (응급전원·모병원 외래치료 등) ───
 
+AWAY_EVENT_TYPES = ("응급전원", "모병원 외래치료")
+
+
 def create_admission_event(*, consultation_id, event_type=None, event_date=None,
-                           hospital=None, memo=None, created_by=None) -> int:
+                           hospital=None, memo=None, created_by=None,
+                           stage_before=None) -> int:
     conn = get_db()
     cur = conn.execute(
         """INSERT INTO admission_events
-           (consultation_id, event_type, event_date, hospital, memo, created_by)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (consultation_id, event_type, event_date, hospital, memo, created_by),
+           (consultation_id, event_type, event_date, hospital, memo, created_by,
+            stage_before)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (consultation_id, event_type, event_date, hospital, memo, created_by,
+         stage_before),
     )
     eid = cur.lastrowid
     conn.commit()
@@ -3279,6 +3630,109 @@ def delete_admission_event(event_id):
     conn.execute("DELETE FROM admission_events WHERE id = ?", (event_id,))
     conn.commit()
     conn.close()
+
+
+def open_away_event(consultation_id):
+    """이 입원 건에서 아직 복귀 기록이 없는 외진 1건 (없으면 None)."""
+    conn = get_db()
+    ph = ",".join("?" * len(AWAY_EVENT_TYPES))
+    row = conn.execute(
+        f"""SELECT * FROM admission_events
+            WHERE consultation_id = ? AND event_type IN ({ph})
+              AND returned_at IS NULL
+            ORDER BY (event_date IS NULL OR event_date = '') ASC,
+                     event_date DESC, id DESC LIMIT 1""",
+        [consultation_id, *AWAY_EVENT_TYPES],
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def mark_admission_event_returned(event_id, *, return_date=None, returned_by=None):
+    """외진 이벤트에 복귀일을 찍는다. return_date 미지정이면 오늘.
+
+    ※ 오늘은 파이썬(서버 로컬=KST)에서 만든다. SQLite date('now')는 UTC라
+      KST 오전 9시 이전에는 하루 전 날짜가 찍혔다 — 외진 복귀를 실제로
+      처리하는 시간대가 하필 그 아침이다. event_date도 화면에서 로컬
+      날짜로 들어오므로 기준을 로컬로 통일한다.
+    """
+    conn = get_db()
+    conn.execute(
+        "UPDATE admission_events SET returned_at = ?, returned_by = ? WHERE id = ?",
+        (return_date or date.today().isoformat(), returned_by, event_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def away_history(consultation_ids):
+    """입원 건별 외진 이력 요약 — 횟수 · 누적 일수 · 마지막 외진일.
+
+    누적 일수는 복귀한 건만 합산하고, 아직 나가 있는 건은 오늘까지로 센다.
+    ※ 외진 기간은 재원 기간에서 빼지 않는다 — 회복기/비회복기 수가 기간과
+      입원 경과일은 외진을 나가 있는 동안에도 계속 흘러가기 때문. 이력은
+      '참고 정보'일 뿐 D-day 계산에 관여하지 않는다.
+    """
+    if not consultation_ids:
+        return {}
+    conn = get_db()
+    ph_id = ",".join("?" * len(consultation_ids))
+    ph_type = ",".join("?" * len(AWAY_EVENT_TYPES))
+    rows = conn.execute(f"""
+        SELECT consultation_id AS cid, COUNT(*) AS n,
+               MAX(event_date) AS last_date,
+               SUM(MAX(0, CAST(julianday(COALESCE(returned_at, ?))
+                             - julianday(event_date) AS INTEGER))) AS days
+        FROM admission_events
+        WHERE consultation_id IN ({ph_id}) AND event_type IN ({ph_type})
+        GROUP BY consultation_id
+    """, [date.today().isoformat()] + list(consultation_ids)
+         + list(AWAY_EVENT_TYPES)).fetchall()
+    conn.close()
+    return {r["cid"]: {"count": r["n"], "days": int(r["days"] or 0),
+                       "last_date": r["last_date"]} for r in rows}
+
+
+def away_now(patient_ids=None):
+    """현재 외진 중(미복귀) 환자 목록 — 나간 날짜·기관·경과일 포함.
+    보드 배지와 '현재 외진 중' 패널이 같은 데이터를 쓴다.
+    patient_ids=None이면 전 환자 대상.
+    """
+    conn = get_db()
+    ph_type = ",".join("?" * len(AWAY_EVENT_TYPES))
+    # 첫 값은 SELECT 절의 julianday(?) — 오늘(서버 로컬=KST) 기준 경과일
+    vals = [date.today().isoformat(), *AWAY_EVENT_TYPES]
+    where_pid = ""
+    if patient_ids is not None:
+        if not patient_ids:
+            conn.close()
+            return []
+        where_pid = f"AND c.patient_id IN ({','.join('?' * len(patient_ids))})"
+        vals += list(patient_ids)
+    rows = conn.execute(f"""
+        SELECT ae.id, ae.event_type, ae.event_date, ae.hospital, ae.memo,
+               ae.stage_before, ae.consultation_id,
+               c.patient_id AS pid, c.attending_doctor, c.room_number,
+               p.name AS pname, p.guardian_name, p.guardian_phone,
+               CAST(julianday(?) - julianday(ae.event_date) AS INTEGER) AS days_out
+        FROM admission_events ae
+        JOIN consultations c ON c.id = ae.consultation_id
+        JOIN patients p ON p.id = c.patient_id
+        WHERE ae.event_type IN ({ph_type}) AND ae.returned_at IS NULL {where_pid}
+        ORDER BY (ae.event_date IS NULL OR ae.event_date = '') ASC,
+                 ae.event_date ASC, ae.id ASC
+    """, vals).fetchall()
+    conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["days_out"] = int(d["days_out"]) if d.get("days_out") is not None else None
+        # 미복귀 경고 — 당일 왕복인 외래치료는 1일, 응급전원은 3일 기준
+        limit = 1 if d["event_type"] == "모병원 외래치료" else 3
+        d["overdue"] = d["days_out"] is not None and d["days_out"] >= limit
+        d["overdue_limit"] = limit
+        out.append(d)
+    return out
 
 
 def patient_timeline(patient_id):

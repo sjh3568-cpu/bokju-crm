@@ -10,7 +10,7 @@
     <div style="display:flex; gap:8px">
         <a href="/consultations" class="btn btn-secondary btn-sm">← 목록</a>
         <a href="/sms?cid={{ c.id }}" class="btn btn-secondary btn-sm">📩 문자 전송</a>
-        <a href="/patients/{{ c.patient_id }}" class="btn btn-secondary btn-sm">생애주기</a>
+        <a href="/patients/{{ c.patient_id }}" class="btn btn-secondary btn-sm">환자 정보</a>
         <a href="/consult/{{ c.id }}/edit" class="btn btn-accent btn-sm">수정</a>
     </div>
 </div>
@@ -284,13 +284,26 @@
     <h3>입원 중 이벤트 <span class="muted" style="font-size:0.66em">— 응급전원·모병원 외래치료 등 입원 기간 중 외부 의료기관 이용 내역</span></h3>
     <div class="tbl-wrap" id="ae-table-wrap" {% if not admission_events %}hidden{% endif %}>
         <table class="tbl tbl-compact">
-            <thead><tr><th>발생일</th><th>유형</th><th>의료기관</th><th>메모</th><th></th></tr></thead>
+            <thead><tr><th>발생일</th><th>유형</th><th>의료기관</th><th>복귀</th><th>메모</th><th></th></tr></thead>
             <tbody>
                 {% for e in admission_events %}
-                <tr data-aevent="{{ e.id }}">
+                {% set _away = e.event_type in ('응급전원', '모병원 외래치료') %}
+                <tr data-aevent="{{ e.id }}"{% if _away and not e.returned_at %} class="ae-open"{% endif %}>
                     <td class="nowrap">{% if e.event_date %}{{ e.event_date|krdate_wd }}{% else %}-{% endif %}</td>
                     <td class="nowrap"><span class="ae-type ae-{{ {'응급전원':'emerg','모병원 외래치료':'visit','복귀':'back'}.get(e.event_type,'etc') }}">{{ e.event_type or '' }}</span></td>
                     <td>{{ e.hospital or '' }}</td>
+                    <td class="nowrap">
+                        {% if not _away %}—
+                        {% elif e.returned_at %}<span class="ae-back-done">↩ {{ e.returned_at|krdate }}</span>
+                        {% else %}
+                        <span class="ae-back-cell">
+                            <input type="date" class="ae-back-date" value="{{ today_str }}"
+                                   min="{{ e.event_date or '' }}" max="{{ today_str }}" title="복귀일">
+                            <button type="button" class="btn btn-primary btn-sm ae-back" data-aevent="{{ e.id }}"
+                                    title="복귀일을 지정해 처리합니다">↩ 복귀</button>
+                        </span>
+                        {% endif %}
+                    </td>
                     <td>{{ e.memo or '' }}</td>
                     <td class="nowrap"><button type="button" class="btn btn-secondary ae-del" data-aevent="{{ e.id }}">삭제</button></td>
                 </tr>
@@ -312,74 +325,6 @@
     </div>
 </div>
 
-<div class="card lev-card" data-pid="{{ c.patient_id }}">
-    <h3>생애주기 이벤트 추가
-        <span class="muted" style="font-size:0.66em">— 이 상담 직후 발생한 사건을 환자 타임라인에 기록</span>
-        <a href="/patients/{{ c.patient_id }}" class="lev-link">환자 전체 타임라인 보기 ›</a>
-    </h3>
-    <div class="lev-add">
-        <select id="lev-type">
-            {% for t in LIFECYCLE_EVENT_TYPES %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
-        </select>
-        <input type="date" id="lev-date" value="{{ c.consult_date or '' }}" title="이벤트 일자">
-        <input type="text" id="lev-title" placeholder="제목 (예: 응급실 이송, 보호자 식이 요청)">
-        <input type="text" id="lev-detail" placeholder="상세 (선택)">
-        <button type="button" class="btn btn-primary btn-sm" id="lev-add-btn">+ 추가</button>
-        <span class="lev-msg muted" id="lev-msg"></span>
-    </div>
-</div>
-
-<style>
-.lev-card h3 .lev-link { float:right; font-size:0.78em; color:var(--primary); text-decoration:none; font-weight:500; }
-.lev-card h3 .lev-link:hover { text-decoration:underline; }
-.lev-add { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:8px; }
-.lev-add select, .lev-add input[type="date"], .lev-add input[type="text"] {
-    padding:5px 8px; border:1px solid var(--border); border-radius:6px;
-    font-family:inherit; font-size:0.85em; }
-.lev-add #lev-title { flex:1 1 200px; min-width:160px; }
-.lev-add #lev-detail { flex:2 1 240px; min-width:160px; }
-.lev-msg { font-size:0.82em; }
-.lev-msg.err { color:var(--danger); }
-.lev-msg.ok { color:var(--success); }
-</style>
-<script>
-(function() {
-    const card = document.querySelector('.lev-card');
-    if (!card) return;
-    const pid = card.dataset.pid;
-    const addBtn = document.getElementById('lev-add-btn');
-    const msg = document.getElementById('lev-msg');
-    addBtn.addEventListener('click', async () => {
-        const payload = {
-            event_type: document.getElementById('lev-type').value,
-            event_date: document.getElementById('lev-date').value,
-            title: document.getElementById('lev-title').value.trim(),
-            detail: document.getElementById('lev-detail').value.trim(),
-        };
-        if (!payload.event_type) {
-            msg.className = 'lev-msg err'; msg.textContent = '이벤트 유형을 선택하세요.'; return;
-        }
-        msg.className = 'lev-msg muted'; msg.textContent = '저장 중...';
-        addBtn.disabled = true;
-        try {
-            const r = await fetch(`/api/patient/${pid}/lifecycle/event`, {
-                method: 'POST', headers: {'content-type': 'application/json'},
-                body: JSON.stringify(payload),
-            });
-            if (!r.ok) throw new Error((await r.json()).error || r.status);
-            msg.className = 'lev-msg ok';
-            msg.textContent = '✓ 환자 타임라인에 기록되었습니다.';
-            document.getElementById('lev-title').value = '';
-            document.getElementById('lev-detail').value = '';
-        } catch (e) {
-            msg.className = 'lev-msg err'; msg.textContent = '저장 실패: ' + e.message;
-        } finally {
-            addBtn.disabled = false;
-        }
-    });
-})();
-</script>
-
 <style>
 .ae-type { display:inline-block; padding:1px 8px; border-radius:9px;
     font-size:0.76em; font-weight:600; }
@@ -387,6 +332,12 @@
 .ae-type.ae-visit { background:#dbeafe; color:#1e40af; }
 .ae-type.ae-back  { background:#dcfce7; color:#166534; }
 .ae-type.ae-etc   { background:#f1f5f9; color:#475569; }
+/* 아직 복귀 기록이 없는 외진 — 행 자체를 눈에 띄게 */
+tr.ae-open { background:#fff7ed; }
+.ae-back-done { color:#166534; font-size:0.86em; font-weight:600; }
+.ae-back-cell { display:inline-flex; gap:4px; align-items:center; }
+.ae-back-date { font-family:inherit; font-size:0.82em; padding:2px 5px;
+    border:1px solid var(--border); border-radius:5px; }
 .ae-add { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; align-items:center; }
 .ae-add select, .ae-add input[type="date"], .ae-add input[type="text"] {
     padding:5px 8px; border:1px solid var(--border); border-radius:6px;
@@ -428,6 +379,20 @@
             msg.className = 'ae-msg err'; msg.textContent = '추가 실패: ' + e.message;
             addBtn.disabled = false;
         }
+    });
+    document.querySelectorAll('.ae-back').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            try {
+                const input = btn.closest('.ae-back-cell').querySelector('.ae-back-date');
+                const r = await fetch(`/api/admission-event/${btn.dataset.aevent}/return`,
+                                      { method: 'POST', headers: {'content-type': 'application/json'},
+                                        body: JSON.stringify(input && input.value ? { return_date: input.value } : {}) });
+                const j = await r.json();
+                if (!r.ok) throw new Error(j.error || r.status);
+                location.reload();
+            } catch (e) { btn.disabled = false; alert('복귀 처리 실패: ' + e.message); }
+        });
     });
     document.querySelectorAll('.ae-del').forEach(btn => {
         btn.addEventListener('click', async () => {

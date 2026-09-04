@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% block title %}환자 P{{ p.id }} — {{ p.name }}{% endblock %}
 {% block content %}
-{% set _kc = {'consult':'k-consult','sms':'k-sms','lifecycle':'k-life','comm':'k-comm'} %}
+{% set _kc = {'consult':'k-consult','sms':'k-sms','comm':'k-comm'} %}
 <div class="page-header">
-    <h1>{{ p.name }} <span class="muted" style="font-size:0.62em">P{{ p.id }} · 생애주기 · 옴니채널</span></h1>
+    <h1>{{ p.name }} <span class="muted" style="font-size:0.62em">P{{ p.id }} · 환자 정보 · 접촉 이력</span></h1>
     <div style="display:flex; gap:8px">
-        <a href="/lifecycle{% if lc_back_q %}?q={{ lc_back_q|urlencode }}{% endif %}" class="btn btn-secondary btn-sm">생애주기 보드</a>
+        <a href="/ward" class="btn btn-secondary btn-sm">재원 관리</a>
         <a href="/sms?pid={{ p.id }}" class="btn btn-secondary btn-sm">📩 문자</a>
     </div>
 </div>
@@ -35,28 +35,15 @@
     </div>
 </div>
 
-<!-- ───────── 생애주기 + 옴니채널 통합 타임라인 ───────── -->
+<!-- ───────── 환자 접촉 이력 ───────── -->
 <div class="card lc-card" data-pid="{{ p.id }}" style="margin-top:12px">
-    <div class="lc-head">
-        <h3>생애주기 단계</h3>
-        <select id="lc-stage">
-            <option value="">미설정</option>
-            {% for s in LIFECYCLE_STAGES %}
-            <option value="{{ s }}" {% if p.lifecycle_stage == s %}selected{% endif %}>{{ s }}</option>
-            {% endfor %}
-        </select>
-        <span class="lc-stage-msg muted"></span>
-        <span class="muted" style="font-size:0.82em">— 단계를 지정하면 생애주기 보드에 표시됩니다</span>
-    </div>
-
-    <h4 class="lc-sub">통합 타임라인 <span class="muted">— 상담·문자·생애주기·커뮤니케이션 ({{ timeline|length }})</span></h4>
+    <h3>통합 접촉 이력 <span class="muted">— 상담·문자·커뮤니케이션 ({{ timeline|length }})</span></h3>
     <div class="lc-timeline" id="lc-timeline">
         {% for e in timeline %}
         <div class="tl-item">
             <span class="tl-badge {{ _kc.get(e.kind, 'k-comm') }}">
                 {%- if e.kind == 'consult' %}상담
                 {%- elif e.kind == 'sms' %}문자 ↗
-                {%- elif e.kind == 'lifecycle' %}{{ e.channel }}
                 {%- else %}{{ e.channel }} {{ '↘' if e.direction == 'in' else '↗' }}{%- endif -%}
             </span>
             <span class="tl-date">{{ e.date }}{% if e.time %} {{ e.time }}{% endif %}</span>
@@ -73,19 +60,6 @@
     </div>
 
     <div class="lc-add-grid">
-        <div class="lc-add">
-            <h4 class="lc-sub">생애주기 이벤트 추가</h4>
-            <div class="lc-add-row">
-                <select id="ev-type">
-                    {% for t in LIFECYCLE_EVENT_TYPES %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
-                </select>
-                <input type="date" id="ev-date" value="{{ now().strftime('%Y-%m-%d') }}">
-            </div>
-            <input type="text" id="ev-title" placeholder="제목 (예: 응급실 이송, 보호자 식이 요청)">
-            <textarea id="ev-detail" rows="2" placeholder="상세 — 응급치료 경위, 보호자/환자 요구사항 등"></textarea>
-            <div><button type="button" class="btn btn-primary btn-sm" id="ev-add">이벤트 추가</button>
-                 <span class="ev-msg muted"></span></div>
-        </div>
         <div class="lc-add">
             <h4 class="lc-sub">커뮤니케이션 기록 <span class="muted">— 받은 문자·카톡·문의</span></h4>
             <div class="lc-add-row">
@@ -159,7 +133,6 @@
     font-weight:700; white-space:nowrap; }
 .k-consult { background:#dbeafe; color:#1e40af; }
 .k-sms { background:#dcfce7; color:#166534; }
-.k-life { background:#ede9fe; color:#6d28d9; }
 .k-comm { background:#fef3c7; color:#92400e; }
 .tl-date { font-size:0.8em; color:var(--text-light); font-feature-settings:"tnum"; }
 .tl-title { font-size:0.9em; font-weight:600; }
@@ -172,7 +145,7 @@
 .tl-del:hover { color:#dc2626; }
 .tl-detail { flex:1 1 100%; font-size:0.85em; color:var(--text);
     white-space:pre-wrap; padding-left:2px; }
-.lc-add-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px;
+.lc-add-grid { display:grid; grid-template-columns:1fr; gap:14px;
     border-top:1px solid var(--border); margin-top:12px; padding-top:6px; }
 @media (max-width:800px) { .lc-add-grid { grid-template-columns:1fr; } }
 .lc-add-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:6px; }
@@ -180,8 +153,8 @@
     border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:0.88em; }
 .lc-add input[type=text], .lc-add textarea { width:100%; box-sizing:border-box; margin-bottom:6px; }
 .lc-add textarea { resize:vertical; }
-.lc-stage-msg.ok, .bl-msg.ok, .ev-msg.ok, .cm-msg.ok { color:var(--success); }
-.lc-stage-msg.err, .bl-msg.err, .ev-msg.err, .cm-msg.err { color:var(--danger); }
+.bl-msg.ok, .cm-msg.ok { color:var(--success); }
+.bl-msg.err, .cm-msg.err { color:var(--danger); }
 </style>
 
 <script src="/static/js/common.js"></script>
@@ -205,32 +178,6 @@
         } catch (e) { blMsg.className = 'bl-msg err'; blMsg.textContent = '실패: ' + e.message; }
     });
 
-    // 생애주기 단계
-    const stageSel = document.getElementById('lc-stage');
-    const stageMsg = document.querySelector('.lc-stage-msg');
-    stageSel.addEventListener('change', async () => {
-        stageMsg.className = 'lc-stage-msg muted'; stageMsg.textContent = '저장 중...';
-        try {
-            await api.post(`/api/patient/${pid}/stage`, { stage: stageSel.value });
-            stageMsg.className = 'lc-stage-msg ok'; stageMsg.textContent = '저장됨';
-            setTimeout(() => { stageMsg.textContent = ''; }, 2000);
-        } catch (e) { stageMsg.className = 'lc-stage-msg err'; stageMsg.textContent = '실패: ' + e.message; }
-    });
-
-    // 생애주기 이벤트 추가
-    const evMsg = document.querySelector('.ev-msg');
-    document.getElementById('ev-add').addEventListener('click', async () => {
-        const body = {
-            event_type: document.getElementById('ev-type').value,
-            event_date: document.getElementById('ev-date').value,
-            title: document.getElementById('ev-title').value.trim(),
-            detail: document.getElementById('ev-detail').value.trim(),
-        };
-        evMsg.className = 'ev-msg muted'; evMsg.textContent = '추가 중...';
-        try { await api.post(`/api/patient/${pid}/lifecycle/event`, body); location.reload(); }
-        catch (e) { evMsg.className = 'ev-msg err'; evMsg.textContent = '실패: ' + e.message; }
-    });
-
     // 커뮤니케이션 기록 추가
     const cmMsg = document.querySelector('.cm-msg');
     document.getElementById('cm-add').addEventListener('click', async () => {
@@ -250,13 +197,11 @@
         catch (e) { cmMsg.className = 'cm-msg err'; cmMsg.textContent = '실패: ' + e.message; }
     });
 
-    // 타임라인 항목 삭제 (생애주기 이벤트 / 커뮤니케이션)
+    // 타임라인 커뮤니케이션 기록 삭제
     document.querySelectorAll('.tl-del').forEach(btn => {
         btn.addEventListener('click', async () => {
             if (!confirm('이 기록을 삭제할까요?')) return;
-            const url = btn.dataset.kind === 'lifecycle'
-                ? `/api/lifecycle/event/${btn.dataset.id}`
-                : `/api/communication/${btn.dataset.id}`;
+            const url = `/api/communication/${btn.dataset.id}`;
             try {
                 const r = await fetch(url, { method: 'DELETE' });
                 if (!r.ok) throw new Error((await r.json()).error || r.status);
