@@ -1826,11 +1826,13 @@ def todos_view():
     today = date.today()
     embed = request.args.get("embed") == "1"   # 팝업(iframe)용 — 헤더/네비 없이 본문만
     view = "list" if request.args.get("view") == "list" else "calendar"
+    selected_date = _valid_date(request.args.get("date"), today.isoformat())
     share_users = [u for u in models.list_users()
                    if u.get("active") and u["id"] != uid
                    and u.get("role") in ("admin", "staff")]
     ctx = {"view": view, "embed": embed, "today": today.isoformat(),
            "auto_new": request.args.get("new") == "1",
+           "selected_date": selected_date,
            "share_users": share_users}
     if view == "list":
         day = _valid_date(request.args.get("date"), today.isoformat())
@@ -1843,9 +1845,10 @@ def todos_view():
             next_day=(date.fromisoformat(day) + timedelta(days=1)).isoformat(),
         )
     else:
+        selected_day = date.fromisoformat(selected_date)
         try:
-            year = int(request.args.get("year") or today.year)
-            month = int(request.args.get("month") or today.month)
+            year = int(request.args.get("year") or selected_day.year)
+            month = int(request.args.get("month") or selected_day.month)
             date(year, month, 1)
         except (TypeError, ValueError):
             year, month = today.year, today.month

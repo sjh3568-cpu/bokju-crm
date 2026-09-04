@@ -30,7 +30,7 @@
     {% endif %}
 
     <button type="button" class="btn btn-primary btn-sm" id="todo-new-btn"
-            data-today="{{ today }}" data-selected-date="{{ day|default(today) }}"
+            data-today="{{ today }}" data-selected-date="{{ selected_date|default(today) }}"
             data-auto-open="{{ '1' if auto_new|default(false) else '0' }}">＋ 새 ToDo</button>
 </div>
 
