@@ -3,7 +3,13 @@
 {% block content %}
 <div class="page-header notice-head">
     <div><h1>공지사항</h1><p class="muted">병원 운영 공지와 필수 확인 내용을 다시 볼 수 있습니다.</p></div>
-    {% if is_admin %}<button type="button" class="btn btn-primary" onclick="document.getElementById('notice-write').open=true">+ 공지 작성</button>{% endif %}
+    <div class="notice-head-actions">
+        <div class="notice-view-switch" role="group" aria-label="공지사항 보기 방식">
+            <button type="button" class="on" data-notice-view="feed" aria-pressed="true">▤ 피드형</button>
+            <button type="button" data-notice-view="list" aria-pressed="false">☷ 목록형</button>
+        </div>
+        {% if is_admin %}<button type="button" class="btn btn-primary" onclick="document.getElementById('notice-write').open=true">+ 공지 작성</button>{% endif %}
+    </div>
 </div>
 
 {% if is_admin %}
@@ -51,6 +57,7 @@
                     <button class="btn btn-secondary btn-sm" type="submit">{{ '게시 종료' if n.active else '다시 게시' }}</button>
                 </form>
             {% endif %}
+            <button type="button" class="notice-expand" aria-expanded="false">내용 보기</button>
         </div>
     </article>
 {% else %}
@@ -59,9 +66,44 @@
 </div>
 
 <style>
-.notice-head p{margin:3px 0 0}.notice-write{margin-bottom:14px}.notice-write summary{cursor:pointer;font-weight:800;color:var(--primary)}
+.notice-head p{margin:3px 0 0}.notice-head-actions{display:flex;align-items:center;gap:9px}.notice-view-switch{display:flex;padding:3px;border:1px solid var(--border);border-radius:9px;background:#f8fafc}.notice-view-switch button{border:0;border-radius:6px;background:transparent;color:var(--text-light);padding:7px 10px;font:inherit;font-size:.8em;font-weight:750;cursor:pointer}.notice-view-switch button.on{background:#fff;color:var(--primary);box-shadow:0 1px 4px rgba(15,23,42,.12)}.notice-write{margin-bottom:14px}.notice-write summary{cursor:pointer;font-weight:800;color:var(--primary)}
 .notice-write form{margin-top:14px}.notice-form-row{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin-bottom:9px}.notice-form-row label{font-size:.84em;color:var(--text-light);display:flex;flex-direction:column;gap:4px}.notice-form-row select,.notice-form-row input,.notice-title-input,.notice-write textarea{border:1px solid var(--border);border-radius:7px;padding:8px 10px;font:inherit}.notice-form-row .notice-check{flex-direction:row;align-items:center;padding-bottom:8px;color:var(--text);font-weight:650}.notice-title-input,.notice-write textarea{display:block;width:100%;box-sizing:border-box;margin-bottom:8px}.notice-write textarea{resize:vertical;line-height:1.55}
-.notice-list{display:flex;flex-direction:column;gap:10px}.notice-card{margin:0;border-left:4px solid #94a3b8}.notice-card.notice-required{border-left-color:#dc2626}.notice-card.notice-inactive{opacity:.62}.notice-card-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.notice-card h2{font-size:1.06em;margin:8px 0 0}.notice-meta{font-size:.77em;color:var(--text-light);white-space:nowrap}.notice-badge{display:inline-block;padding:2px 7px;border-radius:999px;background:#e2e8f0;color:#475569;font-size:.7em;font-weight:800}.notice-badge.required{background:#fee2e2;color:#b91c1c}.notice-badge.target{background:#dbeafe;color:#1d4ed8}.notice-badge.ended{background:#f1f5f9;color:#64748b}.notice-body{white-space:pre-wrap;line-height:1.7;margin:15px 0;color:#1e293b}.notice-foot{border-top:1px solid var(--border);padding-top:9px;display:flex;align-items:center;gap:10px;font-size:.8em;color:var(--text-light)}.notice-foot form{margin-left:auto}.notice-read{color:#15803d;font-weight:700}.notice-unread{color:#b91c1c;font-weight:800}.notice-ack-stat{font-weight:750;color:#334155}
-@media(max-width:700px){.notice-card-head{flex-direction:column}.notice-meta{white-space:normal}}
+.notice-list{display:flex;flex-direction:column;gap:10px}.notice-card{margin:0;border-left:4px solid #94a3b8}.notice-card.notice-required{border-left-color:#dc2626}.notice-card.notice-inactive{opacity:.62}.notice-card-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.notice-card h2{font-size:1.06em;margin:8px 0 0}.notice-meta{font-size:.77em;color:var(--text-light);white-space:nowrap}.notice-badge{display:inline-block;padding:2px 7px;border-radius:999px;background:#e2e8f0;color:#475569;font-size:.7em;font-weight:800}.notice-badge.required{background:#fee2e2;color:#b91c1c}.notice-badge.target{background:#dbeafe;color:#1d4ed8}.notice-badge.ended{background:#f1f5f9;color:#64748b}.notice-body{white-space:pre-wrap;line-height:1.7;margin:15px 0;color:#1e293b}.notice-foot{border-top:1px solid var(--border);padding-top:9px;display:flex;align-items:center;gap:10px;font-size:.8em;color:var(--text-light)}.notice-foot form{margin-left:auto}.notice-read{color:#15803d;font-weight:700}.notice-unread{color:#b91c1c;font-weight:800}.notice-ack-stat{font-weight:750;color:#334155}.notice-expand{display:none;border:0;background:transparent;color:var(--primary);font:inherit;font-weight:800;cursor:pointer;margin-left:auto}
+.notice-list.list-view{gap:6px}.notice-list.list-view .notice-card{padding:12px 14px}.notice-list.list-view .notice-card-head{align-items:center}.notice-list.list-view .notice-card h2{display:inline;margin:0 0 0 7px;font-size:.96em}.notice-list.list-view .notice-meta{min-width:175px;text-align:right}.notice-list.list-view .notice-body{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;overflow:hidden;margin:8px 0 6px;color:#64748b;font-size:.87em;line-height:1.5}.notice-list.list-view .notice-card.expanded .notice-body{display:block;color:#1e293b}.notice-list.list-view .notice-foot{padding-top:6px}.notice-list.list-view .notice-expand{display:inline-block}.notice-list.list-view .notice-foot form+.notice-expand{margin-left:0}
+@media(max-width:700px){.notice-head{align-items:flex-start}.notice-head-actions{width:100%;justify-content:space-between}.notice-card-head,.notice-list.list-view .notice-card-head{flex-direction:column;align-items:flex-start}.notice-meta,.notice-list.list-view .notice-meta{white-space:normal;text-align:left}.notice-view-switch button{padding:7px 8px}}
 </style>
+<script>
+(function(){
+    const container=document.querySelector('.notice-list');
+    const buttons=[...document.querySelectorAll('[data-notice-view]')];
+    if(!container||!buttons.length)return;
+    let view='feed';
+    try{if(localStorage.getItem('bokju_notice_view')==='list')view='list';}catch(e){}
+    function setView(next){
+        view=next==='list'?'list':'feed';
+        container.classList.toggle('list-view',view==='list');
+        if(view==='feed')container.querySelectorAll('.notice-card.expanded').forEach(card=>{
+            card.classList.remove('expanded');
+            const expand=card.querySelector('.notice-expand');
+            if(expand){expand.textContent='내용 보기';expand.setAttribute('aria-expanded','false');}
+        });
+        buttons.forEach(button=>{
+            const active=button.dataset.noticeView===view;
+            button.classList.toggle('on',active);
+            button.setAttribute('aria-pressed',active?'true':'false');
+        });
+        try{localStorage.setItem('bokju_notice_view',view);}catch(e){}
+    }
+    buttons.forEach(button=>button.addEventListener('click',()=>setView(button.dataset.noticeView)));
+    container.addEventListener('click',function(e){
+        const button=e.target.closest('.notice-expand');
+        if(!button)return;
+        const card=button.closest('.notice-card');
+        const expanded=card.classList.toggle('expanded');
+        button.textContent=expanded?'내용 접기':'내용 보기';
+        button.setAttribute('aria-expanded',expanded?'true':'false');
+    });
+    setView(view);
+})();
+</script>
 {% endblock %}
