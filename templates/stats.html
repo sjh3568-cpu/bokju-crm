@@ -40,39 +40,38 @@
 
 <div class="stats-report-sheet">
 <div class="stats-print-title"><h2>복주회복병원 상담실 통계 보고서</h2><p>{{ date_from or '-' }} ~ {{ date_to or '-' }}</p></div>
-<!-- 상단 KPI: 입원 진행 단계 핵심 집계 한눈에 -->
+<div class="section-heading"><span>핵심 성과</span><small>조회 기간과 직전 동일 기간·전년 동기를 비교합니다</small></div>
 <div class="stat-grid kpi-row" id="kpi-row">
-    <div class="stat-card"><div class="label">총 상담건수</div><div class="value" data-kpi="total">-</div><div class="sub" data-kpi="total-sub"></div></div>
-    <div class="stat-card accent"><div class="label">입원 완료</div><div class="value" data-kpi="completed">-</div><div class="sub" data-kpi="completed-sub">실제 입원</div></div>
-    <div class="stat-card"><div class="label">입원 전환율</div><div class="value" data-kpi="conv-rate">-</div><div class="sub">입원완료 ÷ 총 상담</div></div>
-    <div class="stat-card warn"><div class="label">입원 보류 · 취소</div><div class="value split-value"><span data-kpi="pending">-</span><i>/</i><span data-kpi="cancelled">-</span></div><div class="sub"><span>보류</span><span>취소</span></div></div>
-    <div class="stat-card"><div class="label">일평균 상담</div><div class="value" data-kpi="daily-avg">-</div><div class="sub">기간 내 평균</div></div>
-    <div class="stat-card"><div class="label">비사용증후군 발굴</div><div class="value" data-kpi="disuse">-</div><div class="sub">발굴 대상 기재 건수</div></div>
+    <div class="stat-card tone-blue"><div class="label">총 상담</div><div class="value"><span data-kpi="total">-</span><em>건</em></div><div class="delta-row" data-compare="total"></div></div>
+    <div class="stat-card tone-green"><div class="label">입원 완료</div><div class="value"><span data-kpi="completed">-</span><em>건</em></div><div class="delta-row" data-compare="completed"></div></div>
+    <div class="stat-card tone-teal"><div class="label">입원 전환율</div><div class="value" data-kpi="conv-rate">-</div><div class="delta-row" data-compare="conversion_rate"></div></div>
+    <div class="stat-card tone-amber"><div class="label">입원 진행중 · 취소</div><div class="value split-value"><span data-kpi="pending">-</span><i>/</i><span data-kpi="cancelled">-</span></div><div class="sub"><span>미정+보류</span><span>취소</span></div></div>
+    <div class="stat-card tone-violet"><div class="label">상담일 평균</div><div class="value"><span data-kpi="active-day-avg">-</span><em>건</em></div><div class="sub" data-kpi="active-days">실제 상담일 기준</div></div>
+    <div class="stat-card tone-rose"><div class="label">입원 불가 연계율</div><div class="value" data-kpi="capture-rate">-</div><div class="sub" data-kpi="capture-sub">재단·외부시설 안내</div></div>
 </div>
 
-<!-- 시계열(2/3) + 진행 단계(1/3) -->
+<div class="section-heading"><span>상담량과 입원 흐름</span><small>언제 상담이 몰리고 어디에서 정체되는지 확인합니다</small></div>
 <div class="chart-grid g-2-1">
     <div class="card chart-card print-primary">
-        <h3>일별 상담 추이</h3>
+        <h3>일별 상담 추이 <small>건수</small></h3>
         <div class="chart-box"><canvas id="chart-daily"></canvas></div>
     </div>
     <div class="card chart-card print-primary">
-        <h3>입원 진행 단계</h3>
+        <h3>입원 진행 단계 <small>건수·비율</small></h3>
         <div class="chart-box"><canvas id="chart-status"></canvas></div>
     </div>
 </div>
 
-<!-- 상위 분류와 세부 항목을 한 카드에서 비교 -->
 <div class="chart-grid">
     <div class="card chart-card chart-card-combined print-primary">
-        <h3>입원경로 통합</h3>
-        <div class="combined-chart-box">
-            <div><span>경로 그룹</span><div class="chart-box"><canvas id="chart-referral-type"></canvas></div></div>
-            <div><span>세부 경로</span><div class="chart-box"><canvas id="chart-referral-detail"></canvas></div></div>
+        <h3>요일·시간대 상담 집중도 <small>원의 크기 = 전화 건수</small></h3>
+        <div class="combined-chart-box equal">
+            <div><span>요일별 전체 상담</span><div class="chart-box"><canvas id="chart-weekday"></canvas></div></div>
+            <div><span>요일 × 시간대 전화상담</span><div class="chart-box"><canvas id="chart-weekday-hour"></canvas></div></div>
         </div>
     </div>
-    <div class="card chart-card chart-card-combined print-primary">
-        <h3>거주지 통합</h3>
+    <div class="card chart-card chart-card-combined">
+        <h3>거주지 수요 <small>건수·비율</small></h3>
         <div class="combined-chart-box">
             <div><span>시·도</span><div class="chart-box"><canvas id="chart-sido"></canvas></div></div>
             <div><span>시·군·구 Top 10</span><div class="chart-box"><canvas id="chart-sigungu"></canvas></div></div>
@@ -80,69 +79,54 @@
     </div>
 </div>
 
-<!-- 병명: 그룹(도넛 1) + Top15(수평 막대 2) -->
-<div class="chart-grid g-1-2">
+<div class="section-heading"><span>전환 성과와 이탈 원인</span><small>상담 건수가 아닌 실제 입원 성과를 비교합니다</small></div>
+<div class="chart-grid">
+    <div class="card chart-card chart-card-combined print-primary">
+        <h3>입원경로별 성과 <small>입원완료/상담 · 전환율</small></h3>
+        <div class="combined-chart-box">
+            <div><span>경로 그룹 분포</span><div class="chart-box"><canvas id="chart-referral-type"></canvas></div></div>
+            <div><span>세부 경로 전환율</span><div class="chart-box"><canvas id="chart-referral-performance"></canvas></div></div>
+        </div>
+    </div>
     <div class="card chart-card print-primary">
-        <h3>병명 그룹</h3>
+        <h3>입원 취소 사유 <small>건수·비율</small></h3>
+        <div class="chart-box"><canvas id="chart-rejection"></canvas></div>
+    </div>
+</div>
+
+<div class="chart-grid">
+    <div class="card chart-card print-primary">
+        <h3>모병원별 입원 성과 <small>입원완료/상담 · 전환율</small></h3>
+        <div class="chart-box"><canvas id="chart-hospital-performance"></canvas></div>
+    </div>
+    <div class="card chart-card">
+        <h3>상담 후 입원까지 소요일 <small>입원완료 기준</small></h3>
+        <div class="chart-box"><canvas id="chart-admission-lead"></canvas></div>
+    </div>
+</div>
+
+<div class="section-heading"><span>운영 품질과 환자 특성</span><small>담당자 성과와 입력 누락을 함께 점검합니다</small></div>
+<div class="chart-grid">
+    <div class="card chart-card">
+        <h3>상담자별 입원 성과 <small>입원완료/상담 · 전환율</small></h3>
+        <div class="chart-box"><canvas id="chart-counselor-performance"></canvas></div>
+    </div>
+    <div class="card chart-card">
+        <h3>필수 데이터 누락률 <small>낮을수록 좋음</small></h3>
+        <div class="chart-box"><canvas id="chart-missing"></canvas></div>
+    </div>
+</div>
+<div class="chart-grid">
+    <div class="card chart-card">
+        <h3>주요 질환군 <small>건수·비율</small></h3>
         <div class="chart-box"><canvas id="chart-disease-group"></canvas></div>
     </div>
     <div class="card chart-card">
-        <h3>병명 상위 15</h3>
-        <div class="chart-box"><canvas id="chart-disease"></canvas></div>
-    </div>
-</div>
-
-<!-- 상담 수요가 집중되는 요일과 전화 유입 시간 -->
-<div class="chart-grid">
-    <div class="card chart-card chart-card-combined chart-card-wide print-primary">
-        <h3>상담 집중 요일 · 전화 유입 시간</h3>
-        <div class="combined-chart-box equal">
-            <div><span>요일별 전체 상담</span><div class="chart-box"><canvas id="chart-weekday"></canvas></div></div>
-            <div><span>시간대별 전화상담</span><div class="chart-box"><canvas id="chart-phone-hour"></canvas></div></div>
-        </div>
-    </div>
-</div>
-
-<!-- 작은 차트 4개 한 줄 — 보험·연령·상담방법·상담자·성별 -->
-<div class="chart-grid five">
-    <div class="card chart-card">
-        <h3>보험 유형</h3>
-        <div class="chart-box sm"><canvas id="chart-insurance"></canvas></div>
-    </div>
-    <div class="card chart-card">
-        <h3>연령대</h3>
-        <div class="chart-box sm"><canvas id="chart-age"></canvas></div>
-    </div>
-    <div class="card chart-card">
-        <h3>상담 방법</h3>
-        <div class="chart-box sm"><canvas id="chart-channel"></canvas></div>
-    </div>
-    <div class="card chart-card">
-        <h3>상담자별</h3>
-        <div class="chart-box sm"><canvas id="chart-counselor"></canvas></div>
-    </div>
-    <div class="card chart-card">
-        <h3>성별</h3>
-        <div class="chart-box sm"><canvas id="chart-gender"></canvas></div>
+        <h3>입원 불가 환자 연계 <small id="referral-capture-rate"></small></h3>
+        <div class="chart-box"><canvas id="chart-referral-capture"></canvas></div>
     </div>
 </div>
 </div>{# /stats-report-sheet #}
-
-<!-- 회복기 불가 → 외부 시설 연계 (수요 캡처) -->
-<div class="chart-grid">
-    <div class="card chart-card">
-        <h3>외부 시설 연계 분포
-            <span class="muted" id="referral-capture-rate" style="font-weight:400; font-size:0.9em"></span>
-        </h3>
-        <div class="chart-box sm"><canvas id="chart-external-referral"></canvas></div>
-    </div>
-    <div class="card chart-card">
-        <h3>회복기 불가 · 같은 재단 캡처
-            <span class="muted" style="font-weight:400; font-size:0.85em">— 입원취소·상담취소 중 시설 안내율</span>
-        </h3>
-        <div class="chart-box sm"><canvas id="chart-referral-capture"></canvas></div>
-    </div>
-</div>
 
 <!-- Claude 자동 인사이트 -->
 <div class="card insight-card">
@@ -173,16 +157,25 @@
 .custom-row.hide { display:none; }
 .period-meta { margin-left:auto; font-size:0.85em; }
 
-/* KPI: 6장 한 줄, 컴팩트 */
+/* KPI: 6장 한 줄 — 색상 깊이와 비교값을 동시에 표시 */
+.section-heading { display:flex; align-items:baseline; gap:10px; margin:15px 2px 7px; }
+.section-heading span { color:#0f172a; font-size:.95em; font-weight:800; }
+.section-heading small { color:#64748b; font-size:.72em; }
 .kpi-row { grid-template-columns: repeat(6, 1fr); gap:8px; margin-bottom:10px; }
-.kpi-row .stat-card { padding:8px 10px; margin:0; min-width:0; height:84px; display:flex; flex-direction:column; justify-content:center; }
+.kpi-row .stat-card { position:relative; overflow:hidden; padding:10px 12px; margin:0; min-width:0; height:94px; display:flex; flex-direction:column; justify-content:center; border:1px solid rgba(148,163,184,.24); box-shadow:0 6px 16px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.85); }
+.kpi-row .stat-card::after { content:""; position:absolute; right:-18px; bottom:-25px; width:72px; height:72px; border-radius:50%; background:currentColor; opacity:.07; }
+.tone-blue{color:#2563eb}.tone-green{color:#15803d}.tone-teal{color:#0f766e}.tone-amber{color:#b45309}.tone-violet{color:#7c3aed}.tone-rose{color:#be123c}
 .kpi-row .stat-card .label { font-size:0.72em; margin-bottom:2px; }
-.kpi-row .stat-card .value { font-size:1.35em; line-height:1.15; }
+.kpi-row .stat-card .value { color:#0f172a; font-size:1.4em; line-height:1.15; font-weight:800; }
+.kpi-row .stat-card .value em { color:#64748b; font-size:.48em; font-style:normal; font-weight:600; }
 .kpi-row .stat-card .value.sm { font-size:0.95em; line-height:1.25; word-break:keep-all; }
 .kpi-row .stat-card .sub { font-size:0.7em; margin-top:2px; }
 .kpi-row .split-value { display:flex; align-items:center; justify-content:center; gap:8px; }
 .kpi-row .split-value i { color:#94a3b8; font-size:.7em; font-style:normal; }
 .kpi-row .split-value + .sub { display:flex; justify-content:center; gap:22px; }
+.delta-row { display:flex; gap:5px; min-height:17px; margin-top:4px; font-size:.62em; white-space:nowrap; }
+.delta { padding:2px 5px; border-radius:999px; background:#f1f5f9; color:#475569; }
+.delta.up { background:#dcfce7; color:#166534; }.delta.down { background:#fee2e2; color:#991b1b; }
 @media (max-width: 1100px) { .kpi-row { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 600px)  { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
 
@@ -190,24 +183,22 @@
 .chart-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; align-items:stretch; }
 .chart-grid.g-2-1 { grid-template-columns: 2fr 1fr; }
 .chart-grid.g-1-2 { grid-template-columns: 1fr 2fr; }
-.chart-grid.five  { grid-template-columns: repeat(5, 1fr); }
-@media (max-width: 1100px) { .chart-grid.five { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 900px)  { .chart-grid, .chart-grid.g-2-1, .chart-grid.g-1-2 { grid-template-columns:1fr; } }
-@media (max-width: 600px)  { .chart-grid.five { grid-template-columns:1fr 1fr; } }
 
-.chart-card { display:flex; flex-direction:column; padding:10px 12px; margin:0; height:230px; min-width:0; box-sizing:border-box; }
-.chart-card h3 { font-size:0.88em; margin-bottom:6px; color:var(--text); font-weight:600; }
+.chart-card { display:flex; flex-direction:column; padding:12px 14px; margin:0; height:270px; min-width:0; box-sizing:border-box; border:1px solid rgba(148,163,184,.22); box-shadow:0 7px 20px rgba(15,23,42,.07), inset 0 1px 0 #fff; background:linear-gradient(145deg,#fff 0%,#fbfdff 100%); }
+.chart-card h3 { font-size:0.88em; margin-bottom:6px; color:#0f172a; font-weight:750; }
+.chart-card h3 small { color:#64748b; font-size:.75em; font-weight:500; margin-left:4px; }
 .chart-box { position:relative; flex:1; min-height:0; height:auto; }
 .chart-box.sm { height:auto; }
-.chart-grid.five .chart-card { height:190px; }
-.chart-card-combined { height:250px; }
+.chart-card-combined { height:290px; }
 .combined-chart-box { display:grid; grid-template-columns:0.8fr 1.2fr; gap:10px; flex:1; min-height:0; }
 .combined-chart-box.equal { grid-template-columns:1fr 1fr; }
 .chart-card-wide { grid-column:1/-1; }
 .combined-chart-box > div { display:flex; flex-direction:column; min-width:0; min-height:0; }
 .combined-chart-box span { color:var(--text-light); font-size:.72em; text-align:center; margin-bottom:2px; }
 @media (max-width: 700px) {
-    .chart-card-combined { height:440px; }
+    .section-heading { align-items:flex-start; flex-direction:column; gap:2px; }
+    .chart-card-combined { height:500px; }
     .combined-chart-box, .combined-chart-box.equal { grid-template-columns:1fr; }
 }
 
@@ -220,7 +211,7 @@
 @page { size:A4 landscape; margin:8mm; }
 @media print {
     body { background:#fff !important; }
-    header, nav, .sidebar, .topbar, .page-header, .period-bar, .chart-grid, .insight-card { display:none !important; }
+    header, nav, .sidebar, .topbar, .page-header, .period-bar, .section-heading, .chart-grid, .insight-card { display:none !important; }
     body .container, main, .content { width:auto !important; max-width:none !important; margin:0 !important; padding:0 !important; }
     .stats-report-sheet { display:grid; grid-template-columns:repeat(3,1fr); gap:3mm; height:190mm; overflow:hidden; }
     .stats-print-title { display:block; grid-column:1/-1; text-align:center; height:12mm; }
@@ -280,12 +271,11 @@
         Object.values(charts).forEach(chart => chart.resize());
     });
 
-    // 도넛/파이용 datalabels — 건수+비율 (작은 조각은 숨김)
+    // 도넛/파이용 datalabels — 모든 유효 항목에 건수+비율 표시
     const doughnutDatalabels = {
         display: ctx => {
-            const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
             const v = ctx.dataset.data[ctx.dataIndex];
-            return total && (v / total) >= 0.04;  // 4% 미만은 숨김
+            return v > 0;
         },
         color: '#fff',
         font: { weight: 'bold', size: 10 },
@@ -453,6 +443,75 @@
         });
     }
 
+    function makeRateBar(canvasId, items, color) {
+        destroyChart(canvasId);
+        const ctx = document.getElementById(canvasId);
+        if (!ctx) return;
+        if (!items || !items.length) { drawEmpty(ctx); return; }
+        charts[canvasId] = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: items.map(x => x.label),
+                datasets: [{ data: items.map(x => x.rate), backgroundColor: color || '#2563eb',
+                    borderColor: items.map(() => '#fff'), borderWidth:1, borderRadius:7,
+                    raw: items }],
+            },
+            options: {
+                indexAxis:'y', responsive:true, maintainAspectRatio:false,
+                layout:{padding:{right:72}},
+                plugins:{ legend:{display:false}, tooltip:{callbacks:{label:c => {
+                    const x=items[c.dataIndex]; return `입원 ${x.completed}/${x.total}건 · ${x.rate}%`;
+                }}}, datalabels:{...barDatalabels, formatter:(v,c)=>{
+                    const x=items[c.dataIndex]; return `${x.completed}/${x.total} · ${v}%`;
+                }}},
+                scales:{x:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%',font:{size:9}}},y:{ticks:{autoSkip:false,font:{size:9}}}},
+            },
+        });
+    }
+
+    function makeMissingBar(canvasId, items) {
+        destroyChart(canvasId);
+        const ctx=document.getElementById(canvasId);
+        if (!ctx) return;
+        if (!items || !items.length) { drawEmpty(ctx); return; }
+        charts[canvasId]=new Chart(ctx,{type:'bar',data:{labels:items.map(x=>x.label),datasets:[{
+            data:items.map(x=>x.rate),backgroundColor:items.map(x=>x.rate>=20?'#dc2626':x.rate>=10?'#f59e0b':'#16a34a'),borderRadius:7
+        }]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,layout:{padding:{right:58}},plugins:{
+            legend:{display:false},tooltip:{callbacks:{label:c=>`${items[c.dataIndex].count}건 누락 · ${c.raw}%`}},
+            datalabels:{...barDatalabels,formatter:(v,c)=>`${items[c.dataIndex].count}건 · ${v}%`}
+        },scales:{x:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%'}},y:{ticks:{autoSkip:false}}}}});
+    }
+
+    function makePolar(canvasId, items) {
+        destroyChart(canvasId);
+        const ctx = document.getElementById(canvasId);
+        if (!ctx) return;
+        const shown=(items||[]).filter(x=>x.count>0);
+        if (!shown.length) { drawEmpty(ctx); return; }
+        charts[canvasId] = new Chart(ctx, {type:'polarArea', data:{labels:shown.map(x=>x.label), datasets:[{
+            data:shown.map(x=>x.count), backgroundColor:shown.map((_,i)=>PALETTE[i%PALETTE.length]+'BB'), borderColor:'#fff', borderWidth:2
+        }]}, options:{responsive:true,maintainAspectRatio:false,scales:{r:{ticks:{display:false}}},plugins:{
+            legend:{position:'right',labels:{boxWidth:10,font:{size:9}}}, datalabels:{...doughnutDatalabels,display:true}
+        }}});
+    }
+
+    function makeBubbleHeat(canvasId, items) {
+        destroyChart(canvasId);
+        const ctx=document.getElementById(canvasId);
+        if (!ctx) return;
+        if (!items || !items.length) { drawEmpty(ctx); return; }
+        const days=['월','화','수','목','금','토','일'];
+        charts[canvasId]=new Chart(ctx,{type:'bubble',data:{datasets:[{label:'전화상담',data:items.map(x=>({
+            x:days.indexOf(x.weekday),y:x.hour,r:Math.min(16,4+x.count*2),count:x.count
+        })),backgroundColor:'rgba(14,116,144,.58)',borderColor:'#0e7490',borderWidth:1}]},options:{
+            responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},datalabels:{
+                display:true,color:'#fff',font:{size:9,weight:'700'},formatter:v=>v.count
+            },tooltip:{callbacks:{label:c=>`${days[c.raw.x]} ${c.raw.y}시 · ${c.raw.count}건`}}},
+            scales:{x:{min:-.5,max:6.5,ticks:{stepSize:1,callback:v=>days[v]||''},grid:{display:false}},
+                    y:{min:7.5,max:18.5,ticks:{stepSize:2,callback:v=>v+'시'}}}
+        }});
+    }
+
     function makeLine(canvasId, points) {
         destroyChart(canvasId);
         const ctx = document.getElementById(canvasId);
@@ -490,7 +549,7 @@
     }
 
     function formatPctLabel(ctx) {
-        const v = ctx.parsed;
+        const v = typeof ctx.parsed === 'object' ? (ctx.parsed.x ?? ctx.parsed.y ?? 0) : ctx.parsed;
         const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
         const pct = total ? (100 * v / total).toFixed(1) : '0.0';
         return `${ctx.label}: ${v}건 (${pct}%)`;
@@ -520,22 +579,45 @@
     function renderKpi(d) {
         const s = d.summary;
         const total = s.total || 0;
-        setKpi('total', `${total}`, total ? `${s.from || ''} ~ ${s.to || ''}` : '');
+        setKpi('total', `${total}`);
         setKpi('completed', `${s.completed || 0}`);
         setKpi('conv-rate', `${(s.conversion_rate || 0)}%`);
         setKpi('pending', `${s.pending || 0}`);
         const cancelled = s.cancelled || 0;
         const cancelRate = total ? (100 * cancelled / total).toFixed(1) : '0.0';
         setKpi('cancelled', `${cancelled}`, `${cancelRate}%`);
-        // 일평균 = 기간 일수로 나눔
-        let dailyAvg = '-';
-        if (s.from && s.to && total) {
-            const f = new Date(s.from), t = new Date(s.to);
-            const days = Math.max(1, Math.round((t - f) / 86400000) + 1);
-            dailyAvg = (total / days).toFixed(1);
-        }
-        setKpi('daily-avg', dailyAvg);
-        setKpi('disuse', `${s.disuse_screening || 0}`);
+        setKpi('active-day-avg', `${s.active_day_avg || 0}`);
+        setKpi('active-days', `실제 상담 ${s.active_days || 0}일 기준`);
+        const rc=d.referral_capture||{};
+        setKpi('capture-rate', `${rc.rate || 0}%`);
+        setKpi('capture-sub', `${rc.with_referral || 0}/${rc.no_admit_total || 0}건 안내`);
+    }
+
+    const iso=d=>d.toISOString().slice(0,10);
+    const dateUtc=s=>new Date(s+'T00:00:00Z');
+    function deltaBadge(label,current,previous,isRate=false){
+        if (previous==null) return `<span class="delta">${label} -</span>`;
+        const delta=isRate ? current-previous : (previous ? (current-previous)/previous*100 : null);
+        if (delta==null) return `<span class="delta">${label} 신규</span>`;
+        const cls=delta>0?'up':delta<0?'down':'';
+        const unit=isRate?'%p':'%';
+        return `<span class="delta ${cls}">${label} ${delta>0?'▲':delta<0?'▼':''}${Math.abs(delta).toFixed(1)}${unit}</span>`;
+    }
+    async function renderComparisons(d){
+        const s=d.summary;
+        if(!s.from||!s.to) return;
+        const start=dateUtc(s.from), end=dateUtc(s.to), span=Math.round((end-start)/86400000)+1;
+        const prevEnd=new Date(start); prevEnd.setUTCDate(prevEnd.getUTCDate()-1);
+        const prevStart=new Date(prevEnd); prevStart.setUTCDate(prevStart.getUTCDate()-span+1);
+        const yoyStart=new Date(start), yoyEnd=new Date(end);
+        yoyStart.setUTCFullYear(yoyStart.getUTCFullYear()-1); yoyEnd.setUTCFullYear(yoyEnd.getUTCFullYear()-1);
+        const query=(a,b)=>fetch(`/api/stats.json?preset=custom&from=${iso(a)}&to=${iso(b)}`).then(r=>r.ok?r.json():null);
+        const [prev,yoy]=await Promise.all([query(prevStart,prevEnd),query(yoyStart,yoyEnd)]);
+        const keys=['total','completed','conversion_rate'];
+        keys.forEach(key=>{const el=document.querySelector(`[data-compare="${key}"]`);if(!el)return;
+            const rate=key==='conversion_rate';
+            el.innerHTML=deltaBadge('직전',s[key]||0,prev?.summary?.[key],rate)+deltaBadge('전년',s[key]||0,yoy?.summary?.[key],rate);
+        });
     }
 
     // ─── 데이터 로드 + 렌더 ───
@@ -548,6 +630,7 @@
         }
         const d = await r.json();
         renderKpi(d);
+        renderComparisons(d);
         makeLine('chart-daily', d.daily_trend);
         // 진행 단계는 상태별 고정 색상으로 (UX 일관성)
         const STATUS_COLORS = {
@@ -560,20 +643,18 @@
         const statusItems = (d.by_status || []).filter(x => x.count > 0);
         makeStatusDoughnut('chart-status', statusItems, STATUS_COLORS);
         makeDoughnut('chart-referral-type', d.by_referral_type);
-        makeHBar('chart-referral-detail', d.by_referral_detail, '#16a34a');
+        makeRateBar('chart-referral-performance', d.by_referral_conversion, '#16a34a');
         makeDoughnut('chart-disease-group', d.by_disease_group);
-        makeHBar('chart-disease', d.by_disease, '#2563eb');
         makeHBar('chart-sido', d.by_sido, '#9333ea');
         makeHBar('chart-sigungu', d.by_sigungu_top, '#0891b2');
         makeVBar('chart-weekday', d.by_weekday || [], '#2563eb');
-        makeVBar('chart-phone-hour', d.by_phone_hour || [], '#0d9488');
-        makeDoughnut('chart-insurance', d.by_insurance);
-        makeVBar('chart-age', d.by_age, '#f59e0b');
-        makeDoughnut('chart-channel', d.by_channel);
-        makeVBar('chart-counselor', d.by_counselor, '#14532d');
-        makeDoughnut('chart-gender', d.by_gender);
+        makeBubbleHeat('chart-weekday-hour', d.weekday_hour || []);
+        makeHBar('chart-rejection', d.by_rejection_reason || [], '#dc2626');
+        makeRateBar('chart-hospital-performance', d.by_hospital_performance || [], '#2563eb');
+        makePolar('chart-admission-lead', d.by_admission_lead || []);
+        makeRateBar('chart-counselor-performance', d.by_counselor_performance || [], '#7c3aed');
+        makeMissingBar('chart-missing', d.by_missing_field || []);
         // 회복기 불가 → 외부 시설 연계 (수요 캡처)
-        makeDoughnut('chart-external-referral', d.by_external_referral || []);
         const rc = d.referral_capture || { no_admit_total: 0, with_referral: 0, rate: 0 };
         const rcEl = document.getElementById('referral-capture-rate');
         if (rcEl) rcEl.textContent =

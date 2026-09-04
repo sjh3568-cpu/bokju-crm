@@ -2377,6 +2377,8 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
     # 진행중 = 미정 + 입원보류 (입원/취소로 미확정)
     pending = status_counts["미정"] + status_counts["입원보류"]
     conversion_rate = round(100.0 * completed / total, 1) if total else 0.0
+    active_days = len({(r["consult_date"] or "")[:10] for r in rows
+                       if (r["consult_date"] or "")[:10]})
 
     # 상담 진행 단계 (Tier 1) — NULL/빈값은 '상담완료'.
     result_counts = {s: 0 for s in CONSULT_RESULTS}
@@ -2422,6 +2424,7 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
     phone_hour_counts = {f"{hour:02d}시": 0 for hour in range(8, 19)}
     phone_hour_counts["기타 시간"] = 0
     phone_hour_counts["시간 미지정"] = 0
+    weekday_hour_counts = {}
     from datetime import datetime as _datetime
     for r in rows:
         raw_date = (r["consult_date"] or "")[:10]
@@ -2439,6 +2442,12 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
             continue
         key = f"{hour:02d}시" if 8 <= hour <= 18 else "기타 시간"
         phone_hour_counts[key] += 1
+        if 8 <= hour <= 18 and raw_date:
+            try:
+                weekday = weekday_names[_datetime.strptime(raw_date, "%Y-%m-%d").weekday()]
+                weekday_hour_counts[(weekday, hour)] = weekday_hour_counts.get((weekday, hour), 0) + 1
+            except (ValueError, TypeError):
+                pass
 
     # 모병원 — 빈값/None 제외 (자택 거주 환자는 모병원 없음)
     hospital_counts = {}
@@ -2451,10 +2460,49 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
     # 거절·취소 사유 — 입원취소 상태에서만 의미. NULL/빈값 제외.
     reason_counts = {}
     for r in rows:
+        if ((r["admission_status"] or "").strip() != "입원취소" and
+                (r["consult_result"] or "").strip() != "상담취소"):
+            continue
         v = (r["rejection_reason"] or "").strip() if isinstance(r["rejection_reason"], str) else None
         if v:
             reason_counts[v] = reason_counts.get(v, 0) + 1
     by_reason = _sort_desc(reason_counts)
+
+    def _performance(field, *, limit=10):
+        totals, completes = {}, {}
+        for row in rows:
+            label = (row[field] or "").strip()
+            if not label:
+                continue
+            totals[label] = totals.get(label, 0) + 1
+            if (row["admission_status"] or "").strip() in ("입원완료", "퇴원완료"):
+                completes[label] = completes.get(label, 0) + 1
+        result = [{"label": label, "total": count,
+                   "completed": completes.get(label, 0),
+                   "rate": round(100.0 * completes.get(label, 0) / count, 1)}
+                  for label, count in totals.items()]
+        return sorted(result, key=lambda x: (-x["total"], -x["rate"], x["label"]))[:limit]
+
+    # 상담일부터 실제 입원일까지 걸린 기간
+    lead_buckets = {"당일": 0, "1~3일": 0, "4~7일": 0, "8~14일": 0, "15일 이상": 0}
+    for r in rows:
+        if (r["admission_status"] or "").strip() not in ("입원완료", "퇴원완료"):
+            continue
+        try:
+            lead_days = (_datetime.strptime((r["admission_date"] or "")[:10], "%Y-%m-%d") -
+                         _datetime.strptime((r["consult_date"] or "")[:10], "%Y-%m-%d")).days
+        except (ValueError, TypeError):
+            continue
+        bucket = ("당일" if lead_days <= 0 else "1~3일" if lead_days <= 3 else
+                  "4~7일" if lead_days <= 7 else "8~14일" if lead_days <= 14 else "15일 이상")
+        lead_buckets[bucket] += 1
+
+    missing_fields = {
+        "상담시간": sum(1 for r in rows if not (r["consult_time"] or "").strip()),
+        "유입경로": sum(1 for r in rows if (r["referral_source_detail"] or "").strip() in ("", "[]")),
+        "거주지": sum(1 for r in rows if not (r["residence_sigungu"] or "").strip()),
+        "질환명": sum(1 for r in rows if (r["diseases"] or "").strip() in ("", "[]")),
+    }
 
     # 회복기 불가 → 외부 시설 연계 (수요 캡처율 KPI)
     # "입원 불가/일반재활 안내" 상태 = 입원취소 OR 상담취소 (회복기 입원으로 안 이어진 케이스)
@@ -2481,6 +2529,8 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
             "cancelled": cancelled,
             "pending": pending,
             "conversion_rate": conversion_rate,
+            "active_days": active_days,
+            "active_day_avg": round(total / active_days, 1) if active_days else 0.0,
             "disuse_screening": disuse_screening,
             "from": date_from,
             "to": date_to,
@@ -2492,6 +2542,14 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
         "by_consult_result": [{"label": s, "count": result_counts[s]} for s in CONSULT_RESULTS],
         "by_source_hospital": by_hospital,
         "by_rejection_reason": by_reason,
+        "by_referral_conversion": _channel_conversion_table(rows)["details"][:10],
+        "by_hospital_performance": _performance("source_hospital"),
+        "by_counselor_performance": _performance("counselor"),
+        "by_admission_lead": [{"label": label, "count": count}
+                              for label, count in lead_buckets.items()],
+        "by_missing_field": [{"label": label, "count": count,
+                              "rate": round(100.0 * count / total, 1) if total else 0.0}
+                             for label, count in missing_fields.items()],
         "by_external_referral": by_external_referral,
         "referral_capture": {
             "no_admit_total": no_admit_total,
@@ -2514,6 +2572,8 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
                        for name in weekday_names],
         "by_phone_hour": [{"label": name, "count": count}
                           for name, count in phone_hour_counts.items() if count],
+        "weekday_hour": [{"weekday": weekday, "hour": hour, "count": count}
+                         for (weekday, hour), count in weekday_hour_counts.items()],
     }
 
 
