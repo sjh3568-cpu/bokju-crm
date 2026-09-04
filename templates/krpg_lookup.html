@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}KCD 입원대상 조회 · 복주 상담CRM{% endblock %}
+{% block content %}
+<div class="page-header"><div><h1>KCD 입원대상 조회 <span class="muted" style="font-size:.62em">KRPG 2.2 사업대상 {{ krpg_meta.count|int }}개</span></h1></div></div>
+{% include "_krpg_lookup_body.html" %}
+{% endblock %}

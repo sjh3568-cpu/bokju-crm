@@ -1,42 +1,116 @@
 {# 할 일 본문 — 전체 페이지(todos.html)와 팝업(todos_embed.html)이 공유.
-   embed=True 면 날짜 이동 링크·폼이 embed 상태를 유지한다. #}
+   달력(월) 뷰 / 목록(일자별) 뷰. embed=True 면 링크가 embed 상태를 유지. #}
 {% set embed = embed|default(false) %}
-{% set _e = '&embed=1' if embed else '' %}
+{% set _q = '&embed=1' if embed else '' %}
 
-<div class="todo-datebar">
-    <a class="btn btn-secondary btn-sm" href="/todos?date={{ prev_day }}{{ _e }}">◀ 이전</a>
-    <form method="get" action="/todos" class="todo-datepick">
-        {% if embed %}<input type="hidden" name="embed" value="1">{% endif %}
-        <input type="date" name="date" value="{{ day }}" onchange="this.form.submit()">
-    </form>
-    <a class="btn btn-secondary btn-sm" href="/todos?date={{ next_day }}{{ _e }}">다음 ▶</a>
-    {% if day != today %}<a class="btn btn-secondary btn-sm" href="/todos{{ '?embed=1' if embed else '' }}">오늘로</a>{% endif %}
-    <span class="todo-daylabel">{{ day|krdate_wd_full if day else '' }}{% if day == today %} · 오늘{% endif %}</span>
+<div class="todo-toolbar">
+    <div class="todo-viewtabs">
+        <a href="/todos?view=calendar{{ _q }}" class="{{ 'on' if view == 'calendar' }}">📅 달력</a>
+        <a href="/todos?view=list{{ _q }}" class="{{ 'on' if view == 'list' }}">≣ 목록</a>
+    </div>
+
+    {% if view == 'calendar' %}
+    <div class="todo-nav">
+        <a class="btn btn-secondary btn-sm" href="/todos?view=calendar&year={{ prev_year }}&month={{ prev_month }}{{ _q }}">◀</a>
+        <span class="todo-month">{{ month_label }}</span>
+        <a class="btn btn-secondary btn-sm" href="/todos?view=calendar&year={{ next_year }}&month={{ next_month }}{{ _q }}">▶</a>
+        <a class="btn btn-secondary btn-sm" href="/todos?view=calendar{{ _q }}">오늘</a>
+    </div>
+    {% else %}
+    <div class="todo-nav">
+        <a class="btn btn-secondary btn-sm" href="/todos?view=list&date={{ prev_day }}{{ _q }}">◀ 이전</a>
+        <form method="get" action="/todos" class="todo-datepick">
+            <input type="hidden" name="view" value="list">{% if embed %}<input type="hidden" name="embed" value="1">{% endif %}
+            <input type="date" name="date" value="{{ day }}" onchange="this.form.submit()">
+        </form>
+        <a class="btn btn-secondary btn-sm" href="/todos?view=list&date={{ next_day }}{{ _q }}">다음 ▶</a>
+        {% if day != today %}<a class="btn btn-secondary btn-sm" href="/todos?view=list{{ _q }}">오늘</a>{% endif %}
+        <span class="todo-daylabel">{{ day|krdate_wd_full if day else '' }}{% if day == today %} · 오늘{% endif %}</span>
+    </div>
+    {% endif %}
+
+    <button type="button" class="btn btn-primary btn-sm" id="todo-new-btn" data-today="{{ today }}">＋ 새 ToDo</button>
 </div>
 
-<div class="card todo-addcard">
-    <form id="todo-add" class="todo-addform" data-date="{{ day }}">
-        <input type="text" name="title" placeholder="할 일을 입력하세요" required autocomplete="off" class="todo-add-title">
-        <label class="todo-add-remind" title="리마인드 시각(선택)">
-            <span>⏰</span>
-            <input type="datetime-local" name="remind_at">
-        </label>
-        <button type="submit" class="btn btn-primary">추가</button>
+{# 추가/수정 공용 폼 패널 — 그룹웨어 ToDo 양식 (기간·진행률·D-day·내용) #}
+<div class="card todo-form-panel" id="todo-form-panel" hidden>
+    <div class="tf-head"><strong id="todo-form-title">ToDo 추가</strong></div>
+    <form id="todo-form" data-id="">
+        <div class="tf-grid">
+            <label class="tf-field tf-wide"><span>ToDo명 <b class="req">*</b></span>
+                <input type="text" name="title" required autocomplete="off"></label>
+            <label class="tf-field"><span>담당자</span>
+                <input type="text" value="{{ current_user.display_name }}" disabled></label>
+            <label class="tf-field"><span>시작일</span>
+                <input type="date" name="due_date"></label>
+            <label class="tf-field"><span>종료일</span>
+                <input type="date" name="end_date"></label>
+            <label class="tf-field"><span>진행률</span>
+                <span class="tf-progress"><input type="number" name="progress" min="0" max="100" step="10" value="0"><i>%</i></span></label>
+            <div class="tf-field"><span>D-day</span>
+                <label class="tf-check"><input type="checkbox" name="dday"> 사용 (마감 D- 표시)</label></div>
+            <label class="tf-field"><span>리마인드</span>
+                <input type="datetime-local" name="remind_at"></label>
+            <label class="tf-field tf-wide"><span>내용</span>
+                <textarea name="note" rows="2" placeholder="상세 내용 (선택)"></textarea></label>
+        </div>
+        <div class="tf-actions">
+            <button type="submit" class="btn btn-primary btn-sm">저장</button>
+            <button type="button" class="btn btn-danger btn-sm" id="todo-form-del" hidden>삭제</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="todo-form-cancel">취소</button>
+        </div>
     </form>
-    <input type="text" id="todo-add-note" placeholder="메모 (선택)" autocomplete="off" class="todo-add-note">
 </div>
 
+{% macro todo_data(t) -%}
+data-id="{{ t.id }}" data-title="{{ t.title }}" data-due="{{ t.due_date }}"
+data-end="{{ t.end_date or '' }}" data-progress="{{ t.progress or 0 }}"
+data-dday="{{ t.dday or 0 }}" data-remind="{{ t.remind_at or '' }}" data-note="{{ t.note or '' }}"
+{%- endmacro %}
+
+{% if view == 'calendar' %}
+<div class="tbl-wrap">
+<table class="todo-cal">
+    <thead><tr>
+        <th class="sun">일</th><th>월</th><th>화</th><th>수</th><th>목</th><th>금</th><th class="sat">토</th>
+    </tr></thead>
+    <tbody>
+        {% for week in weeks %}
+        <tr>
+            {% for c in week %}
+            <td class="todo-cell{% if not c.in_month %} oom{% endif %}{% if c.is_today %} today{% endif %}" data-date="{{ c.date }}">
+                <div class="tc-day{% if c.weekday == 0 %} sun{% elif c.weekday == 6 %} sat{% endif %}">{{ c.day }}</div>
+                {% for t in c.todos %}
+                <div class="tc-todo{% if t.done %} done{% endif %}" {{ todo_data(t) }}>
+                    {% if t.dday_label %}<span class="tc-dday">{{ t.dday_label }}</span>{% endif %}
+                    <span class="tc-title">{{ t.title }}</span>
+                    {% if t.progress and not t.done %}<span class="tc-prog">{{ t.progress }}%</span>{% endif %}
+                </div>
+                {% endfor %}
+            </td>
+            {% endfor %}
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+<p class="note" style="margin-top:8px">날짜 칸을 누르면 그날 ToDo를 추가하고, 항목을 누르면 수정할 수 있습니다.</p>
+
+{% else %}
+{# ── 목록(일자별) 뷰 ── #}
 {% if overdue %}
 <div class="card todo-overdue">
     <h3>⚠ 지난 미완료 <span class="badge badge-off">{{ overdue|length }}</span></h3>
     <ul class="todo-list">
         {% for t in overdue %}
-        <li class="todo-item" data-id="{{ t.id }}">
+        <li class="todo-item" {{ todo_data(t) }}>
             <button type="button" class="todo-check" data-toggle title="완료 처리"></button>
-            <div class="todo-body">
+            <div class="todo-body todo-openedit">
                 <span class="todo-title">{{ t.title }}</span>
                 <span class="todo-meta">
                     <span class="badge badge-rejected">{{ t.due_date|krdate_short_wd }}</span>
+                    {% if t.dday_label %}<span class="todo-ddaybadge">{{ t.dday_label }}</span>{% endif %}
+                    {% if t.progress %}<span class="todo-progtag">{{ t.progress }}%</span>{% endif %}
                     {% if t.remind_at %}<span class="todo-remind">⏰ {{ t.remind_at.replace('T',' ')[:16] }}</span>{% endif %}
                     {% if t.note %}<span class="todo-note">{{ t.note }}</span>{% endif %}
                 </span>
@@ -55,31 +129,27 @@
     {% if items %}
     <ul class="todo-list">
         {% for t in items %}
-        <li class="todo-item {% if t.done %}todo-done{% endif %}" data-id="{{ t.id }}">
-            <button type="button" class="todo-check {% if t.done %}checked{% endif %}" data-toggle
+        <li class="todo-item{% if t.done %} todo-done{% endif %}" {{ todo_data(t) }}>
+            <button type="button" class="todo-check{% if t.done %} checked{% endif %}" data-toggle
                     title="{{ '완료 취소' if t.done else '완료 처리' }}">{% if t.done %}✓{% endif %}</button>
-            <div class="todo-body">
-                <span class="todo-title" data-edit-title>{{ t.title }}</span>
+            <div class="todo-body todo-openedit">
+                <span class="todo-title">{{ t.title }}</span>
                 <span class="todo-meta">
+                    {% if t.end_date %}<span class="badge badge-confirmed">~ {{ t.end_date|krdate_short_wd }}</span>{% endif %}
+                    {% if t.dday_label %}<span class="todo-ddaybadge">{{ t.dday_label }}</span>{% endif %}
+                    {% if t.progress %}<span class="todo-progtag">{{ t.progress }}%</span>{% endif %}
                     {% if t.remind_at %}<span class="todo-remind">⏰ {{ t.remind_at.replace('T',' ')[:16] }}</span>{% endif %}
                     {% if t.note %}<span class="todo-note">{{ t.note }}</span>{% endif %}
                 </span>
-                <form class="todo-editform" hidden>
-                    <input type="text" name="title" value="{{ t.title }}" required class="todo-edit-title">
-                    <input type="datetime-local" name="remind_at" value="{{ t.remind_at[:16] if t.remind_at else '' }}">
-                    <input type="text" name="note" value="{{ t.note or '' }}" placeholder="메모">
-                    <button type="submit" class="btn btn-primary btn-xs">저장</button>
-                    <button type="button" class="btn btn-secondary btn-xs" data-edit-cancel>취소</button>
-                </form>
             </div>
             <div class="todo-ops">
-                <button type="button" class="btn btn-secondary btn-xs" data-edit title="수정">수정</button>
                 <button type="button" class="btn btn-secondary btn-xs" data-del title="삭제">✕</button>
             </div>
         </li>
         {% endfor %}
     </ul>
     {% else %}
-    <div class="empty">이 날짜에 등록된 할 일이 없습니다. 위에서 추가하세요.</div>
+    <div class="empty">이 날짜에 등록된 할 일이 없습니다. ‘＋ 새 ToDo’로 추가하세요.</div>
     {% endif %}
 </div>
+{% endif %}

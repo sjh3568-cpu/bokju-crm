@@ -1,4 +1,4 @@
-// 상담사 개인 할 일 — 추가·완료·이월·삭제·수정 (fetch 기반, 처리 후 새로고침).
+// 개인 할 일 — 달력/목록 공용. 추가·수정 폼 패널 + 완료·이월·삭제 (fetch 후 새로고침).
 (function () {
     'use strict';
 
@@ -15,78 +15,107 @@
             });
         });
     }
-
     function fail(e) { alert(e.message || '처리 중 오류가 발생했습니다.'); }
+    function reload() { location.reload(); }
 
-    // ── 추가 ──
-    var addForm = document.getElementById('todo-add');
-    if (addForm) {
-        addForm.addEventListener('submit', function (e) {
-            e.preventDefault();
-            var title = addForm.title.value.trim();
-            if (!title) return;
-            var noteEl = document.getElementById('todo-add-note');
-            post('/api/todos', {
-                title: title,
-                due_date: addForm.dataset.date,
-                remind_at: addForm.remind_at.value || '',
-                note: noteEl ? noteEl.value.trim() : '',
-            }).then(function () { location.reload(); }).catch(fail);
-        });
+    var panel = document.getElementById('todo-form-panel');
+    var form = document.getElementById('todo-form');
+    var formTitle = document.getElementById('todo-form-title');
+    var delBtn = document.getElementById('todo-form-del');
+    var newBtn = document.getElementById('todo-new-btn');
+    var today = newBtn ? newBtn.dataset.today : '';
+
+    function showAdd(dateStr) {
+        if (!form) return;
+        form.reset();
+        form.dataset.id = '';
+        form.due_date.value = dateStr || today || '';
+        form.end_date.value = '';
+        form.progress.value = 0;
+        form.dday.checked = false;
+        if (formTitle) formTitle.textContent = 'ToDo 추가';
+        if (delBtn) delBtn.hidden = true;
+        panel.hidden = false;
+        form.title.focus();
+        panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
-    // ── 항목별 동작 (완료·이월·삭제·수정) ──
+    function showEdit(el) {
+        if (!form) return;
+        var d = el.dataset;
+        form.dataset.id = d.id;
+        form.title.value = d.title || '';
+        form.due_date.value = d.due || '';
+        form.end_date.value = d.end || '';
+        form.progress.value = d.progress || 0;
+        form.dday.checked = (d.dday === '1');
+        form.remind_at.value = (d.remind || '').slice(0, 16);
+        form.note.value = d.note || '';
+        if (formTitle) formTitle.textContent = 'ToDo 수정';
+        if (delBtn) delBtn.hidden = false;
+        panel.hidden = false;
+        panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    if (newBtn) newBtn.addEventListener('click', function () { showAdd(); });
+
+    var cancelBtn = document.getElementById('todo-form-cancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', function () { panel.hidden = true; });
+
+    if (form) form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var title = form.title.value.trim();
+        if (!title) return;
+        var body = {
+            title: title,
+            due_date: form.due_date.value || today,
+            end_date: form.end_date.value || '',
+            progress: form.progress.value || 0,
+            dday: form.dday.checked ? '1' : '0',
+            remind_at: form.remind_at.value || '',
+            note: form.note.value.trim(),
+        };
+        var id = form.dataset.id;
+        post(id ? '/api/todos/' + id : '/api/todos', body).then(reload).catch(fail);
+    });
+
+    if (delBtn) delBtn.addEventListener('click', function () {
+        var id = form.dataset.id;
+        if (!id) return;
+        if (!confirm('이 할 일을 삭제할까요?')) return;
+        post('/api/todos/' + id + '/delete', {}).then(reload).catch(fail);
+    });
+
+    // ── 달력: 날짜 칸 클릭=추가, 항목 클릭=수정 ──
+    document.querySelectorAll('.todo-cell').forEach(function (cell) {
+        cell.addEventListener('click', function (e) {
+            var todoEl = e.target.closest('.tc-todo');
+            if (todoEl) { showEdit(todoEl); return; }
+            showAdd(cell.dataset.date);
+        });
+    });
+
+    // ── 목록: 완료 토글 / 이월 / 삭제 / 클릭 수정 ──
     document.querySelectorAll('.todo-item').forEach(function (li) {
         var id = li.dataset.id;
-
         var check = li.querySelector('[data-toggle]');
-        if (check) check.addEventListener('click', function () {
+        if (check) check.addEventListener('click', function (e) {
+            e.stopPropagation();
             var makeDone = !li.classList.contains('todo-done');
-            post('/api/todos/' + id + '/toggle', { done: makeDone ? '1' : '0' })
-                .then(function () { location.reload(); }).catch(fail);
+            post('/api/todos/' + id + '/toggle', { done: makeDone ? '1' : '0' }).then(reload).catch(fail);
         });
-
         var carry = li.querySelector('[data-carry]');
-        if (carry) carry.addEventListener('click', function () {
-            post('/api/todos/' + id + '/carry', {})
-                .then(function () { location.reload(); }).catch(fail);
+        if (carry) carry.addEventListener('click', function (e) {
+            e.stopPropagation();
+            post('/api/todos/' + id + '/carry', {}).then(reload).catch(fail);
         });
-
         var del = li.querySelector('[data-del]');
-        if (del) del.addEventListener('click', function () {
+        if (del) del.addEventListener('click', function (e) {
+            e.stopPropagation();
             if (!confirm('이 할 일을 삭제할까요?')) return;
-            post('/api/todos/' + id + '/delete', {})
-                .then(function () { location.reload(); }).catch(fail);
+            post('/api/todos/' + id + '/delete', {}).then(reload).catch(fail);
         });
-
-        // 인라인 수정
-        var editBtn = li.querySelector('[data-edit]');
-        var form = li.querySelector('.todo-editform');
-        var meta = li.querySelector('.todo-meta');
-        var titleView = li.querySelector('[data-edit-title]');
-        if (editBtn && form) {
-            editBtn.addEventListener('click', function () {
-                form.hidden = false;
-                if (titleView) titleView.hidden = true;
-                if (meta) meta.hidden = true;
-                form.title.focus();
-            });
-            var cancel = form.querySelector('[data-edit-cancel]');
-            if (cancel) cancel.addEventListener('click', function () {
-                form.hidden = true;
-                if (titleView) titleView.hidden = false;
-                if (meta) meta.hidden = false;
-            });
-            form.addEventListener('submit', function (e) {
-                e.preventDefault();
-                var t = form.title.value.trim();
-                if (!t) return;
-                post('/api/todos/' + id, {
-                    title: t,
-                    remind_at: form.remind_at.value || '',
-                    note: form.note.value.trim(),
-                }).then(function () { location.reload(); }).catch(fail);
-            });
-        }
+        var open = li.querySelector('.todo-openedit');
+        if (open) open.addEventListener('click', function () { showEdit(li); });
     });
 })();

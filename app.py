@@ -11,7 +11,9 @@ import os
 import secrets
 import threading
 import calendar
+from functools import lru_cache
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from urllib.parse import urlencode, urlsplit
 
 from dotenv import load_dotenv
@@ -1634,22 +1636,85 @@ def _valid_date(s, default=None):
         return default
 
 
+def _annotate_todos(todos, today):
+    """할 일에 dday_label(마감까지 D-표기)을 붙인다 (dday 사용 항목만)."""
+    for t in todos:
+        t["dday_label"] = ""
+        if t.get("dday"):
+            anchor = t.get("end_date") or t.get("due_date")
+            try:
+                days = (date.fromisoformat(anchor) - today).days
+                t["dday_label"] = ("D-DAY" if days == 0
+                                   else (f"D-{days}" if days > 0 else f"D+{-days}"))
+            except (ValueError, TypeError):
+                t["dday_label"] = ""
+    return todos
+
+
+def _todo_calendar_context(uid, year, month, today):
+    """월 달력 그리드(6주 x 7일) + 각 날짜의 할 일 버킷."""
+    first = date(year, month, 1)
+    start = first - timedelta(days=(first.weekday() + 1) % 7)   # 그 주 일요일부터
+    grid = [start + timedelta(days=i) for i in range(42)]
+    todos = _annotate_todos(
+        models.list_todos_range(uid, grid[0].isoformat(), grid[-1].isoformat()), today)
+    buckets = {}
+    for t in todos:
+        s = date.fromisoformat(t["due_date"])
+        e = date.fromisoformat(t["end_date"]) if t.get("end_date") else s
+        d, last = max(s, grid[0]), min(e, grid[-1])
+        while d <= last:
+            buckets.setdefault(d.isoformat(), []).append(t)
+            d += timedelta(days=1)
+    weeks = []
+    for w in range(6):
+        week = []
+        for dc in grid[w * 7:(w + 1) * 7]:
+            week.append({
+                "date": dc.isoformat(), "day": dc.day,
+                "in_month": dc.month == month, "is_today": dc == today,
+                "weekday": (dc.weekday() + 1) % 7,   # 0=일 .. 6=토
+                "todos": buckets.get(dc.isoformat(), []),
+            })
+        weeks.append(week)
+    prev_m = (first - timedelta(days=1)).replace(day=1)
+    next_m = (first + timedelta(days=31)).replace(day=1)
+    return {
+        "weeks": weeks, "year": year, "month": month,
+        "month_label": f"{year}.{month:02d}",
+        "prev_year": prev_m.year, "prev_month": prev_m.month,
+        "next_year": next_m.year, "next_month": next_m.month,
+    }
+
+
 @app.route("/todos")
 @login_required
 def todos_view():
-    """일자별 개인 할 일 — 선택 날짜 목록 + 지난 미완료(이월 대상)."""
-    day = _valid_date(request.args.get("date"), date.today().isoformat())
-    items = models.list_todos(g.user["id"], day)
-    overdue = models.list_overdue_todos(g.user["id"], date.today().isoformat()) \
-        if day == date.today().isoformat() else []
-    prev_day = (date.fromisoformat(day) - timedelta(days=1)).isoformat()
-    next_day = (date.fromisoformat(day) + timedelta(days=1)).isoformat()
+    """개인 할 일 — 달력(월) 뷰가 기본, 목록(일자별) 뷰 선택 가능."""
+    uid = g.user["id"]
+    today = date.today()
     embed = request.args.get("embed") == "1"   # 팝업(iframe)용 — 헤더/네비 없이 본문만
-    return render_template(
-        "todos_embed.html" if embed else "todos.html",
-        day=day, items=items, overdue=overdue, embed=embed,
-        prev_day=prev_day, next_day=next_day, today=date.today().isoformat(),
-    )
+    view = "list" if request.args.get("view") == "list" else "calendar"
+    ctx = {"view": view, "embed": embed, "today": today.isoformat()}
+    if view == "list":
+        day = _valid_date(request.args.get("date"), today.isoformat())
+        ctx.update(
+            day=day, items=_annotate_todos(models.list_todos(uid, day), today),
+            overdue=_annotate_todos(
+                models.list_overdue_todos(uid, today.isoformat())
+                if day == today.isoformat() else [], today),
+            prev_day=(date.fromisoformat(day) - timedelta(days=1)).isoformat(),
+            next_day=(date.fromisoformat(day) + timedelta(days=1)).isoformat(),
+        )
+    else:
+        try:
+            year = int(request.args.get("year") or today.year)
+            month = int(request.args.get("month") or today.month)
+            date(year, month, 1)
+        except (TypeError, ValueError):
+            year, month = today.year, today.month
+        ctx.update(_todo_calendar_context(uid, year, month, today))
+    return render_template("todos_embed.html" if embed else "todos.html", **ctx)
 
 
 @app.route("/api/todos", methods=["POST"])
@@ -1660,10 +1725,16 @@ def api_todo_create():
     if not title:
         return jsonify({"error": "할 일 내용을 입력하세요."}), 400
     day = _valid_date(data.get("due_date"), date.today().isoformat())
+    end = _valid_date(data.get("end_date"))
+    if end and end < day:          # 종료일이 시작일보다 앞서면 무시
+        end = None
     tid = models.create_todo(
         g.user["id"], title, day,
+        end_date=end,
         note=(data.get("note") or "").strip(),
         remind_at=(data.get("remind_at") or "").strip() or None,
+        progress=data.get("progress") or 0,
+        dday=str(data.get("dday", "")) in ("1", "true", "True", "on"),
     )
     return jsonify({"ok": True, "id": tid})
 
@@ -1686,6 +1757,12 @@ def api_todo_update(tid):
         fields["remind_at"] = (data.get("remind_at") or "").strip()
     if "due_date" in data:
         fields["due_date"] = _valid_date(data.get("due_date"))
+    if "end_date" in data:
+        fields["end_date"] = _valid_date(data.get("end_date")) or ""
+    if "progress" in data:
+        fields["progress"] = data.get("progress") or 0
+    if "dday" in data:
+        fields["dday"] = str(data.get("dday", "")) in ("1", "true", "True", "on")
     models.update_todo(tid, g.user["id"], **fields)
     return jsonify({"ok": True})
 
@@ -2069,6 +2146,73 @@ def compute_period_plan(onset, planned, group_name, delayed=False):
                              if admission_end else 0),
         "milestones": milestones,
     }
+
+
+_KRPG_DATA_PATH = Path(__file__).with_name("data") / "krpg_v22.json"
+
+
+@lru_cache(maxsize=1)
+def _krpg_data():
+    with _KRPG_DATA_PATH.open(encoding="utf-8") as fp:
+        return json.load(fp)
+
+
+def _normalize_kcd(value):
+    return "".join(ch for ch in (value or "").upper() if ch.isalnum())
+
+
+@app.route("/tools/krpg")
+@login_required
+def krpg_lookup():
+    """KRPG 2.2 사업대상 1,477개 KCD 코드 즉시 조회."""
+    template = ("krpg_lookup_embed.html" if request.args.get("embed") == "1"
+                else "krpg_lookup.html")
+    return render_template(template, krpg_meta=_krpg_data())
+
+
+@app.route("/api/krpg/search")
+@login_required
+def api_krpg_search():
+    query = (request.args.get("q") or "").strip()
+    if not query:
+        return jsonify({"query": "", "eligible": False, "exact": False, "items": []})
+    normalized = _normalize_kcd(query)
+    lowered = query.casefold()
+    items = _krpg_data()["items"]
+
+    exact, prefix, text_matches = [], [], []
+    looks_like_code = bool(normalized) and any(ch.isdigit() for ch in normalized) \
+        and not any("가" <= ch <= "힣" for ch in query)
+    for item in items:
+        item_code = _normalize_kcd(item["kcd"])
+        if looks_like_code and item_code == normalized:
+            exact.append(item)
+        elif looks_like_code and item_code.startswith(normalized):
+            prefix.append(item)
+        elif (lowered in item["name_ko"].casefold()
+              or lowered in item["name_en"].casefold()):
+            text_matches.append(item)
+
+    matched = exact + prefix + text_matches
+    # 같은 KRIC·KCD 조합은 한 번만 보여준다. 동일 KCD의 다른 KRIC 분류는 유지한다.
+    unique, seen = [], set()
+    for item in matched:
+        key = (item["kric"], item["kcd"])
+        if key not in seen:
+            seen.add(key)
+            unique.append(item)
+        if len(unique) >= 60:
+            break
+    return jsonify({
+        "query": query,
+        "normalized": normalized if looks_like_code else "",
+        "eligible": bool(exact),
+        "exact": bool(exact),
+        "exact_count": len(exact),
+        "total_matches": len(matched),
+        "items": unique,
+        "version": _krpg_data()["version"],
+    })
 
 
 @app.route("/tools/period-calc")

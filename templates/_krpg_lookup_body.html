@@ -1,0 +1,58 @@
+<div class="card krpg-card">
+    <div class="krpg-search-head">
+        <div><strong>진단명 또는 KCD 코드 검색</strong><span>점(.)이 있는 코드도 검색됩니다. 예: I60.0 → I600</span></div>
+        <span class="krpg-version">KRPG v{{ krpg_meta.version }}</span>
+    </div>
+    <div class="krpg-search-row">
+        <input id="krpg-query" type="search" autocomplete="off" autofocus placeholder="예: I600, 뇌경색, 대퇴골 골절">
+        <button id="krpg-search" type="button" class="btn btn-primary">조회</button>
+    </div>
+    <div id="krpg-result" class="krpg-result initial">
+        KCD 코드 또는 진단명을 입력하면 사업대상 목록 포함 여부를 확인합니다.
+    </div>
+    <div id="krpg-list" class="krpg-list"></div>
+</div>
+<div class="krpg-caution">
+    <strong>판정 시 주의</strong>
+    이 조회는 원본 엑셀의 <b>사업대상(1,477개)</b> KCD 목록 포함 여부입니다.
+    최종 입원 가능 여부는 KRIC 조합, 발병·수술일, 기능상태, 입원시기 및 의료진 판단을 함께 확인해야 합니다.
+    KRIC 07은 KRIC 02·05 코드가 각각 필요하며, KRIC 15는 서로 다른 부위의 골절 코드 2개 이상 등 별도 조합 기준이 있습니다.
+</div>
+<style>
+.krpg-card{margin:0}.krpg-search-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.krpg-search-head strong{display:block;font-size:1.05em}.krpg-search-head span:not(.krpg-version){display:block;color:var(--text-light);font-size:.8em;margin-top:3px}.krpg-version{background:#dcfce7;color:#166534;border-radius:999px;padding:4px 9px;font-size:.75em;font-weight:800;white-space:nowrap}.krpg-search-row{display:flex;gap:7px;margin:14px 0}.krpg-search-row input{flex:1;min-width:0;padding:11px 13px;border:2px solid #86a994;border-radius:8px;font:inherit;font-size:1em}.krpg-search-row input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(22,101,52,.12)}.krpg-result{padding:12px 14px;border-radius:9px;font-size:.91em;font-weight:700}.krpg-result.initial{background:#f1f5f9;color:#64748b}.krpg-result.yes{background:#dcfce7;color:#14532d;border:1px solid #86efac}.krpg-result.no{background:#fee2e2;color:#991b1b;border:1px solid #fecaca}.krpg-result.maybe{background:#fef3c7;color:#92400e;border:1px solid #fde68a}.krpg-list{margin-top:10px;max-height:390px;overflow:auto}.krpg-item{display:grid;grid-template-columns:74px 58px 1fr;gap:8px;align-items:start;padding:9px 8px;border-bottom:1px solid var(--border)}.krpg-item:hover{background:#f8fafc}.krpg-code{font-weight:850;color:#1d4ed8;font-feature-settings:'tnum'}.krpg-kric{font-size:.75em;background:#e2e8f0;color:#475569;border-radius:5px;padding:2px 5px;text-align:center}.krpg-name strong{display:block;font-size:.88em}.krpg-name small{display:block;color:var(--text-light);font-size:.72em;margin-top:2px}.krpg-more{text-align:center;padding:8px;color:var(--text-light);font-size:.78em}.krpg-caution{margin-top:9px;padding:10px 12px;border-radius:8px;background:#fff7ed;color:#9a3412;font-size:.75em;line-height:1.55}.krpg-caution strong{display:block;margin-bottom:2px}@media(max-width:560px){.krpg-item{grid-template-columns:68px 50px 1fr}.krpg-search-row{align-items:stretch}}
+</style>
+<script>
+(function(){
+    const input=document.getElementById('krpg-query');
+    const button=document.getElementById('krpg-search');
+    const result=document.getElementById('krpg-result');
+    const list=document.getElementById('krpg-list');
+    let timer;
+    const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    async function search(){
+        const q=input.value.trim();
+        if(!q){result.className='krpg-result initial';result.textContent='KCD 코드 또는 진단명을 입력하세요.';list.innerHTML='';return;}
+        result.className='krpg-result initial';result.textContent='조회 중...';
+        try{
+            const r=await fetch('/api/krpg/search?q='+encodeURIComponent(q));
+            if(!r.ok) throw new Error(r.status);
+            const d=await r.json();
+            const codeLike=!!d.normalized;
+            if(d.exact){
+                result.className='krpg-result yes';
+                result.innerHTML=`✓ <b>${esc(d.normalized)}</b>는 KRPG 2.2 사업대상 KCD 목록에 포함됩니다.`;
+            }else if(d.items.length){
+                result.className='krpg-result maybe';
+                result.textContent=codeLike?'정확히 일치하는 코드는 없습니다. 아래 유사 코드를 확인하세요.':`관련 진단 ${d.total_matches}건 — 정확한 KCD 코드를 선택해 확인하세요.`;
+            }else{
+                result.className='krpg-result no';
+                result.textContent='사업대상 1,477개 목록에서 일치하는 항목을 찾지 못했습니다.';
+            }
+            list.innerHTML=d.items.map(x=>`<div class="krpg-item"><span class="krpg-code">${esc(x.kcd)}</span><span class="krpg-kric">KRIC ${esc(x.kric)}</span><span class="krpg-name"><strong>${esc(x.name_ko)}</strong><small>${esc(x.name_en)}</small></span></div>`).join('')+(d.total_matches>d.items.length?`<div class="krpg-more">검색 결과 ${d.total_matches}건 중 상위 ${d.items.length}건 표시</div>`:'');
+        }catch(e){result.className='krpg-result no';result.textContent='조회 중 오류가 발생했습니다.';list.innerHTML='';}
+    }
+    button.addEventListener('click',search);
+    input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();search();}});
+    input.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(()=>{if(input.value.trim().length>=2)search();},280);});
+})();
+</script>

@@ -580,6 +580,12 @@ def init_db():
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    # 그룹웨어형 확장: 기간(due_date=시작일 ~ end_date=종료일)·진행률·D-day
+    _ensure_columns(conn, "todos", {
+        "end_date": "DATE",
+        "progress": "INTEGER DEFAULT 0",
+        "dday": "INTEGER DEFAULT 0",
+    })
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_todos_user_date ON todos(user_id, due_date)"
     )
@@ -1156,18 +1162,31 @@ def audit_log_span():
 # ─── 상담사 개인 할 일(To-Do) ───
 # 모든 함수는 user_id로 소유자를 강제해 남의 할 일에 접근하지 못하게 한다.
 
+def _clamp_progress(v):
+    try:
+        return max(0, min(100, int(v)))
+    except (TypeError, ValueError):
+        return 0
+
+
 def create_todo(user_id: int, title: str, due_date: str, *, note: str = "",
-                remind_at: str | None = None) -> int:
+                remind_at: str | None = None, end_date: str | None = None,
+                progress: int = 0, dday: bool = False) -> int:
+    """due_date=시작일(기간 시작), end_date=종료일(선택). progress 0~100(100=완료)."""
     conn = get_db()
-    # 같은 날짜 목록 맨 아래로 추가
     nxt = conn.execute(
         "SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM todos WHERE user_id = ? AND due_date = ?",
         (user_id, due_date),
     ).fetchone()["n"]
+    progress = _clamp_progress(progress)
+    done = 1 if progress >= 100 else 0
     cur = conn.execute(
-        "INSERT INTO todos (user_id, due_date, title, note, remind_at, sort_order) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (user_id, due_date, title, note or None, remind_at or None, nxt),
+        "INSERT INTO todos (user_id, due_date, end_date, title, note, remind_at, "
+        "progress, dday, done, done_at, sort_order) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (user_id, due_date, end_date or None, title, note or None, remind_at or None,
+         progress, 1 if dday else 0, done,
+         datetime.now().isoformat(timespec="seconds") if done else None, nxt),
     )
     conn.commit()
     tid = cur.lastrowid
@@ -1185,8 +1204,10 @@ def get_todo(todo_id: int, user_id: int):
 
 
 def update_todo(todo_id: int, user_id: int, *, title=None, note=None,
-                due_date=None, remind_at=None) -> bool:
-    """전달된 필드만 수정. note/remind_at은 빈 문자열이면 비운다(None)."""
+                due_date=None, end_date=None, remind_at=None,
+                progress=None, dday=None) -> bool:
+    """전달된 필드만 수정. note/end_date/remind_at은 빈 문자열이면 비운다(None).
+    progress를 주면 done/done_at도 함께 동기화(100=완료)."""
     sets, vals = [], []
     if title is not None:
         sets.append("title = ?"); vals.append(title)
@@ -1194,8 +1215,18 @@ def update_todo(todo_id: int, user_id: int, *, title=None, note=None,
         sets.append("note = ?"); vals.append(note or None)
     if due_date is not None:
         sets.append("due_date = ?"); vals.append(due_date)
+    if end_date is not None:
+        sets.append("end_date = ?"); vals.append(end_date or None)
     if remind_at is not None:
         sets.append("remind_at = ?"); vals.append(remind_at or None)
+    if dday is not None:
+        sets.append("dday = ?"); vals.append(1 if dday else 0)
+    if progress is not None:
+        p = _clamp_progress(progress)
+        sets.append("progress = ?"); vals.append(p)
+        sets.append("done = ?"); vals.append(1 if p >= 100 else 0)
+        sets.append("done_at = ?")
+        vals.append(datetime.now().isoformat(timespec="seconds") if p >= 100 else None)
     if not sets:
         return False
     sets.append("updated_at = CURRENT_TIMESTAMP")
@@ -1211,11 +1242,13 @@ def update_todo(todo_id: int, user_id: int, *, title=None, note=None,
 
 
 def set_todo_done(todo_id: int, user_id: int, done: bool) -> bool:
+    """완료 토글 — 진행률도 함께 동기화(완료=100%, 해제=0%)."""
     conn = get_db()
     cur = conn.execute(
-        "UPDATE todos SET done = ?, done_at = ?, updated_at = CURRENT_TIMESTAMP "
+        "UPDATE todos SET done = ?, progress = ?, done_at = ?, updated_at = CURRENT_TIMESTAMP "
         "WHERE id = ? AND user_id = ?",
-        (1 if done else 0, datetime.now().isoformat(timespec="seconds") if done else None,
+        (1 if done else 0, 100 if done else 0,
+         datetime.now().isoformat(timespec="seconds") if done else None,
          todo_id, user_id),
     )
     conn.commit()
@@ -1291,6 +1324,20 @@ def due_reminder_todos(user_id: int, now_iso: str):
         "WHERE user_id = ? AND done = 0 AND remind_at IS NOT NULL AND remind_at <= ? "
         "ORDER BY remind_at ASC",
         (user_id, now_iso),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def list_todos_range(user_id: int, first_day: str, last_day: str):
+    """달력용 — [first_day, last_day] 기간과 겹치는 모든 할 일.
+    기간(due_date~end_date, end_date 없으면 하루)이 조회 구간과 하루라도 겹치면 포함."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM todos WHERE user_id = ? "
+        "AND due_date <= ? AND COALESCE(end_date, due_date) >= ? "
+        "ORDER BY due_date ASC, sort_order ASC, id ASC",
+        (user_id, last_day, first_day),
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
