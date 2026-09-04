@@ -15,12 +15,12 @@
             <div class="header-inner">
                 <a href="/" class="logo">복주 상담실 CRM <small>인덕의료재단</small></a>
                 {% if current_user %}
-                <nav>
+                <nav class="main-nav" aria-label="주 메뉴">
                     {% if P.get('dashboard',0) >= 1 %}
                     <a href="/" {% if request.path == '/' %}class="active"{% endif %}>대시보드</a>
                     {% endif %}
                     {% if P.get('consult',0) >= 3 %}
-                    <a href="/consult/new" {% if request.path == '/consult/new' %}class="active"{% endif %}>새 상담</a>
+                    <a href="/consult/new" class="nav-create{% if request.path == '/consult/new' %} active{% endif %}"><span>＋</span> 새 상담</a>
                     {% endif %}
                     {% if P.get('consult',0) >= 1 %}
                     <a href="/consultations" {% if request.path.startswith('/consultations') %}class="active"{% endif %}>상담 목록</a>
@@ -152,9 +152,19 @@
     .calc-modal-x { background:none; border:none; font-size:1.05rem; cursor:pointer;
         color:var(--text-light); padding:2px 4px; }
     #calc-frame { flex:1; width:100%; min-height:0; border:none; background:var(--bg, #f8fafc); }
+    #krpg-fab,#todo-fab,#calc-fab { width:178px; height:48px; padding:0 16px;
+        justify-content:flex-start; gap:9px; font-size:.9rem; font-weight:750; }
+    #calc-fab { bottom:22px; }
+    #todo-fab { bottom:78px; }
+    #krpg-fab { bottom:134px; }
+    #krpg-fab > span:first-child,#todo-fab > span:first-child,#calc-fab > span:first-child {
+        width:22px; text-align:center; flex:0 0 22px; }
+    .krpg-fab-text,.todo-fab-text,.calc-fab-text { flex:1; text-align:center; white-space:nowrap; }
+    .todo-fab-badge { position:absolute; right:8px; top:-5px; }
     @media (max-width:680px) {
-        #calc-fab { right:14px; bottom:14px; padding:11px 14px; }
-        .calc-fab-text { display:none; }
+        #krpg-fab,#todo-fab,#calc-fab { right:14px; width:48px; height:48px; padding:0; justify-content:center; }
+        #calc-fab { bottom:14px; } #todo-fab { bottom:70px; } #krpg-fab { bottom:126px; }
+        .krpg-fab-text,.todo-fab-text,.calc-fab-text { display:none; }
         #calc-modal { padding:8px; }
         .calc-modal-box { height:94vh; }
     }
