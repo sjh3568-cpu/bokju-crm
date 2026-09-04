@@ -360,21 +360,27 @@
     <div class="dash-calendar-head">
         <div>
             <h3>통합 일정 달력</h3>
-            <p>환자 상담·입원·퇴원 일정과 나의 ToDo·공유받은 ToDo를 함께 봅니다.</p>
+            <p>환자 상담·입원·퇴원 일정과 나의 ToDo·공유받은 ToDo <span class="dash-calendar-month-chip">{{ cal_label }}</span></p>
         </div>
-        <div class="dash-calendar-nav">
-            <a class="btn btn-secondary btn-sm" href="/?cal_year={{ cal_prev_year }}&cal_month={{ cal_prev_month }}#integrated-calendar" aria-label="이전 달">◀</a>
-            <strong>{{ cal_label }}</strong>
-            <a class="btn btn-secondary btn-sm" href="/?cal_year={{ cal_next_year }}&cal_month={{ cal_next_month }}#integrated-calendar" aria-label="다음 달">▶</a>
-            <a class="btn btn-secondary btn-sm" href="/#integrated-calendar">오늘</a>
+        <button type="button" class="dash-calendar-toggle" id="dash-calendar-toggle" aria-expanded="false" aria-controls="dash-calendar-body">
+            <span class="dash-toggle-icon" aria-hidden="true">⌄</span><span class="dash-toggle-label">월간 달력 펼치기</span>
+        </button>
+    </div>
+    <div id="dash-calendar-body" class="dash-calendar-body" hidden>
+        <div class="dash-calendar-topline">
+            <div class="dash-calendar-legend" aria-label="일정 구분">
+                <span class="consult">상담</span><span class="admission">입원예정</span>
+                <span class="admitted">입원</span><span class="discharge">퇴원예정·퇴원</span>
+                <span class="todo">나의 ToDo</span><span class="shared">공유 ToDo</span>
+            </div>
+            <div class="dash-calendar-nav">
+                <a class="btn btn-secondary btn-sm" href="/?cal_year={{ cal_prev_year }}&cal_month={{ cal_prev_month }}#integrated-calendar" aria-label="이전 달">◀</a>
+                <strong>{{ cal_label }}</strong>
+                <a class="btn btn-secondary btn-sm" href="/?cal_year={{ cal_next_year }}&cal_month={{ cal_next_month }}#integrated-calendar" aria-label="다음 달">▶</a>
+                <a class="btn btn-secondary btn-sm" href="/#integrated-calendar">오늘</a>
+            </div>
         </div>
-    </div>
-    <div class="dash-calendar-legend" aria-label="일정 구분">
-        <span class="consult">상담</span><span class="admission">입원예정</span>
-        <span class="admitted">입원</span><span class="discharge">퇴원예정·퇴원</span>
-        <span class="todo">나의 ToDo</span><span class="shared">공유 ToDo</span>
-    </div>
-    <div class="dash-calendar-wrap">
+        <div class="dash-calendar-wrap">
         <table class="dash-calendar">
             <thead><tr><th class="sun">일</th><th>월</th><th>화</th><th>수</th><th>목</th><th>금</th><th class="sat">토</th></tr></thead>
             <tbody>
@@ -398,6 +404,7 @@
             </tr>{% endfor %}
             </tbody>
         </table>
+        </div>
     </div>
 </section>
 
@@ -898,9 +905,26 @@
 .weekly-report-table .total-row th,.weekly-report-table .total-row td { background:#fce4d6; font-weight:700; }
 @media (max-width:760px) { .weekly-compare-grid { grid-template-columns:1fr; } }
 .dash-calendar td{height:132px}.dash-calendar td.holiday{background:#fff7f7}.dash-calendar td.today{background:#ecfdf5}.dash-cal-dayrow{display:flex;align-items:baseline;gap:5px;min-height:18px}.dash-cal-day{margin-bottom:0}.dash-cal-lunar{color:#94a3b8;font-size:.65rem}.dash-cal-holiday{margin:0 0 3px;color:#dc2626;font-size:.66rem;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dash-calendar-card{padding:0;overflow:hidden;border-color:#d8e3dc;box-shadow:0 4px 18px rgba(15,82,45,.06)}.dash-calendar-head{margin:0;padding:15px 17px;background:linear-gradient(105deg,#fff 0%,#f4faf6 100%)}.dash-calendar-head p{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.dash-calendar-month-chip{padding:2px 7px;border-radius:999px;background:#dcfce7;color:#166534;font-size:.78em;font-weight:800}.dash-calendar-toggle{display:inline-flex;align-items:center;gap:8px;min-width:154px;justify-content:center;padding:9px 13px;border:1px solid #b7d4c1;border-radius:999px;background:rgba(255,255,255,.9);color:var(--primary);font:inherit;font-size:.82rem;font-weight:800;cursor:pointer;box-shadow:0 3px 10px rgba(20,83,45,.09);transition:background .18s,box-shadow .18s,transform .18s}.dash-calendar-toggle:hover{background:#ecfdf5;box-shadow:0 5px 14px rgba(20,83,45,.16);transform:translateY(-1px)}.dash-toggle-icon{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--primary);color:#fff;font-size:1.15rem;line-height:1;transition:transform .22s}.dash-calendar-toggle[aria-expanded=true] .dash-toggle-icon{transform:rotate(180deg)}.dash-calendar-body{padding:0 16px 16px;border-top:1px solid #e6eee9}.dash-calendar-body[hidden]{display:none}.dash-calendar-topline{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:10px}.dash-calendar-topline .dash-calendar-legend{margin:0}@media(max-width:700px){.dash-calendar-head{flex-direction:row;align-items:center}.dash-calendar-head p{display:none}.dash-calendar-toggle{min-width:132px}.dash-calendar-topline{align-items:flex-start;flex-direction:column}.dash-calendar-nav{justify-content:flex-start}}
 </style>
 <script src="/static/js/html2canvas.min.js?v=1.4.1"></script>
 <script>
+(function(){
+    const button=document.getElementById('dash-calendar-toggle');
+    const body=document.getElementById('dash-calendar-body');
+    if(!button||!body)return;
+    const key='bokju_dashboard_calendar_open';
+    let open=false;
+    try{open=localStorage.getItem(key)==='1';}catch(e){}
+    function render(){
+        body.hidden=!open;
+        button.setAttribute('aria-expanded',open?'true':'false');
+        button.querySelector('.dash-toggle-label').textContent=open?'월간 달력 접기':'월간 달력 펼치기';
+    }
+    button.addEventListener('click',()=>{open=!open;try{localStorage.setItem(key,open?'1':'0');}catch(e){}render();});
+    render();
+})();
+
 function syncAdmissionPanels() {
     const view = document.querySelector('.dash-view-btn.active')?.dataset.view || 'all';
     document.querySelectorAll('.dash-admission-view').forEach((panel) => {
