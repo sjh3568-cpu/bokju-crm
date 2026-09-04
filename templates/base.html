@@ -39,7 +39,7 @@
                     {% endif %}
                     <a href="/notices" {% if request.path.startswith('/notices') %}class="active"{% endif %}>공지사항{% if has_unread_required_notice %}<span class="nav-notice-new">필수</span>{% endif %}</a>
                     {% if P.get('users',0) >= 2 %}
-                    <a href="/admin/users" {% if request.path.startswith('/admin/users') %}class="active"{% endif %}>사용자 관리</a>
+                    <a href="/admin/users" {% if request.path.startswith('/admin/users') or request.path.startswith('/admin/password-reset') %}class="active"{% endif %}>사용자 관리{% if password_reset_badge %}<span class="nav-notice-new">{{ password_reset_badge }}</span>{% endif %}</a>
                     <a href="/admin/audit" {% if request.path.startswith('/admin/audit') %}class="active"{% endif %} title="누가 언제 무엇을 조회·입력·수정·삭제했는지">이력 관리</a>
                     {% endif %}
                     <a href="/help" {% if request.path.startswith('/help') %}class="active"{% endif %} title="사용 매뉴얼" style="margin-left:auto; opacity:0.7">❓</a>

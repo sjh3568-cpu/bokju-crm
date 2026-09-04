@@ -20,15 +20,19 @@
                 <input type="password" name="password" autocomplete="current-password" required
                        placeholder="비밀번호">
             </label>
-            <div class="login-options">
-                <label><input type="checkbox" id="remember-id"> 내 정보 기억</label>
-                <label><input type="checkbox" id="auto-login" name="auto_login" value="1"> 자동 로그인</label>
+            <div class="login-preferences">
+                <div class="login-options">
+                    <label><input type="checkbox" id="remember-id"> <span><b>아이디 기억</b><small>아이디만 저장</small></span></label>
+                    <span class="login-option-divider" aria-hidden="true"></span>
+                    <label><input type="checkbox" id="auto-login" name="auto_login" value="1"> <span><b>자동 로그인</b><small>30일간 유지</small></span></label>
+                </div>
+                <p class="login-auto-note">공용 PC에서는 자동 로그인을 사용하지 마세요.</p>
             </div>
-            <p class="login-auto-note">자동 로그인은 이 브라우저에서 30일간 유지됩니다. 공용 PC에서는 사용하지 마세요.</p>
             <button type="submit" class="btn btn-primary login-submit">로그인</button>
+            <button type="button" class="login-reset-request" id="password-reset-request">비밀번호 초기화 요청</button>
         </form>
         <p class="login-note">
-            계정이 없거나 비밀번호를 잊으셨나요? <strong>어드민</strong>에게 문의하세요.
+            요청을 보내면 관리자가 사용자 관리 화면에서 확인합니다.
         </p>
     </div>
     <p class="login-footnote">사내망 전용 · 환자 정보는 외부로 전송되지 않습니다.</p>
@@ -53,6 +57,15 @@
             else localStorage.removeItem('bokju_login_username');
             localStorage.setItem('bokju_auto_login_choice',auto.checked?'1':'0');
         }catch(e){}
+    });
+    document.getElementById('password-reset-request').addEventListener('click',()=>{
+        const value=username.value.trim();
+        if(!value){alert('아이디를 먼저 입력해주세요.');username.focus();return;}
+        const resetForm=document.createElement('form');
+        resetForm.method='post';resetForm.action='/password-reset/request';
+        const hidden=document.createElement('input');
+        hidden.type='hidden';hidden.name='username';hidden.value=value;
+        resetForm.appendChild(hidden);document.body.appendChild(resetForm);resetForm.submit();
     });
 })();
 </script>

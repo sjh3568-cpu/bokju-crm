@@ -228,6 +228,18 @@ def init_db():
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS password_reset_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            requested_ip TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            requested_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            resolved_at DATETIME,
+            resolved_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_password_reset_pending
+            ON password_reset_requests(status, requested_at DESC);
+
         CREATE TABLE IF NOT EXISTS audit_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
@@ -931,6 +943,78 @@ def get_user(username: str):
     ).fetchone()
     conn.close()
     return _hydrate_user(row) if row else None
+
+
+def create_password_reset_request(username: str, requested_ip: str | None = None) -> bool:
+    """활성 계정의 미처리 초기화 요청을 1건만 유지한다. 반환값은 외부에 노출하지 않는다."""
+    conn = get_db()
+    user = conn.execute(
+        "SELECT id FROM users WHERE username = ? AND active = 1", (username,)
+    ).fetchone()
+    if not user:
+        conn.close()
+        return False
+    exists = conn.execute(
+        "SELECT 1 FROM password_reset_requests WHERE user_id = ? AND status = 'pending'",
+        (user["id"],),
+    ).fetchone()
+    if not exists:
+        conn.execute(
+            "INSERT INTO password_reset_requests (user_id, requested_ip) VALUES (?, ?)",
+            (user["id"], requested_ip),
+        )
+        conn.commit()
+    conn.close()
+    return True
+
+
+def list_pending_password_reset_requests():
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT r.id, r.user_id, r.requested_at,
+               u.username, u.display_name
+        FROM password_reset_requests r
+        JOIN users u ON u.id = r.user_id
+        WHERE r.status = 'pending' AND u.active = 1
+        ORDER BY r.requested_at ASC, r.id ASC
+    """).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def pending_password_reset_count() -> int:
+    conn = get_db()
+    row = conn.execute(
+        "SELECT COUNT(*) AS n FROM password_reset_requests WHERE status = 'pending'"
+    ).fetchone()
+    conn.close()
+    return int(row["n"] or 0)
+
+
+def resolve_password_reset_requests(user_id: int, resolved_by: int) -> int:
+    conn = get_db()
+    cur = conn.execute("""
+        UPDATE password_reset_requests
+        SET status = 'resolved', resolved_at = CURRENT_TIMESTAMP, resolved_by = ?
+        WHERE user_id = ? AND status = 'pending'
+    """, (resolved_by, user_id))
+    conn.commit()
+    changed = cur.rowcount
+    conn.close()
+    return changed
+
+
+def resolve_password_reset_request(request_id: int, resolved_by: int) -> bool:
+    conn = get_db()
+    cur = conn.execute("""
+        UPDATE password_reset_requests
+        SET status = 'resolved', resolved_at = CURRENT_TIMESTAMP, resolved_by = ?
+        WHERE id = ? AND status = 'pending'
+    """, (resolved_by, request_id))
+    conn.commit()
+    changed = cur.rowcount > 0
+    conn.close()
+    return changed
 
 
 def touch_user_login(user_id: int):

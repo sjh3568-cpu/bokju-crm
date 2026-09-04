@@ -7,6 +7,28 @@
         (상위가 하위 포함). 역할을 고르면 기본 권한이 자동 채워지고, 이후 메뉴별로 조정할 수 있습니다.</p>
 </div>
 
+{% if password_reset_requests %}
+<section class="card reset-request-panel" aria-labelledby="reset-request-title">
+    <div class="reset-request-head">
+        <div><h3 id="reset-request-title">비밀번호 초기화 요청</h3><p>새 비밀번호를 설정하면 요청이 자동으로 처리 완료됩니다.</p></div>
+        <span>{{ password_reset_requests|length }}건 대기</span>
+    </div>
+    <div class="reset-request-list">
+    {% for r in password_reset_requests %}
+        <div class="reset-request-item">
+            <span class="reset-request-icon" aria-hidden="true">🔐</span>
+            <div><strong>{{ r.display_name or r.username }}</strong><span class="mono">{{ r.username }}</span></div>
+            <time>{{ r.requested_at[:16] }}</time>
+            <a class="btn btn-secondary btn-sm" href="#user-{{ r.user_id }}">계정으로 이동</a>
+            <form method="post" action="/admin/password-reset/{{ r.id }}/resolve">
+                <button type="submit" class="btn btn-secondary btn-sm">요청 닫기</button>
+            </form>
+        </div>
+    {% endfor %}
+    </div>
+</section>
+{% endif %}
+
 <div class="card users-add">
     <h3>새 계정 추가</h3>
     <form method="post" action="/admin/users/create" class="users-add-form" autocomplete="off">
@@ -28,7 +50,7 @@
 </div>
 
 {% for u in users %}
-<div class="user-card {% if not u.active %}user-inactive{% endif %}">
+<div class="user-card {% if not u.active %}user-inactive{% endif %}" id="user-{{ u.id }}">
     <div class="user-card-head">
         <div class="uc-id">
             <strong>{{ u.display_name or u.username }}</strong>

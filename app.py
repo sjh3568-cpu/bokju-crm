@@ -337,10 +337,17 @@ def _inject_globals():
             todo_badge = 0
     pending_notice = (models.first_unread_required_announcement(
         _u["id"], _u.get("role", "staff")) if _u else None)
+    password_reset_badge = 0
+    if _u and menu_level(_u, "users") >= PERM_EDIT:
+        try:
+            password_reset_badge = models.pending_password_reset_count()
+        except Exception:
+            password_reset_badge = 0
     return {
         "current_user": _u,
         "todo_badge": todo_badge,
         "has_unread_required_notice": bool(pending_notice),
+        "password_reset_badge": password_reset_badge,
         "today_str": date.today().isoformat(),   # 날짜 입력 기본값(외진 기록 등)
         "INSURANCE_TYPES": INSURANCE_TYPES,
         "CONSULT_CHANNELS": CONSULT_CHANNELS,
@@ -1252,6 +1259,21 @@ def logout_view():
     return response
 
 
+@app.route("/password-reset/request", methods=["POST"])
+def password_reset_request():
+    """로그인 전 초기화 요청. 계정 존재 여부는 응답에서 구분하지 않는다."""
+    username = (request.form.get("username") or "").strip()
+    if username:
+        created = models.create_password_reset_request(username, request.remote_addr)
+        if created:
+            models.log_audit(
+                username=username, action="request_password_reset",
+                target_type="user", detail="비밀번호 초기화 요청", ip=request.remote_addr,
+            )
+    flash("등록된 계정인 경우 관리자에게 비밀번호 초기화 요청을 전달했습니다.", "info")
+    return redirect(url_for("login_view"))
+
+
 # ───────────────────── 공지사항 ─────────────────────
 
 @app.route("/notices")
@@ -1487,6 +1509,7 @@ def admin_users():
     return render_template(
         "users.html", users=users, menus=MENUS, perm_labels=PERM_LEVEL_LABELS,
         role_presets=ROLE_PRESETS, menu_max=MENU_MAX_LEVEL,
+        password_reset_requests=models.list_pending_password_reset_requests(),
     )
 
 
@@ -1555,10 +1578,25 @@ def admin_users_password(uid):
         flash(f"비밀번호는 최소 {_MIN_PW_LEN}자 이상이어야 합니다.", "error")
         return redirect(url_for("admin_users"))
     models.set_user_password(uid, password)
+    models.resolve_password_reset_requests(uid, g.user["id"])
     models.log_audit(user_id=g.user["id"], username=g.user["username"],
                      action="reset_password", target_type="user", target_id=uid,
                      detail=target["username"], ip=request.remote_addr)
     flash(f"'{target['display_name'] or target['username']}' 비밀번호를 변경했습니다.", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/password-reset/<int:request_id>/resolve", methods=["POST"])
+@admin_required
+def admin_password_reset_resolve(request_id):
+    if not models.resolve_password_reset_request(request_id, g.user["id"]):
+        abort(404)
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="resolve_password_reset", target_type="password_reset_request",
+        target_id=request_id, ip=request.remote_addr,
+    )
+    flash("비밀번호 초기화 요청을 처리 완료로 표시했습니다.", "success")
     return redirect(url_for("admin_users"))
 
 
