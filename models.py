@@ -2568,6 +2568,138 @@ def dashboard_calendar_rows(first_day: str, last_day: str):
     conn.close()
     return [dict(r) for r in rows]
 
+
+def weekly_marketing_report(as_of: date | None = None):
+    """주간 운영실적(입원일 기준)과 14일 확정 상담 전환 성과를 분리한다."""
+    as_of = as_of or date.today()
+    week_start = as_of - timedelta(days=as_of.weekday())
+    week_end = week_start + timedelta(days=6)
+    previous_start, previous_end = week_start - timedelta(days=7), week_start - timedelta(days=1)
+    next_start, next_end = week_end + timedelta(days=1), week_end + timedelta(days=7)
+    # 이 주간의 모든 상담이 14일 관찰을 마친 가장 최근 코호트.
+    cohort_start, cohort_end = week_start - timedelta(days=21), week_start - timedelta(days=15)
+
+    conn = get_db()
+    rows = [dict(r) for r in conn.execute(
+        """SELECT c.id, c.patient_id, c.consult_date, c.referral_source_type,
+                  c.referral_source_detail, c.admission_status,
+                  c.planned_admission_date, c.actual_admission_date, c.admission_date,
+                  p.residence_sido, p.residence_sigungu
+           FROM consultations c JOIN patients p ON p.id=c.patient_id""").fetchall()]
+    conn.close()
+
+    def parsed(value):
+        try:
+            return date.fromisoformat(str(value or "")[:10])
+        except ValueError:
+            return None
+
+    def actual_date(row):
+        if (row.get("admission_status") or "").strip() != "입원완료":
+            return None
+        return parsed(row.get("actual_admission_date") or row.get("admission_date"))
+
+    def source_label(row):
+        group = (row.get("referral_source_type") or "").strip()
+        try:
+            details = json.loads(row.get("referral_source_detail") or "[]")
+        except (TypeError, json.JSONDecodeError):
+            details = []
+        detail = next((str(x).strip() for x in details if str(x).strip()), "")
+        if group and detail and detail != group:
+            return f"{group} · {detail}"
+        return detail or group or "유입경로 미기재"
+
+    def region_label(row):
+        sido = (row.get("residence_sido") or "").strip()
+        sigungu = (row.get("residence_sigungu") or "").strip()
+        return " ".join(x for x in (sido, sigungu) if x) or "지역 미기재"
+
+    admissions = sorted(((actual_date(r), r) for r in rows if actual_date(r)),
+                        key=lambda x: (x[0], x[1]["id"]))
+    prior_patients, readmission_ids = set(), set()
+    for _, row in admissions:
+        if row["patient_id"] in prior_patients:
+            readmission_ids.add(row["id"])
+        prior_patients.add(row["patient_id"])
+
+    def in_range(value, start, end):
+        d = parsed(value)
+        return bool(d and start <= d <= end)
+
+    def period_counts(start, end):
+        consults = [r for r in rows if in_range(r.get("consult_date"), start, end)]
+        admitted = [r for r in rows if (actual_date(r) and start <= actual_date(r) <= end)]
+        return {"consultations": len(consults), "admissions": len(admitted),
+                "readmissions": sum(r["id"] in readmission_ids for r in admitted)}
+
+    current = period_counts(week_start, week_end)
+    previous = period_counts(previous_start, previous_end)
+    previous_four = [period_counts(week_start - timedelta(days=7 * i),
+                                   week_start - timedelta(days=7 * i - 6))
+                     for i in range(1, 5)]
+
+    def cohort_counts(start, end):
+        cohort = [r for r in rows if in_range(r.get("consult_date"), start, end)]
+        converted = []
+        for row in cohort:
+            cd, ad = parsed(row.get("consult_date")), actual_date(row)
+            if cd and ad and cd <= ad <= cd + timedelta(days=14):
+                converted.append(row)
+        return cohort, converted
+
+    cohort, converted = cohort_counts(cohort_start, cohort_end)
+    cohort_rate = round(100 * len(converted) / len(cohort), 1) if cohort else 0.0
+
+    def breakdown(label_fn):
+        data = {}
+        def slot(label):
+            return data.setdefault(label, {"label": label, "consultations": 0,
+                                           "admissions": 0, "readmissions": 0,
+                                           "cohort": 0, "converted": 0})
+        for row in rows:
+            label = label_fn(row)
+            if in_range(row.get("consult_date"), week_start, week_end):
+                slot(label)["consultations"] += 1
+            ad = actual_date(row)
+            if ad and week_start <= ad <= week_end:
+                slot(label)["admissions"] += 1
+                slot(label)["readmissions"] += int(row["id"] in readmission_ids)
+        for row in cohort:
+            slot(label_fn(row))["cohort"] += 1
+        for row in converted:
+            slot(label_fn(row))["converted"] += 1
+        result = []
+        for item in data.values():
+            item["conversion_rate"] = round(100 * item["converted"] / item["cohort"], 1) if item["cohort"] else None
+            result.append(item)
+        return sorted(result, key=lambda x: (-x["consultations"], -x["admissions"], x["label"]))
+
+    def kpi(key, label, value, suffix="건"):
+        prev = previous[key]
+        avg = round(sum(x[key] for x in previous_four) / 4, 1)
+        return {"key": key, "label": label, "value": value, "suffix": suffix,
+                "previous_diff": round(value - prev, 1), "four_week_avg": avg,
+                "average_diff": round(value - avg, 1)}
+
+    next_planned = sum(in_range(r.get("planned_admission_date"), next_start, next_end)
+                       and (r.get("admission_status") or "") == "입원예정" for r in rows)
+    kpis = [kpi("consultations", "상담", current["consultations"]),
+            kpi("admissions", "실제 입원", current["admissions"]),
+            kpi("readmissions", "재입원", current["readmissions"])]
+    kpis.append({"key": "conversion", "label": "14일 확정 전환율",
+                 "value": cohort_rate, "suffix": "%", "previous_diff": None,
+                 "four_week_avg": None, "average_diff": None})
+    kpis.append({"key": "next_planned", "label": "다음 주 입원예정",
+                 "value": next_planned, "suffix": "명", "previous_diff": None,
+                 "four_week_avg": None, "average_diff": None})
+    return {"period_label": f"{week_start:%Y.%m.%d} ~ {week_end:%Y.%m.%d}",
+            "cohort_label": f"{cohort_start:%Y.%m.%d} ~ {cohort_end:%Y.%m.%d}",
+            "kpis": kpis, "current": current, "previous": previous,
+            "cohort_total": len(cohort), "cohort_converted": len(converted),
+            "observing": sum(in_range(r.get("consult_date"), week_start - timedelta(days=14), week_end) for r in rows),
+            "sources": breakdown(source_label), "regions": breakdown(region_label)}
+
 def dashboard_summary():
     """양식 기반 통계 — 상담 건수와 입원예정일 등록 건수."""
     conn = get_db()
