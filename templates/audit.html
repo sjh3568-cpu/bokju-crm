@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% block title %}이력 관리 — 복주 상담실{% endblock %}
+{% block content %}
+{# 이력 관리 — audit_log 열람. 어드민 전용(/admin/audit).
+   누가·언제·어떤 환자/상담 정보를 조회·입력·수정·삭제했는지 추적한다. #}
+<div class="page-header">
+    <h2>이력 관리</h2>
+    <div style="margin-left:auto; display:flex; gap:6px">
+        <a class="btn btn-secondary btn-sm" href="/admin/users">사용자 관리</a>
+        <a class="btn btn-secondary btn-sm" href="/admin/audit/export{{ export_qs }}"
+           title="현재 검색 조건 그대로 CSV 저장">CSV 내보내기</a>
+    </div>
+    <p class="hint">
+        모든 계정의 개인정보 열람·입력·수정·삭제 기록입니다. 기록은 자동으로 남으며 화면에서 수정·삭제할 수 없습니다.
+        {% if span.n %}보관 중 {{ '{:,}'.format(span.n) }}건 · {{ (span.oldest or '')[:16] }} ~ {{ (span.newest or '')[:16] }} · {% endif %}
+        권장 보관 {{ AUDIT_RETENTION_DAYS }}일
+    </p>
+</div>
+
+<form class="filter-bar" method="get" action="/admin/audit">
+    <div class="field">
+        <label>기간</label>
+        <div class="date-range">
+            <input type="date" name="from" value="{{ request.args.get('from', '') }}">
+            <span class="dr-sep">~</span>
+            <input type="date" name="to" value="{{ request.args.get('to', '') }}">
+        </div>
+    </div>
+    <div class="field">
+        <label>사용자</label>
+        <select name="user">
+            <option value="">전체</option>
+            {% for u in users %}
+            <option value="{{ u.username }}" {% if request.args.get('user') == u.username %}selected{% endif %}>
+                {{ u.display_name or u.username }} ({{ u.username }}) · {{ u.n }}건
+            </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label>분류</label>
+        <select name="category">
+            <option value="">전체</option>
+            {% for key, cat in AUDIT_CATEGORIES.items() %}
+            <option value="{{ key }}" {% if category == key %}selected{% endif %}>{{ cat[0] }}</option>
+            {% endfor %}
+            <option value="{{ AUDIT_CATEGORY_OTHER }}" {% if category == AUDIT_CATEGORY_OTHER %}selected{% endif %}>기타</option>
+        </select>
+    </div>
+    <div class="field">
+        <label>대상</label>
+        <select name="target">
+            <option value="">전체</option>
+            {% for t in target_types %}
+            <option value="{{ t }}" {% if request.args.get('target') == t %}selected{% endif %}>{{ t }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field" style="flex:1; min-width:150px">
+        <label>검색 (상세·IP·대상ID)</label>
+        <input type="text" name="q" value="{{ request.args.get('q', '') }}" placeholder="키워드 · IP · 대상 ID">
+    </div>
+    <div class="field page-size-field">
+        <label for="page-size">보기 개수</label>
+        <select id="page-size" name="page_size" onchange="this.form.submit()">
+            {% for size in page_size_options %}
+            <option value="{{ size }}" {% if page_size == size %}selected{% endif %}>{{ size }}개</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% if action %}<input type="hidden" name="action" value="{{ action }}">{% endif %}
+    <div style="display:flex; gap:6px; align-self:flex-end">
+        <button class="btn btn-primary btn-sm" type="submit">검색</button>
+        <a class="btn btn-secondary btn-sm" href="/admin/audit">초기화</a>
+    </div>
+</form>
+
+{% if action %}
+<div class="filter-chip-row">
+    <span class="filter-chip-label">행위 필터</span>
+    <a class="filter-chip" href="{{ url_with(action=None, page=None) }}">
+        {{ AUDIT_ACTION_LABELS.get(action, action) }} <span>×</span></a>
+</div>
+{% endif %}
+
+{% if action_counts %}
+{# 현재 조건의 행위별 건수 — 클릭하면 그 행위만 남기고 다시 누르면 해제 #}
+<div class="audit-chips">
+    {% for act, n in action_counts.items() %}
+    <a class="audit-chip{% if act in AUDIT_CRITICAL_ACTIONS %} crit{% endif %}{% if action == act %} on{% endif %}"
+       href="{{ url_with(action=(none if action == act else act), page=None) }}"
+       title="{{ act }}">{{ AUDIT_ACTION_LABELS.get(act, act or '기타') }} <b>{{ n }}</b></a>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% if rows %}
+<div class="tbl-wrap">
+    <table class="tbl tbl-compact audit-tbl">
+        <thead>
+            <tr>
+                <th style="width:140px">일시</th>
+                <th style="width:140px">사용자</th>
+                <th style="width:130px">행위</th>
+                <th style="width:130px">대상</th>
+                <th>상세</th>
+                <th style="width:110px">IP</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for r in rows %}
+            <tr class="{% if r.action in AUDIT_CRITICAL_ACTIONS %}audit-crit{% endif %}">
+                <td class="mono nowrap">{{ (r.created_at or '')[:16] }}</td>
+                <td>
+                    {{ r.display_name or r.username or '—' }}
+                    {% if r.role %}<small class="role-chip">{{ ROLE_LABELS.get(r.role, r.role) }}</small>{% endif %}
+                    {% if r.display_name and r.username and r.display_name != r.username %}
+                    <div class="muted-sm mono">{{ r.username }}</div>
+                    {% endif %}
+                </td>
+                <td>
+                    <a class="audit-act" href="{{ url_with(action=r.action, page=None) }}" title="{{ r.action }}">
+                        {{ AUDIT_ACTION_LABELS.get(r.action, r.action or '—') }}</a>
+                </td>
+                <td class="nowrap">
+                    {% if r.target_type == 'consultation' and r.target_id %}
+                        <a href="/consult/{{ r.target_id }}">상담 #{{ r.target_id }}</a>
+                    {% elif r.target_type == 'patient' and r.target_id %}
+                        <a href="/patients/{{ r.target_id }}">환자 #{{ r.target_id }}</a>
+                    {% elif r.target_type %}
+                        {{ r.target_type }}{% if r.target_id %} #{{ r.target_id }}{% endif %}
+                    {% else %}—{% endif %}
+                </td>
+                <td class="audit-detail">{{ r.detail or '' }}</td>
+                <td class="mono muted-sm">{{ r.ip or '' }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card empty">조건에 맞는 이력이 없습니다.</div>
+{% endif %}
+
+{% if total_pages > 1 %}
+<nav class="pagination" aria-label="페이지 이동">
+    {% if page > 1 %}
+        <a class="pg" href="{{ url_with(page=1) }}" title="첫 페이지">«</a>
+        <a class="pg" href="{{ url_with(page=page-1) }}">‹ 이전</a>
+    {% else %}
+        <span class="pg pg-off">«</span>
+        <span class="pg pg-off">‹ 이전</span>
+    {% endif %}
+    {% set lo = [page - 2, 1]|max %}
+    {% set hi = [page + 2, total_pages]|min %}
+    {% if lo > 1 %}<span class="pg-gap">…</span>{% endif %}
+    {% for p in range(lo, hi + 1) %}
+        {% if p == page %}<span class="pg pg-cur">{{ p }}</span>
+        {% else %}<a class="pg" href="{{ url_with(page=p) }}">{{ p }}</a>{% endif %}
+    {% endfor %}
+    {% if hi < total_pages %}<span class="pg-gap">…</span>{% endif %}
+    {% if page < total_pages %}
+        <a class="pg" href="{{ url_with(page=page+1) }}">다음 ›</a>
+        <a class="pg" href="{{ url_with(page=total_pages) }}" title="마지막 페이지">»</a>
+    {% else %}
+        <span class="pg pg-off">다음 ›</span>
+        <span class="pg pg-off">»</span>
+    {% endif %}
+    {% if rows %}<span class="pg-summary">{{ page_start + 1 }}–{{ page_start + rows|length }} / 총 {{ '{:,}'.format(total) }}건</span>{% endif %}
+</nav>
+{% elif rows %}
+<p class="muted-sm" style="margin-top:8px">총 {{ '{:,}'.format(total) }}건</p>
+{% endif %}
+
+<style>
+.audit-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 12px; }
+.audit-chip { display: inline-block; padding: 3px 9px; border: 1px solid var(--border);
+    border-radius: 12px; background: #fff; color: var(--text-light);
+    font-size: 0.8em; text-decoration: none; }
+.audit-chip:hover { border-color: #94a3b8; }
+.audit-chip b { color: var(--text); margin-left: 3px; }
+.audit-chip.crit { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
+.audit-chip.crit b { color: #b91c1c; }
+.audit-chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+.audit-chip.on b { color: #fff; }
+.audit-tbl td { vertical-align: top; }
+.audit-tbl .nowrap { white-space: nowrap; }
+.audit-tbl .audit-detail { font-size: 0.86em; color: var(--text-light);
+    max-width: 520px; word-break: break-word; }
+.audit-tbl .audit-act { text-decoration: none; color: var(--text); }
+.audit-tbl .audit-act:hover { text-decoration: underline; }
+.audit-tbl tr.audit-crit td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
+.pagination { display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+    margin: 14px 0 4px; }
+.pagination .pg { display: inline-block; min-width: 30px; padding: 4px 9px; text-align: center;
+    border: 1px solid var(--border); border-radius: 4px; background: #fff;
+    color: var(--text); text-decoration: none; font-size: 0.85em; }
+.pagination a.pg:hover { background: #eef2f7; border-color: #94a3b8; }
+.pagination .pg-cur { background: var(--primary); color: #fff; border-color: var(--primary); font-weight: 700; }
+.pagination .pg-off { color: #cbd5e1; cursor: default; }
+.pagination .pg-gap { padding: 0 4px; color: var(--text-light); }
+.pagination .pg-summary { margin-left: 10px; color: var(--text-light); font-size: 0.8em; }
+</style>
+{% endblock %}

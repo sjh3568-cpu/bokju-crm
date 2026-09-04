@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import secrets
+import threading
 import calendar
 from datetime import date, datetime, timedelta
 from urllib.parse import urlencode, urlsplit
@@ -19,6 +20,7 @@ from flask import (
     request, send_file, session, url_for,
 )
 
+import backup
 import models
 from auth import (
     admin_required, authenticate, current_user, is_locked_out,
@@ -27,6 +29,8 @@ from auth import (
 from config import (
     ACTIVITY_ACTIVE_OPTIONS, ACTIVITY_DIAPER_OPTIONS, ACTIVITY_OTHERS_OPTIONS,
     ACTIVITY_WHEELCHAIR_OPTIONS, ADMISSION_DOCS, ADMISSION_STATUSES,
+    AUDIT_ACTION_LABELS, AUDIT_CATEGORIES, AUDIT_CATEGORY_OTHER,
+    AUDIT_CRITICAL_ACTIONS, AUDIT_RETENTION_DAYS,
     ADMISSION_EVENT_TYPES, ATTENDING_DOCTORS,
     BED_OPTIONS, CAREGIVER_OPTIONS,
     CONSCIOUSNESS_MAIN_OPTIONS, CONSULT_CHANNELS, CONVERSATION_LEVEL_OPTIONS,
@@ -59,15 +63,23 @@ app.secret_key = os.getenv("SECRET_KEY") or secrets.token_hex(32)
 app.permanent_session_lifetime = timedelta(hours=int(os.getenv("SESSION_HOURS", "4")))
 
 _db_initialized = False
+# 다중 스레드(waitress) 환경에서 첫 요청 여러 건이 동시에 들어오면 init_db()가
+# 겹쳐 돌아 ALTER TABLE·1회성 마이그레이션이 중복 실행된다. 락으로 한 번만 돌린다.
+_bootstrap_lock = threading.Lock()
 
 
-@app.before_request
-def _bootstrap():
-    """첫 요청 시 DB 초기화 + admin 계정 셋업.
+def initialize():
+    """DB 초기화 + admin 계정 셋업 + 백업 스케줄러 기동. 몇 번 불러도 1회만 실행된다.
     .env의 APP_PASSWORD를 admin 계정 비밀번호로 자동 동기화 (단일 비밀번호 MVP).
+
+    serve.py(운영)는 기동 시점에, 개발 서버는 첫 요청 시점에 호출한다.
     """
     global _db_initialized
-    if not _db_initialized:
+    if _db_initialized:
+        return
+    with _bootstrap_lock:
+        if _db_initialized:
+            return
         models.init_db()
         admin_pw = os.getenv("APP_PASSWORD", "").strip()
         if admin_pw:
@@ -77,6 +89,13 @@ def _bootstrap():
             for username, display_name, role in SEED_USERS:
                 models.ensure_seed_user(username, display_name, role, admin_pw)
         _db_initialized = True
+    if os.getenv("BACKUP_ENABLED", "1") == "1":
+        backup.start_scheduler()
+
+
+@app.before_request
+def _bootstrap():
+    initialize()
 
 
 @app.before_request
@@ -1037,6 +1056,112 @@ def logout_view():
 
 _VALID_ROLES = {"admin", "staff", "viewer"}
 _MIN_PW_LEN = 4
+
+
+AUDIT_PAGE_SIZE = 100  # 이력 관리 페이지당 행 수
+AUDIT_PAGE_SIZE_OPTIONS = (50, 100, 200, 500)
+AUDIT_EXPORT_LIMIT = 20000  # CSV 한 번에 내보내는 최대 행 수
+
+
+def _audit_filters_from_request():
+    """이력 관리 화면의 필터를 요청에서 읽어 models 인자 형태로 정리."""
+    category = (request.args.get("category") or "").strip()
+    action = (request.args.get("action") or "").strip()
+    known = [a for _, acts in AUDIT_CATEGORIES.values() for a in acts]
+    if action:
+        actions, exclude = [action], None
+    elif category == AUDIT_CATEGORY_OTHER:
+        actions, exclude = None, known          # 어느 분류에도 없는 action
+    elif category in AUDIT_CATEGORIES:
+        actions, exclude = AUDIT_CATEGORIES[category][1], None
+    else:
+        category, actions, exclude = "", None, None
+    return {
+        "date_from": (request.args.get("from") or "").strip() or None,
+        "date_to": (request.args.get("to") or "").strip() or None,
+        "username": (request.args.get("user") or "").strip() or None,
+        "target_type": (request.args.get("target") or "").strip() or None,
+        "q": (request.args.get("q") or "").strip() or None,
+        "actions": actions,
+        "exclude_actions": exclude,
+    }, category, action
+
+
+@app.route("/admin/audit")
+@admin_required
+def admin_audit():
+    """이력 관리 — 누가·언제·무엇을 조회/입력/수정/삭제했는지 (audit_log)."""
+    filters, category, action = _audit_filters_from_request()
+    try:
+        page = max(1, int(request.args.get("page") or 1))
+    except (ValueError, TypeError):
+        page = 1
+    try:
+        requested = int(request.args.get("page_size") or AUDIT_PAGE_SIZE)
+    except (ValueError, TypeError):
+        requested = AUDIT_PAGE_SIZE
+    page_size = requested if requested in AUDIT_PAGE_SIZE_OPTIONS else AUDIT_PAGE_SIZE
+
+    total = models.count_audit_logs(**filters)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    page = min(page, total_pages)
+    offset = (page - 1) * page_size
+    rows = models.list_audit_logs(**filters, limit=page_size, offset=offset)
+    # CSV 내보내기 링크 — 현재 검색 조건만 유지 (페이지·보기개수는 의미 없음)
+    export_args = {k: v for k, v in request.args.items()
+                   if k not in ("page", "page_size") and v}
+    export_qs = ("?" + urlencode(export_args)) if export_args else ""
+    return render_template(
+        "audit.html", rows=rows, total=total, page=page, total_pages=total_pages,
+        export_qs=export_qs,
+        page_size=page_size, page_size_options=AUDIT_PAGE_SIZE_OPTIONS,
+        page_start=offset,
+        category=category, action=action,
+        action_counts=models.audit_action_counts(**filters),
+        users=models.audit_usernames(),
+        target_types=models.audit_target_types(),
+        span=models.audit_log_span(),
+        AUDIT_ACTION_LABELS=AUDIT_ACTION_LABELS,
+        AUDIT_CATEGORIES=AUDIT_CATEGORIES,
+        AUDIT_CATEGORY_OTHER=AUDIT_CATEGORY_OTHER,
+        AUDIT_CRITICAL_ACTIONS=AUDIT_CRITICAL_ACTIONS,
+        AUDIT_RETENTION_DAYS=AUDIT_RETENTION_DAYS,
+    )
+
+
+@app.route("/admin/audit/export")
+@admin_required
+def admin_audit_export():
+    """현재 필터 조건의 이력을 CSV로 — 개인정보 열람기록 제출·내부 감사용."""
+    filters, _category, _action = _audit_filters_from_request()
+    rows = models.list_audit_logs(**filters, limit=AUDIT_EXPORT_LIMIT, offset=0)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["일시", "사용자ID", "아이디", "이름", "행위", "행위(코드)",
+                "대상종류", "대상ID", "상세", "IP"])
+    for r in rows:
+        w.writerow([
+            r.get("created_at") or "",
+            r.get("user_id") if r.get("user_id") is not None else "",
+            r.get("username") or "",
+            r.get("display_name") or "",
+            AUDIT_ACTION_LABELS.get(r.get("action"), r.get("action") or ""),
+            r.get("action") or "",
+            r.get("target_type") or "",
+            r.get("target_id") if r.get("target_id") is not None else "",
+            r.get("detail") or "",
+            r.get("ip") or "",
+        ])
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="export_csv", target_type="audit_log",
+        detail=f"이력 {len(rows)}건", ip=request.remote_addr,
+    )
+    data = buf.getvalue().encode("utf-8-sig")  # Excel 한글 깨짐 방지
+    return send_file(
+        io.BytesIO(data), mimetype="text/csv", as_attachment=True,
+        download_name=f"audit_log_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+    )
 
 
 @app.route("/admin/users")

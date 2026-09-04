@@ -1,0 +1,27 @@
+# 시놀로지 NAS — Container Manager > 프로젝트 에서 이 파일로 생성한다.
+# 사전 준비: File Station에서 /volume1/docker/bokju-crm 폴더를 만들고
+#            이 저장소 전체를 그 안에 복사, .env 파일을 채워둘 것.
+services:
+  bokju-crm:
+    build: .
+    container_name: bokju-crm
+    restart: unless-stopped          # NAS 재부팅·오류 종료 시 자동 재시작
+    ports:
+      - "8003:8003"                  # 사내망에서 http://<NAS주소>:8003
+    volumes:
+      # DB — 반드시 NAS 로컬 볼륨. SMB 공유폴더를 마운트하면 WAL이 깨진다.
+      - ./data:/data
+      - ./backups:/backups
+    env_file:
+      - .env
+    environment:
+      TZ: Asia/Seoul
+      BOKJU_DB_PATH: /data/bokju.db
+      BACKUP_DIR: /backups
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8003/login').read()"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

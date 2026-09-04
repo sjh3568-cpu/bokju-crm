@@ -23,7 +23,9 @@ from werkzeug.security import generate_password_hash
 from config import (DIAGNOSIS_SEED, HOSPITAL_ALIASES, SOURCE_HOSPITAL_SEED,
                     STAGE_STALE_DAYS)
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "bokju.db")
+# DB 위치 — 기본은 코드 폴더 옆. 컨테이너 배포 시 BOKJU_DB_PATH로 마운트 볼륨을 가리킨다
+# (예: /data/bokju.db). SQLite WAL은 SMB/NFS에서 동작하지 않으므로 반드시 로컬 파일시스템.
+DB_PATH = os.getenv("BOKJU_DB_PATH") or os.path.join(os.path.dirname(__file__), "bokju.db")
 _CHRONIC_DISEASE_PREFIXES = (
     "당뇨", "고혈압", "파킨슨", "희귀성난치질환",
     "치매", "인지기능저하", "이상행동", "탈출", "암",
@@ -59,10 +61,16 @@ JSON_FIELDS = {
 }
 
 
+# 동시 쓰기 대기 한도(초). 상담사 4명이 같은 순간 저장해도 "database is locked"로
+# 실패하지 않도록 넉넉히 잡는다. SQLite는 쓰기를 직렬화하되 대기 중 순서대로 처리한다.
+BUSY_TIMEOUT = float(os.getenv("BOKJU_DB_TIMEOUT", "30"))
+
+
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=BUSY_TIMEOUT)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute(f"PRAGMA busy_timeout={int(BUSY_TIMEOUT * 1000)}")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
@@ -830,6 +838,130 @@ def log_audit(*, user_id=None, username=None, action, target_type=None, target_i
     )
     conn.commit()
     conn.close()
+
+
+# ─── 이력 관리 (audit_log 조회) ───
+# audit_log.created_at은 SQLite CURRENT_TIMESTAMP = UTC로 저장된다.
+# 화면·필터는 모두 한국시간 기준이므로 읽을 때 datetime(...,'localtime')으로 변환하고,
+# 기간 필터는 반대로 입력값을 datetime(...,'utc')로 바꿔 비교한다
+# (created_at 원본과 비교해야 idx_audit_created 인덱스를 탄다).
+
+def _build_audit_where(*, date_from=None, date_to=None, username=None,
+                       actions=None, exclude_actions=None, target_type=None, q=None):
+    where, vals = [], []
+    if date_from:
+        where.append("a.created_at >= datetime(?, 'utc')")
+        vals.append(f"{date_from} 00:00:00")
+    if date_to:
+        where.append("a.created_at <= datetime(?, 'utc')")
+        vals.append(f"{date_to} 23:59:59")
+    if username:
+        where.append("a.username = ?")
+        vals.append(username)
+    if actions:
+        where.append(f"a.action IN ({','.join('?' * len(actions))})")
+        vals.extend(actions)
+    if exclude_actions:
+        where.append(f"(a.action IS NULL OR a.action NOT IN ({','.join('?' * len(exclude_actions))}))")
+        vals.extend(exclude_actions)
+    if target_type:
+        where.append("a.target_type = ?")
+        vals.append(target_type)
+    if q:
+        like = f"%{q.strip()}%"
+        where.append("(a.detail LIKE ? OR a.username LIKE ? OR a.ip LIKE ? "
+                     "OR a.action LIKE ? OR CAST(a.target_id AS TEXT) = ?)")
+        vals.extend([like, like, like, like, q.strip()])
+    return ("WHERE " + " AND ".join(where) if where else ""), vals
+
+
+def list_audit_logs(*, date_from=None, date_to=None, username=None, actions=None,
+                    exclude_actions=None, target_type=None, q=None,
+                    limit=100, offset=0):
+    """이력 목록 (최신순). created_at은 한국시간 문자열로 변환해 돌려준다."""
+    where_sql, vals = _build_audit_where(
+        date_from=date_from, date_to=date_to, username=username, actions=actions,
+        exclude_actions=exclude_actions, target_type=target_type, q=q)
+    conn = get_db()
+    rows = conn.execute(
+        f"""
+        SELECT a.id, a.user_id, a.username, a.action, a.target_type, a.target_id,
+               a.detail, a.ip,
+               datetime(a.created_at, 'localtime') AS created_at,
+               u.display_name AS display_name, u.role AS role
+        FROM audit_log a LEFT JOIN users u ON u.id = a.user_id
+        {where_sql}
+        ORDER BY a.created_at DESC, a.id DESC
+        LIMIT ? OFFSET ?
+        """,
+        [*vals, limit, offset],
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def count_audit_logs(*, date_from=None, date_to=None, username=None, actions=None,
+                     exclude_actions=None, target_type=None, q=None):
+    where_sql, vals = _build_audit_where(
+        date_from=date_from, date_to=date_to, username=username, actions=actions,
+        exclude_actions=exclude_actions, target_type=target_type, q=q)
+    conn = get_db()
+    n = conn.execute(
+        f"SELECT COUNT(*) AS n FROM audit_log a {where_sql}", vals).fetchone()["n"]
+    conn.close()
+    return n
+
+
+def audit_action_counts(*, date_from=None, date_to=None, username=None, actions=None,
+                        exclude_actions=None, target_type=None, q=None):
+    """현재 필터 조건에서 action별 건수 — 화면 상단 요약칩용. {action: n}."""
+    where_sql, vals = _build_audit_where(
+        date_from=date_from, date_to=date_to, username=username, actions=actions,
+        exclude_actions=exclude_actions, target_type=target_type, q=q)
+    conn = get_db()
+    rows = conn.execute(
+        f"SELECT a.action AS action, COUNT(*) AS n FROM audit_log a {where_sql} "
+        "GROUP BY a.action ORDER BY n DESC", vals).fetchall()
+    conn.close()
+    return {r["action"]: r["n"] for r in rows}
+
+
+def audit_usernames():
+    """이력에 등장한 사용자 목록 (필터 드롭다운용). 삭제된 계정도 포함된다."""
+    conn = get_db()
+    rows = conn.execute(
+        """
+        SELECT a.username AS username, MAX(u.display_name) AS display_name,
+               COUNT(*) AS n
+        FROM audit_log a LEFT JOIN users u ON u.id = a.user_id
+        WHERE a.username IS NOT NULL AND a.username <> ''
+        GROUP BY a.username ORDER BY a.username COLLATE NOCASE
+        """
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def audit_target_types():
+    """이력에 등장한 대상 종류 목록 (필터 드롭다운용)."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT DISTINCT target_type FROM audit_log "
+        "WHERE target_type IS NOT NULL AND target_type <> '' ORDER BY target_type"
+    ).fetchall()
+    conn.close()
+    return [r["target_type"] for r in rows]
+
+
+def audit_log_span():
+    """보관 중인 이력의 전체 건수와 가장 오래된/최신 시각 (한국시간)."""
+    conn = get_db()
+    r = conn.execute(
+        "SELECT COUNT(*) AS n, datetime(MIN(created_at), 'localtime') AS oldest, "
+        "datetime(MAX(created_at), 'localtime') AS newest FROM audit_log"
+    ).fetchone()
+    conn.close()
+    return dict(r)
 
 
 # ─── 환자 ───

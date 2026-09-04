@@ -10,7 +10,7 @@
 
 5회 실패 시 5분 잠금은 audit_log를 카운트해서 처리.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 from flask import abort, flash, g, redirect, request, session, url_for
@@ -33,7 +33,9 @@ def has_min_role(user, min_role: str) -> bool:
 def is_locked_out(ip: str) -> bool:
     if not ip:
         return False
-    since = (datetime.now() - timedelta(minutes=LOCKOUT_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")
+    # audit_log.created_at은 CURRENT_TIMESTAMP = UTC로 저장된다.
+    # 로컬 시각으로 비교하면 KST 기준 9시간 어긋나 잠금이 아예 걸리지 않으므로 UTC로 맞춘다.
+    since = (datetime.now(timezone.utc) - timedelta(minutes=LOCKOUT_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")
     conn = get_db()
     n = conn.execute(
         "SELECT COUNT(*) AS n FROM audit_log WHERE action='login_fail' AND ip = ? AND created_at >= ?",

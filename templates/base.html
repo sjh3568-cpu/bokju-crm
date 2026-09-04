@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="/static/css/style.css">
     {% block head_extra %}{% endblock %}
 </head>
-<body class="{% if current_user and current_user.role == 'viewer' %}role-viewer{% endif %}">
+<body class="{% if current_user and current_user.role == 'viewer' %}role-viewer{% endif %}"{% block body_attrs %}{% endblock %}>
     <header>
         <div class="container">
             <div class="header-inner">
@@ -28,6 +28,7 @@
                     <a href="/report/monthly" {% if request.path.startswith('/report') %}class="active"{% endif %}>월간보고서</a>
                     {% if current_user.role == 'admin' %}
                     <a href="/admin/users" {% if request.path.startswith('/admin/users') %}class="active"{% endif %}>사용자 관리</a>
+                    <a href="/admin/audit" {% if request.path.startswith('/admin/audit') %}class="active"{% endif %} title="누가 언제 무엇을 조회·입력·수정·삭제했는지">이력 관리</a>
                     {% endif %}
                     <a href="/help" {% if request.path.startswith('/help') %}class="active"{% endif %} title="사용 매뉴얼" style="margin-left:auto; opacity:0.7">❓</a>
                 </nav>
@@ -140,5 +141,31 @@
     })();
     </script>
     {% endif %}
+<!-- 자동 새로고침 — 여러 상담사가 동시에 쓰는 현황 화면(대시보드·재원)용.
+     data-autorefresh="초" 를 body에 달아둔 페이지에서만 동작한다.
+     입력 중이거나 모달이 열려 있거나 탭이 백그라운드면 건너뛰고 다음 주기를 기다린다
+     (작성 중인 내용을 날려버리지 않기 위한 안전장치). -->
+<script>
+(function () {
+    const sec = parseInt(document.body.dataset.autorefresh || '0', 10);
+    if (!sec || sec < 5) return;
+
+    function busy() {
+        if (document.hidden) return true;                      // 다른 탭 보는 중
+        const el = document.activeElement;
+        if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return true;   // 입력 중
+        if (el && el.isContentEditable) return true;
+        if (document.querySelector('dialog[open]')) return true;
+        if (document.querySelector('#calc-modal:not([hidden])')) return true;  // 계산기 열림
+        if (window.getSelection && String(window.getSelection())) return true; // 드래그 선택 중
+        return false;
+    }
+
+    setInterval(function () {
+        if (busy()) return;
+        location.reload();
+    }, sec * 1000);
+})();
+</script>
 </body>
 </html>

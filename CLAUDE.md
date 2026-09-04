@@ -22,7 +22,8 @@
 cd c:\Developer\bokju-crm
 pip install -r requirements.txt
 cp .env.example .env       # APP_PASSWORD, SECRET_KEY 입력
-python app.py              # http://127.0.0.1:8003
+python app.py              # 개발 — http://127.0.0.1:8003
+python serve.py            # 운영 — waitress, 0.0.0.0:8003 (NAS 컨테이너 진입점)
 ```
 
 계정: 최초 부팅 시 `config.SEED_USERS` 6명 자동 생성 (어드민·관리자 + 상담사 4명).
@@ -49,6 +50,10 @@ config.py          상수 (보험·시도/시군구·병명 LAYOUT·입원경로
 templates/         base.html, login, dashboard, consult_form/list/detail, patient_detail, error
 static/css/        style.css (Pretendard, 4 그룹 박스, dx-stretch 등)
 static/js/         common.js, form.js (자동완성, 시군구→시도, 010 포맷, 콤보박스)
+serve.py           운영 진입점 — waitress WSGI (개발용 app.run 대체)
+backup.py          자동 백업 — 기동 시 1회 + 매일 03시, 보관기간 경과분 정리
+Dockerfile         NAS Container Manager 배포용 이미지
+docker-compose.yml NAS 프로젝트 정의 (볼륨·재시작·헬스체크)
 bokju.db           SQLite (gitignore)
 backups/           일일 자동 백업 (gitignore)
 uploads/           마이그레이션·녹음 임시 (gitignore)
@@ -60,6 +65,7 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
 |---|---|
 | `GET /login` `POST /login` | 인증 |
 | `GET /admin/users` (+ create/update/password/active/delete POST) | **사용자 관리** (어드민 전용) — 계정 추가·비번·역할·활성/삭제 |
+| `GET /admin/audit` `GET /admin/audit/export` | **이력 관리** (어드민 전용) — audit_log 열람·필터·CSV. 누가 언제 무엇을 조회/입력/수정/삭제했는지 |
 | `GET /` | 대시보드 (이번달 카드 + 오늘 등록 + 7일 추이) |
 | `GET /consult/new` `POST /api/consult` | 상담일지 등록 |
 | `GET /consult/<id>` `GET /consult/<id>/edit` `POST /api/consult/<id>` | 상세 / 수정 |
@@ -108,6 +114,9 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
 
 **`source_hospitals`, `diagnoses`** — 마스터 자동완성용 (신규 입력 시 자동 추가)
 **`users`, `audit_log`, `attachments`** — 인증/감사/첨부
+- `audit_log`는 `models.log_audit()`으로만 쌓이고 화면에서는 `/admin/audit`로 읽기만 한다(수정·삭제 경로 없음).
+- `created_at`은 SQLite `CURRENT_TIMESTAMP` = **UTC**. 읽을 땐 `datetime(created_at, 'localtime')`,
+  기간 필터는 `datetime(?, 'utc')`로 변환해 비교한다 (인덱스 유지). 새 action은 `config.AUDIT_ACTION_LABELS`에 라벨 추가.
 
 ## 폼 UX 원칙
 
@@ -238,6 +247,11 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
 
 - **포트**: 8003 (cafe-helper 8001 / keyword-monitor 8002와 충돌 회피)
 - **진입점**: `python app.py` (디버그 모드는 `FLASK_DEBUG=1`)
-- **DB 위치**: `bokju.db` (현재 로컬). 향후 시놀로지 NAS 또는 MariaDB 이주 검토
+- **DB 위치**: `bokju.db`. 경로는 `BOKJU_DB_PATH`로 지정 (컨테이너 배포 시 `/data/bokju.db`).
+  반드시 로컬 파일시스템 — SMB 공유폴더에 두면 WAL이 깨져 동시 사용 시 데이터가 손상된다.
+- **배포**: 시놀로지 NAS Container Manager + `docker-compose.yml`. 사내망 `http://<NAS>:8003`으로
+  상담사 4명이 브라우저 접속. 운영 서버는 `serve.py`(waitress). 절차는 `docs/DEPLOY-NAS.md`.
+- **백업**: `backup.py`가 기동 시 1회 + 매일 `BACKUP_HOUR`(기본 03시) 스냅샷을 `BACKUP_DIR`에 저장,
+  `BACKUP_KEEP_DAYS`(기본 30일) 경과분 자동 삭제. SQLite 온라인 백업 API라 무중단.
 - **첫 셋업**: `.env`에 `APP_PASSWORD`/`SECRET_KEY` 설정 → `python app.py` → admin 계정 자동 생성 (.env의 `APP_PASSWORD` 사용)
 - **재시작 시 주의**: 템플릿 변경은 즉시 반영 (Jinja 자동 리로드), config.py·models.py 변경은 서버 재시작 필요

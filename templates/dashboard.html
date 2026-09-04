@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{# 여러 명이 띄워놓고 보는 현황 화면 — 30초마다 자동 새로고침 #}
+{% block body_attrs %} data-autorefresh="30"{% endblock %}
 {% macro admission_table(rows) %}
 <div class="tbl-wrap">
     <table class="tbl dash-table">

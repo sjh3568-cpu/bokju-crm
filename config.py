@@ -102,6 +102,76 @@ COUNSELORS = ["박세연", "권창영", "김미화", "신재희"]
 #   · viewer = 읽기 전용 공통 계정. 병동 등 타 부서용. 모든 등록·수정·발송 차단
 ROLE_LABELS = {"admin": "어드민", "staff": "상담사", "viewer": "조회"}
 
+# ─── 이력 관리(감사 로그) ───
+# audit_log.action → 화면 표시 라벨. models.log_audit으로 새 action을 남기면 여기에도 추가한다.
+# (라벨이 없으면 이력 관리 화면에 action 원문이 그대로 표시된다.)
+AUDIT_ACTION_LABELS = {
+    "login": "로그인",
+    "login_fail": "로그인 실패",
+    "logout": "로그아웃",
+    "view_patient": "환자 조회",
+    "view_consult": "상담 조회",
+    "create_consult": "상담 등록",
+    "update_consult": "상담 수정",
+    "delete_consult": "상담 삭제",
+    "confirm_admission": "입원 확정",
+    "update_status": "입원 상태 변경",
+    "update_stage": "생애주기 단계 변경",
+    "update_room": "병실 변경",
+    "update_discharge": "퇴원 예정일 변경",
+    "add_admission_event": "재원 이벤트 추가",
+    "return_admission_event": "외진 복귀 처리",
+    "add_lifecycle_event": "생애주기 이벤트 추가",
+    "delete_lifecycle_event": "생애주기 이벤트 삭제",
+    "add_communication": "소통 기록 추가",
+    "close_communication": "소통 기록 종료",
+    "update_blacklist": "블랙리스트 변경",
+    "merge_patient": "환자 병합",
+    "send_sms": "문자 발송",
+    "export_csv": "CSV 내보내기",
+    "report_insight": "월간보고서 AI 분석",
+    "stats_insight": "통계 AI 분석",
+    "quick_filters_update": "빠른 필터 수정",
+    "create_user": "계정 생성",
+    "update_user": "계정 수정",
+    "delete_user": "계정 삭제",
+    "reset_password": "비밀번호 초기화",
+    "toggle_user_active": "계정 활성/비활성",
+}
+
+# 이력 관리 화면의 '분류' 필터 — 키 → (표시 라벨, 해당 action 목록).
+# 어느 분류에도 없는 action은 '기타'로 묶여 조회된다(AUDIT_CATEGORY_OTHER).
+AUDIT_CATEGORIES = {
+    "auth": ("로그인·인증", ["login", "login_fail", "logout"]),
+    "create": ("등록", [
+        "create_consult", "confirm_admission", "add_admission_event",
+        "add_lifecycle_event", "add_communication",
+    ]),
+    "update": ("수정", [
+        "update_consult", "update_status", "update_stage", "update_room",
+        "update_discharge", "update_blacklist", "return_admission_event",
+        "close_communication", "merge_patient", "quick_filters_update",
+    ]),
+    "delete": ("삭제", ["delete_consult", "delete_lifecycle_event"]),
+    "view": ("조회", ["view_patient", "view_consult"]),
+    "outbound": ("반출·발송", ["send_sms", "export_csv", "report_insight", "stats_insight"]),
+    "account": ("계정 관리", [
+        "create_user", "update_user", "delete_user", "reset_password",
+        "toggle_user_active",
+    ]),
+}
+AUDIT_CATEGORY_OTHER = "other"
+
+# 개인정보 열람·변경 이력 보관 기간(일). 화면 안내용 — 자동 삭제는 하지 않는다.
+AUDIT_RETENTION_DAYS = 365
+
+# 이력 관리 화면에서 '중요 변경'으로 강조할 action (조회·로그인 소음과 구분).
+AUDIT_CRITICAL_ACTIONS = {
+    "delete_consult", "delete_lifecycle_event", "merge_patient",
+    "create_user", "update_user", "delete_user", "reset_password",
+    "toggle_user_active", "export_csv", "update_blacklist", "login_fail",
+}
+
 # 최초 부팅 시 없으면 자동 생성되는 계정 — (username, display_name, role).
 # 초기 비밀번호는 .env의 APP_PASSWORD. 이후 어드민이 '사용자 관리'에서 개별 변경.
 # (이미 존재하는 계정은 건드리지 않아 어드민이 설정한 비번이 보존된다.)
