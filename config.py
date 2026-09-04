@@ -138,6 +138,9 @@ AUDIT_ACTION_LABELS = {
     "delete_user": "계정 삭제",
     "reset_password": "비밀번호 초기화",
     "toggle_user_active": "계정 활성/비활성",
+    "create_notice": "공지 등록",
+    "update_notice": "공지 상태 변경",
+    "ack_notice": "공지 확인",
 }
 
 # 이력 관리 화면의 '분류' 필터 — 키 → (표시 라벨, 해당 action 목록).
@@ -160,6 +163,7 @@ AUDIT_CATEGORIES = {
         "create_user", "update_user", "delete_user", "reset_password",
         "toggle_user_active",
     ]),
+    "notice": ("공지사항", ["create_notice", "update_notice", "ack_notice"]),
 }
 AUDIT_CATEGORY_OTHER = "other"
 

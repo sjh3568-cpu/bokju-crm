@@ -63,6 +63,10 @@
     </div>
     <div class="card chart-card trend-overview-card print-primary">
         <h3>연도별 상담·입원 건수 <small>전체 연도</small></h3>
+        <div class="monthly-chart-legend" aria-label="연도별 차트 범례">
+            <span><i class="legend-consult"></i>상담 건수</span>
+            <span><i class="legend-admission legend-admission-bar"></i>입원 건수</span>
+        </div>
         <div class="chart-box"><canvas id="chart-yearly"></canvas></div>
     </div>
 </div>
@@ -196,7 +200,7 @@
 .section-heading small { color:#64748b; font-size:.72em; }
 .section-heading.priority b { display:inline-grid; place-items:center; width:22px; height:22px; border-radius:7px; color:#fff; background:linear-gradient(145deg,#166534,#16a34a); box-shadow:0 3px 7px rgba(22,101,52,.22); font-size:.72em; }
 .kpi-row { grid-template-columns: repeat(6, 1fr); gap:8px; margin-bottom:10px; }
-.kpi-row .stat-card { position:relative; overflow:hidden; padding:10px 12px; margin:0; min-width:0; height:94px; display:flex; flex-direction:column; justify-content:center; border:1px solid rgba(148,163,184,.24); box-shadow:0 6px 16px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.85); }
+.kpi-row .stat-card { position:relative; overflow:hidden; padding:10px 12px; margin:0; min-width:0; height:112px; display:flex; flex-direction:column; justify-content:center; border:1px solid rgba(148,163,184,.24); box-shadow:0 6px 16px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.85); }
 .kpi-row .stat-card::after { content:""; position:absolute; right:-18px; bottom:-25px; width:72px; height:72px; border-radius:50%; background:currentColor; opacity:.07; }
 .tone-blue{color:#2563eb}.tone-green{color:#15803d}.tone-teal{color:#0f766e}.tone-amber{color:#b45309}.tone-violet{color:#7c3aed}.tone-rose{color:#be123c}
 .kpi-row .stat-card .label { font-size:0.72em; margin-bottom:2px; }
@@ -207,7 +211,7 @@
 .kpi-row .split-value { display:flex; align-items:center; justify-content:center; gap:8px; }
 .kpi-row .split-value i { color:#94a3b8; font-size:.7em; font-style:normal; }
 .kpi-row .split-value + .sub { display:flex; justify-content:center; gap:22px; }
-.delta-row { display:flex; gap:5px; min-height:17px; margin-top:4px; font-size:.62em; white-space:nowrap; }
+.delta-row { display:flex; flex-direction:column; align-items:flex-start; gap:2px; min-height:34px; margin-top:4px; font-size:.62em; white-space:nowrap; }
 .delta { padding:2px 5px; border-radius:999px; background:#f1f5f9; color:#475569; }
 .delta.up { background:#dcfce7; color:#166534; }.delta.down { background:#fee2e2; color:#991b1b; }
 @media (max-width: 1100px) { .kpi-row { grid-template-columns: repeat(3, 1fr); } }
@@ -237,6 +241,8 @@
 .monthly-chart-legend .legend-consult { width:11px; height:8px; border:1px solid #2563eb; border-radius:2px; background:rgba(37,99,235,.58); }
 .monthly-chart-legend .legend-admission { width:14px; height:0; border-top:3px solid #16a34a; position:relative; }
 .monthly-chart-legend .legend-admission::after { content:""; position:absolute; width:5px; height:5px; border:2px solid #15803d; border-radius:50%; background:#fff; left:4px; top:-5px; }
+.monthly-chart-legend .legend-admission-bar { width:11px; height:8px; border:0; border-radius:2px; background:#16a34a; }
+.monthly-chart-legend .legend-admission-bar::after { display:none; }
 .monthly-chart-legend .legend-rate { color:#15803d; font-size:1.05em; font-style:normal; font-weight:850; line-height:1; }
 .combined-chart-box { display:grid; grid-template-columns:0.8fr 1.2fr; gap:10px; flex:1; min-height:0; }
 .combined-chart-box.equal { grid-template-columns:1fr 1fr; }
@@ -300,7 +306,7 @@
 
     // ─── Chart.js 공통 ───
     Chart.defaults.font.family = 'Pretendard, -apple-system, sans-serif';
-    Chart.defaults.font.size = 10;
+    Chart.defaults.font.size = 12;
     Chart.defaults.plugins.legend.labels.boxWidth = 10;
     Chart.defaults.plugins.legend.labels.padding = 5;
     Chart.defaults.layout = { padding: 0 };
@@ -473,8 +479,8 @@
                     },
                 },
                 scales: {
-                    x: { beginAtZero: true, ticks: { precision: 0, font: { size: 10 } } },
-                    y: { ticks: { autoSkip: false, font: { size: 10 } } },
+                    x: { beginAtZero: true, ticks: { precision: 0, font: { size: 12 } } },
+                    y: { ticks: { autoSkip: false, font: { size: 12 } } },
                 },
             },
         });
@@ -508,8 +514,8 @@
                     },
                 },
                 scales: {
-                    x: { ticks: { font: { size: 10 } } },
-                    y: { beginAtZero: true, ticks: { precision: 0, font: { size: 10 } } },
+                    x: { ticks: { font: { size: 12 } } },
+                    y: { beginAtZero: true, ticks: { precision: 0, font: { size: 12 } } },
                 },
             },
         });
@@ -537,7 +543,7 @@
                 }}}, datalabels:{...barDatalabels, formatter:(v,c)=>{
                     const x=sortedItems[c.dataIndex]; return `${x.completed}/${x.total}건 · ${v}%`;
                 }}},
-                scales:{x:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%',font:{size:9}}},y:{ticks:{autoSkip:false,font:{size:9}}}},
+                scales:{x:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%',font:{size:12}}},y:{ticks:{autoSkip:false,font:{size:12}}}},
             },
         });
     }
@@ -581,8 +587,8 @@
             responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},datalabels:{
                 display:true,color:'#fff',font:{size:9,weight:'700'},formatter:v=>v.count
             },tooltip:{callbacks:{label:c=>`${days[c.raw.x]} ${c.raw.y}시 · ${c.raw.count}건`}}},
-            scales:{x:{min:-.5,max:6.5,ticks:{stepSize:1,callback:v=>days[v]||''},grid:{display:false}},
-                    y:{min:7.5,max:18.5,ticks:{stepSize:2,callback:v=>v+'시'}}}
+            scales:{x:{min:-.5,max:6.5,ticks:{stepSize:1,callback:v=>days[v]||'',font:{size:12}},grid:{display:false}},
+                    y:{min:7.5,max:18.5,ticks:{stepSize:2,callback:v=>v+'시',font:{size:12}}}}
         }});
     }
 
@@ -627,8 +633,8 @@
                     },
                 },
                 scales: {
-                    x: { ticks: { autoSkip: true, maxTicksLimit: 18, minRotation: 40, maxRotation: 50, font: { size: 9 } } },
-                    y: { beginAtZero: true, ticks: { precision: 0, font: { size: 10 } } },
+                    x: { ticks: { autoSkip: true, maxTicksLimit: 18, minRotation: 40, maxRotation: 50, font: { size: 12 } } },
+                    y: { beginAtZero: true, ticks: { precision: 0, font: { size: 12 } } },
                 },
             },
         });
@@ -706,7 +712,7 @@
                 maintainAspectRatio: false,
                 layout: { padding: { top: showAdmissionLine ? 32 : 28, right: 16, bottom: 6 } },
                 plugins: {
-                    legend: { display: !showAdmissionLine, position: 'top' },
+                    legend: { display: false },
                     tooltip: { mode: 'index', intersect: false, callbacks: {
                         afterBody: points => points.length ? `입원 전환율: ${items[points[0].dataIndex].rate || 0}%` : ''
                     } },
@@ -722,13 +728,13 @@
                     },
                 },
                 scales: {
-                    x: { stacked: false, ticks: { autoSkip: false, minRotation: showAdmissionLine ? 35 : 0, maxRotation: showAdmissionLine ? 50 : 0, font: { size: 9 } }, grid: { display: false } },
-                    y: { beginAtZero: true, ticks: { precision: 0, font: { size: 9 } } },
+                    x: { stacked: false, ticks: { autoSkip: false, minRotation: showAdmissionLine ? 35 : 0, maxRotation: showAdmissionLine ? 50 : 0, font: { size: 12 } }, grid: { display: false } },
+                    y: { beginAtZero: true, ticks: { precision: 0, font: { size: 12 } } },
                     admissions: { display: showAdmissionLine, position: 'right', beginAtZero: true,
                         suggestedMax: Math.max(5, ...items.map(x => x.admissions || 0)) * 1.2,
                         grid: { drawOnChartArea: false },
-                        ticks: { precision: 0, color: '#15803d', font: { size: 8 } },
-                        title: { display: showAdmissionLine, text: '입원 건수', color: '#15803d', font: { size: 9, weight: '700' } } },
+                        ticks: { precision: 0, color: '#15803d', font: { size: 11 } },
+                        title: { display: showAdmissionLine, text: '입원 건수', color: '#15803d', font: { size: 12, weight: '700' } } },
                 },
             },
         });
@@ -783,11 +789,15 @@
     const dateUtc=s=>new Date(s+'T00:00:00Z');
     function deltaBadge(label,current,previous,isRate=false){
         if (previous==null) return `<span class="delta">${label} -</span>`;
-        const delta=isRate ? current-previous : (previous ? (current-previous)/previous*100 : null);
-        if (delta==null) return `<span class="delta">${label} 신규</span>`;
-        const cls=delta>0?'up':delta<0?'down':'';
-        const unit=isRate?'%p':'%';
-        return `<span class="delta ${cls}">${label} ${delta>0?'▲':delta<0?'▼':''}${Math.abs(delta).toFixed(1)}${unit}</span>`;
+        const difference=current-previous;
+        const changeRate=previous ? difference/previous*100 : null;
+        const cls=difference>0?'up':difference<0?'down':'';
+        const arrow=difference>0?'▲':difference<0?'▼':'–';
+        const relative=changeRate==null?'신규':`${changeRate>=0?'+':''}${changeRate.toFixed(1)}%`;
+        if(isRate){
+            return `<span class="delta ${cls}">${label} ${arrow}${Math.abs(difference).toFixed(1)}%p (${relative})</span>`;
+        }
+        return `<span class="delta ${cls}">${label} ${arrow}${Math.abs(difference)}건 (${relative})</span>`;
     }
     async function renderComparisons(d){
         const s=d.summary;
@@ -799,10 +809,13 @@
         yoyStart.setUTCFullYear(yoyStart.getUTCFullYear()-1); yoyEnd.setUTCFullYear(yoyEnd.getUTCFullYear()-1);
         const query=(a,b)=>fetch(`/api/stats.json?preset=custom&from=${iso(a)}&to=${iso(b)}`).then(r=>r.ok?r.json():null);
         const [prev,yoy]=await Promise.all([query(prevStart,prevEnd),query(yoyStart,yoyEnd)]);
+        const lastDay=new Date(Date.UTC(end.getUTCFullYear(),end.getUTCMonth()+1,0)).getUTCDate();
+        const isFullMonth=start.getUTCDate()===1 && end.getUTCDate()===lastDay && start.getUTCMonth()===end.getUTCMonth();
+        const previousLabel=isFullMonth?'전월':'직전';
         const keys=['total','completed','conversion_rate'];
         keys.forEach(key=>{const el=document.querySelector(`[data-compare="${key}"]`);if(!el)return;
             const rate=key==='conversion_rate';
-            el.innerHTML=deltaBadge('직전',s[key]||0,prev?.summary?.[key],rate)+deltaBadge('전년',s[key]||0,yoy?.summary?.[key],rate);
+            el.innerHTML=deltaBadge(previousLabel,s[key]||0,prev?.summary?.[key],rate)+deltaBadge('전년',s[key]||0,yoy?.summary?.[key],rate);
         });
     }
 

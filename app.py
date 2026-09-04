@@ -104,7 +104,7 @@ def _bootstrap():
 # 인증·권한 판정에서 제외하는 경로 (로그인 전이거나 공용 도구)
 _PERM_EXEMPT_PREFIXES = (
     "/login", "/logout", "/healthz", "/static/", "/help",
-    "/tools/period-calc", "/period-calc",
+    "/tools/period-calc", "/period-calc", "/notices",
 )
 
 # 신규 '등록'으로 취급하는 쓰기 경로 (그 외 쓰기는 '수정' 레벨로 판정)
@@ -202,6 +202,24 @@ def _enforce_menu_permissions():
     abort(403)
 
 
+@app.before_request
+def _require_announcement_acknowledgement():
+    """필수 공지를 확인하기 전에는 다른 업무 화면으로 이동할 수 없게 한다."""
+    user = current_user()
+    if not user or request.path.startswith(("/login", "/logout", "/static/", "/notices")):
+        return
+    pending = models.first_unread_required_announcement(user["id"], user.get("role", "staff"))
+    if not pending:
+        return
+    if request.path.startswith("/api/"):
+        return jsonify({
+            "error": "필수 공지를 먼저 확인해주세요.",
+            "notice_id": pending["id"],
+            "notice_url": url_for("notice_required"),
+        }), 428
+    return redirect(url_for("notice_required", next=request.full_path.rstrip("?")))
+
+
 @app.after_request
 def _no_store(resp):
     """환자 정보 페이지가 브라우저 캐시에 남지 않도록.
@@ -241,8 +259,20 @@ def _is_safe_next_url(value):
 
 @app.context_processor
 def _inject_globals():
+    _u = current_user()
+    # 나의 할 일 리마인드 배지 — 오늘+지난 미완료 개수 (로그인 시에만 조회)
+    todo_badge = 0
+    if _u:
+        try:
+            todo_badge = models.todo_reminder_count(_u["id"], date.today().isoformat())
+        except Exception:
+            todo_badge = 0
+    pending_notice = (models.first_unread_required_announcement(
+        _u["id"], _u.get("role", "staff")) if _u else None)
     return {
-        "current_user": current_user(),
+        "current_user": _u,
+        "todo_badge": todo_badge,
+        "has_unread_required_notice": bool(pending_notice),
         "today_str": date.today().isoformat(),   # 날짜 입력 기본값(외진 기록 등)
         "INSURANCE_TYPES": INSURANCE_TYPES,
         "CONSULT_CHANNELS": CONSULT_CHANNELS,
@@ -1125,6 +1155,8 @@ def login_view():
         next_url = request.args.get("next") or request.form.get("next") or url_for("dashboard")
         if not _is_safe_next_url(next_url):
             next_url = url_for("dashboard")
+        if models.first_unread_required_announcement(user["id"], user.get("role", "staff")):
+            return redirect(url_for("notice_required", next=next_url))
         return redirect(next_url)
     if current_user():
         return redirect(url_for("dashboard"))
@@ -1136,6 +1168,99 @@ def logout_view():
     logout_user()
     flash("로그아웃되었습니다.", "info")
     return redirect(url_for("login_view"))
+
+
+# ───────────────────── 공지사항 ─────────────────────
+
+@app.route("/notices")
+@login_required
+def notices_view():
+    user = current_user()
+    is_admin = user.get("role") == "admin"
+    notices = models.list_announcements(
+        user["id"], user.get("role", "staff"), include_inactive=is_admin)
+    return render_template("notices.html", notices=notices, is_admin=is_admin)
+
+
+@app.route("/notices/required")
+@login_required
+def notice_required():
+    user = current_user()
+    notice = models.first_unread_required_announcement(
+        user["id"], user.get("role", "staff"))
+    next_url = request.args.get("next") or url_for("dashboard")
+    if not _is_safe_next_url(next_url):
+        next_url = url_for("dashboard")
+    if not notice:
+        return redirect(next_url)
+    return render_template("notice_required.html", notice=notice, next_url=next_url)
+
+
+@app.route("/notices/<int:notice_id>/ack", methods=["POST"])
+@login_required
+def notice_acknowledge(notice_id):
+    user = current_user()
+    if not models.acknowledge_announcement(
+            notice_id, user["id"], user.get("role", "staff")):
+        abort(404)
+    models.log_audit(
+        user_id=user["id"], username=user["username"], action="ack_notice",
+        target_type="announcement", target_id=notice_id, ip=request.remote_addr,
+    )
+    next_url = request.form.get("next") or url_for("dashboard")
+    if not _is_safe_next_url(next_url):
+        next_url = url_for("dashboard")
+    if models.first_unread_required_announcement(user["id"], user.get("role", "staff")):
+        return redirect(url_for("notice_required", next=next_url))
+    flash("공지사항을 확인했습니다.", "success")
+    return redirect(next_url)
+
+
+@app.route("/notices/create", methods=["POST"])
+@login_required
+def notice_create():
+    user = current_user()
+    if user.get("role") != "admin":
+        abort(403)
+    title = (request.form.get("title") or "").strip()
+    body = (request.form.get("body") or "").strip()
+    if not title or not body:
+        flash("공지 제목과 내용을 모두 입력해주세요.", "error")
+        return redirect(url_for("notices_view"))
+    target_role = request.form.get("target_role")
+    if target_role not in ("staff", "viewer", "all"):
+        target_role = "staff"
+    notice_id = models.create_announcement(
+        title=title, body=body, target_role=target_role,
+        requires_ack=request.form.get("requires_ack") == "1",
+        expires_at=(request.form.get("expires_at") or "").strip() or None,
+        created_by=user["id"], created_by_name=user.get("display_name") or user["username"],
+    )
+    models.log_audit(
+        user_id=user["id"], username=user["username"], action="create_notice",
+        target_type="announcement", target_id=notice_id, detail=title,
+        ip=request.remote_addr,
+    )
+    flash("공지사항을 게시했습니다.", "success")
+    return redirect(url_for("notices_view"))
+
+
+@app.route("/notices/<int:notice_id>/active", methods=["POST"])
+@login_required
+def notice_set_active(notice_id):
+    user = current_user()
+    if user.get("role") != "admin":
+        abort(403)
+    active = request.form.get("active") == "1"
+    if not models.set_announcement_active(notice_id, active):
+        abort(404)
+    models.log_audit(
+        user_id=user["id"], username=user["username"], action="update_notice",
+        target_type="announcement", target_id=notice_id,
+        detail="게시" if active else "게시 종료", ip=request.remote_addr,
+    )
+    flash("공지 상태를 변경했습니다.", "success")
+    return redirect(url_for("notices_view"))
 
 
 # ───────────────────── 사용자 관리 (어드민 전용) ─────────────────────
@@ -1497,6 +1622,104 @@ def healthz():
 def help_manual():
     """8개 메뉴 사용 매뉴얼 — 신규 상담사 온보딩·일상 참고용."""
     return render_template("help.html")
+
+
+# ───────────────────── 상담사 개인 할 일(To-Do) ─────────────────────
+# 계정별 개인 기능 — 권한 매트릭스와 무관, 모든 로그인 사용자가 사용.
+
+def _valid_date(s, default=None):
+    try:
+        return datetime.strptime((s or "").strip(), "%Y-%m-%d").date().isoformat()
+    except (ValueError, AttributeError):
+        return default
+
+
+@app.route("/todos")
+@login_required
+def todos_view():
+    """일자별 개인 할 일 — 선택 날짜 목록 + 지난 미완료(이월 대상)."""
+    day = _valid_date(request.args.get("date"), date.today().isoformat())
+    items = models.list_todos(g.user["id"], day)
+    overdue = models.list_overdue_todos(g.user["id"], date.today().isoformat()) \
+        if day == date.today().isoformat() else []
+    prev_day = (date.fromisoformat(day) - timedelta(days=1)).isoformat()
+    next_day = (date.fromisoformat(day) + timedelta(days=1)).isoformat()
+    return render_template(
+        "todos.html", day=day, items=items, overdue=overdue,
+        prev_day=prev_day, next_day=next_day, today=date.today().isoformat(),
+    )
+
+
+@app.route("/api/todos", methods=["POST"])
+@login_required
+def api_todo_create():
+    data = request.get_json(silent=True) or request.form
+    title = (data.get("title") or "").strip()
+    if not title:
+        return jsonify({"error": "할 일 내용을 입력하세요."}), 400
+    day = _valid_date(data.get("due_date"), date.today().isoformat())
+    tid = models.create_todo(
+        g.user["id"], title, day,
+        note=(data.get("note") or "").strip(),
+        remind_at=(data.get("remind_at") or "").strip() or None,
+    )
+    return jsonify({"ok": True, "id": tid})
+
+
+@app.route("/api/todos/<int:tid>", methods=["POST"])
+@login_required
+def api_todo_update(tid):
+    if not models.get_todo(tid, g.user["id"]):
+        abort(404)
+    data = request.get_json(silent=True) or request.form
+    fields = {}
+    if "title" in data:
+        t = (data.get("title") or "").strip()
+        if not t:
+            return jsonify({"error": "할 일 내용을 입력하세요."}), 400
+        fields["title"] = t
+    if "note" in data:
+        fields["note"] = (data.get("note") or "").strip()
+    if "remind_at" in data:
+        fields["remind_at"] = (data.get("remind_at") or "").strip()
+    if "due_date" in data:
+        fields["due_date"] = _valid_date(data.get("due_date"))
+    models.update_todo(tid, g.user["id"], **fields)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/todos/<int:tid>/toggle", methods=["POST"])
+@login_required
+def api_todo_toggle(tid):
+    data = request.get_json(silent=True) or request.form
+    done = str(data.get("done", "1")) in ("1", "true", "True", "on")
+    if not models.set_todo_done(tid, g.user["id"], done):
+        abort(404)
+    return jsonify({"ok": True, "done": done})
+
+
+@app.route("/api/todos/<int:tid>/carry", methods=["POST"])
+@login_required
+def api_todo_carry(tid):
+    if not models.carry_todo_to(tid, g.user["id"], date.today().isoformat()):
+        abort(404)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/todos/<int:tid>/delete", methods=["POST"])
+@login_required
+def api_todo_delete(tid):
+    if not models.delete_todo(tid, g.user["id"]):
+        abort(404)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/todos/reminders")
+@login_required
+def api_todo_reminders():
+    """리마인드 시각이 지난 미완료 할 일 — 브라우저 알림 폴링용."""
+    now_iso = datetime.now().isoformat(timespec="seconds")
+    return jsonify({"items": models.due_reminder_todos(g.user["id"], now_iso)})
 
 
 # ───────────────────── 통계 (Phase 3) ─────────────────────

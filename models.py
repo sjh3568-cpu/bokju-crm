@@ -241,6 +241,31 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
 
+        -- 공지사항과 사용자별 필수 확인 기록.
+        CREATE TABLE IF NOT EXISTS announcements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            body TEXT NOT NULL,
+            target_role TEXT DEFAULT 'staff',
+            requires_ack INTEGER DEFAULT 1,
+            active INTEGER DEFAULT 1,
+            expires_at DATE,
+            created_by INTEGER,
+            created_by_name TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_announcements_active
+            ON announcements(active, created_at DESC);
+        CREATE TABLE IF NOT EXISTS announcement_reads (
+            announcement_id INTEGER NOT NULL REFERENCES announcements(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            read_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (announcement_id, user_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_announcement_reads_user
+            ON announcement_reads(user_id, announcement_id);
+
         CREATE TABLE IF NOT EXISTS attachments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             consultation_id INTEGER NOT NULL REFERENCES consultations(id) ON DELETE CASCADE,
@@ -539,6 +564,25 @@ def init_db():
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    # 상담사 개인 할 일(To-Do) — 계정별·일자별. 리마인드 시각(remind_at) 선택.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS todos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            due_date DATE NOT NULL,
+            title TEXT NOT NULL,
+            note TEXT,
+            done INTEGER DEFAULT 0,
+            done_at DATETIME,
+            remind_at DATETIME,
+            sort_order INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_todos_user_date ON todos(user_id, due_date)"
+    )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_patients_lifecycle "
         "ON patients(lifecycle_stage, lifecycle_stage_changed_at)"
@@ -891,6 +935,100 @@ def log_audit(*, user_id=None, username=None, action, target_type=None, target_i
     conn.close()
 
 
+# ─── 공지사항 ───
+
+def create_announcement(*, title: str, body: str, target_role: str = "staff",
+                        requires_ack: bool = True, expires_at: str | None = None,
+                        created_by: int | None = None,
+                        created_by_name: str | None = None) -> int:
+    conn = get_db()
+    cur = conn.execute(
+        """INSERT INTO announcements
+           (title, body, target_role, requires_ack, expires_at, created_by, created_by_name)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (title, body, target_role, 1 if requires_ack else 0, expires_at or None,
+         created_by, created_by_name),
+    )
+    conn.commit()
+    notice_id = cur.lastrowid
+    conn.close()
+    return notice_id
+
+
+def list_announcements(user_id: int, role: str, *, include_inactive: bool = False):
+    conn = get_db()
+    where = [] if include_inactive else ["a.active = 1"]
+    if not include_inactive:
+        where.append("(a.expires_at IS NULL OR a.expires_at = '' OR a.expires_at >= date('now', 'localtime'))")
+        where.append("(a.target_role = 'all' OR a.target_role = ?)")
+    vals = [] if include_inactive else [role]
+    rows = conn.execute(f"""
+        SELECT a.*,
+               EXISTS(SELECT 1 FROM announcement_reads r
+                      WHERE r.announcement_id = a.id AND r.user_id = ?) AS acknowledged,
+               (SELECT datetime(r.read_at, 'localtime') FROM announcement_reads r
+                WHERE r.announcement_id = a.id AND r.user_id = ?) AS acknowledged_at,
+               (SELECT COUNT(*) FROM announcement_reads r
+                WHERE r.announcement_id = a.id) AS ack_count,
+               (SELECT COUNT(*) FROM users u
+                WHERE u.active = 1 AND (a.target_role = 'all' OR u.role = a.target_role)) AS target_count
+        FROM announcements a
+        {('WHERE ' + ' AND '.join(where)) if where else ''}
+        ORDER BY a.active DESC, a.created_at DESC, a.id DESC
+    """, [user_id, user_id, *vals]).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def first_unread_required_announcement(user_id: int, role: str):
+    conn = get_db()
+    row = conn.execute("""
+        SELECT a.* FROM announcements a
+        WHERE a.active = 1 AND a.requires_ack = 1
+          AND (a.target_role = 'all' OR a.target_role = ?)
+          AND (a.expires_at IS NULL OR a.expires_at = '' OR a.expires_at >= date('now', 'localtime'))
+          AND NOT EXISTS (
+              SELECT 1 FROM announcement_reads r
+              WHERE r.announcement_id = a.id AND r.user_id = ?
+          )
+        ORDER BY a.created_at ASC, a.id ASC LIMIT 1
+    """, (role, user_id)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def acknowledge_announcement(announcement_id: int, user_id: int, role: str) -> bool:
+    conn = get_db()
+    allowed = conn.execute("""
+        SELECT 1 FROM announcements
+        WHERE id = ? AND active = 1
+          AND (target_role = 'all' OR target_role = ?)
+          AND (expires_at IS NULL OR expires_at = '' OR expires_at >= date('now', 'localtime'))
+    """, (announcement_id, role)).fetchone()
+    if not allowed:
+        conn.close()
+        return False
+    conn.execute(
+        "INSERT OR IGNORE INTO announcement_reads (announcement_id, user_id) VALUES (?, ?)",
+        (announcement_id, user_id),
+    )
+    conn.commit()
+    conn.close()
+    return True
+
+
+def set_announcement_active(announcement_id: int, active: bool) -> bool:
+    conn = get_db()
+    cur = conn.execute(
+        "UPDATE announcements SET active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (1 if active else 0, announcement_id),
+    )
+    conn.commit()
+    changed = cur.rowcount > 0
+    conn.close()
+    return changed
+
+
 # ─── 이력 관리 (audit_log 조회) ───
 # audit_log.created_at은 SQLite CURRENT_TIMESTAMP = UTC로 저장된다.
 # 화면·필터는 모두 한국시간 기준이므로 읽을 때 datetime(...,'localtime')으로 변환하고,
@@ -1013,6 +1151,149 @@ def audit_log_span():
     ).fetchone()
     conn.close()
     return dict(r)
+
+
+# ─── 상담사 개인 할 일(To-Do) ───
+# 모든 함수는 user_id로 소유자를 강제해 남의 할 일에 접근하지 못하게 한다.
+
+def create_todo(user_id: int, title: str, due_date: str, *, note: str = "",
+                remind_at: str | None = None) -> int:
+    conn = get_db()
+    # 같은 날짜 목록 맨 아래로 추가
+    nxt = conn.execute(
+        "SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM todos WHERE user_id = ? AND due_date = ?",
+        (user_id, due_date),
+    ).fetchone()["n"]
+    cur = conn.execute(
+        "INSERT INTO todos (user_id, due_date, title, note, remind_at, sort_order) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (user_id, due_date, title, note or None, remind_at or None, nxt),
+    )
+    conn.commit()
+    tid = cur.lastrowid
+    conn.close()
+    return tid
+
+
+def get_todo(todo_id: int, user_id: int):
+    conn = get_db()
+    row = conn.execute(
+        "SELECT * FROM todos WHERE id = ? AND user_id = ?", (todo_id, user_id)
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def update_todo(todo_id: int, user_id: int, *, title=None, note=None,
+                due_date=None, remind_at=None) -> bool:
+    """전달된 필드만 수정. note/remind_at은 빈 문자열이면 비운다(None)."""
+    sets, vals = [], []
+    if title is not None:
+        sets.append("title = ?"); vals.append(title)
+    if note is not None:
+        sets.append("note = ?"); vals.append(note or None)
+    if due_date is not None:
+        sets.append("due_date = ?"); vals.append(due_date)
+    if remind_at is not None:
+        sets.append("remind_at = ?"); vals.append(remind_at or None)
+    if not sets:
+        return False
+    sets.append("updated_at = CURRENT_TIMESTAMP")
+    conn = get_db()
+    cur = conn.execute(
+        f"UPDATE todos SET {', '.join(sets)} WHERE id = ? AND user_id = ?",
+        [*vals, todo_id, user_id],
+    )
+    conn.commit()
+    changed = cur.rowcount > 0
+    conn.close()
+    return changed
+
+
+def set_todo_done(todo_id: int, user_id: int, done: bool) -> bool:
+    conn = get_db()
+    cur = conn.execute(
+        "UPDATE todos SET done = ?, done_at = ?, updated_at = CURRENT_TIMESTAMP "
+        "WHERE id = ? AND user_id = ?",
+        (1 if done else 0, datetime.now().isoformat(timespec="seconds") if done else None,
+         todo_id, user_id),
+    )
+    conn.commit()
+    changed = cur.rowcount > 0
+    conn.close()
+    return changed
+
+
+def delete_todo(todo_id: int, user_id: int) -> bool:
+    conn = get_db()
+    cur = conn.execute(
+        "DELETE FROM todos WHERE id = ? AND user_id = ?", (todo_id, user_id))
+    conn.commit()
+    changed = cur.rowcount > 0
+    conn.close()
+    return changed
+
+
+def carry_todo_to(todo_id: int, user_id: int, due_date: str) -> bool:
+    """지난 미완료 할 일을 지정 날짜(보통 오늘)로 이월."""
+    conn = get_db()
+    cur = conn.execute(
+        "UPDATE todos SET due_date = ?, updated_at = CURRENT_TIMESTAMP "
+        "WHERE id = ? AND user_id = ? AND done = 0",
+        (due_date, todo_id, user_id),
+    )
+    conn.commit()
+    changed = cur.rowcount > 0
+    conn.close()
+    return changed
+
+
+def list_todos(user_id: int, due_date: str):
+    """특정 날짜의 할 일 (미완료 먼저, 정렬순)."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM todos WHERE user_id = ? AND due_date = ? "
+        "ORDER BY done ASC, sort_order ASC, id ASC",
+        (user_id, due_date),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def list_overdue_todos(user_id: int, before_date: str):
+    """지난 날짜의 미완료 할 일 (오래된 순)."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM todos WHERE user_id = ? AND done = 0 AND due_date < ? "
+        "ORDER BY due_date ASC, sort_order ASC, id ASC",
+        (user_id, before_date),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def todo_reminder_count(user_id: int, today: str) -> int:
+    """리마인드 배지용 — 오늘 이하(오늘+지난)의 미완료 할 일 개수."""
+    conn = get_db()
+    n = conn.execute(
+        "SELECT COUNT(*) AS n FROM todos WHERE user_id = ? AND done = 0 AND due_date <= ?",
+        (user_id, today),
+    ).fetchone()["n"]
+    conn.close()
+    return n
+
+
+def due_reminder_todos(user_id: int, now_iso: str):
+    """리마인드 시각이 지났고 아직 미완료인 할 일 (브라우저 알림용)."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT id, title, due_date, remind_at FROM todos "
+        "WHERE user_id = ? AND done = 0 AND remind_at IS NOT NULL AND remind_at <= ? "
+        "ORDER BY remind_at ASC",
+        (user_id, now_iso),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 # ─── 환자 ───

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}필수 공지 확인 — 복주 상담실{% endblock %}
+{% block content %}
+<div class="notice-gate-wrap">
+    <section class="card notice-gate" role="dialog" aria-labelledby="notice-required-title" aria-describedby="notice-required-body">
+        <div class="notice-gate-icon">!</div>
+        <div class="notice-gate-label">업무 시작 전 필수 확인</div>
+        <h1 id="notice-required-title">{{ notice.title }}</h1>
+        <div class="notice-gate-meta">{{ notice.created_at[:16] }} · {{ notice.created_by_name or '관리자' }}{% if notice.expires_at %} · {{ notice.expires_at|krdate }}까지{% endif %}</div>
+        <div id="notice-required-body" class="notice-gate-body">{{ notice.body }}</div>
+        <form method="post" action="/notices/{{ notice.id }}/ack">
+            <input type="hidden" name="next" value="{{ next_url }}">
+            <label class="notice-gate-check"><input type="checkbox" id="ack-check" required> 위 공지 내용을 읽고 확인했습니다.</label>
+            <button class="btn btn-primary notice-gate-btn" type="submit">확인하고 업무 화면으로 이동</button>
+        </form>
+        <p class="notice-gate-note">확인 시각이 기록됩니다. 확인 후에도 공지사항 메뉴에서 다시 볼 수 있습니다.</p>
+    </section>
+</div>
+<style>
+.notice-gate-wrap{min-height:calc(100vh - 210px);display:grid;place-items:center;padding:24px 0}.notice-gate{width:min(720px,100%);box-sizing:border-box;border-top:5px solid #dc2626;padding:28px 34px;text-align:center}.notice-gate-icon{width:46px;height:46px;display:grid;place-items:center;margin:0 auto 8px;border-radius:50%;background:#dc2626;color:#fff;font-size:1.55em;font-weight:900}.notice-gate-label{color:#b91c1c;font-size:.82em;font-weight:850}.notice-gate h1{font-size:1.45em;margin:9px 0 5px}.notice-gate-meta{color:var(--text-light);font-size:.8em}.notice-gate-body{text-align:left;white-space:pre-wrap;line-height:1.75;margin:24px 0;padding:20px;border:1px solid var(--border);border-radius:10px;background:#f8fafc;max-height:42vh;overflow:auto}.notice-gate-check{display:flex;justify-content:center;align-items:center;gap:7px;font-weight:750;margin-bottom:12px}.notice-gate-check input{width:18px;height:18px}.notice-gate-btn{width:100%;padding:12px}.notice-gate-note{font-size:.76em;color:var(--text-light);margin:10px 0 0}@media(max-width:600px){.notice-gate{padding:22px 18px}.notice-gate h1{font-size:1.2em}}
+</style>
+{% endblock %}

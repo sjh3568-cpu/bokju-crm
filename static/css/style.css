@@ -661,6 +661,46 @@ body:not(.cc-sms) .ib-del { display: none !important; }
     font-size: 0.9em; background: #fff; }
 .perm-savebar { margin-top: 12px; text-align: right; }
 
+/* 내비 배지 (할 일 리마인드 개수) */
+.nav-badge { display: inline-block; min-width: 17px; height: 17px; line-height: 17px;
+    padding: 0 5px; margin-left: 4px; border-radius: 9px; background: #ef4444; color: #fff;
+    font-size: 0.68rem; font-weight: 700; text-align: center; vertical-align: top; }
+
+/* 할 일(To-Do) */
+.todo-datebar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.todo-datepick { margin: 0; }
+.todo-datepick input { padding: 7px 9px; border: 1px solid var(--border); border-radius: 7px; font-size: 0.92rem; }
+.todo-daylabel { font-weight: 600; color: var(--primary); margin-left: 4px; }
+.todo-addcard { margin-bottom: 14px; }
+.todo-addform { display: flex; gap: 8px; align-items: stretch; margin: 0; flex-wrap: wrap; }
+.todo-add-title { flex: 1 1 260px; padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: 8px; font-size: 0.98rem; }
+.todo-add-remind { display: flex; align-items: center; gap: 4px; color: var(--text-light);
+    font-size: 0.9em; border: 1px solid var(--border); border-radius: 8px; padding: 0 8px; }
+.todo-add-remind input { border: none; padding: 8px 2px; font-size: 0.9rem; background: transparent; }
+.todo-add-note { width: 100%; margin-top: 8px; padding: 8px 12px; border: 1px solid var(--border);
+    border-radius: 8px; font-size: 0.92rem; }
+.todo-overdue { border-color: #fecaca; background: #fff7f7; margin-bottom: 14px; }
+.todo-overdue h3 { margin: 0 0 10px; font-size: 0.98rem; color: #b91c1c; }
+.todo-list { list-style: none; margin: 0; padding: 0; }
+.todo-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 4px;
+    border-bottom: 1px solid var(--border); }
+.todo-item:last-child { border-bottom: none; }
+.todo-check { flex-shrink: 0; width: 22px; height: 22px; margin-top: 1px; border: 2px solid var(--primary-light);
+    border-radius: 6px; background: #fff; cursor: pointer; color: #fff; font-size: 0.9em;
+    line-height: 1; display: flex; align-items: center; justify-content: center; }
+.todo-check.checked { background: var(--primary-light); border-color: var(--primary-light); }
+.todo-body { flex: 1; min-width: 0; }
+.todo-title { font-size: 0.98rem; word-break: break-word; }
+.todo-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 3px; }
+.todo-remind { font-size: 0.8em; color: #b45309; background: #fef3c7; border-radius: 6px; padding: 1px 6px; }
+.todo-note { font-size: 0.85em; color: var(--text-light); }
+.todo-done .todo-title { text-decoration: line-through; color: var(--text-light); }
+.todo-ops { display: flex; gap: 6px; flex-shrink: 0; }
+.todo-editform { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.todo-editform input[type=text] { flex: 1 1 200px; padding: 6px 9px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9em; }
+.todo-editform input[type=datetime-local] { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9em; }
+
 /* Empty / Note */
 .empty { padding: 28px 12px; text-align: center; color: var(--text-light); }
 .note { font-size: 0.82em; color: var(--text-light); }
@@ -769,4 +809,8 @@ tr.follow-up-done a:hover { color: #1f2937; }
     font-size: 0.78em;
     font-weight: 600;
     margin-right: 6px;
+}
+.nav-notice-new {
+    display:inline-block; margin-left:3px; padding:1px 4px; border-radius:5px;
+    background:#dc2626; color:#fff; font-size:.58em; vertical-align:top;
 }

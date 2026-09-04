@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}공지사항 — 복주 상담실{% endblock %}
+{% block content %}
+<div class="page-header notice-head">
+    <div><h1>공지사항</h1><p class="muted">병원 운영 공지와 필수 확인 내용을 다시 볼 수 있습니다.</p></div>
+    {% if is_admin %}<button type="button" class="btn btn-primary" onclick="document.getElementById('notice-write').open=true">+ 공지 작성</button>{% endif %}
+</div>
+
+{% if is_admin %}
+<details id="notice-write" class="card notice-write">
+    <summary>새 공지사항 작성</summary>
+    <form method="post" action="/notices/create">
+        <div class="notice-form-row">
+            <label>공지 대상
+                <select name="target_role">
+                    <option value="staff">상담사</option>
+                    <option value="viewer">조회 계정</option>
+                    <option value="all">전체 직원</option>
+                </select>
+            </label>
+            <label>게시 종료일 <input type="date" name="expires_at"></label>
+            <label class="notice-check"><input type="checkbox" name="requires_ack" value="1" checked> 로그인 후 필수 확인</label>
+        </div>
+        <input class="notice-title-input" name="title" maxlength="120" placeholder="공지 제목" required>
+        <textarea name="body" rows="7" placeholder="상담사에게 전달할 내용을 입력하세요." required></textarea>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">공지 게시</button></div>
+    </form>
+</details>
+{% endif %}
+
+<div class="notice-list">
+{% for n in notices %}
+    <article class="card notice-card {% if n.requires_ack %}notice-required{% endif %} {% if not n.active %}notice-inactive{% endif %}">
+        <div class="notice-card-head">
+            <div>
+                {% if n.requires_ack %}<span class="notice-badge required">필수 확인</span>{% else %}<span class="notice-badge">일반 공지</span>{% endif %}
+                <span class="notice-badge target">{% if n.target_role == 'staff' %}상담사{% elif n.target_role == 'viewer' %}조회 계정{% else %}전체 직원{% endif %}</span>
+                {% if not n.active %}<span class="notice-badge ended">게시 종료</span>{% endif %}
+                <h2>{{ n.title }}</h2>
+            </div>
+            <div class="notice-meta">{{ n.created_at[:16] }} · {{ n.created_by_name or '관리자' }}</div>
+        </div>
+        <div class="notice-body">{{ n.body }}</div>
+        <div class="notice-foot">
+            {% if n.expires_at %}<span>게시 종료 {{ n.expires_at|krdate }}</span>{% endif %}
+            {% if n.acknowledged %}<span class="notice-read">✓ 확인 {{ n.acknowledged_at or '' }}</span>{% elif n.requires_ack and not is_admin %}<span class="notice-unread">미확인</span>{% endif %}
+            {% if is_admin %}
+                <span class="notice-ack-stat">확인 {{ n.ack_count }}/{{ n.target_count }}명</span>
+                <form method="post" action="/notices/{{ n.id }}/active">
+                    <input type="hidden" name="active" value="{{ 0 if n.active else 1 }}">
+                    <button class="btn btn-secondary btn-sm" type="submit">{{ '게시 종료' if n.active else '다시 게시' }}</button>
+                </form>
+            {% endif %}
+        </div>
+    </article>
+{% else %}
+    <div class="card empty">등록된 공지사항이 없습니다.</div>
+{% endfor %}
+</div>
+
+<style>
+.notice-head p{margin:3px 0 0}.notice-write{margin-bottom:14px}.notice-write summary{cursor:pointer;font-weight:800;color:var(--primary)}
+.notice-write form{margin-top:14px}.notice-form-row{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin-bottom:9px}.notice-form-row label{font-size:.84em;color:var(--text-light);display:flex;flex-direction:column;gap:4px}.notice-form-row select,.notice-form-row input,.notice-title-input,.notice-write textarea{border:1px solid var(--border);border-radius:7px;padding:8px 10px;font:inherit}.notice-form-row .notice-check{flex-direction:row;align-items:center;padding-bottom:8px;color:var(--text);font-weight:650}.notice-title-input,.notice-write textarea{display:block;width:100%;box-sizing:border-box;margin-bottom:8px}.notice-write textarea{resize:vertical;line-height:1.55}
+.notice-list{display:flex;flex-direction:column;gap:10px}.notice-card{margin:0;border-left:4px solid #94a3b8}.notice-card.notice-required{border-left-color:#dc2626}.notice-card.notice-inactive{opacity:.62}.notice-card-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.notice-card h2{font-size:1.06em;margin:8px 0 0}.notice-meta{font-size:.77em;color:var(--text-light);white-space:nowrap}.notice-badge{display:inline-block;padding:2px 7px;border-radius:999px;background:#e2e8f0;color:#475569;font-size:.7em;font-weight:800}.notice-badge.required{background:#fee2e2;color:#b91c1c}.notice-badge.target{background:#dbeafe;color:#1d4ed8}.notice-badge.ended{background:#f1f5f9;color:#64748b}.notice-body{white-space:pre-wrap;line-height:1.7;margin:15px 0;color:#1e293b}.notice-foot{border-top:1px solid var(--border);padding-top:9px;display:flex;align-items:center;gap:10px;font-size:.8em;color:var(--text-light)}.notice-foot form{margin-left:auto}.notice-read{color:#15803d;font-weight:700}.notice-unread{color:#b91c1c;font-weight:800}.notice-ack-stat{font-weight:750;color:#334155}
+@media(max-width:700px){.notice-card-head{flex-direction:column}.notice-meta{white-space:normal}}
+</style>
+{% endblock %}

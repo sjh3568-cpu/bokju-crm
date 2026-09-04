@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}할 일 — 복주 상담실{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h2>내 할 일</h2>
+    <p class="hint">{{ current_user.display_name }}님의 개인 할 일입니다. 다른 사람에게는 보이지 않습니다.</p>
+</div>
+
+<div class="todo-datebar">
+    <a class="btn btn-secondary btn-sm" href="/todos?date={{ prev_day }}">◀ 이전</a>
+    <form method="get" action="/todos" class="todo-datepick">
+        <input type="date" name="date" value="{{ day }}" onchange="this.form.submit()">
+    </form>
+    <a class="btn btn-secondary btn-sm" href="/todos?date={{ next_day }}">다음 ▶</a>
+    {% if day != today %}<a class="btn btn-secondary btn-sm" href="/todos">오늘로</a>{% endif %}
+    <span class="todo-daylabel">{{ day|krdate_wd_full if day else '' }}{% if day == today %} · 오늘{% endif %}</span>
+</div>
+
+<div class="card todo-addcard">
+    <form id="todo-add" class="todo-addform" data-date="{{ day }}">
+        <input type="text" name="title" placeholder="할 일을 입력하세요" required autocomplete="off" class="todo-add-title">
+        <label class="todo-add-remind" title="리마인드 시각(선택)">
+            <span>⏰</span>
+            <input type="datetime-local" name="remind_at">
+        </label>
+        <button type="submit" class="btn btn-primary">추가</button>
+    </form>
+    <input type="text" id="todo-add-note" placeholder="메모 (선택)" autocomplete="off" class="todo-add-note">
+</div>
+
+{% if overdue %}
+<div class="card todo-overdue">
+    <h3>⚠ 지난 미완료 <span class="badge badge-off">{{ overdue|length }}</span></h3>
+    <ul class="todo-list">
+        {% for t in overdue %}
+        <li class="todo-item" data-id="{{ t.id }}">
+            <button type="button" class="todo-check" data-toggle title="완료 처리"></button>
+            <div class="todo-body">
+                <span class="todo-title">{{ t.title }}</span>
+                <span class="todo-meta">
+                    <span class="badge badge-rejected">{{ t.due_date|krdate_short_wd }}</span>
+                    {% if t.remind_at %}<span class="todo-remind">⏰ {{ t.remind_at.replace('T',' ')[:16] }}</span>{% endif %}
+                    {% if t.note %}<span class="todo-note">{{ t.note }}</span>{% endif %}
+                </span>
+            </div>
+            <div class="todo-ops">
+                <button type="button" class="btn btn-primary btn-xs" data-carry>오늘로</button>
+                <button type="button" class="btn btn-secondary btn-xs" data-del title="삭제">✕</button>
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<div class="card">
+    {% if items %}
+    <ul class="todo-list">
+        {% for t in items %}
+        <li class="todo-item {% if t.done %}todo-done{% endif %}" data-id="{{ t.id }}">
+            <button type="button" class="todo-check {% if t.done %}checked{% endif %}" data-toggle
+                    title="{{ '완료 취소' if t.done else '완료 처리' }}">{% if t.done %}✓{% endif %}</button>
+            <div class="todo-body">
+                <span class="todo-title" data-edit-title>{{ t.title }}</span>
+                <span class="todo-meta">
+                    {% if t.remind_at %}<span class="todo-remind">⏰ {{ t.remind_at.replace('T',' ')[:16] }}</span>{% endif %}
+                    {% if t.note %}<span class="todo-note">{{ t.note }}</span>{% endif %}
+                </span>
+                <form class="todo-editform" hidden>
+                    <input type="text" name="title" value="{{ t.title }}" required class="todo-edit-title">
+                    <input type="datetime-local" name="remind_at" value="{{ t.remind_at[:16] if t.remind_at else '' }}">
+                    <input type="text" name="note" value="{{ t.note or '' }}" placeholder="메모">
+                    <button type="submit" class="btn btn-primary btn-xs">저장</button>
+                    <button type="button" class="btn btn-secondary btn-xs" data-edit-cancel>취소</button>
+                </form>
+            </div>
+            <div class="todo-ops">
+                <button type="button" class="btn btn-secondary btn-xs" data-edit title="수정">수정</button>
+                <button type="button" class="btn btn-secondary btn-xs" data-del title="삭제">✕</button>
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty">이 날짜에 등록된 할 일이 없습니다. 위에서 추가하세요.</div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/todos.js"></script>
+{% endblock %}

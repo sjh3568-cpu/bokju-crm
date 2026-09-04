@@ -19,6 +19,7 @@
                     {% if P.get('dashboard',0) >= 1 %}
                     <a href="/" {% if request.path == '/' %}class="active"{% endif %}>대시보드</a>
                     {% endif %}
+                    <a href="/todos" {% if request.path.startswith('/todos') %}class="active"{% endif %}>할 일{% if todo_badge %}<span class="nav-badge">{{ todo_badge }}</span>{% endif %}</a>
                     {% if P.get('consult',0) >= 3 %}
                     <a href="/consult/new" {% if request.path == '/consult/new' %}class="active"{% endif %}>새 상담</a>
                     {% endif %}
@@ -37,6 +38,7 @@
                     {% if P.get('report',0) >= 1 %}
                     <a href="/report/monthly" {% if request.path.startswith('/report') %}class="active"{% endif %}>월간보고서</a>
                     {% endif %}
+                    <a href="/notices" {% if request.path.startswith('/notices') %}class="active"{% endif %}>공지사항{% if has_unread_required_notice %}<span class="nav-notice-new">필수</span>{% endif %}</a>
                     {% if P.get('users',0) >= 2 %}
                     <a href="/admin/users" {% if request.path.startswith('/admin/users') %}class="active"{% endif %}>사용자 관리</a>
                     <a href="/admin/audit" {% if request.path.startswith('/admin/audit') %}class="active"{% endif %} title="누가 언제 무엇을 조회·입력·수정·삭제했는지">이력 관리</a>
@@ -178,5 +180,43 @@
     }, sec * 1000);
 })();
 </script>
+{% if current_user %}
+<!-- 할 일 리마인드 — 리마인드 시각이 지난 미완료 할 일을 브라우저 알림으로.
+     탭이 열려 있어야 뜨며, 같은 항목은 한 번만 알린다(localStorage). -->
+<script>
+(function () {
+    if (!('Notification' in window)) return;
+    var SEEN = 'bokju_todo_reminded';
+    function seen() { try { return JSON.parse(localStorage.getItem(SEEN) || '[]'); } catch (e) { return []; } }
+    function markSeen(ids) { try { localStorage.setItem(SEEN, JSON.stringify(ids.slice(-200))); } catch (e) {} }
+    function check() {
+        if (Notification.permission !== 'granted') return;
+        fetch('/api/todos/reminders', { credentials: 'same-origin' })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (d) {
+                if (!d || !d.items) return;
+                var done = seen();
+                d.items.forEach(function (t) {
+                    if (done.indexOf(t.id) !== -1) return;
+                    var n = new Notification('할 일 리마인드', {
+                        body: t.title, tag: 'bokju-todo-' + t.id,
+                    });
+                    n.onclick = function () { window.focus(); location.href = '/todos'; };
+                    done.push(t.id);
+                });
+                markSeen(done);
+            })
+            .catch(function () {});
+    }
+    // 권한이 아직 미정이면 한 번 요청 (거부해도 배지로 리마인드됨)
+    if (Notification.permission === 'default') {
+        Notification.requestPermission().then(check);
+    } else {
+        check();
+    }
+    setInterval(check, 120000);  // 2분마다
+})();
+</script>
+{% endif %}
 </body>
 </html>
