@@ -174,7 +174,7 @@
 .period-meta { margin-left:auto; font-size:0.85em; }
 
 /* KPI: 6장 한 줄 — 색상 깊이와 비교값을 동시에 표시 */
-.section-heading { display:flex; align-items:baseline; gap:10px; margin:15px 2px 7px; }
+.section-heading { display:flex; align-items:center; gap:10px; width:100%; margin:18px 0 8px; min-height:24px; }
 .section-heading span { color:#0f172a; font-size:.95em; font-weight:800; }
 .section-heading small { color:#64748b; font-size:.72em; }
 .section-heading.priority b { display:inline-grid; place-items:center; width:22px; height:22px; border-radius:7px; color:#fff; background:linear-gradient(145deg,#166534,#16a34a); box-shadow:0 3px 7px rgba(22,101,52,.22); font-size:.72em; }
@@ -197,27 +197,28 @@
 @media (max-width: 600px)  { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
 
 /* 차트 그리드: 변형들 */
-.chart-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; align-items:stretch; }
+.chart-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px; width:100%; margin:0 0 10px; align-items:stretch; }
 .chart-grid.g-2-1 { grid-template-columns: 2fr 1fr; }
 .chart-grid.g-1-2 { grid-template-columns: 1fr 2fr; }
 .chart-grid.three { grid-template-columns:repeat(3,1fr); }
 @media (max-width: 900px)  { .chart-grid, .chart-grid.g-2-1, .chart-grid.g-1-2 { grid-template-columns:1fr; } }
 @media (max-width: 1100px) { .chart-grid.three { grid-template-columns:1fr; } }
 
-.chart-card { display:flex; flex-direction:column; padding:12px 14px; margin:0; height:270px; min-width:0; box-sizing:border-box; border:1px solid rgba(148,163,184,.22); box-shadow:0 7px 20px rgba(15,23,42,.07), inset 0 1px 0 #fff; background:linear-gradient(145deg,#fff 0%,#fbfdff 100%); }
+.chart-grid > .chart-card,
+.chart-grid > .chart-card + .chart-card { align-self:stretch; display:flex; flex-direction:column; padding:12px 14px; margin:0 !important; height:270px; min-width:0; min-height:0; box-sizing:border-box; border:1px solid rgba(148,163,184,.22); box-shadow:0 7px 20px rgba(15,23,42,.07), inset 0 1px 0 #fff; background:linear-gradient(145deg,#fff 0%,#fbfdff 100%); }
 .chart-card h3 { font-size:0.88em; margin-bottom:6px; color:#0f172a; font-weight:750; }
 .chart-card h3 small { color:#64748b; font-size:.75em; font-weight:500; margin-left:4px; }
 .chart-box { position:relative; flex:1; min-height:0; height:auto; }
 .chart-box.sm { height:auto; }
-.chart-card-combined { height:290px; }
+.chart-grid > .chart-card-combined { height:290px; }
 .combined-chart-box { display:grid; grid-template-columns:0.8fr 1.2fr; gap:10px; flex:1; min-height:0; }
 .combined-chart-box.equal { grid-template-columns:1fr 1fr; }
 .chart-card-wide { grid-column:1/-1; }
-.combined-chart-box > div { display:flex; flex-direction:column; min-width:0; min-height:0; }
+.combined-chart-box > div { align-self:stretch; display:flex; flex-direction:column; min-width:0; min-height:0; height:100%; }
 .combined-chart-box span { color:var(--text-light); font-size:.72em; text-align:center; margin-bottom:2px; }
 @media (max-width: 700px) {
     .section-heading { align-items:flex-start; flex-direction:column; gap:2px; }
-    .chart-card-combined { height:500px; }
+    .chart-grid > .chart-card-combined { height:500px; }
     .combined-chart-box, .combined-chart-box.equal { grid-template-columns:1fr; }
 }
 
