@@ -1,9 +1,11 @@
 # 시놀로지 NAS — Docker(DSM 7.0/7.1) 또는 Container Manager(7.2+) > 프로젝트 에서 생성한다.
 # 사전 준비: File Station에서 /volume1/docker/bokju-crm 폴더를 만들고
 #            이 저장소 전체를 그 안에 복사, .env 파일을 채워둘 것.
-# version 키는 최신 Compose v2에선 선택이지만, DSM 7.0/7.1의 Docker 패키지가 쓰는
-# docker-compose 1.x는 이게 없으면 파일 전체를 구형(v1) 포맷으로 해석해 실패한다.
-version: "3.8"
+# version 키는 최신 Compose v2에선 선택이지만, DSM에 동봉된 docker-compose 1.x는
+# 이게 없으면 파일 전체를 구형(v1) 포맷으로 해석해 실패한다.
+# 3.4를 쓰는 이유: healthcheck의 start_period가 3.4부터 지원되고(그 아래로는 못 내려감),
+# 3.4는 docker-compose 1.16+ 이면 다 읽는다. 구형 DSM에서도 안전한 하한선.
+version: "3.4"
 
 services:
   bokju-crm:
