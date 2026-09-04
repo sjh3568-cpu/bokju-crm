@@ -92,19 +92,19 @@
     </div>
 
     {# KRPG 2.2 사업대상 KCD 코드 즉시 조회 #}
-    <button type="button" id="krpg-fab" title="KCD 입원대상 조회 (Alt+K)">
-        <span class="krpg-fab-icon">🔎</span><span class="krpg-fab-text">KCD 조회</span>
+    <button type="button" id="krpg-fab" title="한국형 재활환자분류체계 조회 (Alt+K)">
+        <span class="krpg-fab-icon">🔎</span><span class="krpg-fab-text">환자분류체계</span>
     </button>
     <div id="krpg-modal" hidden>
         <div class="calc-modal-backdrop" data-krpg-close></div>
-        <div class="calc-modal-box" role="dialog" aria-modal="true" aria-label="KCD 입원대상 조회">
+        <div class="calc-modal-box" role="dialog" aria-modal="true" aria-label="한국형 재활환자분류체계 조회">
             <div class="calc-modal-head">
-                <strong>KCD 입원대상 조회</strong>
-                <span class="muted-sm">KRPG 2.2 · 사업대상 1,477개</span>
+                <strong>한국형 재활환자분류체계</strong>
+                <span class="muted-sm">KRPG 2.2 · 사업대상·전체·변경 코드</span>
                 <a class="calc-modal-full" href="/tools/krpg" target="_blank" rel="noopener">전체 화면 ↗</a>
                 <button type="button" class="calc-modal-x" data-krpg-close aria-label="닫기">✕</button>
             </div>
-            <iframe id="krpg-frame" title="KCD 입원대상 조회" data-src="/tools/krpg?embed=1"></iframe>
+            <iframe id="krpg-frame" title="한국형 재활환자분류체계 조회" data-src="/tools/krpg?embed=1"></iframe>
         </div>
     </div>
     {% endif %}

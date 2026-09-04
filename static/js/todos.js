@@ -18,12 +18,26 @@
     function fail(e) { alert(e.message || '처리 중 오류가 발생했습니다.'); }
     function reload() { location.reload(); }
 
-    var panel = document.getElementById('todo-form-panel');
+    var panel = document.getElementById('todo-form-panel');       // 우측 드로어
+    var backdrop = document.getElementById('todo-drawer-backdrop');
     var form = document.getElementById('todo-form');
     var formTitle = document.getElementById('todo-form-title');
     var delBtn = document.getElementById('todo-form-del');
     var newBtn = document.getElementById('todo-new-btn');
     var today = newBtn ? newBtn.dataset.today : '';
+
+    function openDrawer() {
+        if (!panel) return;
+        panel.classList.add('open');
+        panel.setAttribute('aria-hidden', 'false');
+        if (backdrop) backdrop.hidden = false;
+    }
+    function closeDrawer() {
+        if (!panel) return;
+        panel.classList.remove('open');
+        panel.setAttribute('aria-hidden', 'true');
+        if (backdrop) backdrop.hidden = true;
+    }
 
     function showAdd(dateStr) {
         if (!form) return;
@@ -35,9 +49,8 @@
         form.dday.checked = false;
         if (formTitle) formTitle.textContent = 'ToDo 추가';
         if (delBtn) delBtn.hidden = true;
-        panel.hidden = false;
-        form.title.focus();
-        panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        openDrawer();
+        setTimeout(function () { form.title.focus(); }, 60);
     }
 
     function showEdit(el) {
@@ -53,14 +66,18 @@
         form.note.value = d.note || '';
         if (formTitle) formTitle.textContent = 'ToDo 수정';
         if (delBtn) delBtn.hidden = false;
-        panel.hidden = false;
-        panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        openDrawer();
     }
 
     if (newBtn) newBtn.addEventListener('click', function () { showAdd(); });
-
-    var cancelBtn = document.getElementById('todo-form-cancel');
-    if (cancelBtn) cancelBtn.addEventListener('click', function () { panel.hidden = true; });
+    ['todo-form-cancel', 'todo-form-cancel2'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.addEventListener('click', closeDrawer);
+    });
+    if (backdrop) backdrop.addEventListener('click', closeDrawer);
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && panel && panel.classList.contains('open')) closeDrawer();
+    });
 
     if (form) form.addEventListener('submit', function (e) {
         e.preventDefault();

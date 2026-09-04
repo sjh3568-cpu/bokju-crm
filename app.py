@@ -55,6 +55,40 @@ from config import (
 )
 import sms as sms_gateway
 
+# 할 일 달력 음력·공휴일 (미설치 환경에서도 앱은 동작하도록 방어적 import)
+try:
+    import holidays as _holidays
+except Exception:
+    _holidays = None
+try:
+    from korean_lunar_calendar import KoreanLunarCalendar as _KLC
+except Exception:
+    _KLC = None
+
+
+def _lunar_label(d):
+    """양력 date → '음 M.D' (윤달이면 '윤' 접두). 라이브러리 없으면 ''."""
+    if not _KLC:
+        return ""
+    try:
+        c = _KLC()
+        c.setSolarDate(d.year, d.month, d.day)
+        lead = "윤" if c.isIntercalation else "음"
+        return f"{lead} {c.lunarMonth}.{c.lunarDay}"
+    except Exception:
+        return ""
+
+
+@lru_cache(maxsize=8)
+def _kr_holidays(years):
+    """연도 튜플에 대한 한국 공휴일 dict (캐시). years=(2026, 2027) 등."""
+    if not _holidays:
+        return {}
+    try:
+        return dict(_holidays.SouthKorea(years=list(years)))
+    except Exception:
+        return {}
+
 load_dotenv()
 
 logging.basicConfig(
@@ -1666,14 +1700,20 @@ def _todo_calendar_context(uid, year, month, today):
         while d <= last:
             buckets.setdefault(d.isoformat(), []).append(t)
             d += timedelta(days=1)
+    kr_hol = _kr_holidays(tuple(sorted({grid[0].year, grid[-1].year})))
     weeks = []
     for w in range(6):
         week = []
         for dc in grid[w * 7:(w + 1) * 7]:
+            wd = (dc.weekday() + 1) % 7            # 0=일 .. 6=토
+            holiday = kr_hol.get(dc)
             week.append({
                 "date": dc.isoformat(), "day": dc.day,
                 "in_month": dc.month == month, "is_today": dc == today,
-                "weekday": (dc.weekday() + 1) % 7,   # 0=일 .. 6=토
+                "weekday": wd,
+                "lunar": _lunar_label(dc),
+                "holiday": holiday,                 # 공휴일명 또는 None
+                "is_holiday": bool(holiday) or wd == 0,   # 일요일·공휴일=빨강
                 "todos": buckets.get(dc.isoformat(), []),
             })
         weeks.append(week)
@@ -2174,11 +2214,24 @@ def krpg_lookup():
 @login_required
 def api_krpg_search():
     query = (request.args.get("q") or "").strip()
+    scope = (request.args.get("scope") or "business").strip()
+    if scope not in ("business", "all", "changes"):
+        scope = "business"
     if not query:
-        return jsonify({"query": "", "eligible": False, "exact": False, "items": []})
+        return jsonify({"query": "", "scope": scope, "eligible": False,
+                        "exact": False, "items": [], "counts": _krpg_data()["counts"]})
     normalized = _normalize_kcd(query)
     lowered = query.casefold()
-    items = _krpg_data()["items"]
+    data = _krpg_data()
+    items = data["datasets"][scope]
+    business_keys = {(_normalize_kcd(x["kcd"]), x["kric"])
+                     for x in data["datasets"]["business"]}
+    business_codes = {_normalize_kcd(x["kcd"])
+                      for x in data["datasets"]["business"]}
+    change_by_key = {
+        (_normalize_kcd(x["kcd"]), x["kric"]): x.get("note", "")
+        for x in data["datasets"]["changes"]
+    }
 
     exact, prefix, text_matches = [], [], []
     looks_like_code = bool(normalized) and any(ch.isdigit() for ch in normalized) \
@@ -2197,21 +2250,27 @@ def api_krpg_search():
     # 같은 KRIC·KCD 조합은 한 번만 보여준다. 동일 KCD의 다른 KRIC 분류는 유지한다.
     unique, seen = [], set()
     for item in matched:
-        key = (item["kric"], item["kcd"])
-        if key not in seen:
-            seen.add(key)
-            unique.append(item)
+        display_key = (item["kric"], item["kcd"])
+        lookup_key = (_normalize_kcd(item["kcd"]), item["kric"])
+        if display_key not in seen:
+            seen.add(display_key)
+            enriched = dict(item)
+            enriched["business_target"] = lookup_key in business_keys
+            enriched["change"] = change_by_key.get(lookup_key, "")
+            unique.append(enriched)
         if len(unique) >= 60:
             break
     return jsonify({
         "query": query,
+        "scope": scope,
         "normalized": normalized if looks_like_code else "",
-        "eligible": bool(exact),
+        "eligible": bool(looks_like_code and normalized in business_codes),
         "exact": bool(exact),
         "exact_count": len(exact),
         "total_matches": len(matched),
         "items": unique,
-        "version": _krpg_data()["version"],
+        "version": data["version"],
+        "counts": data["counts"],
     })
 
 

@@ -32,35 +32,41 @@
     <button type="button" class="btn btn-primary btn-sm" id="todo-new-btn" data-today="{{ today }}">＋ 새 ToDo</button>
 </div>
 
-{# 추가/수정 공용 폼 패널 — 그룹웨어 ToDo 양식 (기간·진행률·D-day·내용) #}
-<div class="card todo-form-panel" id="todo-form-panel" hidden>
-    <div class="tf-head"><strong id="todo-form-title">ToDo 추가</strong></div>
+{# 추가/수정 공용 폼 — 우측 슬라이드 드로어 (달력을 가리지 않고 옆에서 기입) #}
+<div class="todo-drawer-backdrop" id="todo-drawer-backdrop" hidden></div>
+<aside class="todo-drawer" id="todo-form-panel" aria-hidden="true">
+    <div class="todo-drawer-head">
+        <strong id="todo-form-title">ToDo 추가</strong>
+        <button type="button" class="todo-drawer-x" id="todo-form-cancel" aria-label="닫기">✕</button>
+    </div>
     <form id="todo-form" data-id="">
-        <div class="tf-grid">
-            <label class="tf-field tf-wide"><span>ToDo명 <b class="req">*</b></span>
-                <input type="text" name="title" required autocomplete="off"></label>
-            <label class="tf-field"><span>담당자</span>
-                <input type="text" value="{{ current_user.display_name }}" disabled></label>
+        <label class="tf-field"><span>ToDo명 <b class="req">*</b></span>
+            <input type="text" name="title" required autocomplete="off"></label>
+        <label class="tf-field"><span>담당자</span>
+            <input type="text" value="{{ current_user.display_name }}" disabled></label>
+        <div class="tf-row">
             <label class="tf-field"><span>시작일</span>
                 <input type="date" name="due_date"></label>
             <label class="tf-field"><span>종료일</span>
                 <input type="date" name="end_date"></label>
+        </div>
+        <div class="tf-row">
             <label class="tf-field"><span>진행률</span>
                 <span class="tf-progress"><input type="number" name="progress" min="0" max="100" step="10" value="0"><i>%</i></span></label>
             <div class="tf-field"><span>D-day</span>
-                <label class="tf-check"><input type="checkbox" name="dday"> 사용 (마감 D- 표시)</label></div>
-            <label class="tf-field"><span>리마인드</span>
-                <input type="datetime-local" name="remind_at"></label>
-            <label class="tf-field tf-wide"><span>내용</span>
-                <textarea name="note" rows="2" placeholder="상세 내용 (선택)"></textarea></label>
+                <label class="tf-check"><input type="checkbox" name="dday"> 사용</label></div>
         </div>
+        <label class="tf-field"><span>리마인드</span>
+            <input type="datetime-local" name="remind_at"></label>
+        <label class="tf-field"><span>내용</span>
+            <textarea name="note" rows="3" placeholder="상세 내용 (선택)"></textarea></label>
         <div class="tf-actions">
             <button type="submit" class="btn btn-primary btn-sm">저장</button>
             <button type="button" class="btn btn-danger btn-sm" id="todo-form-del" hidden>삭제</button>
-            <button type="button" class="btn btn-secondary btn-sm" id="todo-form-cancel">취소</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="todo-form-cancel2">취소</button>
         </div>
     </form>
-</div>
+</aside>
 
 {% macro todo_data(t) -%}
 data-id="{{ t.id }}" data-title="{{ t.title }}" data-due="{{ t.due_date }}"
@@ -78,8 +84,12 @@ data-dday="{{ t.dday or 0 }}" data-remind="{{ t.remind_at or '' }}" data-note="{
         {% for week in weeks %}
         <tr>
             {% for c in week %}
-            <td class="todo-cell{% if not c.in_month %} oom{% endif %}{% if c.is_today %} today{% endif %}" data-date="{{ c.date }}">
-                <div class="tc-day{% if c.weekday == 0 %} sun{% elif c.weekday == 6 %} sat{% endif %}">{{ c.day }}</div>
+            <td class="todo-cell{% if not c.in_month %} oom{% endif %}{% if c.is_today %} today{% endif %}{% if c.holiday %} holiday{% endif %}" data-date="{{ c.date }}">
+                <div class="tc-dayrow">
+                    <span class="tc-day{% if c.is_holiday %} sun{% elif c.weekday == 6 %} sat{% endif %}">{{ c.day }}</span>
+                    {% if c.lunar %}<span class="tc-lunar">{{ c.lunar }}</span>{% endif %}
+                </div>
+                {% if c.holiday %}<div class="tc-holiday" title="{{ c.holiday }}">{{ c.holiday }}</div>{% endif %}
                 {% for t in c.todos %}
                 <div class="tc-todo{% if t.done %} done{% endif %}" {{ todo_data(t) }}>
                     {% if t.dday_label %}<span class="tc-dday">{{ t.dday_label }}</span>{% endif %}
