@@ -7,7 +7,7 @@
 {% block content %}
 <div class="page-header">
     <h1>통계 대시보드</h1>
-    <div class="stats-head-actions"><button type="button" class="btn btn-secondary" onclick="window.print()">A4 보고서 인쇄</button><a href="/consult/new" class="btn btn-primary">+ 새 상담일지</a></div>
+    <div class="stats-head-actions"><a href="/stats/hospitals?preset=custom&amp;from={{ date_from or '' }}&amp;to={{ date_to or '' }}" class="btn btn-secondary">모병원 분석</a><button type="button" class="btn btn-secondary" onclick="window.print()">A4 보고서 인쇄</button><a href="/consult/new" class="btn btn-primary">+ 새 상담일지</a></div>
 </div>
 
 <form id="period-form" class="period-bar card" method="get" action="/stats">
@@ -27,7 +27,7 @@
         </label>
         {% endfor %}
     </div>
-    <div class="custom-row {% if preset != 'custom' %}hide{% endif %}">
+    <div class="custom-row">
         <label>시작 <input type="date" name="from" value="{{ date_from or '' }}"></label>
         <label>종료 <input type="date" name="to" value="{{ date_to or '' }}"></label>
         <button type="submit" class="btn btn-secondary btn-sm">조회</button>
@@ -135,7 +135,7 @@
 
 <div class="section-heading"><span>추가 운영지표</span><small>모병원 성과, 데이터 품질과 입원 불가 환자 연계</small></div>
 <div class="chart-grid three">
-    <div class="card chart-card"><h3>모병원별 입원 성과</h3><div class="chart-box"><canvas id="chart-hospital-performance"></canvas></div></div>
+    <div class="card chart-card"><h3>모병원별 입원 성과 <a class="chart-detail-link" href="/stats/hospitals?preset=custom&amp;from={{ date_from or '' }}&amp;to={{ date_to or '' }}">상세 목록 →</a></h3><div class="chart-box"><canvas id="chart-hospital-performance"></canvas></div></div>
     <div class="card chart-card"><h3>필수 데이터 누락률</h3><div class="chart-box"><canvas id="chart-missing"></canvas></div></div>
     <div class="card chart-card">
         <h3>입원 불가 환자 연계 <small id="referral-capture-rate"></small></h3>
@@ -208,6 +208,7 @@
 .chart-grid > .chart-card + .chart-card { align-self:stretch; display:flex; flex-direction:column; padding:12px 14px; margin:0 !important; height:270px; min-width:0; min-height:0; box-sizing:border-box; border:1px solid rgba(148,163,184,.22); box-shadow:0 7px 20px rgba(15,23,42,.07), inset 0 1px 0 #fff; background:linear-gradient(145deg,#fff 0%,#fbfdff 100%); }
 .chart-card h3 { font-size:0.88em; margin-bottom:6px; color:#0f172a; font-weight:750; }
 .chart-card h3 small { color:#64748b; font-size:.75em; font-weight:500; margin-left:4px; }
+.chart-detail-link { float:right; color:var(--primary); font-size:.78em; font-weight:650; text-decoration:none; }
 .chart-box { position:relative; flex:1; min-height:0; height:auto; }
 .chart-box.sm { height:auto; }
 .chart-grid > .chart-card-combined { height:290px; }
@@ -260,6 +261,14 @@
             const isCustom = el.value === 'custom';
             document.querySelector('.custom-row').classList.toggle('hide', !isCustom);
             if (!isCustom) document.getElementById('period-form').submit();
+        });
+    });
+    document.querySelectorAll('.custom-row input[type="date"]').forEach(el => {
+        el.addEventListener('change', () => {
+            const custom = document.querySelector('input[name="preset"][value="custom"]');
+            if (custom) custom.checked = true;
+            document.querySelectorAll('.preset-chip').forEach(chip => chip.classList.remove('on'));
+            if (custom) custom.closest('.preset-chip').classList.add('on');
         });
     });
 

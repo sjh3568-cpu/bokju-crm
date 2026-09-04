@@ -1089,6 +1089,22 @@ def api_stats():
     return jsonify(data)
 
 
+@app.route("/stats/hospitals")
+@login_required
+def hospital_stats_view():
+    """모병원별 입원 환자 집계와 환자 단위 상세 목록."""
+    preset, date_from, date_to = _stats_period_from_request()
+    hospital = (request.args.get("hospital") or "").strip()
+    q = (request.args.get("q") or "").strip()
+    overall = models.hospital_admission_analysis(date_from, date_to)
+    filtered = models.hospital_admission_analysis(
+        date_from, date_to, hospital=hospital or None, q=q or None)
+    return render_template(
+        "stats_hospitals.html", preset=preset, date_from=date_from, date_to=date_to,
+        hospital=hospital, q=q, hospitals=overall["hospitals"], data=filtered,
+    )
+
+
 @app.route("/report/monthly")
 @login_required
 def report_monthly():

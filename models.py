@@ -2603,6 +2603,55 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
     }
 
 
+def hospital_admission_analysis(date_from=None, date_to=None, hospital=None, q=None):
+    """모병원별 실제 입원 환자 집계와 원자료 목록."""
+    effective_date = ("COALESCE(NULLIF(c.actual_admission_date, ''), "
+                      "NULLIF(c.admission_date, ''), NULLIF(c.planned_admission_date, ''), "
+                      "c.consult_date)")
+    where = ["c.admission_status IN ('입원완료', '퇴원완료')",
+             "c.source_hospital IS NOT NULL", "TRIM(c.source_hospital) != ''"]
+    vals = []
+    if date_from:
+        where.append(f"{effective_date} >= ?"); vals.append(date_from)
+    if date_to:
+        where.append(f"{effective_date} <= ?"); vals.append(date_to)
+    if hospital:
+        where.append("c.source_hospital = ?"); vals.append(hospital)
+    if q:
+        where.append("(p.name LIKE ? OR c.source_hospital LIKE ?)")
+        vals.extend([f"%{q}%", f"%{q}%"])
+    conn = get_db()
+    rows = conn.execute(f"""
+        SELECT c.id AS consultation_id, p.id AS patient_id, p.name AS patient_name,
+               p.gender, c.patient_age, c.source_hospital, c.consult_date,
+               {effective_date} AS admission_date, c.admission_status,
+               c.diseases, c.counselor
+        FROM consultations c JOIN patients p ON p.id = c.patient_id
+        WHERE {' AND '.join(where)}
+        ORDER BY admission_date DESC, c.id DESC
+    """, vals).fetchall()
+    conn.close()
+
+    seen, details, counts = set(), [], {}
+    for row in rows:
+        item = dict(row)
+        key = (item["patient_id"], item["source_hospital"], item["admission_date"])
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            disease_items = json.loads(item.get("diseases") or "[]")
+        except (json.JSONDecodeError, TypeError):
+            disease_items = []
+        item["disease_summary"] = ", ".join(str(x) for x in (disease_items or [])[:3])
+        details.append(item)
+        counts[item["source_hospital"]] = counts.get(item["source_hospital"], 0) + 1
+    hospitals = [{"name": name, "count": count}
+                 for name, count in sorted(counts.items(), key=lambda x: (-x[1], x[0]))]
+    return {"hospitals": hospitals, "rows": details, "total": len(details),
+            "hospital_count": len(hospitals)}
+
+
 # ─── 임원 월간 보고서 (Phase 3.5) ───
 
 def _month_range(year: int, month: int) -> tuple[str, str]:

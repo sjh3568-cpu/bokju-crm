@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}모병원 분석 — 복주 상담실{% endblock %}
+{% block content %}
+<div class="page-header hospital-page-head">
+    <div><a href="/stats" class="btn-back">← 통계 대시보드</a><h1>모병원별 입원 환자 분석</h1></div>
+    <a href="/consult" class="btn btn-secondary">상담목록에서 확인</a>
+</div>
+
+<form id="hospital-filter" class="card hospital-filter" method="get">
+    <input type="hidden" name="preset" value="custom">
+    <label>입원 시작일<input type="date" name="from" value="{{ date_from or '' }}"></label>
+    <label>입원 종료일<input type="date" name="to" value="{{ date_to or '' }}"></label>
+    <label class="hospital-select">모병원
+        <select name="hospital">
+            <option value="">전체 모병원</option>
+            {% for h in hospitals %}<option value="{{ h.name }}" {% if hospital == h.name %}selected{% endif %}>{{ h.name }} ({{ h.count }}명)</option>{% endfor %}
+        </select>
+    </label>
+    <label>환자·병원 검색<input type="search" name="q" value="{{ q }}" placeholder="환자명 또는 병원명"></label>
+    <button class="btn btn-primary" type="submit">조회</button>
+    <a class="btn btn-secondary" href="/stats/hospitals">초기화</a>
+</form>
+
+<div class="stat-grid hospital-kpis">
+    <div class="stat-card"><div class="label">조회 입원환자</div><div class="value">{{ data.total }}<small>명</small></div></div>
+    <div class="stat-card"><div class="label">유입 모병원</div><div class="value">{{ data.hospital_count }}<small>곳</small></div></div>
+    <div class="stat-card"><div class="label">조회 기간</div><div class="value date-value">{{ date_from }}<br>~ {{ date_to }}</div></div>
+</div>
+
+<div class="hospital-layout">
+    <section class="card hospital-summary">
+        <div class="panel-title"><h2>모병원별 입원 인원</h2><span>중복 상담 제외</span></div>
+        {% if hospitals %}
+        <div class="hospital-bars">
+            {% set max_count = hospitals[0].count %}
+            {% for h in hospitals %}
+            <a class="hospital-bar {% if hospital == h.name %}selected{% endif %}" href="?preset=custom&amp;from={{ date_from }}&amp;to={{ date_to }}&amp;hospital={{ h.name|urlencode }}">
+                <span class="hospital-name" title="{{ h.name }}">{{ h.name }}</span>
+                <i><b style="width:{{ (h.count * 100 / max_count)|round(1) }}%"></b></i>
+                <strong>{{ h.count }}명</strong>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}<div class="empty-state">조회 기간에 모병원이 기록된 입원 환자가 없습니다.</div>{% endif %}
+    </section>
+
+    <section class="card hospital-detail">
+        <div class="panel-title"><h2>{% if hospital %}{{ hospital }}{% else %}전체 모병원{% endif %} 입원 환자</h2><span>총 {{ data.total }}명</span></div>
+        <div class="table-wrap">
+            <table class="tbl">
+                <thead><tr><th>입원일</th><th>환자</th><th>성별·나이</th><th>모병원</th><th>주요 질환</th><th>상담사</th><th>상태</th></tr></thead>
+                <tbody>
+                {% for r in data.rows %}
+                <tr>
+                    <td class="nowrap">{{ r.admission_date or '-' }}</td>
+                    <td><a href="/patient/{{ r.patient_id }}">{{ r.patient_name }}</a></td>
+                    <td class="nowrap">{{ r.gender or '-' }} · {% if r.patient_age is not none %}{{ r.patient_age }}세{% else %}-{% endif %}</td>
+                    <td>{{ r.source_hospital }}</td>
+                    <td title="{{ r.disease_summary }}">{{ r.disease_summary or '-' }}</td>
+                    <td>{{ r.counselor or '-' }}</td>
+                    <td><span class="status-badge">{{ r.admission_status }}</span></td>
+                </tr>
+                {% else %}<tr><td colspan="7" class="empty-state">조건에 맞는 입원 환자가 없습니다.</td></tr>{% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+<style>
+.hospital-page-head > div { display:flex; align-items:center; gap:12px; }
+.hospital-filter { display:flex; align-items:end; gap:10px; margin-bottom:12px; }
+.hospital-filter label { display:flex; flex-direction:column; gap:4px; color:var(--text-light); font-size:.76em; }
+.hospital-filter input,.hospital-filter select { height:36px; min-width:145px; padding:6px 9px; border:1px solid var(--border); border-radius:7px; background:#fff; font:inherit; color:var(--text); }
+.hospital-filter .hospital-select { flex:1; }.hospital-filter .hospital-select select { width:100%; }
+.hospital-kpis { grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:12px; }
+.hospital-kpis .stat-card { min-height:82px; box-shadow:0 5px 14px rgba(15,23,42,.06); }
+.hospital-kpis .value small { margin-left:3px; color:var(--text-light); font-size:.48em; }
+.hospital-kpis .date-value { font-size:1em; line-height:1.4; }
+.hospital-layout { display:grid; grid-template-columns:minmax(270px,.72fr) minmax(0,2fr); gap:12px; align-items:stretch; }
+.hospital-layout > .card,.hospital-layout > .card + .card { margin:0; min-width:0; }
+.panel-title { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+.panel-title h2 { font-size:1em; }.panel-title span { color:var(--text-light); font-size:.75em; }
+.hospital-bars { display:flex; flex-direction:column; gap:5px; max-height:620px; overflow:auto; }
+.hospital-bar { display:grid; grid-template-columns:minmax(90px,1fr) 90px 34px; gap:7px; align-items:center; padding:6px; border-radius:7px; color:var(--text); text-decoration:none; }
+.hospital-bar:hover,.hospital-bar.selected { background:#f0fdf4; }
+.hospital-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.78em; }
+.hospital-bar i { height:8px; overflow:hidden; border-radius:999px; background:#e2e8f0; }.hospital-bar i b { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,#15803d,#22c55e); }
+.hospital-bar strong { color:#166534; font-size:.76em; text-align:right; }
+.hospital-detail { overflow:hidden; }.table-wrap { overflow:auto; max-height:650px; }
+.hospital-detail .tbl { min-width:850px; }.hospital-detail .tbl th { position:sticky; top:0; z-index:1; }
+.hospital-detail .tbl td { font-size:.82em; }.nowrap { white-space:nowrap; }
+.status-badge { display:inline-block; padding:2px 6px; border-radius:999px; background:#dcfce7; color:#166534; white-space:nowrap; font-size:.78em; font-weight:650; }
+.empty-state { padding:30px 12px !important; color:var(--text-light); text-align:center !important; }
+@media(max-width:900px){.hospital-filter{align-items:stretch;flex-wrap:wrap}.hospital-filter label{flex:1 1 180px}.hospital-layout{grid-template-columns:1fr}.hospital-kpis{grid-template-columns:1fr}.hospital-page-head>div{align-items:flex-start;flex-direction:column;gap:3px}}
+</style>
+{% endblock %}
