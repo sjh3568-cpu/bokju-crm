@@ -44,12 +44,10 @@
             <input type="text" name="title" required autocomplete="off"></label>
         <label class="tf-field"><span>담당자</span>
             <input type="text" value="{{ current_user.display_name }}" disabled></label>
-        <div class="tf-row">
-            <label class="tf-field"><span>시작 (날짜·시간)</span>
-                <span class="tf-datetime"><input type="date" name="due_date"><input type="time" name="start_time"></span></label>
-            <label class="tf-field"><span>종료 (날짜·시간)</span>
-                <span class="tf-datetime"><input type="date" name="end_date"><input type="time" name="end_time"></span></label>
-        </div>
+        <label class="tf-field"><span>시작 (날짜·시간)</span>
+            <span class="tf-datetime"><input type="date" name="due_date"><input type="time" name="start_time"></span></label>
+        <label class="tf-field"><span>종료 (날짜·시간)</span>
+            <span class="tf-datetime"><input type="date" name="end_date"><input type="time" name="end_time"></span></label>
         <div class="tf-row">
             <label class="tf-field"><span>진행률</span>
                 <span class="tf-progress"><input type="number" name="progress" min="0" max="100" step="10" value="0"><i>%</i></span></label>
@@ -58,6 +56,14 @@
         </div>
         <label class="tf-field"><span>리마인드</span>
             <input type="datetime-local" name="remind_at"></label>
+        <fieldset class="tf-field todo-share-field">
+            <legend>공유자 <small>선택한 상담사에게 알림이 전송됩니다.</small></legend>
+            <div class="todo-share-options">
+                {% for u in share_users %}
+                <label><input type="checkbox" name="share_user_ids" value="{{ u.id }}"> {{ u.display_name }}</label>
+                {% else %}<span class="muted-sm">공유 가능한 다른 사용자가 없습니다.</span>{% endfor %}
+            </div>
+        </fieldset>
         <label class="tf-field"><span>내용</span>
             <textarea name="note" rows="3" placeholder="상세 내용 (선택)"></textarea></label>
         <div class="tf-actions">
@@ -71,6 +77,7 @@
 {% macro todo_data(t) -%}
 data-id="{{ t.id }}" data-title="{{ t.title }}" data-due="{{ t.due_date }}"
 data-end="{{ t.end_date or '' }}" data-stime="{{ t.start_time or '' }}" data-etime="{{ t.end_time or '' }}"
+data-owner="{{ 1 if t.is_owner|default(true) else 0 }}" data-shares="{{ t.share_user_ids|default([])|join(',') }}"
 data-progress="{{ t.progress or 0 }}"
 data-dday="{{ t.dday or 0 }}" data-remind="{{ t.remind_at or '' }}" data-note="{{ t.note or '' }}"
 {%- endmacro %}
@@ -96,6 +103,7 @@ data-dday="{{ t.dday or 0 }}" data-remind="{{ t.remind_at or '' }}" data-note="{
                     {% if t.dday_label %}<span class="tc-dday">{{ t.dday_label }}</span>{% endif %}
                     {% if t.start_time %}<span class="tc-time">{{ t.start_time }}</span>{% endif %}
                     <span class="tc-title">{{ t.title }}</span>
+                    {% if not t.is_owner %}<span class="tc-shared" title="{{ t.owner_name }}님 공유">공유</span>{% endif %}
                     {% if t.progress and not t.done %}<span class="tc-prog">{{ t.progress }}%</span>{% endif %}
                 </div>
                 {% endfor %}
@@ -118,7 +126,7 @@ data-dday="{{ t.dday or 0 }}" data-remind="{{ t.remind_at or '' }}" data-note="{
         <li class="todo-item" {{ todo_data(t) }}>
             <button type="button" class="todo-check" data-toggle title="완료 처리"></button>
             <div class="todo-body todo-openedit">
-                <span class="todo-title">{% if t.start_time %}<span class="todo-time">{{ t.start_time }}</span> {% endif %}{{ t.title }}{% if t.end_time %} <span class="todo-time">~{{ t.end_time }}</span>{% endif %}</span>
+                <span class="todo-title">{% if t.start_time %}<span class="todo-time">{{ t.start_time }}</span> {% endif %}{{ t.title }}{% if t.end_time %} <span class="todo-time">~{{ t.end_time }}</span>{% endif %}{% if not t.is_owner %} <span class="todo-shared-badge">{{ t.owner_name }}님 공유</span>{% endif %}</span>
                 <span class="todo-meta">
                     <span class="badge badge-rejected">{{ t.due_date|krdate_short_wd }}</span>
                     {% if t.dday_label %}<span class="todo-ddaybadge">{{ t.dday_label }}</span>{% endif %}
@@ -128,8 +136,8 @@ data-dday="{{ t.dday or 0 }}" data-remind="{{ t.remind_at or '' }}" data-note="{
                 </span>
             </div>
             <div class="todo-ops">
-                <button type="button" class="btn btn-primary btn-xs" data-carry>오늘로</button>
-                <button type="button" class="btn btn-secondary btn-xs" data-del title="삭제">✕</button>
+                {% if t.is_owner %}<button type="button" class="btn btn-primary btn-xs" data-carry>오늘로</button>
+                <button type="button" class="btn btn-secondary btn-xs" data-del title="삭제">✕</button>{% endif %}
             </div>
         </li>
         {% endfor %}
@@ -145,7 +153,7 @@ data-dday="{{ t.dday or 0 }}" data-remind="{{ t.remind_at or '' }}" data-note="{
             <button type="button" class="todo-check{% if t.done %} checked{% endif %}" data-toggle
                     title="{{ '완료 취소' if t.done else '완료 처리' }}">{% if t.done %}✓{% endif %}</button>
             <div class="todo-body todo-openedit">
-                <span class="todo-title">{% if t.start_time %}<span class="todo-time">{{ t.start_time }}</span> {% endif %}{{ t.title }}{% if t.end_time %} <span class="todo-time">~{{ t.end_time }}</span>{% endif %}</span>
+                <span class="todo-title">{% if t.start_time %}<span class="todo-time">{{ t.start_time }}</span> {% endif %}{{ t.title }}{% if t.end_time %} <span class="todo-time">~{{ t.end_time }}</span>{% endif %}{% if not t.is_owner %} <span class="todo-shared-badge">{{ t.owner_name }}님 공유</span>{% endif %}</span>
                 <span class="todo-meta">
                     {% if t.end_date %}<span class="badge badge-confirmed">~ {{ t.end_date|krdate_short_wd }}</span>{% endif %}
                     {% if t.dday_label %}<span class="todo-ddaybadge">{{ t.dday_label }}</span>{% endif %}
@@ -155,7 +163,7 @@ data-dday="{{ t.dday or 0 }}" data-remind="{{ t.remind_at or '' }}" data-note="{
                 </span>
             </div>
             <div class="todo-ops">
-                <button type="button" class="btn btn-secondary btn-xs" data-del title="삭제">✕</button>
+                {% if t.is_owner %}<button type="button" class="btn btn-secondary btn-xs" data-del title="삭제">✕</button>{% endif %}
             </div>
         </li>
         {% endfor %}

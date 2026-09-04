@@ -83,7 +83,7 @@
         <div class="calc-modal-box" role="dialog" aria-modal="true" aria-label="내 할 일">
             <div class="calc-modal-head">
                 <strong>내 할 일</strong>
-                <span class="muted-sm">{{ current_user.display_name }}님의 개인 할 일 · 나만 볼 수 있음</span>
+                <span class="muted-sm">{{ current_user.display_name }}님의 할 일 · 상담사 공유 가능</span>
                 <a class="calc-modal-full" href="/todos" target="_blank" rel="noopener">전체 화면 ↗</a>
                 <button type="button" class="calc-modal-x" data-todo-close aria-label="닫기">✕</button>
             </div>
@@ -264,12 +264,11 @@
      탭이 열려 있어야 뜨며, 같은 항목은 한 번만 알린다(localStorage). -->
 <script>
 (function () {
-    if (!('Notification' in window)) return;
-    var SEEN = 'bokju_todo_reminded';
+    var supportsNotification = ('Notification' in window);
+    var SEEN = 'bokju_todo_reminded_{{ current_user.id }}';
     function seen() { try { return JSON.parse(localStorage.getItem(SEEN) || '[]'); } catch (e) { return []; } }
     function markSeen(ids) { try { localStorage.setItem(SEEN, JSON.stringify(ids.slice(-200))); } catch (e) {} }
     function check() {
-        if (Notification.permission !== 'granted') return;
         fetch('/api/todos/reminders', { credentials: 'same-origin' })
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (d) {
@@ -277,10 +276,14 @@
                 var done = seen();
                 d.items.forEach(function (t) {
                     if (done.indexOf(t.id) !== -1) return;
-                    var n = new Notification('할 일 리마인드', {
-                        body: t.title, tag: 'bokju-todo-' + t.id,
-                    });
-                    n.onclick = function () { window.focus(); location.href = '/todos'; };
+                    var message = (t.shared && t.owner_name ? t.owner_name + ' · ' : '') + t.title;
+                    if (t.shared && window.toast) toast('새 공유 할 일: ' + message, 'info');
+                    if (supportsNotification && Notification.permission === 'granted') {
+                        var n = new Notification(t.shared ? '새 할 일이 공유되었습니다' : '할 일 리마인드', {
+                            body: message, tag: 'bokju-todo-' + t.id,
+                        });
+                        n.onclick = function () { window.focus(); location.href = '/todos'; };
+                    }
                     done.push(t.id);
                 });
                 markSeen(done);
@@ -288,7 +291,7 @@
             .catch(function () {});
     }
     // 권한이 아직 미정이면 한 번 요청 (거부해도 배지로 리마인드됨)
-    if (Notification.permission === 'default') {
+    if (supportsNotification && Notification.permission === 'default') {
         Notification.requestPermission().then(check);
     } else {
         check();

@@ -300,7 +300,7 @@ def _inject_globals():
     todo_badge = 0
     if _u:
         try:
-            todo_badge = models.todo_reminder_count(_u["id"], date.today().isoformat())
+            todo_badge = models.todo_badge_count(_u["id"], date.today().isoformat())
         except Exception:
             todo_badge = 0
     pending_notice = (models.first_unread_required_announcement(
@@ -1681,6 +1681,8 @@ def _valid_time(s, default=None):
 def _annotate_todos(todos, today):
     """할 일에 dday_label(마감까지 D-표기)을 붙인다 (dday 사용 항목만)."""
     for t in todos:
+        t["share_user_ids"] = (models.todo_share_user_ids(t["id"])
+                               if t.get("is_owner", True) else [])
         t["dday_label"] = ""
         if t.get("dday"):
             anchor = t.get("end_date") or t.get("due_date")
@@ -1743,7 +1745,11 @@ def todos_view():
     today = date.today()
     embed = request.args.get("embed") == "1"   # 팝업(iframe)용 — 헤더/네비 없이 본문만
     view = "list" if request.args.get("view") == "list" else "calendar"
-    ctx = {"view": view, "embed": embed, "today": today.isoformat()}
+    share_users = [u for u in models.list_users()
+                   if u.get("active") and u["id"] != uid
+                   and u.get("role") in ("admin", "staff")]
+    ctx = {"view": view, "embed": embed, "today": today.isoformat(),
+           "share_users": share_users}
     if view == "list":
         day = _valid_date(request.args.get("date"), today.isoformat())
         ctx.update(
@@ -1762,7 +1768,9 @@ def todos_view():
         except (TypeError, ValueError):
             year, month = today.year, today.month
         ctx.update(_todo_calendar_context(uid, year, month, today))
-    return render_template("todos_embed.html" if embed else "todos.html", **ctx)
+    rendered = render_template("todos_embed.html" if embed else "todos.html", **ctx)
+    models.mark_todo_shares_seen(uid)
+    return rendered
 
 
 @app.route("/api/todos", methods=["POST"])
@@ -1786,6 +1794,7 @@ def api_todo_create():
         progress=data.get("progress") or 0,
         dday=str(data.get("dday", "")) in ("1", "true", "True", "on"),
     )
+    models.sync_todo_shares(tid, g.user["id"], data.get("share_user_ids") or [])
     return jsonify({"ok": True, "id": tid})
 
 
@@ -1818,6 +1827,8 @@ def api_todo_update(tid):
     if "dday" in data:
         fields["dday"] = str(data.get("dday", "")) in ("1", "true", "True", "on")
     models.update_todo(tid, g.user["id"], **fields)
+    if "share_user_ids" in data:
+        models.sync_todo_shares(tid, g.user["id"], data.get("share_user_ids") or [])
     return jsonify({"ok": True})
 
 
@@ -1852,7 +1863,11 @@ def api_todo_delete(tid):
 def api_todo_reminders():
     """리마인드 시각이 지난 미완료 할 일 — 브라우저 알림 폴링용."""
     now_iso = datetime.now().isoformat(timespec="seconds")
-    return jsonify({"items": models.due_reminder_todos(g.user["id"], now_iso)})
+    items = models.due_reminder_todos(g.user["id"], now_iso)
+    for item in models.unread_shared_todos(g.user["id"]):
+        items.append({"id": f"shared-{item['id']}", "title": item["title"],
+                      "shared": True, "owner_name": item.get("owner_name")})
+    return jsonify({"items": items})
 
 
 # ───────────────────── 통계 (Phase 3) ─────────────────────

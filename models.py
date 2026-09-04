@@ -589,6 +589,18 @@ def init_db():
         "start_time": "TEXT",
         "end_time": "TEXT",
     })
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS todo_shares (
+            todo_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            shared_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            seen_at DATETIME,
+            PRIMARY KEY (todo_id, user_id),
+            FOREIGN KEY (todo_id) REFERENCES todos(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_todo_shares_user ON todo_shares(user_id, seen_at)")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_todos_user_date ON todos(user_id, due_date)"
     )
@@ -1209,6 +1221,70 @@ def get_todo(todo_id: int, user_id: int):
     return dict(row) if row else None
 
 
+def get_todo_access(todo_id: int, user_id: int):
+    """소유하거나 공유받은 할 일. is_owner와 공유자 정보를 함께 반환한다."""
+    conn = get_db()
+    row = conn.execute(
+        "SELECT t.*, u.display_name AS owner_name, (t.user_id = ?) AS is_owner "
+        "FROM todos t JOIN users u ON u.id = t.user_id "
+        "WHERE t.id = ? AND (t.user_id = ? OR EXISTS "
+        "(SELECT 1 FROM todo_shares s WHERE s.todo_id=t.id AND s.user_id=?))",
+        (user_id, todo_id, user_id, user_id),
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def sync_todo_shares(todo_id: int, owner_id: int, user_ids) -> None:
+    """공유 대상 동기화. 새 대상은 미확인 알림 상태로 등록한다."""
+    clean = sorted({int(x) for x in (user_ids or []) if str(x).isdigit() and int(x) != owner_id})
+    conn = get_db()
+    valid = {r["id"] for r in conn.execute(
+        "SELECT id FROM users WHERE active=1 AND role IN ('admin','staff') AND id != ?",
+        (owner_id,)).fetchall()}
+    clean = [x for x in clean if x in valid]
+    if clean:
+        marks = ",".join("?" for _ in clean)
+        conn.execute(
+            f"DELETE FROM todo_shares WHERE todo_id=? AND user_id NOT IN ({marks})",
+            (todo_id, *clean),
+        )
+        conn.executemany(
+            "INSERT OR IGNORE INTO todo_shares(todo_id,user_id) VALUES (?,?)",
+            [(todo_id, x) for x in clean],
+        )
+    else:
+        conn.execute("DELETE FROM todo_shares WHERE todo_id=?", (todo_id,))
+    conn.commit()
+    conn.close()
+
+
+def todo_share_user_ids(todo_id: int) -> list[int]:
+    conn = get_db()
+    rows = conn.execute("SELECT user_id FROM todo_shares WHERE todo_id=? ORDER BY user_id", (todo_id,)).fetchall()
+    conn.close()
+    return [r["user_id"] for r in rows]
+
+
+def mark_todo_shares_seen(user_id: int) -> None:
+    conn = get_db()
+    conn.execute("UPDATE todo_shares SET seen_at=CURRENT_TIMESTAMP WHERE user_id=? AND seen_at IS NULL", (user_id,))
+    conn.commit()
+    conn.close()
+
+
+def unread_shared_todos(user_id: int):
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT t.id, t.title, t.due_date, u.display_name AS owner_name "
+        "FROM todo_shares s JOIN todos t ON t.id=s.todo_id JOIN users u ON u.id=t.user_id "
+        "WHERE s.user_id=? AND s.seen_at IS NULL ORDER BY s.shared_at",
+        (user_id,),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 def update_todo(todo_id: int, user_id: int, *, title=None, note=None,
                 due_date=None, end_date=None, remind_at=None,
                 progress=None, dday=None, start_time=None, end_time=None) -> bool:
@@ -1256,10 +1332,11 @@ def set_todo_done(todo_id: int, user_id: int, done: bool) -> bool:
     conn = get_db()
     cur = conn.execute(
         "UPDATE todos SET done = ?, progress = ?, done_at = ?, updated_at = CURRENT_TIMESTAMP "
-        "WHERE id = ? AND user_id = ?",
+        "WHERE id = ? AND (user_id = ? OR EXISTS "
+        "(SELECT 1 FROM todo_shares s WHERE s.todo_id=todos.id AND s.user_id=?))",
         (1 if done else 0, 100 if done else 0,
          datetime.now().isoformat(timespec="seconds") if done else None,
-         todo_id, user_id),
+         todo_id, user_id, user_id),
     )
     conn.commit()
     changed = cur.rowcount > 0
@@ -1295,9 +1372,11 @@ def list_todos(user_id: int, due_date: str):
     """특정 날짜의 할 일 (미완료 먼저, 시작시간 순, 시간없는 항목은 뒤로)."""
     conn = get_db()
     rows = conn.execute(
-        "SELECT * FROM todos WHERE user_id = ? AND due_date = ? "
+        "SELECT t.*, u.display_name AS owner_name, (t.user_id = ?) AS is_owner FROM todos t "
+        "JOIN users u ON u.id=t.user_id WHERE (t.user_id = ? OR EXISTS "
+        "(SELECT 1 FROM todo_shares s WHERE s.todo_id=t.id AND s.user_id=?)) AND due_date = ? "
         "ORDER BY done ASC, (start_time IS NULL) ASC, start_time ASC, sort_order ASC, id ASC",
-        (user_id, due_date),
+        (user_id, user_id, user_id, due_date),
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
@@ -1307,9 +1386,12 @@ def list_overdue_todos(user_id: int, before_date: str):
     """지난 날짜의 미완료 할 일 (오래된 순)."""
     conn = get_db()
     rows = conn.execute(
-        "SELECT * FROM todos WHERE user_id = ? AND done = 0 AND due_date < ? "
+        "SELECT t.*, u.display_name AS owner_name, (t.user_id = ?) AS is_owner FROM todos t "
+        "JOIN users u ON u.id=t.user_id WHERE (t.user_id = ? OR EXISTS "
+        "(SELECT 1 FROM todo_shares s WHERE s.todo_id=t.id AND s.user_id=?)) "
+        "AND done = 0 AND due_date < ? "
         "ORDER BY due_date ASC, (start_time IS NULL) ASC, start_time ASC, sort_order ASC, id ASC",
-        (user_id, before_date),
+        (user_id, user_id, user_id, before_date),
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
@@ -1319,8 +1401,25 @@ def todo_reminder_count(user_id: int, today: str) -> int:
     """리마인드 배지용 — 오늘 이하(오늘+지난)의 미완료 할 일 개수."""
     conn = get_db()
     n = conn.execute(
-        "SELECT COUNT(*) AS n FROM todos WHERE user_id = ? AND done = 0 AND due_date <= ?",
-        (user_id, today),
+        "SELECT COUNT(*) AS n FROM todos t WHERE (t.user_id = ? OR EXISTS "
+        "(SELECT 1 FROM todo_shares s WHERE s.todo_id=t.id AND s.user_id=?)) "
+        "AND done = 0 AND due_date <= ?",
+        (user_id, user_id, today),
+    ).fetchone()["n"]
+    conn.close()
+    return n
+
+
+def todo_badge_count(user_id: int, today: str) -> int:
+    """오늘까지 미완료 또는 아직 확인하지 않은 공유 할 일의 중복 없는 수."""
+    conn = get_db()
+    n = conn.execute(
+        "SELECT COUNT(*) AS n FROM ("
+        "SELECT t.id FROM todos t WHERE (t.user_id=? OR EXISTS "
+        "(SELECT 1 FROM todo_shares s WHERE s.todo_id=t.id AND s.user_id=?)) "
+        "AND t.done=0 AND t.due_date<=? UNION "
+        "SELECT todo_id FROM todo_shares WHERE user_id=? AND seen_at IS NULL)",
+        (user_id, user_id, today, user_id),
     ).fetchone()["n"]
     conn.close()
     return n
@@ -1344,10 +1443,12 @@ def list_todos_range(user_id: int, first_day: str, last_day: str):
     기간(due_date~end_date, end_date 없으면 하루)이 조회 구간과 하루라도 겹치면 포함."""
     conn = get_db()
     rows = conn.execute(
-        "SELECT * FROM todos WHERE user_id = ? "
+        "SELECT t.*, u.display_name AS owner_name, (t.user_id = ?) AS is_owner FROM todos t "
+        "JOIN users u ON u.id=t.user_id WHERE (t.user_id = ? OR EXISTS "
+        "(SELECT 1 FROM todo_shares s WHERE s.todo_id=t.id AND s.user_id=?)) "
         "AND due_date <= ? AND COALESCE(end_date, due_date) >= ? "
         "ORDER BY due_date ASC, (start_time IS NULL) ASC, start_time ASC, sort_order ASC, id ASC",
-        (user_id, last_day, first_day),
+        (user_id, user_id, user_id, last_day, first_day),
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]

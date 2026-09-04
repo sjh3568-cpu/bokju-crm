@@ -49,6 +49,7 @@
         form.end_time.value = '';
         form.progress.value = 0;
         form.dday.checked = false;
+        form.querySelectorAll('[name="share_user_ids"]').forEach(function (x) { x.checked = false; });
         if (formTitle) formTitle.textContent = 'ToDo 추가';
         if (delBtn) delBtn.hidden = true;
         openDrawer();
@@ -58,6 +59,7 @@
     function showEdit(el) {
         if (!form) return;
         var d = el.dataset;
+        if (d.owner === '0') return;
         form.dataset.id = d.id;
         form.title.value = d.title || '';
         form.due_date.value = d.due || '';
@@ -68,6 +70,10 @@
         form.dday.checked = (d.dday === '1');
         form.remind_at.value = (d.remind || '').slice(0, 16);
         form.note.value = d.note || '';
+        var shared = (d.shares || '').split(',');
+        form.querySelectorAll('[name="share_user_ids"]').forEach(function (x) {
+            x.checked = shared.indexOf(x.value) !== -1;
+        });
         if (formTitle) formTitle.textContent = 'ToDo 수정';
         if (delBtn) delBtn.hidden = false;
         openDrawer();
@@ -97,6 +103,7 @@
             dday: form.dday.checked ? '1' : '0',
             remind_at: form.remind_at.value || '',
             note: form.note.value.trim(),
+            share_user_ids: Array.from(form.querySelectorAll('[name="share_user_ids"]:checked')).map(function (x) { return x.value; }),
         };
         var id = form.dataset.id;
         post(id ? '/api/todos/' + id : '/api/todos', body).then(reload).catch(fail);
