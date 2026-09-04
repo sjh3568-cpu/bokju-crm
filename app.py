@@ -1561,6 +1561,72 @@ def admin_users_delete(uid):
 
 # ───────────────────── 메인 ─────────────────────
 
+def _dashboard_calendar_context(uid, year, month):
+    """상담·입퇴원 일정과 개인/공유 ToDo를 합친 월간 달력."""
+    first = date(year, month, 1)
+    start = first - timedelta(days=(first.weekday() + 1) % 7)
+    days = [start + timedelta(days=i) for i in range(42)]
+    last = days[-1]
+    buckets = {d.isoformat(): [] for d in days}
+
+    def add(day, kind, title, meta="", href="#", time=""):
+        key = (day or "")[:10]
+        if key not in buckets:
+            return
+        buckets[key].append({"kind": kind, "title": title, "meta": meta,
+                             "href": href, "time": (time or "")[:5]})
+
+    for row in models.dashboard_calendar_rows(start.isoformat(), last.isoformat()):
+        name = row.get("patient_name") or "환자 미지정"
+        href = f"/consult/{row['id']}"
+        add(row.get("consult_date"), "consult", name,
+            "상담" + (f" · {row['counselor']}" if row.get("counselor") else ""),
+            href, row.get("consult_time"))
+        actual = row.get("actual_admission_date") or row.get("admission_date")
+        planned = row.get("planned_admission_date")
+        if actual:
+            add(actual, "admitted", name, "입원", href, row.get("planned_admission_time"))
+        if planned and (not actual or planned != actual):
+            add(planned, "admission", name, "입원예정", href, row.get("planned_admission_time"))
+        discharged = row.get("discharge_date")
+        discharge_due = row.get("discharge_due_date")
+        if discharged:
+            add(discharged, "discharged", name, "퇴원", href)
+        elif discharge_due:
+            add(discharge_due, "discharge", name, "퇴원예정", href)
+
+    todos = models.list_todos_range(uid, start.isoformat(), last.isoformat())
+    for todo in todos:
+        begin = date.fromisoformat(todo["due_date"])
+        end = date.fromisoformat(todo["end_date"]) if todo.get("end_date") else begin
+        cursor = max(begin, start)
+        while cursor <= min(end, last):
+            shared = not bool(todo.get("is_owner"))
+            meta = ((todo.get("owner_name") or "다른 상담사") + " 공유"
+                    if shared else "ToDo")
+            add(cursor.isoformat(), "shared" if shared else "todo", todo["title"],
+                meta, f"/todos?view=list&date={cursor.isoformat()}", todo.get("start_time"))
+            cursor += timedelta(days=1)
+
+    order = {"admission": 0, "admitted": 0, "discharge": 1, "discharged": 1,
+             "consult": 2, "shared": 3, "todo": 4}
+    weeks = []
+    for w in range(6):
+        week = []
+        for d in days[w * 7:(w + 1) * 7]:
+            events = sorted(buckets[d.isoformat()],
+                            key=lambda x: (order.get(x["kind"], 9), x["time"], x["title"]))
+            week.append({"date": d.isoformat(), "day": d.day,
+                         "in_month": d.month == month, "is_today": d == date.today(),
+                         "weekday": (d.weekday() + 1) % 7, "events": events})
+        weeks.append(week)
+    prev_m = (first - timedelta(days=1)).replace(day=1)
+    next_m = (first + timedelta(days=31)).replace(day=1)
+    return {"dashboard_calendar_weeks": weeks, "cal_year": year, "cal_month": month,
+            "cal_label": f"{year}.{month:02d}",
+            "cal_prev_year": prev_m.year, "cal_prev_month": prev_m.month,
+            "cal_next_year": next_m.year, "cal_next_month": next_m.month}
+
 @app.route("/")
 @login_required
 def dashboard():
@@ -1645,6 +1711,15 @@ def dashboard():
     data["summary"]["action_total"] = action_queue["today_total"]
     data["summary"]["action_danger"] = action_queue["danger"]
     data["summary"]["action_stale"] = action_queue["stale_total"]
+    try:
+        cal_year = int(request.args.get("cal_year") or date.today().year)
+        cal_month = int(request.args.get("cal_month") or date.today().month)
+        if not 2000 <= cal_year <= 2100:
+            raise ValueError
+        date(cal_year, cal_month, 1)
+    except (TypeError, ValueError):
+        cal_year, cal_month = date.today().year, date.today().month
+    data.update(_dashboard_calendar_context(g.user["id"], cal_year, cal_month))
     return render_template("dashboard.html", **data)
 
 

@@ -812,8 +812,9 @@ body:not(.cc-sms) .ib-del { display: none !important; }
 .todo-share-field { border: 0; padding: 0; margin: 0; }
 .todo-share-field legend { width: 100%; font-size: .82em; font-weight: 700; margin-bottom: 6px; }
 .todo-share-field legend small { color: var(--text-light); font-weight: 400; margin-left: 5px; }
-.todo-share-options { display: flex; flex-wrap: wrap; gap: 6px; padding: 9px; border: 1px solid var(--border); border-radius: 8px; background: #f8fafc; }
-.todo-share-options label { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; background: #fff; font-size: .82em; cursor: pointer; }
+.todo-share-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding: 9px; border: 1px solid var(--border); border-radius: 8px; background: #f8fafc; }
+.todo-share-options label { display: grid; grid-template-columns: 18px minmax(0,1fr); align-items: center; gap: 7px; min-height: 34px; padding: 6px 8px; border: 1px solid #e2e8f0; border-radius: 6px; background: #fff; color: var(--text); font-size: .82em; line-height: 1.25; cursor: pointer; }
+.todo-share-options input[type=checkbox] { width: 18px; height: 18px; margin: 0; }
 .todo-shared-badge,.tc-shared { display: inline-flex; flex-shrink: 0; padding: 1px 5px; border-radius: 5px; background: #ede9fe; color: #6d28d9; font-size: .72em; font-weight: 750; text-decoration: none; }
 
 /* 목록 뷰 배지 */

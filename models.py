@@ -2544,6 +2544,30 @@ def _ensure_master_entry(hospital: str | None, diagnosis: str | None):
 
 # ─── 대시보드 ───
 
+def dashboard_calendar_rows(first_day: str, last_day: str):
+    """대시보드 통합 달력용 상담·입원·퇴원 관련 날짜 자료."""
+    conn = get_db()
+    rows = conn.execute(
+        """
+        SELECT c.id, c.consult_date, c.consult_time, c.counselor,
+               c.admission_status, c.planned_admission_date, c.planned_admission_time,
+               c.actual_admission_date, c.admission_date,
+               c.discharge_due_date, c.discharge_date,
+               p.name AS patient_name
+        FROM consultations c JOIN patients p ON p.id=c.patient_id
+        WHERE date(c.consult_date) BETWEEN date(?) AND date(?)
+           OR date(NULLIF(c.planned_admission_date,'')) BETWEEN date(?) AND date(?)
+           OR date(NULLIF(c.actual_admission_date,'')) BETWEEN date(?) AND date(?)
+           OR date(NULLIF(c.admission_date,'')) BETWEEN date(?) AND date(?)
+           OR date(NULLIF(c.discharge_due_date,'')) BETWEEN date(?) AND date(?)
+           OR date(NULLIF(c.discharge_date,'')) BETWEEN date(?) AND date(?)
+        ORDER BY c.consult_date, c.consult_time, c.id
+        """,
+        (first_day, last_day) * 6,
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
 def dashboard_summary():
     """양식 기반 통계 — 상담 건수와 입원예정일 등록 건수."""
     conn = get_db()

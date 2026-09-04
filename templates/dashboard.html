@@ -354,6 +354,47 @@
     </a>
 </div>
 
+<section class="card dash-calendar-card" id="integrated-calendar">
+    <div class="dash-calendar-head">
+        <div>
+            <h3>통합 일정 달력</h3>
+            <p>환자 상담·입원·퇴원 일정과 나의 ToDo·공유받은 ToDo를 함께 봅니다.</p>
+        </div>
+        <div class="dash-calendar-nav">
+            <a class="btn btn-secondary btn-sm" href="/?cal_year={{ cal_prev_year }}&cal_month={{ cal_prev_month }}#integrated-calendar" aria-label="이전 달">◀</a>
+            <strong>{{ cal_label }}</strong>
+            <a class="btn btn-secondary btn-sm" href="/?cal_year={{ cal_next_year }}&cal_month={{ cal_next_month }}#integrated-calendar" aria-label="다음 달">▶</a>
+            <a class="btn btn-secondary btn-sm" href="/#integrated-calendar">오늘</a>
+        </div>
+    </div>
+    <div class="dash-calendar-legend" aria-label="일정 구분">
+        <span class="consult">상담</span><span class="admission">입원예정</span>
+        <span class="admitted">입원</span><span class="discharge">퇴원예정·퇴원</span>
+        <span class="todo">나의 ToDo</span><span class="shared">공유 ToDo</span>
+    </div>
+    <div class="dash-calendar-wrap">
+        <table class="dash-calendar">
+            <thead><tr><th class="sun">일</th><th>월</th><th>화</th><th>수</th><th>목</th><th>금</th><th class="sat">토</th></tr></thead>
+            <tbody>
+            {% for week in dashboard_calendar_weeks %}<tr>
+                {% for cell in week %}
+                <td class="{% if not cell.in_month %}other-month {% endif %}{% if cell.is_today %}today {% endif %}">
+                    <div class="dash-cal-day{% if cell.weekday == 0 %} sun{% elif cell.weekday == 6 %} sat{% endif %}">{{ cell.day }}</div>
+                    <div class="dash-cal-events">
+                    {% for event in cell.events %}
+                        <a class="dash-cal-event {{ event.kind }}" href="{{ event.href }}" title="{{ event.meta }} · {{ event.title }}">
+                            {% if event.time %}<time>{{ event.time }}</time>{% endif %}<b>{{ event.meta }}</b><span>{{ event.title }}</span>
+                        </a>
+                    {% endfor %}
+                    </div>
+                </td>
+                {% endfor %}
+            </tr>{% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
 {{ action_queue_panel(action_queue) }}
 
 <div class="card" id="admission-schedule">
@@ -629,6 +670,7 @@
 </div>
 
 <style>
+.dash-calendar-card{margin-top:16px}.dash-calendar-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:8px}.dash-calendar-head h3{margin:0}.dash-calendar-head p{margin:3px 0 0;color:var(--text-light);font-size:.82em}.dash-calendar-nav{display:flex;align-items:center;gap:6px}.dash-calendar-nav strong{min-width:82px;text-align:center;color:var(--primary);font-size:1.05rem}.dash-calendar-legend{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.dash-calendar-legend span{padding:3px 8px;border-radius:999px;font-size:.72em;font-weight:750}.dash-calendar-wrap{overflow-x:auto}.dash-calendar{width:100%;min-width:980px;border-collapse:collapse;table-layout:fixed}.dash-calendar th{padding:7px;border:1px solid var(--border);background:#f8fafc;color:var(--text-light);font-size:.78rem}.dash-calendar td{height:126px;padding:5px;vertical-align:top;border:1px solid var(--border);background:#fff}.dash-calendar td.other-month{background:#f8fafc;opacity:.62}.dash-calendar td.today{background:#ecfdf5;box-shadow:inset 0 0 0 2px var(--primary-light)}.dash-calendar .sun{color:#dc2626}.dash-calendar .sat{color:#2563eb}.dash-cal-day{font-size:.8rem;font-weight:800;margin-bottom:4px}.dash-cal-events{max-height:102px;overflow-y:auto;display:flex;flex-direction:column;gap:3px}.dash-cal-event{display:grid;grid-template-columns:auto auto minmax(0,1fr);align-items:center;gap:4px;padding:3px 5px;border-radius:5px;text-decoration:none;font-size:.69rem;line-height:1.2}.dash-cal-event time{font-variant-numeric:tabular-nums;font-weight:800}.dash-cal-event b{white-space:nowrap}.dash-cal-event span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dash-cal-event.consult,.dash-calendar-legend .consult{background:#dbeafe;color:#1e40af}.dash-cal-event.admission,.dash-calendar-legend .admission{background:#fef3c7;color:#92400e}.dash-cal-event.admitted,.dash-calendar-legend .admitted{background:#dcfce7;color:#166534}.dash-cal-event.discharge,.dash-cal-event.discharged,.dash-calendar-legend .discharge{background:#fee2e2;color:#991b1b}.dash-cal-event.todo,.dash-calendar-legend .todo{background:#f1f5f9;color:#334155}.dash-cal-event.shared,.dash-calendar-legend .shared{background:#ede9fe;color:#6d28d9}@media(max-width:700px){.dash-calendar-head{align-items:flex-start;flex-direction:column}.dash-calendar-nav{width:100%;justify-content:flex-end}}
 .dash-head { align-items:flex-start; }
 .dash-actions { display:flex; gap:6px; align-items:center; }
 /* KPI — 1행: 액션 히어로(전체 폭), 2행: 현황 6칸. 6열 그리드로 상하좌우 정렬을 맞춘다. */
