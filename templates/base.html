@@ -19,7 +19,6 @@
                     {% if P.get('dashboard',0) >= 1 %}
                     <a href="/" {% if request.path == '/' %}class="active"{% endif %}>대시보드</a>
                     {% endif %}
-                    <a href="/todos" {% if request.path.startswith('/todos') %}class="active"{% endif %}>할 일{% if todo_badge %}<span class="nav-badge">{{ todo_badge }}</span>{% endif %}</a>
                     {% if P.get('consult',0) >= 3 %}
                     <a href="/consult/new" {% if request.path == '/consult/new' %}class="active"{% endif %}>새 상담</a>
                     {% endif %}
@@ -71,6 +70,24 @@
                 <button type="button" class="calc-modal-x" data-calc-close aria-label="닫기">✕</button>
             </div>
             <iframe id="calc-frame" title="기간 계산기" data-src="/tools/period-calc?embed=1"></iframe>
+        </div>
+    </div>
+
+    {# 내 할 일 — 어느 화면에서든 바로 열리는 팝업. 본문은 iframe(embed=1). #}
+    <button type="button" id="todo-fab" title="내 할 일 (Alt+T)">
+        <span class="todo-fab-icon">📝</span><span class="todo-fab-text">할 일</span>
+        {% if todo_badge %}<span class="todo-fab-badge">{{ todo_badge }}</span>{% endif %}
+    </button>
+    <div id="todo-modal" hidden>
+        <div class="calc-modal-backdrop" data-todo-close></div>
+        <div class="calc-modal-box" role="dialog" aria-modal="true" aria-label="내 할 일">
+            <div class="calc-modal-head">
+                <strong>내 할 일</strong>
+                <span class="muted-sm">{{ current_user.display_name }}님의 개인 할 일 · 나만 볼 수 있음</span>
+                <a class="calc-modal-full" href="/todos" target="_blank" rel="noopener">전체 화면 ↗</a>
+                <button type="button" class="calc-modal-x" data-todo-close aria-label="닫기">✕</button>
+            </div>
+            <iframe id="todo-frame" title="내 할 일" data-src="/todos?embed=1"></iframe>
         </div>
     </div>
     {% endif %}
@@ -148,6 +165,33 @@
         });
         document.addEventListener('keydown', onKey);
         // iframe 안에 포커스가 있을 때도 ESC로 닫히도록 (동일 출처라 접근 가능)
+        frame.addEventListener('load', function () {
+            try { frame.contentDocument.addEventListener('keydown', onKey); } catch (err) {}
+        });
+    })();
+    </script>
+    <script>
+    (function () {
+        const fab = document.getElementById('todo-fab');
+        const modal = document.getElementById('todo-modal');
+        const frame = document.getElementById('todo-frame');
+        if (!fab || !modal || !frame) return;
+        function open() {
+            // 열 때마다 최신 목록을 다시 로드 (다른 화면에서 추가했을 수 있으므로)
+            frame.src = frame.dataset.src;
+            modal.hidden = false;
+        }
+        function close() { modal.hidden = true; }
+        function onKey(e) {
+            if (e.key === 'Escape' && !modal.hidden) close();
+            // Alt+T — 어느 화면에서든 키보드로 바로 열기
+            if (e.altKey && (e.key === 't' || e.key === 'T')) { e.preventDefault(); open(); }
+        }
+        fab.addEventListener('click', open);
+        modal.addEventListener('click', function (e) {
+            if (e.target.closest('[data-todo-close]')) close();
+        });
+        document.addEventListener('keydown', onKey);
         frame.addEventListener('load', function () {
             try { frame.contentDocument.addEventListener('keydown', onKey); } catch (err) {}
         });

@@ -1644,8 +1644,10 @@ def todos_view():
         if day == date.today().isoformat() else []
     prev_day = (date.fromisoformat(day) - timedelta(days=1)).isoformat()
     next_day = (date.fromisoformat(day) + timedelta(days=1)).isoformat()
+    embed = request.args.get("embed") == "1"   # 팝업(iframe)용 — 헤더/네비 없이 본문만
     return render_template(
-        "todos.html", day=day, items=items, overdue=overdue,
+        "todos_embed.html" if embed else "todos.html",
+        day=day, items=items, overdue=overdue, embed=embed,
         prev_day=prev_day, next_day=next_day, today=date.today().isoformat(),
     )
 

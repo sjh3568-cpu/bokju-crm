@@ -666,6 +666,26 @@ body:not(.cc-sms) .ib-del { display: none !important; }
     padding: 0 5px; margin-left: 4px; border-radius: 9px; background: #ef4444; color: #fff;
     font-size: 0.68rem; font-weight: 700; text-align: center; vertical-align: top; }
 
+/* 할 일 플로팅 버튼(우측 하단, 기간 계산기 위에) + 팝업 */
+#todo-fab { position: fixed; right: 22px; bottom: 74px; z-index: 60;
+    display: flex; align-items: center; gap: 8px; padding: 12px 18px;
+    border: none; border-radius: 999px; cursor: pointer;
+    background: var(--accent); color: #fff; font-size: 0.95rem; font-weight: 600;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.22); }
+#todo-fab:hover { filter: brightness(1.08); box-shadow: 0 6px 18px rgba(0,0,0,0.28); }
+.todo-fab-icon { font-size: 1.1em; line-height: 1; }
+.todo-fab-badge { min-width: 18px; height: 18px; line-height: 18px; padding: 0 5px;
+    border-radius: 9px; background: #ef4444; color: #fff; font-size: 0.72rem;
+    font-weight: 700; text-align: center; }
+#todo-modal { position: fixed; inset: 0; z-index: 70; display: flex;
+    align-items: center; justify-content: center; padding: 20px; }
+#todo-modal[hidden] { display: none; }
+#todo-frame { flex: 1; width: 100%; min-height: 0; border: none; background: var(--bg, #f8fafc); }
+@media (max-width: 680px) {
+    #todo-fab { right: 14px; bottom: 66px; padding: 11px 14px; }
+    .todo-fab-text { display: none; }
+}
+
 /* 할 일(To-Do) */
 .todo-datebar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 .todo-datepick { margin: 0; }
