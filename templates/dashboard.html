@@ -354,6 +354,8 @@
     </a>
 </div>
 
+{{ action_queue_panel(action_queue) }}
+
 <section class="card dash-calendar-card" id="integrated-calendar">
     <div class="dash-calendar-head">
         <div>
@@ -378,8 +380,12 @@
             <tbody>
             {% for week in dashboard_calendar_weeks %}<tr>
                 {% for cell in week %}
-                <td class="{% if not cell.in_month %}other-month {% endif %}{% if cell.is_today %}today {% endif %}">
-                    <div class="dash-cal-day{% if cell.weekday == 0 %} sun{% elif cell.weekday == 6 %} sat{% endif %}">{{ cell.day }}</div>
+                <td class="{% if not cell.in_month %}other-month {% endif %}{% if cell.is_today %}today {% endif %}{% if cell.holiday %}holiday {% endif %}">
+                    <div class="dash-cal-dayrow">
+                        <span class="dash-cal-day{% if cell.is_holiday %} sun{% elif cell.weekday == 6 %} sat{% endif %}">{{ cell.day }}</span>
+                        {% if cell.lunar %}<span class="dash-cal-lunar">{{ cell.lunar }}</span>{% endif %}
+                    </div>
+                    {% if cell.holiday %}<div class="dash-cal-holiday" title="{{ cell.holiday }}">{{ cell.holiday }}</div>{% endif %}
                     <div class="dash-cal-events">
                     {% for event in cell.events %}
                         <a class="dash-cal-event {{ event.kind }}" href="{{ event.href }}" title="{{ event.meta }} · {{ event.title }}">
@@ -394,8 +400,6 @@
         </table>
     </div>
 </section>
-
-{{ action_queue_panel(action_queue) }}
 
 <div class="card" id="admission-schedule">
     <div class="dash-section-head">
@@ -892,6 +896,7 @@
 .weekly-report-table tbody th { background:#f8fafc; white-space:nowrap; }
 .weekly-report-table .total-row th,.weekly-report-table .total-row td { background:#fce4d6; font-weight:700; }
 @media (max-width:760px) { .weekly-compare-grid { grid-template-columns:1fr; } }
+.dash-calendar td{height:132px}.dash-calendar td.holiday{background:#fff7f7}.dash-calendar td.today{background:#ecfdf5}.dash-cal-dayrow{display:flex;align-items:baseline;gap:5px;min-height:18px}.dash-cal-day{margin-bottom:0}.dash-cal-lunar{color:#94a3b8;font-size:.65rem}.dash-cal-holiday{margin:0 0 3px;color:#dc2626;font-size:.66rem;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 </style>
 <script src="/static/js/html2canvas.min.js?v=1.4.1"></script>
 <script>

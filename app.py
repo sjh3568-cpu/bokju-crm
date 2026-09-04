@@ -1610,15 +1610,21 @@ def _dashboard_calendar_context(uid, year, month):
 
     order = {"admission": 0, "admitted": 0, "discharge": 1, "discharged": 1,
              "consult": 2, "shared": 3, "todo": 4}
+    kr_holidays = _kr_holidays(tuple(sorted({start.year, last.year})))
     weeks = []
     for w in range(6):
         week = []
         for d in days[w * 7:(w + 1) * 7]:
             events = sorted(buckets[d.isoformat()],
                             key=lambda x: (order.get(x["kind"], 9), x["time"], x["title"]))
+            holiday = kr_holidays.get(d)
+            weekday = (d.weekday() + 1) % 7
             week.append({"date": d.isoformat(), "day": d.day,
                          "in_month": d.month == month, "is_today": d == date.today(),
-                         "weekday": (d.weekday() + 1) % 7, "events": events})
+                         "weekday": weekday, "lunar": _lunar_label(d),
+                         "holiday": holiday,
+                         "is_holiday": bool(holiday) or weekday == 0,
+                         "events": events})
         weeks.append(week)
     prev_m = (first - timedelta(days=1)).replace(day=1)
     next_m = (first + timedelta(days=31)).replace(day=1)
