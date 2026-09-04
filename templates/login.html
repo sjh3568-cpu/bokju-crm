@@ -20,6 +20,11 @@
                 <input type="password" name="password" autocomplete="current-password" required
                        placeholder="비밀번호">
             </label>
+            <div class="login-options">
+                <label><input type="checkbox" id="remember-id"> 내 정보 기억</label>
+                <label><input type="checkbox" id="auto-login" name="auto_login" value="1"> 자동 로그인</label>
+            </div>
+            <p class="login-auto-note">자동 로그인은 이 브라우저에서 30일간 유지됩니다. 공용 PC에서는 사용하지 마세요.</p>
             <button type="submit" class="btn btn-primary login-submit">로그인</button>
         </form>
         <p class="login-note">
@@ -28,4 +33,27 @@
     </div>
     <p class="login-footnote">사내망 전용 · 환자 정보는 외부로 전송되지 않습니다.</p>
 </div>
+<script>
+(function(){
+    const form=document.querySelector('.login-form');
+    const username=form?.querySelector('[name="username"]');
+    const remember=document.getElementById('remember-id');
+    const auto=document.getElementById('auto-login');
+    if(!form||!username||!remember||!auto)return;
+    try{
+        const saved=localStorage.getItem('bokju_login_username');
+        if(saved){username.value=saved;remember.checked=true;}
+        auto.checked=localStorage.getItem('bokju_auto_login_choice')==='1';
+    }catch(e){}
+    auto.addEventListener('change',()=>{if(auto.checked)remember.checked=true;});
+    remember.addEventListener('change',()=>{if(!remember.checked)auto.checked=false;});
+    form.addEventListener('submit',()=>{
+        try{
+            if(remember.checked)localStorage.setItem('bokju_login_username',username.value.trim());
+            else localStorage.removeItem('bokju_login_username');
+            localStorage.setItem('bokju_auto_login_choice',auto.checked?'1':'0');
+        }catch(e){}
+    });
+})();
+</script>
 {% endblock %}

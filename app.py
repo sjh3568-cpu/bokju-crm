@@ -4,6 +4,7 @@
 규모가 커지면 Blueprint로 쪼갤 것 (현재는 cafe-helper 스타일 단일 파일).
 """
 import csv
+import hashlib
 import io
 import json
 import logging
@@ -17,6 +18,7 @@ from pathlib import Path
 from urllib.parse import urlencode, urlsplit
 
 from dotenv import load_dotenv
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from flask import (
     Flask, abort, flash, g, jsonify, redirect, render_template,
     request, send_file, session, url_for,
@@ -100,6 +102,9 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY") or secrets.token_hex(32)
 app.permanent_session_lifetime = timedelta(hours=int(os.getenv("SESSION_HOURS", "4")))
+_REMEMBER_COOKIE = "bokju_remember"
+_REMEMBER_DAYS = max(1, int(os.getenv("AUTO_LOGIN_DAYS", "30")))
+_remember_serializer = URLSafeTimedSerializer(app.secret_key, salt="bokju-auto-login-v1")
 
 _db_initialized = False
 # 다중 스레드(waitress) 환경에서 첫 요청 여러 건이 동시에 들어오면 init_db()가
@@ -135,6 +140,31 @@ def initialize():
 @app.before_request
 def _bootstrap():
     initialize()
+
+
+def _remember_fingerprint(user):
+    """비밀번호 변경 시 기존 자동 로그인 토큰이 즉시 무효화되도록 해시 일부를 묶는다."""
+    return hashlib.sha256((user.get("password_hash") or "").encode()).hexdigest()[:20]
+
+
+@app.before_request
+def _restore_remembered_login():
+    """4시간 세션이 끝난 뒤에도 유효한 자동 로그인 쿠키가 있으면 세션을 복원한다."""
+    if current_user() or request.path.startswith(("/logout", "/static/")):
+        return
+    token = request.cookies.get(_REMEMBER_COOKIE)
+    if not token:
+        return
+    try:
+        payload = _remember_serializer.loads(token, max_age=_REMEMBER_DAYS * 86400)
+        user = models.get_user_by_id(int(payload.get("uid") or 0))
+        if (not user or not user.get("active")
+                or payload.get("fp") != _remember_fingerprint(user)):
+            raise BadSignature("invalid remembered user")
+        login_user(user)
+        models.touch_user_login(user["id"])
+    except (BadSignature, SignatureExpired, TypeError, ValueError):
+        g.clear_remember_cookie = True
 
 
 # 인증·권한 판정에서 제외하는 경로 (로그인 전이거나 공용 도구)
@@ -263,6 +293,8 @@ def _no_store(resp):
     """
     resp.headers["Cache-Control"] = "no-store, private, must-revalidate"
     resp.headers["Pragma"] = "no-cache"
+    if getattr(g, "clear_remember_cookie", False):
+        resp.delete_cookie(_REMEMBER_COOKIE, path="/", samesite="Lax")
     return resp
 
 
@@ -1191,9 +1223,21 @@ def login_view():
         next_url = request.args.get("next") or request.form.get("next") or url_for("dashboard")
         if not _is_safe_next_url(next_url):
             next_url = url_for("dashboard")
-        if models.first_unread_required_announcement(user["id"], user.get("role", "staff")):
-            return redirect(url_for("notice_required", next=next_url))
-        return redirect(next_url)
+        destination = (url_for("notice_required", next=next_url)
+                       if models.first_unread_required_announcement(
+                           user["id"], user.get("role", "staff")) else next_url)
+        response = redirect(destination)
+        if request.form.get("auto_login") == "1":
+            token = _remember_serializer.dumps({
+                "uid": user["id"], "fp": _remember_fingerprint(user),
+            })
+            response.set_cookie(
+                _REMEMBER_COOKIE, token, max_age=_REMEMBER_DAYS * 86400,
+                httponly=True, secure=request.is_secure, samesite="Lax", path="/",
+            )
+        else:
+            response.delete_cookie(_REMEMBER_COOKIE, path="/", samesite="Lax")
+        return response
     if current_user():
         return redirect(url_for("dashboard"))
     return render_template("login.html")
@@ -1203,7 +1247,9 @@ def login_view():
 def logout_view():
     logout_user()
     flash("로그아웃되었습니다.", "info")
-    return redirect(url_for("login_view"))
+    response = redirect(url_for("login_view"))
+    response.delete_cookie(_REMEMBER_COOKIE, path="/", samesite="Lax")
+    return response
 
 
 # ───────────────────── 공지사항 ─────────────────────
