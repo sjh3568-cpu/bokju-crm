@@ -8,25 +8,36 @@
     <link rel="stylesheet" href="/static/css/style.css">
     {% block head_extra %}{% endblock %}
 </head>
-<body class="{% if current_user and current_user.role == 'viewer' %}role-viewer{% endif %}"{% block body_attrs %}{% endblock %}>
+{%- set P = current_user.perms if current_user else {} -%}
+<body class="{% if current_user %}{% if P.get('consult',0) >= 2 %}cw-consult {% endif %}{% if P.get('consult',0) >= 3 %}cc-consult {% endif %}{% if P.get('ward',0) >= 2 %}cw-ward {% endif %}{% if P.get('sms',0) >= 3 %}cc-sms {% endif %}{% endif %}"{% block body_attrs %}{% endblock %}>
     <header>
         <div class="container">
             <div class="header-inner">
                 <a href="/" class="logo">복주 상담실 CRM <small>인덕의료재단</small></a>
                 {% if current_user %}
                 <nav>
+                    {% if P.get('dashboard',0) >= 1 %}
                     <a href="/" {% if request.path == '/' %}class="active"{% endif %}>대시보드</a>
-                    {% if current_user.role != 'viewer' %}
+                    {% endif %}
+                    {% if P.get('consult',0) >= 3 %}
                     <a href="/consult/new" {% if request.path == '/consult/new' %}class="active"{% endif %}>새 상담</a>
                     {% endif %}
+                    {% if P.get('consult',0) >= 1 %}
                     <a href="/consultations" {% if request.path.startswith('/consultations') %}class="active"{% endif %}>상담 목록</a>
+                    {% endif %}
+                    {% if P.get('ward',0) >= 1 %}
                     <a href="/ward" {% if request.path.startswith('/ward') or request.path.startswith('/patients') %}class="active"{% endif %}>재원 관리</a>
-                    {% if current_user.role != 'viewer' %}
+                    {% endif %}
+                    {% if P.get('sms',0) >= 1 %}
                     <a href="/sms" {% if request.path.startswith('/sms') %}class="active"{% endif %}>문자</a>
                     {% endif %}
+                    {% if P.get('stats',0) >= 1 %}
                     <a href="/stats" {% if request.path.startswith('/stats') %}class="active"{% endif %}>통계</a>
+                    {% endif %}
+                    {% if P.get('report',0) >= 1 %}
                     <a href="/report/monthly" {% if request.path.startswith('/report') %}class="active"{% endif %}>월간보고서</a>
-                    {% if current_user.role == 'admin' %}
+                    {% endif %}
+                    {% if P.get('users',0) >= 2 %}
                     <a href="/admin/users" {% if request.path.startswith('/admin/users') %}class="active"{% endif %}>사용자 관리</a>
                     <a href="/admin/audit" {% if request.path.startswith('/admin/audit') %}class="active"{% endif %} title="누가 언제 무엇을 조회·입력·수정·삭제했는지">이력 관리</a>
                     {% endif %}

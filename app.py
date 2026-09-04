@@ -24,7 +24,7 @@ import backup
 import models
 from auth import (
     admin_required, authenticate, current_user, is_locked_out,
-    login_required, login_user, logout_user, writer_required,
+    login_required, login_user, logout_user, menu_level,
 )
 from config import (
     ACTIVITY_ACTIVE_OPTIONS, ACTIVITY_DIAPER_OPTIONS, ACTIVITY_OTHERS_OPTIONS,
@@ -41,6 +41,9 @@ from config import (
     HEARING_OPTIONS, INFO_PROVIDED_OPTIONS,
     COUNSELORS, DISEASES_LAYOUT, OTHERS_LAYOUT, ROOM_CAPACITY,
     ROLE_LABELS, SEED_USERS,
+    MENUS, MENU_KEYS, MENU_MAX_LEVEL, ROLE_PRESETS, role_preset,
+    PERM_HIDDEN, PERM_VIEW, PERM_EDIT, PERM_CREATE,
+    PERM_LEVELS, PERM_LEVEL_LABELS,
     INSURANCE_TYPES, OTHERS_CHECKLIST, REFERRAL_SOURCE_GROUPS, REFERRAL_TYPES,
     LIFECYCLE_STAGES, LIFECYCLE_EVENT_TYPES, LEGACY_STAGE_MAP, CARE_PHASES,
     SIDO_LIST, SIGUNGU_INDEX, SIGUNGU_LIST,
@@ -98,22 +101,105 @@ def _bootstrap():
     initialize()
 
 
-@app.before_request
-def _enforce_readonly_viewer():
-    """조회(viewer) 공통 계정은 로그아웃을 제외한 모든 쓰기 요청을 차단.
-    화면은 자유롭게 열람하되 등록·수정·발송·삭제는 전부 막는다 (읽기 전용).
+# 인증·권한 판정에서 제외하는 경로 (로그인 전이거나 공용 도구)
+_PERM_EXEMPT_PREFIXES = (
+    "/login", "/logout", "/healthz", "/static/", "/help",
+    "/tools/period-calc", "/period-calc",
+)
+
+# 신규 '등록'으로 취급하는 쓰기 경로 (그 외 쓰기는 '수정' 레벨로 판정)
+_CREATE_PATHS = (
+    "/api/consult",          # 새 상담 저장 (정확히 이 경로일 때만, 아래에서 검사)
+    "/api/sms/send",         # 문자 발송
+    "/api/sms/template",     # 문자 템플릿 추가/저장
+    "/api/communication",    # 커뮤니케이션(인바운드) 기록
+)
+
+
+def _route_requirement(path: str, method: str):
+    """요청 경로·메서드 → (menu_key, 필요_레벨). 판정 대상이 아니면 (None, 0).
+
+    경로 접두어로 메뉴를 정하고, 메서드·세부 경로로 필요 레벨을 정한다.
+      · GET 조회 화면 → 조회(1)
+      · 새 상담 폼/저장, 문자 발송, CSV 등 '신규 생성' → 등록(3)
+      · 상담 수정 폼, 상태 변경, 재원 액션 등 기존 변경 → 수정(2)
     """
-    if request.method in ("GET", "HEAD", "OPTIONS"):
-        return
+    for pref in _PERM_EXEMPT_PREFIXES:
+        if path == pref or path.startswith(pref):
+            return None, 0
+
+    is_write = method not in ("GET", "HEAD", "OPTIONS")
+
+    # ── 사용자 관리·이력 관리 (users 메뉴 수정↑) ──
+    if path.startswith("/admin/"):
+        return "users", PERM_EDIT
+
+    # ── 상담 ──
+    if (path == "/consultations.csv"):
+        return "consult", PERM_CREATE          # 내보내기 = 전체 권한
+    if path == "/consult/new":
+        return "consult", PERM_CREATE
+    if path.startswith("/consult/") and path.endswith("/edit"):
+        return "consult", PERM_EDIT
+    if path.startswith("/consultations") or path.startswith("/consult/") \
+            or path == "/consult" or path.startswith("/api/consult") \
+            or path.startswith("/api/quick-filters") or path.startswith("/api/autocomplete"):
+        # 재원 관련 상담 액션(입원확정·외진·퇴원)은 재원 메뉴로 분류
+        if any(seg in path for seg in ("/admit", "/discharge", "/admission-event")):
+            return "ward", (PERM_EDIT if is_write else PERM_VIEW)
+        if not is_write:
+            return "consult", PERM_VIEW
+        if path == "/api/consult":             # 신규 상담 저장
+            return "consult", PERM_CREATE
+        return "consult", PERM_EDIT
+
+    # ── 재원 관리 (환자·병동·생애주기·외진) ──
+    if path.startswith("/ward") or path.startswith("/patients") \
+            or path.startswith("/api/patient") or path.startswith("/api/admission-event") \
+            or path.startswith("/lifecycle"):
+        return "ward", (PERM_EDIT if is_write else PERM_VIEW)
+
+    # ── 문자 / 커뮤니케이션 ──
+    if path.startswith("/sms") or path.startswith("/api/sms") \
+            or path.startswith("/api/communication") or path.startswith("/api/webhook"):
+        if not is_write:
+            return "sms", PERM_VIEW
+        return "sms", PERM_CREATE               # 발송·템플릿·기록 = 생성
+
+    # ── 통계 ──
+    if path.startswith("/stats") or path.startswith("/api/stats"):
+        return "stats", PERM_VIEW
+
+    # ── 월간보고서 ──
+    if path.startswith("/report") or path.startswith("/api/report"):
+        return "report", PERM_VIEW
+
+    # ── 대시보드 (루트) ──
+    if path == "/" or path.startswith("/api/dashboard"):
+        return "dashboard", PERM_VIEW
+
+    return None, 0
+
+
+@app.before_request
+def _enforce_menu_permissions():
+    """계정별 메뉴 권한 매트릭스로 접근을 일괄 판정.
+    로그인 안 됐으면 통과(각 뷰의 login_required가 처리). 권한 부족 시 403(또는 안내 후 되돌림).
+    """
     user = current_user()
-    if not user or user.get("role") != "viewer":
+    if not user:
         return
-    if request.path == "/logout":
+    menu, required = _route_requirement(request.path, request.method)
+    if menu is None:
+        return
+    if menu_level(user, menu) >= required:
         return
     if request.path.startswith("/api/"):
         abort(403)
-    flash("조회 전용 계정은 이 작업을 수행할 수 없습니다.", "error")
-    return redirect(request.referrer or url_for("dashboard"))
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        flash("이 작업을 수행할 권한이 없습니다.", "error")
+        return redirect(request.referrer or url_for("dashboard"))
+    abort(403)
 
 
 @app.after_request
@@ -1164,11 +1250,37 @@ def admin_audit_export():
     )
 
 
+def _parse_perms_form(form):
+    """폼의 perm_<menu> 값 → {menu: level} (메뉴별 지원 최대 레벨로 클램프)."""
+    perms = {}
+    for k in MENU_KEYS:
+        try:
+            lvl = int(form.get(f"perm_{k}", 0))
+        except (TypeError, ValueError):
+            lvl = 0
+        perms[k] = max(0, min(MENU_MAX_LEVEL[k], lvl))
+    return perms
+
+
+def _count_user_managers(exclude_id=None):
+    """사용자 관리(users) 권한이 '수정' 이상인 활성 계정 수. 마지막 관리자 보호용."""
+    n = 0
+    for u in models.list_users():
+        if exclude_id is not None and u["id"] == exclude_id:
+            continue
+        if u["active"] and u["perms"].get("users", 0) >= PERM_EDIT:
+            n += 1
+    return n
+
+
 @app.route("/admin/users")
 @admin_required
 def admin_users():
     users = models.list_users()
-    return render_template("users.html", users=users)
+    return render_template(
+        "users.html", users=users, menus=MENUS, perm_labels=PERM_LEVEL_LABELS,
+        role_presets=ROLE_PRESETS, menu_max=MENU_MAX_LEVEL,
+    )
 
 
 @app.route("/admin/users/create", methods=["POST"])
@@ -1184,8 +1296,11 @@ def admin_users_create():
     if len(password) < _MIN_PW_LEN:
         flash(f"비밀번호는 최소 {_MIN_PW_LEN}자 이상이어야 합니다.", "error")
         return redirect(url_for("admin_users"))
+    # 권한: 폼에 perm_* 가 오면 그 값, 없으면 역할 프리셋
+    perms = _parse_perms_form(request.form) if any(
+        k.startswith("perm_") for k in request.form) else role_preset(role)
     try:
-        models.create_user(username, display_name, role, password)
+        models.create_user(username, display_name, role, password, permissions=perms)
     except ValueError as e:
         flash(str(e), "error")
         return redirect(url_for("admin_users"))
@@ -1207,15 +1322,18 @@ def admin_users_update(uid):
     if role not in _VALID_ROLES:
         flash("올바른 역할이 아닙니다.", "error")
         return redirect(url_for("admin_users"))
-    # 마지막 어드민의 역할을 강등하지 못하게
-    if target["role"] == "admin" and role != "admin" and models.count_active_admins() <= 1:
-        flash("마지막 어드민의 역할은 변경할 수 없습니다.", "error")
+    perms = _parse_perms_form(request.form)
+    # 사용자 관리 권한을 잃게 되는 변경이면, 다른 관리자가 최소 1명 남아야 함
+    if perms.get("users", 0) < PERM_EDIT and target["perms"].get("users", 0) >= PERM_EDIT \
+            and _count_user_managers(exclude_id=uid) < 1:
+        flash("사용자 관리 권한을 가진 계정이 최소 1개는 있어야 합니다.", "error")
         return redirect(url_for("admin_users"))
-    models.update_user(uid, display_name, role)
+    models.update_user(uid, display_name, role, permissions=perms)
     models.log_audit(user_id=g.user["id"], username=g.user["username"],
                      action="update_user", target_type="user", target_id=uid,
-                     detail=f"{target['username']} → {role}", ip=request.remote_addr)
-    flash("계정 정보를 저장했습니다.", "success")
+                     detail=f"{target['username']} → {role} perms={perms}",
+                     ip=request.remote_addr)
+    flash("계정 정보·권한을 저장했습니다.", "success")
     return redirect(url_for("admin_users"))
 
 
@@ -1247,8 +1365,9 @@ def admin_users_active(uid):
     if not activate and uid == g.user["id"]:
         flash("본인 계정은 비활성화할 수 없습니다.", "error")
         return redirect(url_for("admin_users"))
-    if not activate and target["role"] == "admin" and models.count_active_admins() <= 1:
-        flash("마지막 어드민은 비활성화할 수 없습니다.", "error")
+    if not activate and target["perms"].get("users", 0) >= PERM_EDIT \
+            and _count_user_managers(exclude_id=uid) < 1:
+        flash("사용자 관리 권한을 가진 계정이 최소 1개는 있어야 합니다.", "error")
         return redirect(url_for("admin_users"))
     models.set_user_active(uid, activate)
     models.log_audit(user_id=g.user["id"], username=g.user["username"],
@@ -1267,8 +1386,9 @@ def admin_users_delete(uid):
     if uid == g.user["id"]:
         flash("본인 계정은 삭제할 수 없습니다.", "error")
         return redirect(url_for("admin_users"))
-    if target["role"] == "admin" and models.count_active_admins() <= 1:
-        flash("마지막 어드민은 삭제할 수 없습니다.", "error")
+    if target["perms"].get("users", 0) >= PERM_EDIT \
+            and _count_user_managers(exclude_id=uid) < 1:
+        flash("사용자 관리 권한을 가진 계정이 최소 1개는 있어야 합니다.", "error")
         return redirect(url_for("admin_users"))
     models.delete_user(uid)
     models.log_audit(user_id=g.user["id"], username=g.user["username"],
@@ -1750,7 +1870,7 @@ def period_calc():
 
 
 @app.route("/consult/new")
-@writer_required
+@login_required
 def consult_new():
     # 인박스 미처리 인바운드에서 상담 등록을 시작한 경우 — communication 로드 후 prefill
     inbox_comm = None
@@ -1820,7 +1940,7 @@ def consult_detail(cid):
 
 
 @app.route("/consult/<int:cid>/edit")
-@writer_required
+@login_required
 def consult_edit(cid):
     c = models.get_consultation(cid)
     if not c:
@@ -2978,7 +3098,7 @@ def api_webhook_kakao():
 # ───────────────────── 문자 발송 (5번 요청) ─────────────────────
 
 @app.route("/sms")
-@writer_required
+@login_required
 def sms_compose():
     """문자 전송 — 최근 상담에서 보호자 선택 → 환자군 템플릿 → 발송."""
     recent = models.list_consultations(limit=200)
@@ -3006,7 +3126,7 @@ def sms_compose():
 
 
 @app.route("/sms/templates")
-@writer_required
+@login_required
 def sms_templates_view():
     return render_template(
         "sms_templates.html",

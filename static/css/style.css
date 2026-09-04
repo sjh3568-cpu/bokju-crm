@@ -570,44 +570,51 @@ fieldset.opt-box legend { white-space: nowrap; }
     margin: 20px 0 0; padding-top: 18px; border-top: 1px solid var(--border); }
 .login-footnote { font-size: 0.78rem; color: var(--text-light); text-align: center; margin: 0; }
 
-/* 조회(viewer) 전용 계정 — 쓰기 버튼 숨김. 백엔드(_enforce_readonly_viewer)가 실제 차단하고,
-   여기서는 UI에서 등록·수정·삭제·발송 컨트롤을 감춰 혼동을 없앤다. */
-.role-viewer a[href="/consult/new"],
-.role-viewer a[href$="/edit"],
-.role-viewer a[href^="/sms"],
-.role-viewer .pt-actions,
-.role-viewer .bulk-toolbar,
-.role-viewer #bulk-status-apply,
-.role-viewer #bulk-edit,
-.role-viewer #bulk-delete,
-.role-viewer #quick-filter-edit,
-.role-viewer #bl-save,
-.role-viewer #cm-add,
-.role-viewer .tl-del,
-.role-viewer .adm-status-btn,
-.role-viewer .discharge-interview-toggle,
-.role-viewer .recovery-call-toggle,
-.role-viewer .ib-callback-done,
-.role-viewer .ib-done,
-.role-viewer .ib-del,
-.role-viewer .status-tier,
-.role-viewer .status-savebar,
-.role-viewer .ae-add,
-.role-viewer .status-save,
-.role-viewer .ae-back,
-.role-viewer .ae-del,
-.role-viewer .rm-back-btn,
-.role-viewer .rm-away-btn,
-.role-viewer .rm-dis,
-.role-viewer .rm-move,
-.role-viewer .rm-room-save,
-.role-viewer .rm-back-cancel,
-.role-viewer .wd-away-btn,
-.role-viewer .wd-dis,
-.role-viewer .wd-back,
-.role-viewer .wd-af-save,
-.role-viewer .wd-af-cancel,
-.role-viewer .wd-ad-save { display: none !important; }
+/* 메뉴별 권한에 따른 쓰기 버튼 숨김. 백엔드(_enforce_menu_permissions)가 실제 차단하고,
+   여기서는 UI에서 권한 없는 등록·수정·삭제·발송 컨트롤을 감춰 혼동을 없앤다.
+   body 클래스: cc-consult(상담 등록) cw-consult(상담 수정) cw-ward(재원 수정) cc-sms(문자 발송). */
+
+/* 상담 '등록' 권한(3) 없을 때 숨김 */
+body:not(.cc-consult) a[href="/consult/new"],
+body:not(.cc-consult) a[href="/consultations.csv"],
+body:not(.cc-consult) #quick-filter-edit,
+/* 상담 '수정' 권한(2) 없을 때 숨김 */
+body:not(.cw-consult) a[href$="/edit"],
+body:not(.cw-consult) .status-tier,
+body:not(.cw-consult) .status-savebar,
+body:not(.cw-consult) .status-save,
+body:not(.cw-consult) .bulk-toolbar,
+body:not(.cw-consult) #bulk-status-apply,
+body:not(.cw-consult) #bulk-edit,
+body:not(.cw-consult) #bulk-delete,
+body:not(.cw-consult) .adm-status-btn,
+body:not(.cw-consult) .discharge-interview-toggle,
+body:not(.cw-consult) .recovery-call-toggle,
+/* 재원 '수정' 권한(2) 없을 때 숨김 */
+body:not(.cw-ward) .pt-actions,
+body:not(.cw-ward) #bl-save,
+body:not(.cw-ward) #cm-add,
+body:not(.cw-ward) .tl-del,
+body:not(.cw-ward) .ae-add,
+body:not(.cw-ward) .ae-back,
+body:not(.cw-ward) .ae-del,
+body:not(.cw-ward) .rm-back-btn,
+body:not(.cw-ward) .rm-away-btn,
+body:not(.cw-ward) .rm-dis,
+body:not(.cw-ward) .rm-move,
+body:not(.cw-ward) .rm-room-save,
+body:not(.cw-ward) .rm-back-cancel,
+body:not(.cw-ward) .wd-away-btn,
+body:not(.cw-ward) .wd-dis,
+body:not(.cw-ward) .wd-back,
+body:not(.cw-ward) .wd-af-save,
+body:not(.cw-ward) .wd-af-cancel,
+body:not(.cw-ward) .wd-ad-save,
+/* 문자 '발송' 권한(3) 없을 때 숨김 */
+body:not(.cc-sms) a[href^="/sms"],
+body:not(.cc-sms) .ib-callback-done,
+body:not(.cc-sms) .ib-done,
+body:not(.cc-sms) .ib-del { display: none !important; }
 
 /* Role chip (header) */
 .role-chip { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 8px;
@@ -624,15 +631,35 @@ fieldset.opt-box legend { white-space: nowrap; }
     color: var(--text-light); font-weight: 600; }
 .users-add-form input, .users-add-form select { padding: 8px 10px; border: 1px solid var(--border);
     border-radius: 7px; font-size: 0.92rem; }
-.users-tbl td { vertical-align: middle; }
-.users-tbl .cell-form { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
-.users-tbl .cell-form input[type=text] { padding: 6px 9px; border: 1px solid var(--border);
-    border-radius: 7px; font-size: 0.9em; max-width: 130px; }
-.users-tbl .cell-form select { padding: 6px 8px; border: 1px solid var(--border);
-    border-radius: 7px; font-size: 0.9em; }
-.users-tbl .user-actions { white-space: nowrap; }
-.users-tbl .user-actions .cell-form { margin-right: 6px; }
-.user-inactive { opacity: 0.55; }
+.cell-form { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
+.cell-form input[type=text] { padding: 6px 9px; border: 1px solid var(--border);
+    border-radius: 7px; font-size: 0.9em; max-width: 150px; }
+.user-inactive { opacity: 0.6; }
+
+/* 계정 카드 + 메뉴별 권한 매트릭스 */
+.role-chip-dark { background: #dcfce7; color: var(--primary); }
+.user-card { background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px; }
+.user-card-head { display: flex; justify-content: space-between; align-items: center;
+    flex-wrap: wrap; gap: 10px; padding-bottom: 10px; border-bottom: 1px dashed var(--border); }
+.uc-id { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.uc-id strong { font-size: 1.02rem; }
+.uc-login { font-size: 0.78rem; }
+.uc-ops { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.perm-form { margin-top: 12px; }
+.perm-topline { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; margin-bottom: 12px; }
+.perm-topline label { display: flex; flex-direction: column; gap: 5px; font-size: 0.78rem;
+    color: var(--text-light); font-weight: 600; }
+.perm-topline input, .perm-topline select { padding: 7px 9px; border: 1px solid var(--border);
+    border-radius: 7px; font-size: 0.92rem; }
+.perm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px; }
+.perm-cell { display: flex; flex-direction: column; gap: 5px; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 7px; padding: 8px 10px; }
+.perm-menu { font-size: 0.82rem; font-weight: 600; color: var(--text); }
+.perm-cell select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;
+    font-size: 0.9em; background: #fff; }
+.perm-savebar { margin-top: 12px; text-align: right; }
 
 /* Empty / Note */
 .empty { padding: 28px 12px; text-align: center; color: var(--text-light); }

@@ -20,8 +20,8 @@ from datetime import date, datetime, timedelta
 
 from werkzeug.security import generate_password_hash
 
-from config import (DIAGNOSIS_SEED, HOSPITAL_ALIASES, SOURCE_HOSPITAL_SEED,
-                    STAGE_STALE_DAYS)
+from config import (DIAGNOSIS_SEED, HOSPITAL_ALIASES, MENU_KEYS,
+                    SOURCE_HOSPITAL_SEED, STAGE_STALE_DAYS, role_preset)
 
 # DB 위치 — 기본은 코드 폴더 옆. 컨테이너 배포 시 BOKJU_DB_PATH로 마운트 볼륨을 가리킨다
 # (예: /data/bokju.db). SQLite WAL은 SMB/NFS에서 동작하지 않으므로 반드시 로컬 파일시스템.
@@ -518,6 +518,10 @@ def init_db():
         "updated_at": "DATETIME",
         "use_count": "INTEGER DEFAULT 0",  # 폼 저장 시 증가. 자동완성 정렬 가중치.
     })
+    # 사용자 메뉴별 세부 권한 — {menu_key: level} JSON. NULL이면 role 프리셋을 따른다.
+    _ensure_columns(conn, "users", {
+        "permissions": "TEXT",
+    })
     # 요양원(노인의료복지시설) 별도 마스터 — 보건복지부·국민건강보험공단 데이터.
     # 자동완성·정식명 강제는 병원과 동일 룰을 공유하지만 마스터는 분리.
     conn.execute("""
@@ -695,68 +699,95 @@ def replace_quick_filters(items):
 def ensure_admin_user(username: str, password: str, display_name: str | None = None):
     conn = get_db()
     pw_hash = generate_password_hash(password)
+    perms = json.dumps(role_preset("admin"))
     conn.execute(
         """
-        INSERT INTO users (username, display_name, password_hash, role)
-        VALUES (?, ?, ?, 'admin')
+        INSERT INTO users (username, display_name, password_hash, role, permissions)
+        VALUES (?, ?, ?, 'admin', ?)
         ON CONFLICT(username) DO UPDATE SET
             password_hash = excluded.password_hash,
             display_name = COALESCE(excluded.display_name, users.display_name),
+            permissions = excluded.permissions,
             active = 1
         """,
-        (username, display_name or username, pw_hash),
+        (username, display_name or username, pw_hash, perms),
     )
     conn.commit()
     conn.close()
 
 
+def _hydrate_user(row) -> dict:
+    """DB row → dict. permissions JSON을 파싱하고, 역할 프리셋 위에 덮어 '유효 권한'(perms)을 채운다.
+    - perms_raw: DB에 저장된 값(부분적일 수 있음)
+    - perms    : 모든 메뉴 키가 채워진 최종 판정용 매트릭스
+    """
+    u = dict(row)
+    raw = {}
+    if u.get("permissions"):
+        try:
+            parsed = json.loads(u["permissions"])
+            if isinstance(parsed, dict):
+                raw = {k: int(v) for k, v in parsed.items() if k in MENU_KEYS}
+        except (ValueError, TypeError):
+            raw = {}
+    eff = role_preset(u.get("role", "viewer"))
+    eff.update(raw)
+    u["perms_raw"] = raw
+    u["perms"] = {k: int(eff.get(k, 0)) for k in MENU_KEYS}
+    return u
+
+
 def ensure_seed_user(username: str, display_name: str, role: str, password: str):
-    """시드 계정을 없을 때만 생성. 이미 있으면 건드리지 않아 설정된 비번·역할이 보존된다."""
+    """시드 계정을 없을 때만 생성. 이미 있으면 건드리지 않아 설정된 비번·역할·권한이 보존된다."""
     conn = get_db()
     exists = conn.execute(
         "SELECT 1 FROM users WHERE username = ?", (username,)
     ).fetchone()
     if not exists:
         conn.execute(
-            "INSERT INTO users (username, display_name, password_hash, role) "
-            "VALUES (?, ?, ?, ?)",
-            (username, display_name, generate_password_hash(password), role),
+            "INSERT INTO users (username, display_name, password_hash, role, permissions) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (username, display_name, generate_password_hash(password), role,
+             json.dumps(role_preset(role))),
         )
         conn.commit()
     conn.close()
 
 
 def list_users():
-    """전체 계정 목록 (역할 서열 내림차순 → 이름 순)."""
+    """전체 계정 목록 (역할 서열 내림차순 → 이름 순). 각 항목에 유효 권한(perms) 포함."""
     conn = get_db()
     rows = conn.execute(
         """
         SELECT * FROM users
-        ORDER BY CASE role WHEN 'admin' THEN 3 WHEN 'manager' THEN 2 ELSE 1 END DESC,
+        ORDER BY CASE role WHEN 'admin' THEN 3 WHEN 'staff' THEN 2 ELSE 1 END DESC,
                  display_name COLLATE NOCASE
         """
     ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    return [_hydrate_user(r) for r in rows]
 
 
 def get_user_by_id(user_id: int):
     conn = get_db()
     row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     conn.close()
-    return dict(row) if row else None
+    return _hydrate_user(row) if row else None
 
 
-def create_user(username: str, display_name: str, role: str, password: str):
-    """새 계정 생성. 중복 아이디면 ValueError."""
+def create_user(username: str, display_name: str, role: str, password: str,
+                permissions: dict | None = None):
+    """새 계정 생성. 중복 아이디면 ValueError. 권한 미지정 시 역할 프리셋 사용."""
     conn = get_db()
     if conn.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone():
         conn.close()
         raise ValueError("이미 존재하는 아이디입니다.")
+    perms = permissions if permissions is not None else role_preset(role)
     conn.execute(
-        "INSERT INTO users (username, display_name, password_hash, role) "
-        "VALUES (?, ?, ?, ?)",
-        (username, display_name or username, generate_password_hash(password), role),
+        "INSERT INTO users (username, display_name, password_hash, role, permissions) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (username, display_name or username, generate_password_hash(password), role,
+         json.dumps(perms)),
     )
     conn.commit()
     conn.close()
@@ -772,12 +803,32 @@ def set_user_password(user_id: int, password: str):
     conn.close()
 
 
-def update_user(user_id: int, display_name: str, role: str):
+def set_user_permissions(user_id: int, permissions: dict):
+    """메뉴별 권한 매트릭스 저장 (MENU_KEYS만, 0~3으로 정규화)."""
+    clean = {k: max(0, min(3, int(permissions.get(k, 0)))) for k in MENU_KEYS}
     conn = get_db()
     conn.execute(
-        "UPDATE users SET display_name = ?, role = ? WHERE id = ?",
-        (display_name, role, user_id),
+        "UPDATE users SET permissions = ? WHERE id = ?",
+        (json.dumps(clean), user_id),
     )
+    conn.commit()
+    conn.close()
+
+
+def update_user(user_id: int, display_name: str, role: str,
+                permissions: dict | None = None):
+    conn = get_db()
+    if permissions is not None:
+        clean = {k: max(0, min(3, int(permissions.get(k, 0)))) for k in MENU_KEYS}
+        conn.execute(
+            "UPDATE users SET display_name = ?, role = ?, permissions = ? WHERE id = ?",
+            (display_name, role, json.dumps(clean), user_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE users SET display_name = ?, role = ? WHERE id = ?",
+            (display_name, role, user_id),
+        )
     conn.commit()
     conn.close()
 
@@ -814,7 +865,7 @@ def get_user(username: str):
         (username,),
     ).fetchone()
     conn.close()
-    return dict(row) if row else None
+    return _hydrate_user(row) if row else None
 
 
 def touch_user_login(user_id: int):

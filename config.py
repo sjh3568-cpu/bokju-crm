@@ -100,6 +100,7 @@ COUNSELORS = ["박세연", "권창영", "김미화", "신재희"]
 #   · admin  = 전권. 사용자 관리·CSV 내보내기·환자 병합·빠른필터 편집
 #   · staff  = 상담 입력·수정·조회 + 재원·문자 + 통계·월간보고서 (계정 관리는 불가)
 #   · viewer = 읽기 전용 공통 계정. 병동 등 타 부서용. 모든 등록·수정·발송 차단
+# 역할은 이제 '권한 프리셋'의 이름일 뿐 — 실제 접근은 users.permissions(메뉴별 레벨)로 판정.
 ROLE_LABELS = {"admin": "어드민", "staff": "상담사", "viewer": "조회"}
 
 # ─── 이력 관리(감사 로그) ───
@@ -171,6 +172,45 @@ AUDIT_CRITICAL_ACTIONS = {
     "create_user", "update_user", "delete_user", "reset_password",
     "toggle_user_active", "export_csv", "update_blacklist", "login_fail",
 }
+
+# 메뉴별 세부 권한 — 단계형 레벨 (상위가 하위 포함). 계정별로 설정.
+PERM_HIDDEN, PERM_VIEW, PERM_EDIT, PERM_CREATE = 0, 1, 2, 3
+PERM_LEVELS = [PERM_HIDDEN, PERM_VIEW, PERM_EDIT, PERM_CREATE]
+PERM_LEVEL_LABELS = {
+    PERM_HIDDEN: "미현시", PERM_VIEW: "조회", PERM_EDIT: "수정", PERM_CREATE: "등록",
+}
+
+# 권한을 매길 메뉴 — (key, label, 지원 최대 레벨). 조회 전용 메뉴는 최대 '조회'.
+MENUS = [
+    ("dashboard", "대시보드",  PERM_VIEW),
+    ("consult",   "상담",       PERM_CREATE),
+    ("ward",      "재원 관리",  PERM_EDIT),
+    ("sms",       "문자",       PERM_CREATE),
+    ("stats",     "통계",       PERM_VIEW),
+    ("report",    "월간보고서", PERM_VIEW),
+    ("users",     "사용자 관리", PERM_EDIT),
+]
+MENU_KEYS = [m[0] for m in MENUS]
+MENU_MAX_LEVEL = {k: mx for k, _, mx in MENUS}
+
+# 역할 프리셋 — 계정 생성/역할 변경 시 권한 매트릭스 기본값.
+ROLE_PRESETS = {
+    "admin":  {k: MENU_MAX_LEVEL[k] for k in MENU_KEYS},  # 모든 메뉴 최대 권한
+    "staff":  {
+        "dashboard": PERM_VIEW, "consult": PERM_CREATE, "ward": PERM_EDIT,
+        "sms": PERM_CREATE, "stats": PERM_VIEW, "report": PERM_VIEW, "users": PERM_HIDDEN,
+    },
+    "viewer": {
+        "dashboard": PERM_VIEW, "consult": PERM_VIEW, "ward": PERM_VIEW,
+        "sms": PERM_HIDDEN, "stats": PERM_VIEW, "report": PERM_VIEW, "users": PERM_HIDDEN,
+    },
+}
+
+
+def role_preset(role: str) -> dict:
+    """역할 프리셋 권한 매트릭스 (알 수 없는 역할이면 viewer 기준)."""
+    return dict(ROLE_PRESETS.get(role, ROLE_PRESETS["viewer"]))
+
 
 # 최초 부팅 시 없으면 자동 생성되는 계정 — (username, display_name, role).
 # 초기 비밀번호는 .env의 APP_PASSWORD. 이후 어드민이 '사용자 관리'에서 개별 변경.

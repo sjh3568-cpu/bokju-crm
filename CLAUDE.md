@@ -30,22 +30,27 @@ python serve.py            # 운영 — waitress, 0.0.0.0:8003 (NAS 컨테이너
 초기 비밀번호는 `.env`의 `APP_PASSWORD`, 이후 어드민이 `/admin/users`에서 개별 변경.
 `admin`은 비번 분실 대비 break-glass 계정 (매 부팅 시 `APP_PASSWORD`로 동기화).
 
-**역할 3단계** — viewer(조회) < staff(상담사) < admin(어드민):
-- **어드민**: 전권 (사용자 관리·CSV 내보내기·환자 병합·빠른필터 편집)
-- **상담사**: 상담 입력·수정·조회 + 재원·문자 + 통계·월간보고서 (계정 관리 불가)
-- **조회**: 읽기 전용 공통 계정 (병동 등 타 부서용). 대시보드·재원·상담·환자·통계·보고서
-  열람 O, 모든 등록·수정·발송·삭제는 차단.
-
-데코레이터: `auth.writer_required`(상담사↑, 쓰기 폼) / `auth.admin_required`(어드민 전용).
-조회 계정의 모든 쓰기는 `app._enforce_readonly_viewer`(before_request)에서 일괄 403.
-UI 쓰기 버튼은 `<body class="role-viewer">` + style.css의 `.role-viewer …{display:none}`로 숨김.
+**권한 — 계정별 메뉴 권한 매트릭스** (`users.permissions` JSON = `{menu: level}`):
+- 단계형 레벨: **미현시(0) < 조회(1) < 수정(2) < 등록(3)**, 상위가 하위 포함 (`config.PERM_*`).
+- 메뉴 7종 (`config.MENUS`): 대시보드·상담·재원 관리·문자·통계·월간보고서·사용자 관리.
+  조회 전용 메뉴(대시보드·통계·월간보고서)는 최대 레벨이 '조회'.
+- **역할**(admin/staff/viewer)은 이제 '권한 프리셋' 이름일 뿐 (`config.ROLE_PRESETS`) —
+  계정 생성/역할 변경 시 매트릭스 기본값을 채우고, 이후 `사용자 관리` 화면에서 메뉴별로 조정.
+  기존 계정은 `permissions`가 비어 있으면 역할 프리셋으로 자동 판정(`models._hydrate_user`).
+- **판정**: `app._route_requirement(path, method)`가 경로→메뉴→필요레벨을 정하고,
+  `app._enforce_menu_permissions`(before_request)가 일괄 차단(API 403 / 화면 403·되돌림).
+  세부 라우트 방어로 `auth.admin_required`(=users 메뉴 수정↑)도 병용.
+- **UI 숨김**: `<body>`에 `cc-consult/cw-consult/cw-ward/cc-sms` 클래스를 권한에 따라 부여,
+  style.css의 `body:not(.…) 셀렉터{display:none}`로 권한 없는 쓰기 버튼을 감춘다.
+- `admin` break-glass 계정은 항상 전권(프리셋 admin) 고정, 화면에서 편집 불가.
+- 안전장치: 사용자 관리 권한(users≥수정) 계정은 최소 1개 유지 (마지막 1개 삭제·강등·비활성 금지).
 
 ## 구조
 
 ```
 app.py             Flask 진입점, 모든 라우트, API
 models.py          SQLite 스키마 + 마이그레이션 (_ensure_columns) + JSON 직렬화
-auth.py            인증 + @login_required / @writer_required / @admin_required (역할 3단계)
+auth.py            인증 + @login_required / @menu_required / @admin_required (계정별 메뉴 권한)
 config.py          상수 (보험·시도/시군구·병명 LAYOUT·입원경로 등)
 templates/         base.html, login, dashboard, consult_form/list/detail, patient_detail, error
 static/css/        style.css (Pretendard, 4 그룹 박스, dx-stretch 등)
@@ -64,8 +69,8 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
 | 경로 | 동작 |
 |---|---|
 | `GET /login` `POST /login` | 인증 |
-| `GET /admin/users` (+ create/update/password/active/delete POST) | **사용자 관리** (어드민 전용) — 계정 추가·비번·역할·활성/삭제 |
-| `GET /admin/audit` `GET /admin/audit/export` | **이력 관리** (어드민 전용) — audit_log 열람·필터·CSV. 누가 언제 무엇을 조회/입력/수정/삭제했는지 |
+| `GET /admin/users` (+ create/update/password/active/delete POST) | **사용자 관리** (users 메뉴 수정↑) — 계정 추가·비번·역할·**메뉴별 권한**·활성/삭제 |
+| `GET /admin/audit` `GET /admin/audit/export` | **이력 관리** (users 메뉴 수정↑) — audit_log 열람·필터·CSV. 누가 언제 무엇을 조회/입력/수정/삭제했는지 |
 | `GET /` | 대시보드 (이번달 카드 + 오늘 등록 + 7일 추이) |
 | `GET /consult/new` `POST /api/consult` | 상담일지 등록 |
 | `GET /consult/<id>` `GET /consult/<id>/edit` `POST /api/consult/<id>` | 상세 / 수정 |
