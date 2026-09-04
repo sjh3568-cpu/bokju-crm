@@ -2333,7 +2333,11 @@ def api_krpg_search():
         page = max(int(request.args.get("page") or 1), 1)
     except (TypeError, ValueError):
         page = 1
-    page_size = 100
+    try:
+        requested_page_size = int(request.args.get("page_size") or 30)
+    except (TypeError, ValueError):
+        requested_page_size = 30
+    page_size = requested_page_size if requested_page_size in (30, 50, 100, 200) else 30
     if scope not in ("business", "all", "changes"):
         scope = "business"
     normalized = _normalize_kcd(query)
