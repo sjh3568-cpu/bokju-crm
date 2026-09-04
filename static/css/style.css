@@ -36,8 +36,12 @@ header { background:linear-gradient(100deg,#14532d 0%,#0f5f36 100%); color:white
 .logo { color:white; text-decoration:none; font-size:1.26em; font-weight:800; letter-spacing:-.025em; white-space:nowrap; flex:0 0 auto; }
 .logo small { font-size: 0.7em; font-weight: 400; opacity: 0.85; margin-left: 6px; }
 .main-nav { display:flex; gap:3px; align-items:center; justify-content:center; flex:1 1 auto; min-width:0; }
-.main-nav a { display:inline-flex; align-items:center; min-height:34px; padding:6px 9px; border:1px solid transparent; border-radius:7px; color:rgba(255,255,255,.82); text-decoration:none; font-size:.86em; font-weight:550; white-space:nowrap; transition:background .15s,color .15s,border-color .15s; }
-.main-nav a:hover { color:#fff; background:rgba(255,255,255,.1); }
+.main-nav a { display:inline-flex; align-items:center; min-height:34px; padding:6px 9px; border:1px solid transparent; border-radius:7px; color:rgba(255,255,255,.82); text-decoration:none; font-size:.86em; font-weight:550; white-space:nowrap; position:relative; overflow:hidden; transition:background .15s,color .15s,border-color .15s,transform .15s; }
+.main-nav a::after { content:""; position:absolute; top:-60%; left:-55%; width:30%; height:220%; background:linear-gradient(90deg,transparent,rgba(255,255,255,.48),transparent); transform:skewX(-18deg); opacity:0; pointer-events:none; }
+.main-nav a:hover { color:#fff; background:rgba(255,255,255,.12); transform:translateY(-1px); }
+.main-nav a:hover::after { opacity:1; animation:nav-glint .48s ease-out; }
+@keyframes nav-glint { from{left:-55%} to{left:130%} }
+@media(prefers-reduced-motion:reduce){.main-nav a{transition:none}.main-nav a:hover{transform:none}.main-nav a:hover::after{animation:none;opacity:0}}
 .main-nav a.active { color:#fff; background:rgba(255,255,255,.16); border-color:rgba(255,255,255,.22); font-weight:750; }
 .main-nav .nav-create { margin:0 3px; background:#fff; color:var(--primary); border-color:#fff; font-weight:800; box-shadow:0 2px 7px rgba(0,0,0,.12); }
 .main-nav .nav-create:hover,.main-nav .nav-create.active { background:#f0fdf4; color:#0f4a29; border-color:#bbf7d0; }

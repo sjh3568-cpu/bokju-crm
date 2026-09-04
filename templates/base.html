@@ -75,7 +75,7 @@
 
     {# 내 할 일 — 어느 화면에서든 바로 열리는 팝업. 본문은 iframe(embed=1). #}
     <button type="button" id="todo-fab" title="내 할 일 (Alt+T)">
-        <span class="todo-fab-icon">📝</span><span class="todo-fab-text">할 일</span>
+        <span class="todo-fab-icon">📝</span><span class="todo-fab-text">To-DO List</span>
         {% if todo_badge %}<span class="todo-fab-badge">{{ todo_badge }}</span>{% endif %}
     </button>
     <div id="todo-modal" hidden>
@@ -152,8 +152,15 @@
     .calc-modal-x { background:none; border:none; font-size:1.05rem; cursor:pointer;
         color:var(--text-light); padding:2px 4px; }
     #calc-frame { flex:1; width:100%; min-height:0; border:none; background:var(--bg, #f8fafc); }
-    #krpg-fab,#todo-fab,#calc-fab { width:178px; height:48px; padding:0 16px;
-        justify-content:flex-start; gap:9px; font-size:.9rem; font-weight:750; }
+    #krpg-fab,#todo-fab,#calc-fab { width:148px; height:46px; padding:0 12px;
+        justify-content:flex-start; gap:7px; font-size:.84rem; font-weight:750;
+        opacity:.8; backdrop-filter:blur(5px); -webkit-backdrop-filter:blur(5px);
+        border:1px solid rgba(255,255,255,.28); box-shadow:0 4px 14px rgba(15,23,42,.16); }
+    #krpg-fab { background:linear-gradient(120deg,rgba(29,78,216,.86),rgba(59,130,246,.68)); }
+    #todo-fab { background:linear-gradient(120deg,rgba(37,99,235,.86),rgba(96,165,250,.68)); }
+    #calc-fab { background:linear-gradient(120deg,rgba(20,83,45,.88),rgba(22,163,74,.7)); }
+    #krpg-fab:hover,#todo-fab:hover,#calc-fab:hover { opacity:1; transform:translateX(-2px);
+        filter:none; box-shadow:0 7px 19px rgba(15,23,42,.24); }
     #calc-fab { bottom:22px; }
     #todo-fab { bottom:78px; }
     #krpg-fab { bottom:134px; }
