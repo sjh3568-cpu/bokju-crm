@@ -1724,19 +1724,30 @@ def _dashboard_calendar_context(uid, year, month, counselor=None):
 @login_required
 def dashboard():
     today_d = date.today()
-    admission_date = _valid_date(request.args.get("admission_date"), today_d.isoformat())
-    admission_d = date.fromisoformat(admission_date)
+    legacy_admission_date = request.args.get("admission_date")
+    admission_from = _valid_date(
+        request.args.get("admission_from") or legacy_admission_date, today_d.isoformat())
+    admission_to = _valid_date(
+        request.args.get("admission_to") or legacy_admission_date, admission_from)
+    if admission_from > admission_to:
+        admission_from, admission_to = admission_to, admission_from
     admission_weekdays = "월화수목금토일"
-    data = models.dashboard_summary(admission_date)
+    def admission_date_label(value):
+        parsed = date.fromisoformat(value)
+        return parsed.strftime("%Y.%m.%d") + f"({admission_weekdays[parsed.weekday()]})"
+    data = models.dashboard_summary(admission_from, admission_to)
     data.update({
-        "admission_lookup_date": admission_date,
-        "admission_lookup_label": admission_d.strftime("%Y.%m.%d")
-                                  + f"({admission_weekdays[admission_d.weekday()]})",
+        "admission_lookup_from": admission_from,
+        "admission_lookup_to": admission_to,
+        "admission_lookup_label": (admission_date_label(admission_from)
+                                   if admission_from == admission_to else
+                                   f"{admission_date_label(admission_from)} ~ {admission_date_label(admission_to)}"),
         "admission_quick_dates": [
-            {"label": "오늘", "date": today_d.isoformat()},
-            {"label": "어제", "date": (today_d - timedelta(days=1)).isoformat()},
-            {"label": "그저께", "date": (today_d - timedelta(days=2)).isoformat()},
-            {"label": "1주일 전", "date": (today_d - timedelta(days=7)).isoformat()},
+            {"label": "오늘", "from": today_d.isoformat(), "to": today_d.isoformat()},
+            {"label": "어제", "from": (today_d - timedelta(days=1)).isoformat(), "to": (today_d - timedelta(days=1)).isoformat()},
+            {"label": "그저께", "from": (today_d - timedelta(days=2)).isoformat(), "to": (today_d - timedelta(days=2)).isoformat()},
+            {"label": "최근 7일", "from": (today_d - timedelta(days=6)).isoformat(), "to": today_d.isoformat()},
+            {"label": "최근 30일", "from": (today_d - timedelta(days=29)).isoformat(), "to": today_d.isoformat()},
         ],
     })
     open_comms = models.inbox_open_communications()

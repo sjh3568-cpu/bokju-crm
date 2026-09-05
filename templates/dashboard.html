@@ -424,13 +424,15 @@
     <div class="dash-admission-datebar">
         <div class="dash-admission-quick" aria-label="입원일 빠른 조회">
             {% for quick in admission_quick_dates %}
-            <a href="/?admission_date={{ quick.date }}#admission-schedule"
-               class="{% if admission_lookup_date == quick.date %}active{% endif %}">{{ quick.label }}</a>
+            <a href="/?admission_from={{ quick.from }}&admission_to={{ quick.to }}#admission-schedule"
+               class="{% if admission_lookup_from == quick.from and admission_lookup_to == quick.to %}active{% endif %}">{{ quick.label }}</a>
             {% endfor %}
         </div>
         <form method="get" action="/" class="dash-admission-date-form">
-            <label for="admission-date">날짜 직접 선택</label>
-            <input type="date" id="admission-date" name="admission_date" value="{{ admission_lookup_date }}">
+            <label for="admission-from">기간 직접 선택</label>
+            <input type="date" id="admission-from" name="admission_from" value="{{ admission_lookup_from }}">
+            <span class="dash-date-sep">~</span>
+            <input type="date" id="admission-to" name="admission_to" value="{{ admission_lookup_to }}">
             <button type="submit" class="btn btn-secondary btn-sm">조회</button>
         </form>
     </div>
@@ -777,6 +779,7 @@
 .dash-admission-date-form label { color:var(--text-light); font-size:.76em; font-weight:700; white-space:nowrap; }
 .dash-admission-date-form input { padding:6px 8px; border:1px solid var(--border); border-radius:7px;
     background:#fff; color:var(--text); font:inherit; font-size:.82em; }
+.dash-date-sep{color:var(--text-light);font-size:.8em}
 @media(max-width:760px){.dash-admission-datebar{align-items:flex-start;flex-direction:column}.dash-admission-date-form{width:100%}.dash-admission-date-form input{flex:1}}
 .dash-filter-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:4px 0 10px; }
 .dash-status-tabs, .dash-view-tabs, .dash-consult-tabs, .dash-discharge-tabs,
@@ -940,6 +943,7 @@
 .dash-calendar td{height:132px}.dash-calendar td.holiday{background:#fff7f7}.dash-calendar td.today{background:#ecfdf5}.dash-cal-dayrow{display:flex;align-items:baseline;gap:5px;min-height:18px}.dash-cal-day{margin-bottom:0}.dash-cal-lunar{color:#94a3b8;font-size:.65rem}.dash-cal-holiday{margin:0 0 3px;color:#dc2626;font-size:.66rem;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dash-calendar-card{padding:0;overflow:hidden;border-color:#d8e3dc;box-shadow:0 4px 18px rgba(15,82,45,.06)}.dash-calendar-head{margin:0;padding:15px 17px;background:linear-gradient(105deg,#fff 0%,#f4faf6 100%)}.dash-calendar-head p{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.dash-calendar-month-chip{padding:2px 7px;border-radius:999px;background:#dcfce7;color:#166534;font-size:.78em;font-weight:800}.dash-calendar-toggle{display:inline-flex;align-items:center;gap:8px;min-width:154px;justify-content:center;padding:9px 13px;border:1px solid #b7d4c1;border-radius:999px;background:rgba(255,255,255,.9);color:var(--primary);font:inherit;font-size:.82rem;font-weight:800;cursor:pointer;box-shadow:0 3px 10px rgba(20,83,45,.09);transition:background .18s,box-shadow .18s,transform .18s}.dash-calendar-toggle:hover{background:#ecfdf5;box-shadow:0 5px 14px rgba(20,83,45,.16);transform:translateY(-1px)}.dash-toggle-icon{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--primary);color:#fff;font-size:1.15rem;line-height:1;transition:transform .22s}.dash-calendar-toggle[aria-expanded=true] .dash-toggle-icon{transform:rotate(180deg)}.dash-calendar-body{padding:0 16px 16px;border-top:1px solid #e6eee9}.dash-calendar-body[hidden]{display:none}.dash-calendar-topline{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:10px}.dash-calendar-topline .dash-calendar-legend{margin:0}@media(max-width:700px){.dash-calendar-head{flex-direction:row;align-items:center}.dash-calendar-head p{display:none}.dash-calendar-toggle{min-width:132px}.dash-calendar-topline{align-items:flex-start;flex-direction:column}.dash-calendar-nav{justify-content:flex-start}}
 .dash-calendar td[data-date]{cursor:pointer;transition:background-color .15s,box-shadow .15s}.dash-calendar td[data-date]:hover{background:#f3faf5;box-shadow:inset 0 0 0 1px #86b99a}.dash-cal-add{appearance:none;border:0;background:transparent;padding:1px 4px;border-radius:5px;font-family:inherit;font-weight:800;color:inherit;cursor:pointer}.dash-cal-add:hover,.dash-cal-add:focus-visible{background:#dff4e6;outline:2px solid #79ad8b;outline-offset:1px}
+.dash-cal-event,.dash-cal-event.admitted,.dash-cal-event.discharged{min-width:0;max-width:100%;height:21px;box-sizing:border-box;white-space:nowrap;overflow:hidden}.dash-cal-event>*{min-width:0}.dash-cal-event.admitted span,.dash-cal-event.discharged span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 </style>
 <script src="/static/js/html2canvas.min.js?v=1.4.1"></script>
 <script>

@@ -2765,19 +2765,25 @@ def dashboard_calendar_rows(first_day: str, last_day: str, counselor: str | None
     conn.close()
     return [dict(r) for r in rows]
 
-def dashboard_summary(admission_lookup_date: str | None = None):
+def dashboard_summary(admission_lookup_from: str | None = None,
+                      admission_lookup_to: str | None = None):
     """양식 기반 통계 — 상담 건수와 입원예정일 등록 건수."""
     conn = get_db()
     now = datetime.now()
     ym = now.strftime("%Y-%m")
     today = now.strftime("%Y-%m-%d")
     today_d = now.date()
-    admission_lookup_date = admission_lookup_date or today
+    admission_lookup_from = admission_lookup_from or today
+    admission_lookup_to = admission_lookup_to or admission_lookup_from
     try:
-        admission_lookup_d = datetime.strptime(admission_lookup_date, "%Y-%m-%d").date()
+        admission_lookup_from_d = datetime.strptime(admission_lookup_from, "%Y-%m-%d").date()
+        admission_lookup_to_d = datetime.strptime(admission_lookup_to, "%Y-%m-%d").date()
     except (TypeError, ValueError):
-        admission_lookup_d = today_d
-        admission_lookup_date = today
+        admission_lookup_from_d = admission_lookup_to_d = today_d
+        admission_lookup_from = admission_lookup_to = today
+    if admission_lookup_from_d > admission_lookup_to_d:
+        admission_lookup_from_d, admission_lookup_to_d = admission_lookup_to_d, admission_lookup_from_d
+        admission_lookup_from, admission_lookup_to = admission_lookup_to, admission_lookup_from
     admission_window_days = 15
     week_until_d = today_d + timedelta(days=admission_window_days)
     week_until = week_until_d.isoformat()
@@ -2847,7 +2853,8 @@ def dashboard_summary(admission_lookup_date: str | None = None):
                 OR date(NULLIF(c.actual_admission_date, '')) BETWEEN date(?) AND date(?)
                 OR date(NULLIF(c.admission_date, '')) BETWEEN date(?) AND date(?)))
                OR date(COALESCE(NULLIF(c.actual_admission_date, ''),
-                                NULLIF(c.admission_date, ''))) = date(?))
+                                NULLIF(c.admission_date, '')))
+                  BETWEEN date(?) AND date(?))
         ORDER BY date(COALESCE(
                    CASE WHEN c.admission_status = '입원완료' THEN NULLIF(c.actual_admission_date, '') END,
                    CASE WHEN c.admission_status = '입원완료' THEN NULLIF(c.admission_date, '') END,
@@ -2859,7 +2866,7 @@ def dashboard_summary(admission_lookup_date: str | None = None):
                  c.id
         """,
         (today, week_until, today, week_until, today, week_until,
-         admission_lookup_date),
+         admission_lookup_from, admission_lookup_to),
     ).fetchall()
 
     hold_rows = conn.execute(
@@ -3082,7 +3089,8 @@ def dashboard_summary(admission_lookup_date: str | None = None):
 
     def _in_admission_window(value):
         d = _date_value(value)
-        return bool(d and (today_d <= d <= week_until_d or d == admission_lookup_d))
+        return bool(d and (today_d <= d <= week_until_d
+                           or admission_lookup_from_d <= d <= admission_lookup_to_d))
 
     def _consult_disease_labels(item):
         labels = []
@@ -3237,8 +3245,9 @@ def dashboard_summary(admission_lookup_date: str | None = None):
     }
     admission_selected = [
         row for row in admission_schedule
-        if row.get("admission_display_date") == admission_lookup_date
-        and (admission_lookup_d >= today_d or row.get("admission_bucket") == "completed")
+        if admission_lookup_from <= (row.get("admission_display_date") or "") <= admission_lookup_to
+        and (_date_value(row.get("admission_display_date")) >= today_d
+             or row.get("admission_bucket") == "completed")
     ]
     admission_selected_groups = {
         "counselor": _group_admissions(admission_selected, "counselor"),
