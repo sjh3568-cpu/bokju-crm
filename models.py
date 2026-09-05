@@ -600,6 +600,8 @@ def init_db():
         "dday": "INTEGER DEFAULT 0",
         "start_time": "TEXT",
         "end_time": "TEXT",
+        "patient_id": "INTEGER",     # 연결된 환자(선택) — 상담/환자 화면에서 만든 할 일
+        "patient_name": "TEXT",      # 표시용 스냅샷 (조회 시 JOIN 없이 바로 사용)
     })
     conn.execute("""
         CREATE TABLE IF NOT EXISTS todo_shares (
@@ -1271,9 +1273,10 @@ def _clamp_progress(v):
 def create_todo(user_id: int, title: str, due_date: str, *, note: str = "",
                 remind_at: str | None = None, end_date: str | None = None,
                 progress: int = 0, dday: bool = False,
-                start_time: str | None = None, end_time: str | None = None) -> int:
+                start_time: str | None = None, end_time: str | None = None,
+                patient_id: int | None = None, patient_name: str | None = None) -> int:
     """due_date=시작일(기간 시작), end_date=종료일(선택). start_time/end_time='HH:MM'(선택).
-    progress 0~100(100=완료)."""
+    progress 0~100(100=완료). patient_id/patient_name = 연결 환자(선택)."""
     conn = get_db()
     nxt = conn.execute(
         "SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM todos WHERE user_id = ? AND due_date = ?",
@@ -1283,17 +1286,30 @@ def create_todo(user_id: int, title: str, due_date: str, *, note: str = "",
     done = 1 if progress >= 100 else 0
     cur = conn.execute(
         "INSERT INTO todos (user_id, due_date, end_date, start_time, end_time, title, note, "
-        "remind_at, progress, dday, done, done_at, sort_order) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "remind_at, progress, dday, done, done_at, sort_order, patient_id, patient_name) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (user_id, due_date, end_date or None, start_time or None, end_time or None,
          title, note or None, remind_at or None,
          progress, 1 if dday else 0, done,
-         datetime.now().isoformat(timespec="seconds") if done else None, nxt),
+         datetime.now().isoformat(timespec="seconds") if done else None, nxt,
+         patient_id or None, patient_name or None),
     )
     conn.commit()
     tid = cur.lastrowid
     conn.close()
     return tid
+
+
+def list_todos_for_patient(user_id: int, patient_id: int):
+    """특정 환자에 연결된 내 할 일 (최근 시작일 순)."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM todos WHERE user_id = ? AND patient_id = ? "
+        "ORDER BY done ASC, due_date DESC, (start_time IS NULL) ASC, start_time ASC, id DESC",
+        (user_id, patient_id),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 def get_todo(todo_id: int, user_id: int):
@@ -2628,26 +2644,35 @@ def _ensure_master_entry(hospital: str | None, diagnosis: str | None):
 
 # ─── 대시보드 ───
 
-def dashboard_calendar_rows(first_day: str, last_day: str):
-    """대시보드 통합 달력용 상담·입원·퇴원 관련 날짜 자료."""
+def dashboard_calendar_rows(first_day: str, last_day: str, counselor: str | None = None):
+    """대시보드 통합 달력용 상담·입원·퇴원 관련 날짜 자료.
+    counselor 지정 시 해당 상담사 담당 건만 (내 담당만 보기)."""
     conn = get_db()
+    where_dates = (
+        "(date(c.consult_date) BETWEEN date(?) AND date(?)"
+        " OR date(NULLIF(c.planned_admission_date,'')) BETWEEN date(?) AND date(?)"
+        " OR date(NULLIF(c.actual_admission_date,'')) BETWEEN date(?) AND date(?)"
+        " OR date(NULLIF(c.admission_date,'')) BETWEEN date(?) AND date(?)"
+        " OR date(NULLIF(c.discharge_due_date,'')) BETWEEN date(?) AND date(?)"
+        " OR date(NULLIF(c.discharge_date,'')) BETWEEN date(?) AND date(?))"
+    )
+    params = list((first_day, last_day) * 6)
+    counselor_sql = ""
+    if counselor:
+        counselor_sql = " AND c.counselor = ?"
+        params.append(counselor)
     rows = conn.execute(
-        """
+        f"""
         SELECT c.id, c.consult_date, c.consult_time, c.counselor,
                c.admission_status, c.planned_admission_date, c.planned_admission_time,
                c.actual_admission_date, c.admission_date,
                c.discharge_due_date, c.discharge_date,
                p.name AS patient_name
         FROM consultations c JOIN patients p ON p.id=c.patient_id
-        WHERE date(c.consult_date) BETWEEN date(?) AND date(?)
-           OR date(NULLIF(c.planned_admission_date,'')) BETWEEN date(?) AND date(?)
-           OR date(NULLIF(c.actual_admission_date,'')) BETWEEN date(?) AND date(?)
-           OR date(NULLIF(c.admission_date,'')) BETWEEN date(?) AND date(?)
-           OR date(NULLIF(c.discharge_due_date,'')) BETWEEN date(?) AND date(?)
-           OR date(NULLIF(c.discharge_date,'')) BETWEEN date(?) AND date(?)
+        WHERE {where_dates}{counselor_sql}
         ORDER BY c.consult_date, c.consult_time, c.id
         """,
-        (first_day, last_day) * 6,
+        params,
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]

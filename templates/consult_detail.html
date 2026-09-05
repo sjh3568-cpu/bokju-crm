@@ -424,6 +424,34 @@ tr.ae-open { background:#fff7ed; }
     </dl>
 </div>
 
+{# 이 환자 관련 내 할 일 — 재연락·서류·보호자 콜 등을 환자와 연결해 바로 등록 #}
+<div class="card pt-todo-card" id="pt-todo" data-pid="{{ c.patient_id }}" data-pname="{{ c.patient_name }}">
+    <h3>이 환자 할 일 <small class="muted">나만 보이는 개인 할 일</small></h3>
+    <form class="pt-todo-add" autocomplete="off">
+        <input type="text" name="title" placeholder="예) 보호자 재연락, 입원서류 확인" required class="pt-todo-title">
+        <input type="date" name="due_date" value="{{ today_str }}" title="날짜">
+        <input type="time" name="start_time" title="시간(선택)">
+        <button type="submit" class="btn btn-primary btn-sm">추가</button>
+    </form>
+    <ul class="pt-todo-list">
+        {% for t in patient_todos %}
+        <li class="pt-todo-item{% if t.done %} done{% endif %}" data-id="{{ t.id }}">
+            <button type="button" class="todo-check{% if t.done %} checked{% endif %}" data-toggle title="완료 토글">{% if t.done %}✓{% endif %}</button>
+            <span class="pt-todo-main">
+                <span class="pt-todo-date">{{ t.due_date|krdate_short_wd }}{% if t.start_time %} {{ t.start_time }}{% endif %}</span>
+                <span class="pt-todo-t">{{ t.title }}</span>
+                {% if t.dday_label %}<span class="todo-ddaybadge">{{ t.dday_label }}</span>{% endif %}
+                {% if t.progress and not t.done %}<span class="todo-progtag">{{ t.progress }}%</span>{% endif %}
+            </span>
+            <button type="button" class="btn btn-secondary btn-xs" data-del title="삭제">✕</button>
+        </li>
+        {% else %}
+        <li class="pt-todo-empty muted">아직 이 환자와 연결된 할 일이 없습니다.</li>
+        {% endfor %}
+    </ul>
+    <p class="note" style="margin-top:6px">추가한 할 일은 <a href="/todos?view=calendar" target="_blank" rel="noopener">내 할 일 달력</a>에도 함께 표시됩니다.</p>
+</div>
+
 <div class="card">
     <h3>환자 상태</h3>
     <dl class="kv">
@@ -509,4 +537,39 @@ tr.ae-open { background:#fff7ed; }
 </div>
 {% endif %}
 
+<script>
+(function () {
+    var card = document.getElementById('pt-todo');
+    if (!card) return;
+    var pid = card.dataset.pid, pname = card.dataset.pname;
+    function post(url, body) {
+        return fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+            credentials:'same-origin', body:JSON.stringify(body||{})})
+            .then(function(r){ return r.json().catch(function(){return {};}).then(function(d){
+                if(!r.ok) throw new Error(d.error||('오류 '+r.status)); return d; }); });
+    }
+    function fail(e){ alert(e.message||'처리 중 오류'); }
+    var form = card.querySelector('.pt-todo-add');
+    if (form) form.addEventListener('submit', function(e){
+        e.preventDefault();
+        var title=form.title.value.trim(); if(!title) return;
+        post('/api/todos', {title:title, due_date:form.due_date.value,
+            start_time:form.start_time.value||'', patient_id:pid, patient_name:pname})
+            .then(function(){ location.reload(); }).catch(fail);
+    });
+    card.querySelectorAll('.pt-todo-item').forEach(function(li){
+        var id=li.dataset.id;
+        var chk=li.querySelector('[data-toggle]');
+        if(chk) chk.addEventListener('click', function(){
+            var done=!li.classList.contains('done');
+            post('/api/todos/'+id+'/toggle', {done:done?'1':'0'}).then(function(){location.reload();}).catch(fail);
+        });
+        var del=li.querySelector('[data-del]');
+        if(del) del.addEventListener('click', function(){
+            if(!confirm('이 할 일을 삭제할까요?')) return;
+            post('/api/todos/'+id+'/delete', {}).then(function(){location.reload();}).catch(fail);
+        });
+    });
+})();
+</script>
 {% endblock %}

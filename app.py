@@ -1645,8 +1645,9 @@ def admin_users_delete(uid):
 
 # ───────────────────── 메인 ─────────────────────
 
-def _dashboard_calendar_context(uid, year, month):
-    """상담·입퇴원 일정과 개인/공유 ToDo를 합친 월간 달력."""
+def _dashboard_calendar_context(uid, year, month, counselor=None):
+    """상담·입퇴원 일정과 개인/공유 ToDo를 합친 월간 달력.
+    counselor 지정 시 상담·입퇴원 일정은 그 상담사 담당 건만 (내 담당만 보기)."""
     first = date(year, month, 1)
     start = first - timedelta(days=(first.weekday() + 1) % 7)
     days = [start + timedelta(days=i) for i in range(42)]
@@ -1660,7 +1661,7 @@ def _dashboard_calendar_context(uid, year, month):
         buckets[key].append({"kind": kind, "title": title, "meta": meta,
                              "href": href, "time": (time or "")[:5]})
 
-    for row in models.dashboard_calendar_rows(start.isoformat(), last.isoformat()):
+    for row in models.dashboard_calendar_rows(start.isoformat(), last.isoformat(), counselor):
         name = row.get("patient_name") or "환자 미지정"
         href = f"/consult/{row['id']}"
         add(row.get("consult_date"), "consult", name,
@@ -1715,7 +1716,8 @@ def _dashboard_calendar_context(uid, year, month):
     return {"dashboard_calendar_weeks": weeks, "cal_year": year, "cal_month": month,
             "cal_label": f"{year}.{month:02d}",
             "cal_prev_year": prev_m.year, "cal_prev_month": prev_m.month,
-            "cal_next_year": next_m.year, "cal_next_month": next_m.month}
+            "cal_next_year": next_m.year, "cal_next_month": next_m.month,
+            "cal_mine": bool(counselor)}
 
 @app.route("/")
 @login_required
@@ -1809,7 +1811,10 @@ def dashboard():
         date(cal_year, cal_month, 1)
     except (TypeError, ValueError):
         cal_year, cal_month = date.today().year, date.today().month
-    data.update(_dashboard_calendar_context(g.user["id"], cal_year, cal_month))
+    # 통합 달력 '내 담당만/전체' — 기본 내 담당만. cal_mine=0이면 전체.
+    cal_mine = request.args.get("cal_mine", "1") != "0"
+    cal_counselor = g.user.get("display_name") if cal_mine else None
+    data.update(_dashboard_calendar_context(g.user["id"], cal_year, cal_month, cal_counselor))
     return render_template("dashboard.html", **data)
 
 
@@ -1953,6 +1958,15 @@ def api_todo_create():
     end = _valid_date(data.get("end_date"))
     if end and end < day:          # 종료일이 시작일보다 앞서면 무시
         end = None
+    # 환자 연결(선택) — 상담/환자 화면에서 만든 경우. patient_name은 표시용 스냅샷.
+    try:
+        pid = int(data.get("patient_id")) if data.get("patient_id") else None
+    except (TypeError, ValueError):
+        pid = None
+    pname = (data.get("patient_name") or "").strip() or None
+    if pid and not pname:
+        pat = models.get_patient(pid)
+        pname = pat.get("name") if pat else None
     tid = models.create_todo(
         g.user["id"], title, day,
         end_date=end,
@@ -1962,6 +1976,7 @@ def api_todo_create():
         remind_at=(data.get("remind_at") or "").strip() or None,
         progress=data.get("progress") or 0,
         dday=str(data.get("dday", "")) in ("1", "true", "True", "on"),
+        patient_id=pid, patient_name=pname,
     )
     models.sync_todo_shares(tid, g.user["id"], data.get("share_user_ids") or [])
     return jsonify({"ok": True, "id": tid})
@@ -2576,8 +2591,11 @@ def consult_detail(cid):
         ip=request.remote_addr,
     )
     history = models.patient_consultations(c["patient_id"])
+    patient_todos = _annotate_todos(
+        models.list_todos_for_patient(g.user["id"], c["patient_id"]), date.today())
     return render_template("consult_detail.html", c=c, history=history,
                            admission_events=models.list_admission_events(cid),
+                           patient_todos=patient_todos, today_str=date.today().isoformat(),
                            LIFECYCLE_EVENT_TYPES=LIFECYCLE_EVENT_TYPES)
 
 
