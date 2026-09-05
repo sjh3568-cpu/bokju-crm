@@ -89,20 +89,7 @@
 
 <div class="page-header wd-head">
     <h1>재원 관리 <span class="muted" style="font-size:0.62em">{{ kpis.admitted }}명 재원</span></h1>
-    <form class="wd-search" method="get" action="/ward">
-        <input type="text" name="q" value="{{ q }}" class="wd-q"
-               placeholder="🔍 환자명 · 호실 · 연락처" autocomplete="off">
-        {% if doctor %}<input type="hidden" name="doctor" value="{{ doctor }}">{% endif %}
-        {% if q %}<a href="/ward" class="wd-q-clear" title="검색 지우기">✕</a>{% endif %}
-    </form>
     <div class="wd-head-act">
-        <select class="wd-sel" onchange="location.href=this.value">
-            <option value="/ward{% if q %}?q={{ q|urlencode }}{% endif %}" {% if not doctor %}selected{% endif %}>전체 주치의</option>
-            {% for d in doctor_options %}
-            <option value="/ward?doctor={{ d|urlencode }}{% if q %}&q={{ q|urlencode }}{% endif %}"
-                    {% if doctor == d %}selected{% endif %}>{{ d }}</option>
-            {% endfor %}
-        </select>
         <a class="btn btn-primary btn-sm" href="/consult/new">+ 새 상담일지</a>
     </div>
 </div>
@@ -116,8 +103,8 @@
 <section class="card wd-overview wd-trend-page">
     <div class="wd-sec-head"><h3>📈 회복기 환자 비율 추이</h3><span class="muted-sm">재원 환자 기준 · 유지 기준선 40%</span></div>
     <div class="wd-trend-grid">
-        <div><strong>최근 30일 · 일별</strong><svg class="wd-ratio-chart" data-series='{{ daily_ratio_trend|tojson }}' viewBox="0 0 620 190" role="img" aria-label="일별 회복기 환자 비율"></svg></div>
-        <div><strong>최근 12개월 · 월별</strong><svg class="wd-ratio-chart" data-series='{{ monthly_ratio_trend|tojson }}' viewBox="0 0 620 190" role="img" aria-label="월별 회복기 환자 비율"></svg></div>
+        <div><strong>최근 30일 · 일별</strong><svg class="wd-ratio-chart" data-series='{{ daily_ratio_trend|tojson }}' viewBox="0 0 1000 260" role="img" aria-label="일별 회복기 환자 비율"></svg></div>
+        <div><strong>최근 12개월 · 월별</strong><svg class="wd-ratio-chart" data-series='{{ monthly_ratio_trend|tojson }}' viewBox="0 0 1000 260" role="img" aria-label="월별 회복기 환자 비율"></svg></div>
     </div>
 </section>
 {% else %}
@@ -129,13 +116,13 @@
         <span class="wd-k-n">{{ kpis.admitted }}</span>
         <span class="wd-k-l">🏥 총 입원 환자</span>
     </a>
-    <a class="wd-k wd-k-mix" href="/ward?tab=trend">
-        <span class="wd-k-split"><b>{{ kpis.recovery }}<small>명 · {{ kpis.recovery_ratio }}%</small></b><b>{{ kpis.nonrecovery }}<small>명 · {{ kpis.nonrecovery_ratio }}%</small></b></span>
-        <span class="wd-k-l"><i class="rec"></i>회복기 <small>S005</small> · <i class="non"></i>비회복기 <small>S006</small></span>
-    </a>
     <a class="wd-k accent" href="#sec-ward" title="허가병상 {{ kpis.bed_capacity }}병상 기준">
         <span class="wd-k-n">{{ kpis.bed_occupancy }}<small>%</small></span>
         <span class="wd-k-l">병상 가동률 · {{ kpis.admitted }}/{{ kpis.bed_capacity }}병상</span>
+    </a>
+    <a class="wd-k wd-k-mix" href="/ward?tab=trend">
+        <span class="wd-k-split"><b>{{ kpis.recovery }}<small>명 · {{ kpis.recovery_ratio }}%</small></b><b>{{ kpis.nonrecovery }}<small>명 · {{ kpis.nonrecovery_ratio }}%</small></b></span>
+        <span class="wd-k-l"><i class="rec"></i>회복기 <small>S005</small> · <i class="non"></i>비회복기 <small>S006</small></span>
     </a>
     <a class="wd-k {% if kpis.recovery_ratio_ok %}ok{% else %}danger{% endif %} {% if filt == 'recovery' %}on{% endif %}"
        href="/ward?filt=recovery{{ _dq }}#sec-ward" title="재활의료기관 유지 기준: 회복기 40% 이상 — 클릭 시 회복기 명단">
@@ -146,18 +133,25 @@
         <span class="wd-k-n">{{ kpis.away }}</span>
         <span class="wd-k-l">🚑 외진 중{% if kpis.away_overdue %} <b>지연 {{ kpis.away_overdue }}</b>{% endif %}</span>
     </a>
+    <a class="wd-k wd-k-notice {% if kpis.recovery_due_unchecked or kpis.discharge_due_unchecked %}warn{% else %}zero{% endif %}" href="/ward?filt=recdue#sec-ward">
+        <span class="wd-k-split"><b>{{ kpis.recovery_due }}<small>전환 · 미확인 {{ kpis.recovery_due_unchecked }}</small></b><b>{{ kpis.discharge_due_30 }}<small>퇴원 · 미확인 {{ kpis.discharge_due_unchecked }}</small></b></span>
+        <span class="wd-k-l">📣 회복기 종료·퇴원 안내 D-30</span>
+    </a>
 </div>
-{% if kpis.ext1 or kpis.ext2 or kpis.pending_recent %}
-<div class="wd-subkpi">
-    <span class="muted-sm">입원 연장:</span>
-    <a href="/ward?filt=ext1{{ _dq }}#sec-ward" class="wd-extchip t1 {% if filt == 'ext1' %}on{% endif %}">연장 1회 {{ kpis.ext1 }}</a>
-    <a href="/ward?filt=ext2{{ _dq }}#sec-ward" class="wd-extchip t2 {% if filt == 'ext2' %}on{% endif %}">연장 2회 {{ kpis.ext2 }}</a>
-    {% if kpis.pending_recent %}<a href="#sec-pending" class="wd-extchip pend">⚠ 입원일 미확정 {{ kpis.pending_recent }}</a>{% endif %}
-</div>
-{% endif %}
 
 {# ─── 병동 빠른 조회 + 필터 + 내보내기 ─── #}
 {% set _fq = [] %}
+<div class="wd-filter-panel">
+    <div class="wd-filter-title"><strong>재원환자 검색·필터</strong><span>조건을 선택하면 아래 명단이 자동으로 펼쳐집니다.</span></div>
+    <form class="wd-filter-search" method="get" action="/ward">
+        <input type="text" name="q" value="{{ q }}" class="wd-q" placeholder="🔍 환자명 · 호실 · 연락처" autocomplete="off">
+        <select class="wd-sel" name="doctor">
+            <option value="">전체 주치의</option>
+            {% for d in doctor_options %}<option value="{{ d }}" {% if doctor == d %}selected{% endif %}>{{ d }}</option>{% endfor %}
+        </select>
+        <button class="btn btn-primary btn-sm" type="submit">조회</button>
+        {% if q or doctor or any_filter %}<a class="btn btn-secondary btn-sm" href="/ward#sec-ward">초기화</a>{% endif %}
+    </form>
 <div class="wd-filterbar">
     <div class="wd-wards">
         <a href="/ward{% if doctor %}?doctor={{ doctor|urlencode }}{% endif %}#sec-ward" class="wd-wardbtn {% if not ward_f %}on{% endif %}">전체</a>
@@ -166,9 +160,14 @@
         {% endfor %}
     </div>
     <div class="wd-filter-extra">
+        <a href="/ward?filt=recovery{{ _dq }}#sec-ward" class="wd-extchip {% if filt == 'recovery' %}on{% endif %}">회복기 {{ kpis.recovery }}</a>
+        <a href="/ward?filt=nonrecovery{{ _dq }}#sec-ward" class="wd-extchip {% if filt == 'nonrecovery' %}on{% endif %}">비회복기 {{ kpis.nonrecovery }}</a>
         <a href="/ward?filt=recdue{{ _dq }}#sec-ward" class="wd-extchip {% if filt == 'recdue' %}on{% endif %}">⏱ 회복기 종료 D-30 {{ kpis.recovery_due }} <b>미확인 {{ kpis.recovery_due_unchecked }}</b></a>
         <a href="/ward?filt=dis30{{ _dq }}#sec-ward" class="wd-extchip {% if filt == 'dis30' %}on{% endif %}">🚪 퇴원 예정 D-30 {{ kpis.discharge_due_30 }} <b>미확인 {{ kpis.discharge_due_unchecked }}</b></a>
         <a href="/ward?organism=1{{ _dq }}#sec-ward" class="wd-extchip {% if organism_f %}on{% endif %}" style="border-color:#fca5a5;color:#b91c1c">🦠 균 환자</a>
+        <a href="/ward?filt=ext1{{ _dq }}#sec-ward" class="wd-extchip t1 {% if filt == 'ext1' %}on{% endif %}">연장 1회 {{ kpis.ext1 }}</a>
+        <a href="/ward?filt=ext2{{ _dq }}#sec-ward" class="wd-extchip t2 {% if filt == 'ext2' %}on{% endif %}">연장 2회 {{ kpis.ext2 }}</a>
+        {% if kpis.pending_recent %}<a href="#sec-pending" class="wd-extchip pend">입원일 미확정 {{ kpis.pending_recent }}</a>{% endif %}
         {% if tag_counts %}
         <select class="wd-sel wd-tagsel" onchange="if(this.value)location.href=this.value">
             <option value="">🏷 관리 태그…</option>
@@ -180,6 +179,7 @@
         <a href="/ward.csv?{% if ward_f %}ward={{ ward_f|urlencode }}&{% endif %}{% if filt %}filt={{ filt }}&{% endif %}{% if tag_f %}tag={{ tag_f|urlencode }}&{% endif %}{% if organism_f %}organism=1&{% endif %}{% if doctor %}doctor={{ doctor|urlencode }}{% endif %}"
            class="btn btn-secondary btn-sm">⬇ CSV 내보내기</a>
     </div>
+</div>
 </div>
 
 {# ─── ① 재원 환자 (KPI 카드 순서대로: 총입원·회복기·비회복기·비율 필터) ─── #}
@@ -496,7 +496,7 @@
 .wd-tabs a { padding:8px 14px; color:#64748b; text-decoration:none; font-size:.88em; font-weight:700; border-bottom:3px solid transparent; }
 .wd-tabs a:hover { color:var(--primary); }
 .wd-tabs a.on { color:var(--primary); border-bottom-color:var(--primary); }
-.wd-kpi { display:grid; grid-template-columns:repeat(5, 1fr); gap:8px; margin:10px 0 10px; }
+.wd-kpi { display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); gap:8px; margin:10px 0 14px; }
 @media(max-width:900px){ .wd-kpi{ grid-template-columns:repeat(4, 1fr); } }
 @media(max-width:560px){ .wd-kpi{ grid-template-columns:repeat(2, 1fr); } }
 .wd-k { display:flex; flex-direction:column; gap:2px; padding:10px 12px; background:#fff;
@@ -508,6 +508,7 @@
 .wd-k-split b { font-size:1.35em; line-height:1; }
 .wd-k-split small { display:block; margin-top:4px; font-size:.48em; color:#64748b; }
 .wd-k-split b + b { color:#b45309; border-left:1px solid #e2e8f0; padding-left:8px; }
+.wd-k-notice .wd-k-split b { font-size:1.18em; color:#9a3412; }
 .wd-k-l i { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:3px; }
 .wd-k-l i.rec { background:#14b8a6; } .wd-k-l i.non { background:#f59e0b; margin-left:3px; }
 .wd-k-l { font-size:0.76em; color:#475569; font-weight:600; white-space:nowrap;
@@ -552,7 +553,12 @@
 .rm-dx .wd-org { font-size:0.7em; }
 /* 병동 빠른 조회 + 필터 바 */
 .wd-filterbar { display:flex; align-items:center; justify-content:space-between; gap:12px;
-    flex-wrap:wrap; margin:0 0 12px; }
+    flex-wrap:wrap; margin:0; }
+.wd-filter-panel { margin:0 0 12px; padding:12px; border:1px solid var(--border); border-radius:10px; background:#fff; }
+.wd-filter-title { display:flex; align-items:baseline; gap:8px; margin-bottom:9px; }
+.wd-filter-title span { color:var(--text-light); font-size:.78em; }
+.wd-filter-search { display:grid; grid-template-columns:minmax(230px,1fr) 160px auto auto; gap:7px; margin-bottom:10px; }
+.wd-filter-search .wd-q { border-radius:7px; }
 .wd-wards { display:flex; gap:5px; flex-wrap:wrap; }
 .wd-wardbtn { padding:5px 11px; border:1px solid var(--border); border-radius:999px;
     background:#fff; color:#475569; text-decoration:none; font-size:0.85em; font-weight:700; }
@@ -582,10 +588,10 @@
 .wd-overview-grid { display:grid; grid-template-columns:minmax(0,2fr) minmax(260px,1fr); gap:12px; margin:12px 0; }
 .wd-overview { min-width:0; }
 .wd-trend-page { margin-top:8px; }
-.wd-trend-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.wd-trend-grid { display:grid; grid-template-columns:1fr; gap:16px; }
 .wd-trend-grid > div { min-width:0; padding:8px; border:1px solid #e2e8f0; border-radius:8px; background:#fbfdff; }
 .wd-trend-grid strong { display:block; font-size:.82em; color:#334155; margin:0 0 2px 5px; }
-.wd-ratio-chart { display:block; width:100%; height:auto; min-height:150px; overflow:visible; }
+.wd-ratio-chart { display:block; width:100%; height:270px; min-height:240px; overflow:visible; }
 .wd-due-grid { display:grid; gap:10px; align-content:start; }
 .wd-due-card { padding:0; overflow:hidden; }
 .wd-due-card > summary, .wd-discharged > summary { cursor:pointer; list-style:none; display:flex; justify-content:space-between;
@@ -683,10 +689,13 @@
 .wd-old { margin-top:10px; }
 .wd-old > summary { cursor:pointer; font-size:0.84em; color:var(--text-light); }
 @media (max-width: 1000px) {
-    .wd-kpi { grid-template-columns:repeat(2, 1fr); }
+    .wd-kpi { grid-template-columns:repeat(3, 1fr); }
     .wd-overview-grid { grid-template-columns:1fr; }
 }
-@media (max-width: 700px) { .wd-trend-grid { grid-template-columns:1fr; } }
+@media (max-width: 700px) {
+    .wd-kpi { grid-template-columns:repeat(2,1fr); }
+    .wd-filter-search { grid-template-columns:1fr 1fr; }
+}
 </style>
 
 <script src="/static/js/common.js"></script>
@@ -709,7 +718,7 @@
     document.querySelectorAll('.wd-ratio-chart').forEach(svg => {
         const data = JSON.parse(svg.dataset.series || '[]');
         if (!data.length) return;
-        const NS = 'http://www.w3.org/2000/svg', left=42, right=607, top=14, bottom=150;
+        const NS = 'http://www.w3.org/2000/svg', left=48, right=980, top=18, bottom=210;
         const x = i => data.length === 1 ? (left+right)/2 : left + (right-left)*i/(data.length-1);
         const y = v => bottom - (bottom-top)*Math.max(0,Math.min(100,v))/100;
         const el = (tag, attrs, value) => { const n=document.createElementNS(NS,tag); Object.entries(attrs||{}).forEach(([k,v])=>n.setAttribute(k,v)); if(value!==undefined)n.textContent=value; svg.appendChild(n); return n; };
@@ -723,7 +732,7 @@
             const dot=el('circle',{cx:x(i),cy:y(d.ratio),r:3.5,fill:'#fff',stroke:'#15803d','stroke-width':2});
             const title=document.createElementNS(NS,'title'); title.textContent=`${d.date}: ${d.ratio}% (${d.recovery}/${d.total}명)`; dot.appendChild(title);
             if (i%labelEvery===0 || i===data.length-1) {
-                el('text',{x:x(i),y:174,'text-anchor':'middle',fill:'#64748b','font-size':10},d.label);
+                el('text',{x:x(i),y:242,'text-anchor':'middle',fill:'#64748b','font-size':11},d.label);
                 el('text',{x:x(i),y:y(d.ratio)-7,'text-anchor':'middle',fill:'#166534','font-size':10,'font-weight':700},d.ratio+'%');
             }
         });
