@@ -4490,10 +4490,25 @@ def away_now(patient_ids=None):
     return out
 
 
-def patient_timeline(patient_id):
-    """환자의 모든 접점을 시간순(최신순)으로 병합 — 상담/문자/생애주기/커뮤니케이션."""
+def patient_timeline(patient_id, viewer_id=None):
+    """환자의 모든 접점을 시간순(최신순)으로 병합 — 상담/문자/생애주기/커뮤니케이션.
+    viewer_id 지정 시 그 사용자의 '완료된 이 환자 할 일'도 개인적으로 함께 표시(본인만)."""
     conn = get_db()
     items = []
+    if viewer_id:
+        for r in conn.execute(
+            "SELECT id, title, due_date, start_time, done_at FROM todos "
+            "WHERE user_id = ? AND patient_id = ? AND done = 1",
+            (viewer_id, patient_id)):
+            da = (r["done_at"] or "")
+            items.append({
+                "kind": "todo", "channel": "할 일", "direction": "",
+                "date": (da[:10] or r["due_date"] or ""),
+                "time": (da[11:16] if len(da) >= 16 else (r["start_time"] or "")),
+                "title": "✓ 완료 — " + (r["title"] or "할 일"),
+                "detail": "", "ref": None,
+                "del_kind": None, "del_id": None, "status": None,
+            })
     for r in conn.execute(
         "SELECT id, consult_date, consult_time, consult_channel, consult_result "
         "FROM consultations WHERE patient_id = ?", (patient_id,)):

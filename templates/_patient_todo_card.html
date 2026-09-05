@@ -9,22 +9,31 @@
         <input type="time" name="start_time" title="시간(선택)">
         <button type="submit" class="btn btn-primary btn-sm">추가</button>
     </form>
+    {% macro pt_item(t) -%}
+    <li class="pt-todo-item{% if t.done %} done{% endif %}" data-id="{{ t.id }}">
+        <button type="button" class="todo-check{% if t.done %} checked{% endif %}" data-toggle title="완료 토글">{% if t.done %}✓{% endif %}</button>
+        <span class="pt-todo-main">
+            <span class="pt-todo-date">{{ t.due_date|krdate_short_wd }}{% if t.start_time %} {{ t.start_time }}{% endif %}</span>
+            <span class="pt-todo-t">{{ t.title }}</span>
+            {% if t.dday_label %}<span class="todo-ddaybadge">{{ t.dday_label }}</span>{% endif %}
+            {% if t.progress and not t.done %}<span class="todo-progtag">{{ t.progress }}%</span>{% endif %}
+        </span>
+        <button type="button" class="btn btn-secondary btn-xs" data-del title="삭제">✕</button>
+    </li>
+    {%- endmacro %}
+    {% set pt_active = patient_todos|rejectattr('done')|list %}
+    {% set pt_done = patient_todos|selectattr('done')|list %}
     <ul class="pt-todo-list">
-        {% for t in patient_todos %}
-        <li class="pt-todo-item{% if t.done %} done{% endif %}" data-id="{{ t.id }}">
-            <button type="button" class="todo-check{% if t.done %} checked{% endif %}" data-toggle title="완료 토글">{% if t.done %}✓{% endif %}</button>
-            <span class="pt-todo-main">
-                <span class="pt-todo-date">{{ t.due_date|krdate_short_wd }}{% if t.start_time %} {{ t.start_time }}{% endif %}</span>
-                <span class="pt-todo-t">{{ t.title }}</span>
-                {% if t.dday_label %}<span class="todo-ddaybadge">{{ t.dday_label }}</span>{% endif %}
-                {% if t.progress and not t.done %}<span class="todo-progtag">{{ t.progress }}%</span>{% endif %}
-            </span>
-            <button type="button" class="btn btn-secondary btn-xs" data-del title="삭제">✕</button>
-        </li>
-        {% else %}
-        <li class="pt-todo-empty muted">아직 이 환자와 연결된 할 일이 없습니다.</li>
+        {% for t in pt_active %}{{ pt_item(t) }}{% else %}
+        {% if not pt_done %}<li class="pt-todo-empty muted">아직 이 환자와 연결된 할 일이 없습니다.</li>{% endif %}
         {% endfor %}
     </ul>
+    {% if pt_done %}
+    <details class="todo-done-fold">
+        <summary>완료 {{ pt_done|length }}건 보기</summary>
+        <ul class="pt-todo-list">{% for t in pt_done %}{{ pt_item(t) }}{% endfor %}</ul>
+    </details>
+    {% endif %}
     <p class="note" style="margin-top:6px">추가한 할 일은 <a href="/todos?view=calendar" target="_blank" rel="noopener">내 할 일 달력</a>에도 함께 표시됩니다.</p>
 </div>
 

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}환자 P{{ p.id }} — {{ p.name }}{% endblock %}
 {% block content %}
-{% set _kc = {'consult':'k-consult','sms':'k-sms','comm':'k-comm'} %}
+{% set _kc = {'consult':'k-consult','sms':'k-sms','comm':'k-comm','todo':'k-todo'} %}
 <div class="page-header">
     <h1>{{ p.name }} <span class="muted" style="font-size:0.62em">P{{ p.id }} · 환자 정보 · 접촉 이력</span></h1>
     <div style="display:flex; gap:8px">
@@ -47,6 +47,7 @@
             <span class="tl-badge {{ _kc.get(e.kind, 'k-comm') }}">
                 {%- if e.kind == 'consult' %}상담
                 {%- elif e.kind == 'sms' %}문자 ↗
+                {%- elif e.kind == 'todo' %}할 일 ✓
                 {%- else %}{{ e.channel }} {{ '↘' if e.direction == 'in' else '↗' }}{%- endif -%}
             </span>
             <span class="tl-date">{{ e.date }}{% if e.time %} {{ e.time }}{% endif %}</span>
@@ -137,6 +138,7 @@
 .k-consult { background:#dbeafe; color:#1e40af; }
 .k-sms { background:#dcfce7; color:#166534; }
 .k-comm { background:#fef3c7; color:#92400e; }
+.k-todo { background:#ecfeff; color:#0e7490; }
 .tl-date { font-size:0.8em; color:var(--text-light); font-feature-settings:"tnum"; }
 .tl-title { font-size:0.9em; font-weight:600; }
 .tl-title a { color:var(--primary); }

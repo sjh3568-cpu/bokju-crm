@@ -89,6 +89,27 @@ data-progress="{{ t.progress or 0 }}"
 data-dday="{{ t.dday or 0 }}" data-remind="{{ t.remind_at or '' }}" data-note="{{ t.note or '' }}"
 {%- endmacro %}
 
+{% macro todo_list_item(t) -%}
+<li class="todo-item{% if t.done %} todo-done{% endif %}" {{ todo_data(t) }}>
+    <button type="button" class="todo-check{% if t.done %} checked{% endif %}" data-toggle
+            title="{{ '완료 취소' if t.done else '완료 처리' }}">{% if t.done %}✓{% endif %}</button>
+    <div class="todo-body todo-openedit">
+        <span class="todo-title">{% if t.start_time %}<span class="todo-time">{{ t.start_time }}</span> {% endif %}{{ t.title }}{% if t.end_time %} <span class="todo-time">~{{ t.end_time }}</span>{% endif %}{% if not t.is_owner %} <span class="todo-shared-badge">{{ t.owner_name }}님 공유</span>{% endif %}</span>
+        <span class="todo-meta">
+            {% if t.patient_name %}<span class="todo-patient-badge">👤 {{ t.patient_name }}</span>{% endif %}
+            {% if t.end_date %}<span class="badge badge-confirmed">~ {{ t.end_date|krdate_short_wd }}</span>{% endif %}
+            {% if t.dday_label %}<span class="todo-ddaybadge">{{ t.dday_label }}</span>{% endif %}
+            {% if t.progress %}<span class="todo-progtag">{{ t.progress }}%</span>{% endif %}
+            {% if t.remind_at %}<span class="todo-remind">⏰ {{ t.remind_at.replace('T',' ')[:16] }}</span>{% endif %}
+            {% if t.note %}<span class="todo-note">{{ t.note }}</span>{% endif %}
+        </span>
+    </div>
+    <div class="todo-ops">
+        {% if t.is_owner %}<button type="button" class="btn btn-secondary btn-xs" data-del title="삭제">✕</button>{% endif %}
+    </div>
+</li>
+{%- endmacro %}
+
 {% if view == 'calendar' %}
 <div class="tbl-wrap">
 <table class="todo-cal">
@@ -154,32 +175,23 @@ data-dday="{{ t.dday or 0 }}" data-remind="{{ t.remind_at or '' }}" data-note="{
 </div>
 {% endif %}
 
+{% set day_active = items|rejectattr('done')|list %}
+{% set day_done = items|selectattr('done')|list %}
 <div class="card">
-    {% if items %}
+    {% if day_active %}
     <ul class="todo-list">
-        {% for t in items %}
-        <li class="todo-item{% if t.done %} todo-done{% endif %}" {{ todo_data(t) }}>
-            <button type="button" class="todo-check{% if t.done %} checked{% endif %}" data-toggle
-                    title="{{ '완료 취소' if t.done else '완료 처리' }}">{% if t.done %}✓{% endif %}</button>
-            <div class="todo-body todo-openedit">
-                <span class="todo-title">{% if t.start_time %}<span class="todo-time">{{ t.start_time }}</span> {% endif %}{{ t.title }}{% if t.end_time %} <span class="todo-time">~{{ t.end_time }}</span>{% endif %}{% if not t.is_owner %} <span class="todo-shared-badge">{{ t.owner_name }}님 공유</span>{% endif %}</span>
-                <span class="todo-meta">
-                    {% if t.patient_name %}<span class="todo-patient-badge">👤 {{ t.patient_name }}</span>{% endif %}
-                    {% if t.end_date %}<span class="badge badge-confirmed">~ {{ t.end_date|krdate_short_wd }}</span>{% endif %}
-                    {% if t.dday_label %}<span class="todo-ddaybadge">{{ t.dday_label }}</span>{% endif %}
-                    {% if t.progress %}<span class="todo-progtag">{{ t.progress }}%</span>{% endif %}
-                    {% if t.remind_at %}<span class="todo-remind">⏰ {{ t.remind_at.replace('T',' ')[:16] }}</span>{% endif %}
-                    {% if t.note %}<span class="todo-note">{{ t.note }}</span>{% endif %}
-                </span>
-            </div>
-            <div class="todo-ops">
-                {% if t.is_owner %}<button type="button" class="btn btn-secondary btn-xs" data-del title="삭제">✕</button>{% endif %}
-            </div>
-        </li>
-        {% endfor %}
+        {% for t in day_active %}{{ todo_list_item(t) }}{% endfor %}
     </ul>
-    {% else %}
+    {% elif not day_done %}
     <div class="empty">이 날짜에 등록된 할 일이 없습니다. ‘＋ 새 ToDo’로 추가하세요.</div>
+    {% endif %}
+    {% if day_done %}
+    <details class="todo-done-fold">
+        <summary>완료 {{ day_done|length }}건 보기</summary>
+        <ul class="todo-list">
+            {% for t in day_done %}{{ todo_list_item(t) }}{% endfor %}
+        </ul>
+    </details>
     {% endif %}
 </div>
 {% endif %}

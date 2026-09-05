@@ -859,6 +859,15 @@ body:not(.cc-sms) .ib-del { display: none !important; }
 .pt-todo-date { font-size: 0.8em; color: var(--text-light); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pt-todo-item.done .pt-todo-t { text-decoration: line-through; color: var(--text-light); }
 .pt-todo-empty { padding: 8px 2px; }
+
+/* 완료 항목 접기 (목록·환자카드 공용) */
+.todo-done-fold { margin-top: 6px; }
+.todo-done-fold > summary { cursor: pointer; list-style: none; font-size: 0.85rem;
+    color: var(--text-light); font-weight: 600; padding: 8px 2px; user-select: none; }
+.todo-done-fold > summary::-webkit-details-marker { display: none; }
+.todo-done-fold > summary::before { content: "▸ "; }
+.todo-done-fold[open] > summary::before { content: "▾ "; }
+.todo-done-fold > summary:hover { color: var(--primary); }
 .tc-prog { flex-shrink: 0; margin-left: auto; font-weight: 700; opacity: 0.75; }
 
 /* 드로어 날짜+시간 입력 */

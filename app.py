@@ -2795,7 +2795,8 @@ def patient_detail(pid):
         abort(404)
     history = models.patient_consultations(pid)
     # 구 생애주기 이벤트는 재원 관리 전환 후 화면에서 제외한다.
-    timeline = [e for e in models.patient_timeline(pid) if e.get("kind") != "lifecycle"]
+    timeline = [e for e in models.patient_timeline(pid, viewer_id=g.user["id"])
+                if e.get("kind") != "lifecycle"]
     models.log_audit(
         user_id=g.user["id"], username=g.user["username"],
         action="view_patient", target_type="patient", target_id=pid,
