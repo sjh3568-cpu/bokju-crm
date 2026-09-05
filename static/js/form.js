@@ -849,6 +849,7 @@
         const cancelRow = document.getElementById('status-reason-cancel');
         const completedRow = document.getElementById('status-extra-completed');
         const plannedRow = document.getElementById('status-extra-planned');
+        const waitingRow = document.getElementById('status-extra-waiting');
         const plannedDateEl = form.querySelector('input[name="consultation.planned_admission_date"]');
         function refresh(triggered) {
             const c = form.querySelector('input[name="consultation.admission_status"]:checked');
@@ -857,6 +858,7 @@
             if (cancelRow) cancelRow.hidden = (s !== '입원취소');
             if (completedRow) completedRow.hidden = (s !== '입원완료');
             if (plannedRow) plannedRow.hidden = (s !== '입원예정');
+            if (waitingRow) waitingRow.hidden = (s !== '입원대기');
             // 입원예정 선택 + 날짜 비어있음 → 헤더 입원예정일 칸 시각 강조
             if (plannedDateEl) {
                 const needFlash = (s === '입원예정' && !plannedDateEl.value);

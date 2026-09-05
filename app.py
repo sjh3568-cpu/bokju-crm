@@ -1158,6 +1158,7 @@ def _agefrom(birth_year):
 # 입원예정·입원보류→입원대기, 입원완료→입원, 퇴원완료→퇴원. 전진만 (수동 지정한
 # 더 앞선 단계는 되돌리지 않음). 퇴원은 종료 단계라 항상 적용.
 _STATUS_TO_STAGE = {
+    "입원대기": "입원대기",
     "입원예정": "입원대기",
     "입원보류": "입원대기",
     "입원완료": "입원",
@@ -3448,6 +3449,12 @@ def ward_view():
     # 퇴원 기록이 있으면 명부에서 빠진다
     rows = [c for c in rows if not (c.get("discharge_date") or "").strip()]
 
+    bed_waiting = models.list_consultations(admission_status="입원대기", limit=10000)
+    for c in bed_waiting:
+        c["wait_days"] = _days_since(c.get("consult_date"))
+        c.update(_split_diagnosis(c))
+    bed_waiting.sort(key=lambda c: (-(c.get("wait_days") or 0), c.get("patient_name") or ""))
+
     away_by_cid = {a["consultation_id"]: a for a in models.away_now()}
     admitted, pending = [], []
     for c in rows:
@@ -3556,6 +3563,7 @@ def ward_view():
         "pending": len(pending),
         "pending_recent": len(pending_recent),
         "unassigned": len(unassigned),
+        "bed_waiting": len(bed_waiting),
     }
     recovery_due_list = sorted(
         [c for c in admitted if c.get("recovery_due")],
@@ -3659,6 +3667,7 @@ def ward_view():
         daily_ratio_trend=daily_ratio_trend, monthly_ratio_trend=monthly_ratio_trend,
         discharged=discharged,
         subtab=subtab,
+        bed_waiting=bed_waiting,
     )
 
 
@@ -3901,11 +3910,13 @@ def api_consult_admit(cid):
         datetime.strptime(adate, "%Y-%m-%d")
     except ValueError:
         return jsonify({"error": "입원일 형식 오류 (YYYY-MM-DD)"}), 400
-    fields = {"actual_admission_date": adate}
+    fields = {"actual_admission_date": adate, "admission_date": adate,
+              "admission_status": "입원완료"}
     room = (payload.get("room_number") or "").strip()
     if room:
         fields["room_number"] = room
     models.update_consultation(cid, **fields)
+    _sync_lifecycle_stage(con["patient_id"], "입원완료")
     models.log_audit(
         user_id=g.user["id"], username=g.user["username"],
         action="confirm_admission", target_type="consultation", target_id=cid,

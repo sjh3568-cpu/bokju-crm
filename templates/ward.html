@@ -95,7 +95,8 @@
 </div>
 
 <nav class="wd-tabs" aria-label="재원관리 세부 메뉴">
-    <a href="/ward" class="{% if subtab != 'trend' %}on{% endif %}">재원 현황</a>
+    <a href="/ward" class="{% if subtab == 'status' %}on{% endif %}">재원 현황</a>
+    <a href="/ward?tab=waiting" class="{% if subtab == 'waiting' %}on{% endif %}">병상 대기 <b>{{ kpis.bed_waiting }}</b></a>
     <a href="/ward?tab=trend" class="{% if subtab == 'trend' %}on{% endif %}">회복기 비율 추이</a>
 </nav>
 
@@ -106,6 +107,20 @@
         <div><strong>최근 30일 · 일별</strong><svg class="wd-ratio-chart" data-series='{{ daily_ratio_trend|tojson }}' viewBox="0 0 1000 260" role="img" aria-label="일별 회복기 환자 비율"></svg></div>
         <div><strong>최근 12개월 · 월별</strong><svg class="wd-ratio-chart" data-series='{{ monthly_ratio_trend|tojson }}' viewBox="0 0 1000 260" role="img" aria-label="월별 회복기 환자 비율"></svg></div>
     </div>
+</section>
+{% elif subtab == 'waiting' %}
+<section class="card wd-sec wd-waiting">
+    <div class="wd-sec-head"><h3>🛏 병상 대기 환자 <span class="wd-n">{{ bed_waiting|length }}</span></h3><span class="muted-sm">입원 결정 후 병상 배정을 기다리는 환자 · 오래 기다린 순</span></div>
+    {% if bed_waiting %}<div class="tbl-wrap"><table class="tbl wd-tbl"><thead><tr><th>대기</th><th>환자</th><th>상담일</th><th>예상 입원</th><th>주치의</th><th>주요 질환</th><th>보호자·연락처</th><th>대기 메모</th><th>입원 확정</th></tr></thead><tbody>
+    {% for c in bed_waiting %}<tr class="{% if c.wait_days is not none and c.wait_days >= 7 %}wd-over{% endif %}">
+        <td class="nowrap"><span class="wd-days {% if c.wait_days is not none and c.wait_days >= 7 %}over{% endif %}">{{ c.wait_days or 0 }}일</span></td>
+        <td class="nowrap"><a href="/consult/{{ c.id }}"><strong>{{ c.patient_name }}</strong></a> <span class="muted-sm">{% if c.patient_age is not none %}{{ c.patient_age }}세{% endif %}{% if c.gender == 'M' %}·남{% elif c.gender == 'F' %}·여{% endif %}</span></td>
+        <td class="nowrap">{{ c.consult_date|krdate }}</td><td class="nowrap">{{ c.planned_admission_date|krdate if c.planned_admission_date else '미정' }} {{ c.planned_admission_time or '' }}</td>
+        <td>{{ c.attending_doctor or '-' }}</td><td class="wd-dx">{{ c.dx_primary[:2]|join(', ') if c.dx_primary else '-' }}</td>
+        <td class="nowrap">{{ c.guardian_name or '-' }} · {{ c.guardian_phone or '-' }}</td><td>{{ c.hold_reason or '병상 배정 대기' }}</td>
+        <td class="nowrap wd-admit" data-cid="{{ c.id }}"><input type="date" class="wd-ad-date" value="{{ c.planned_admission_date or today_str }}"><input type="text" class="wd-ad-room" placeholder="호실" size="5"><button type="button" class="btn btn-primary btn-xs wd-ad-save">입원 확정</button></td>
+    </tr>{% endfor %}</tbody></table></div>
+    {% else %}<div class="empty">현재 병상 대기 환자가 없습니다.</div>{% endif %}
 </section>
 {% else %}
 
