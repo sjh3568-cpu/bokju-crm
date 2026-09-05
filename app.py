@@ -2075,8 +2075,20 @@ def api_todo_update(tid):
 def api_todo_toggle(tid):
     data = request.get_json(silent=True) or request.form
     done = str(data.get("done", "1")) in ("1", "true", "True", "on")
-    if not models.set_todo_done(tid, g.user["id"], done):
+    uid = g.user["id"]
+    # 소유자뿐 아니라 공유받은 사람도 완료 처리 가능 (위임 흐름)
+    t = models.get_todo_access(tid, uid)
+    if not t:
         abort(404)
+    models.set_todo_done_any(tid, done)
+    # 공유된 할 일을 완료하면 다른 참여자(소유자·공유대상)에게 '완료 알림'
+    if done:
+        participants = models.todo_participants(tid)
+        if len(participants) > 1:
+            actor = g.user.get("display_name") or g.user["username"]
+            for p in participants:
+                if p != uid:
+                    models.add_todo_notification(p, tid, actor, t.get("title") or "할 일")
     return jsonify({"ok": True, "done": done})
 
 
@@ -2126,10 +2138,20 @@ def api_todo_move(tid):
 def api_todo_reminders():
     """리마인드 시각이 지난 미완료 할 일 — 브라우저 알림 폴링용."""
     now_iso = datetime.now().isoformat(timespec="seconds")
-    items = models.due_reminder_todos(g.user["id"], now_iso)
-    for item in models.unread_shared_todos(g.user["id"]):
-        items.append({"id": f"shared-{item['id']}", "title": item["title"],
-                      "shared": True, "owner_name": item.get("owner_name")})
+    uid = g.user["id"]
+    items = []
+    for t in models.due_reminder_todos(uid, now_iso):
+        items.append({"id": f"remind-{t['id']}", "kind": "remind",
+                      "label": "할 일 리마인드", "body": t["title"]})
+    for item in models.unread_shared_todos(uid):
+        items.append({"id": f"shared-{item['id']}", "kind": "shared",
+                      "label": "할 일 공유됨",
+                      "body": (item.get("owner_name") or "동료") + "님이 공유: " + item["title"]})
+    # 완료 알림 — 공유 할 일을 다른 사람이 완료함 (한 번만 전달 후 확인 처리)
+    for n in models.pop_unseen_todo_notifications(uid):
+        items.append({"id": f"done-{n['id']}", "kind": "done",
+                      "label": "할 일 완료됨",
+                      "body": (n.get("actor_name") or "동료") + "님이 완료: " + (n.get("todo_title") or "할 일")})
     return jsonify({"items": items})
 
 

@@ -298,12 +298,12 @@
                 var done = seen();
                 d.items.forEach(function (t) {
                     if (done.indexOf(t.id) !== -1) return;
-                    var message = (t.shared && t.owner_name ? t.owner_name + ' · ' : '') + t.title;
-                    if (t.shared && window.toast) toast('새 공유 할 일: ' + message, 'info');
+                    var label = t.label || (t.shared ? '할 일 공유됨' : '할 일 리마인드');
+                    var body = t.body || t.title || '';
+                    // 공유·완료 알림은 알림 권한이 없어도 화면 토스트로 표시
+                    if (window.toast && (t.kind === 'shared' || t.kind === 'done')) toast(label + ': ' + body, 'info');
                     if (supportsNotification && Notification.permission === 'granted') {
-                        var n = new Notification(t.shared ? '새 할 일이 공유되었습니다' : '할 일 리마인드', {
-                            body: message, tag: 'bokju-todo-' + t.id,
-                        });
+                        var n = new Notification(label, { body: body, tag: 'bokju-todo-' + t.id });
                         n.onclick = function () { window.focus(); location.href = '/todos'; };
                     }
                     done.push(t.id);

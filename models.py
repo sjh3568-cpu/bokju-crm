@@ -616,6 +616,20 @@ def init_db():
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_todo_shares_user ON todo_shares(user_id, seen_at)")
+    # 할 일 알림 — 공유 할 일 완료 시 다른 참여자에게 전달('완료 알림').
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS todo_notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            todo_id INTEGER,
+            kind TEXT DEFAULT 'done',
+            actor_name TEXT,
+            todo_title TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            seen_at DATETIME
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_todo_notif_user ON todo_notifications(user_id, seen_at)")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_todos_user_date ON todos(user_id, due_date)"
     )
@@ -1399,6 +1413,62 @@ def unread_shared_todos(user_id: int):
         "WHERE s.user_id=? AND s.seen_at IS NULL ORDER BY s.shared_at",
         (user_id,),
     ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def todo_participants(todo_id: int) -> list[int]:
+    """할 일의 참여자 = 소유자 + 공유 대상 user_id 목록."""
+    conn = get_db()
+    ids = set()
+    r = conn.execute("SELECT user_id FROM todos WHERE id=?", (todo_id,)).fetchone()
+    if r:
+        ids.add(r["user_id"])
+    for s in conn.execute("SELECT user_id FROM todo_shares WHERE todo_id=?", (todo_id,)):
+        ids.add(s["user_id"])
+    conn.close()
+    return list(ids)
+
+
+def set_todo_done_any(todo_id: int, done: bool) -> bool:
+    """소유자 제한 없이 todo_id로 완료 상태 변경 (호출 측에서 권한 확인). 진행률도 동기화."""
+    conn = get_db()
+    cur = conn.execute(
+        "UPDATE todos SET done=?, progress=?, done_at=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (1 if done else 0, 100 if done else 0,
+         datetime.now().isoformat(timespec="seconds") if done else None, todo_id),
+    )
+    conn.commit()
+    changed = cur.rowcount > 0
+    conn.close()
+    return changed
+
+
+def add_todo_notification(user_id: int, todo_id: int, actor_name: str, todo_title: str,
+                          kind: str = "done") -> None:
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO todo_notifications (user_id, todo_id, kind, actor_name, todo_title) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (user_id, todo_id, kind, actor_name, todo_title),
+    )
+    conn.commit()
+    conn.close()
+
+
+def pop_unseen_todo_notifications(user_id: int):
+    """미확인 알림을 반환하고 즉시 확인 처리(중복 전송 방지)."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT id, kind, actor_name, todo_title FROM todo_notifications "
+        "WHERE user_id=? AND seen_at IS NULL ORDER BY created_at",
+        (user_id,),
+    ).fetchall()
+    if rows:
+        conn.execute(
+            "UPDATE todo_notifications SET seen_at=CURRENT_TIMESTAMP "
+            "WHERE user_id=? AND seen_at IS NULL", (user_id,))
+        conn.commit()
     conn.close()
     return [dict(r) for r in rows]
 
