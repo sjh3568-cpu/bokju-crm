@@ -2765,13 +2765,19 @@ def dashboard_calendar_rows(first_day: str, last_day: str, counselor: str | None
     conn.close()
     return [dict(r) for r in rows]
 
-def dashboard_summary():
+def dashboard_summary(admission_lookup_date: str | None = None):
     """양식 기반 통계 — 상담 건수와 입원예정일 등록 건수."""
     conn = get_db()
     now = datetime.now()
     ym = now.strftime("%Y-%m")
     today = now.strftime("%Y-%m-%d")
     today_d = now.date()
+    admission_lookup_date = admission_lookup_date or today
+    try:
+        admission_lookup_d = datetime.strptime(admission_lookup_date, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        admission_lookup_d = today_d
+        admission_lookup_date = today
     admission_window_days = 15
     week_until_d = today_d + timedelta(days=admission_window_days)
     week_until = week_until_d.isoformat()
@@ -2835,12 +2841,13 @@ def dashboard_summary():
                p.insurance_type,
                p.guardian_name, p.guardian_phone, p.blacklist
         FROM consultations c JOIN patients p ON p.id = c.patient_id
-        WHERE COALESCE(c.admission_status, '') NOT IN ('입원취소', '퇴원완료')
-          AND (
-            date(NULLIF(c.planned_admission_date, '')) BETWEEN date(?) AND date(?)
-            OR date(NULLIF(c.actual_admission_date, '')) BETWEEN date(?) AND date(?)
-            OR date(NULLIF(c.admission_date, '')) BETWEEN date(?) AND date(?)
-          )
+        WHERE COALESCE(c.admission_status, '') != '입원취소'
+          AND ((COALESCE(c.admission_status, '') != '퇴원완료' AND (
+                date(NULLIF(c.planned_admission_date, '')) BETWEEN date(?) AND date(?)
+                OR date(NULLIF(c.actual_admission_date, '')) BETWEEN date(?) AND date(?)
+                OR date(NULLIF(c.admission_date, '')) BETWEEN date(?) AND date(?)))
+               OR date(COALESCE(NULLIF(c.actual_admission_date, ''),
+                                NULLIF(c.admission_date, ''))) = date(?))
         ORDER BY date(COALESCE(
                    CASE WHEN c.admission_status = '입원완료' THEN NULLIF(c.actual_admission_date, '') END,
                    CASE WHEN c.admission_status = '입원완료' THEN NULLIF(c.admission_date, '') END,
@@ -2851,7 +2858,8 @@ def dashboard_summary():
                  COALESCE(c.planned_admission_time, c.consult_time, ''),
                  c.id
         """,
-        (today, week_until, today, week_until, today, week_until),
+        (today, week_until, today, week_until, today, week_until,
+         admission_lookup_date),
     ).fetchall()
 
     hold_rows = conn.execute(
@@ -3074,7 +3082,7 @@ def dashboard_summary():
 
     def _in_admission_window(value):
         d = _date_value(value)
-        return bool(d and today_d <= d <= week_until_d)
+        return bool(d and (today_d <= d <= week_until_d or d == admission_lookup_d))
 
     def _consult_disease_labels(item):
         labels = []
@@ -3175,7 +3183,7 @@ def dashboard_summary():
         status = (d.get("admission_status") or "").strip()
         actual_date = d.get("actual_admission_date") or d.get("admission_date") or ""
         planned_date = d.get("planned_admission_date") or ""
-        is_completed = status == "입원완료"
+        is_completed = status in ("입원완료", "퇴원완료")
         display_date = actual_date if is_completed and actual_date else planned_date
         if not _in_admission_window(display_date):
             continue
@@ -3195,10 +3203,16 @@ def dashboard_summary():
         d["ward"] = _ward_label(d.get("room_number"))
         admission_schedule.append(d)
 
+    # 대시보드 KPI·업무 큐의 기존 15일 범위에는 과거 날짜 조회용 행이 섞이지 않게 분리한다.
+    admission_window_schedule = [
+        row for row in admission_schedule
+        if (value_date := _date_value(row.get("admission_display_date")))
+        and today_d <= value_date <= week_until_d
+    ]
     admission_by_status = {
-        "all": admission_schedule,
-        "planned": [r for r in admission_schedule if r.get("admission_bucket") == "planned"],
-        "completed": [r for r in admission_schedule if r.get("admission_bucket") == "completed"],
+        "all": admission_window_schedule,
+        "planned": [r for r in admission_window_schedule if r.get("admission_bucket") == "planned"],
+        "completed": [r for r in admission_window_schedule if r.get("admission_bucket") == "completed"],
     }
 
     def _group_admissions(rows, key):
@@ -3221,6 +3235,16 @@ def dashboard_summary():
         }
         for name, rows in admission_by_status.items()
     }
+    admission_selected = [
+        row for row in admission_schedule
+        if row.get("admission_display_date") == admission_lookup_date
+        and (admission_lookup_d >= today_d or row.get("admission_bucket") == "completed")
+    ]
+    admission_selected_groups = {
+        "counselor": _group_admissions(admission_selected, "counselor"),
+        "doctor": _group_admissions(admission_selected, "attending_doctor"),
+        "ward": _group_admissions(admission_selected, "ward"),
+    }
 
     hold_list = []
     for r in hold_rows:
@@ -3231,7 +3255,7 @@ def dashboard_summary():
 
     summary["today_consults"] = len(today_list)
     summary["admission_window_days"] = admission_window_days
-    summary["admission_week"] = len(admission_schedule)
+    summary["admission_week"] = len(admission_window_schedule)
     summary["admission_planned_week"] = len(admission_by_status["planned"])
     summary["admission_completed_week"] = len(admission_by_status["completed"])
     summary["admission_today"] = sum(
@@ -3276,10 +3300,12 @@ def dashboard_summary():
             "follow_up": today_follow_up,
         },
         "counselor_today": [dict(r) for r in counselor_rows],
-        "admission_schedule": admission_schedule,
+        "admission_schedule": admission_window_schedule,
         "admission_by_status": admission_by_status,
         "admission_groups": admission_groups_by_status["all"],
         "admission_groups_by_status": admission_groups_by_status,
+        "admission_selected": admission_selected,
+        "admission_selected_groups": admission_selected_groups,
         "holds": hold_list,
         "week_trend": week_trend,
         "week_flow_summary": week_flow_summary,

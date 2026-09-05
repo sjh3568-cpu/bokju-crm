@@ -1723,7 +1723,22 @@ def _dashboard_calendar_context(uid, year, month, counselor=None):
 @app.route("/")
 @login_required
 def dashboard():
-    data = models.dashboard_summary()
+    today_d = date.today()
+    admission_date = _valid_date(request.args.get("admission_date"), today_d.isoformat())
+    admission_d = date.fromisoformat(admission_date)
+    admission_weekdays = "월화수목금토일"
+    data = models.dashboard_summary(admission_date)
+    data.update({
+        "admission_lookup_date": admission_date,
+        "admission_lookup_label": admission_d.strftime("%Y.%m.%d")
+                                  + f"({admission_weekdays[admission_d.weekday()]})",
+        "admission_quick_dates": [
+            {"label": "오늘", "date": today_d.isoformat()},
+            {"label": "어제", "date": (today_d - timedelta(days=1)).isoformat()},
+            {"label": "그저께", "date": (today_d - timedelta(days=2)).isoformat()},
+            {"label": "1주일 전", "date": (today_d - timedelta(days=7)).isoformat()},
+        ],
+    })
     open_comms = models.inbox_open_communications()
     callbacks = models.inbox_callbacks()
 
