@@ -374,6 +374,7 @@ def init_db():
             consultation_id INTEGER NOT NULL REFERENCES consultations(id) ON DELETE CASCADE,
             event_type TEXT,
             event_date DATE,
+            event_time TIME,
             hospital TEXT,
             memo TEXT,
             created_by TEXT,
@@ -500,6 +501,8 @@ def init_db():
         "hold_reason": "TEXT",            # 10번 — 입원보류 사유 (필수)
         "discharge_due_date": "DATE",     # 10번 — 입원연장 시 새 퇴원예정일
         "discharge_date": "DATE",         # 10번 — 실제 퇴원일 (퇴원완료)
+        "discharge_destination": "TEXT",  # 퇴원 후 이동 기관·장소
+        "discharge_reason": "TEXT",       # 퇴원 사유
         # ── 폼 추가 개선 2차 (2026-05) ──
         "referral_online_note": "TEXT",   # 입원경로 온라인 박스 수기 입력
         "referral_etc_note": "TEXT",      # 입원경로 기타 박스 수기 입력
@@ -542,6 +545,7 @@ def init_db():
     # 나감 이벤트 1행이 복귀일까지 들고 있는다 → '지금 나가 있는 환자'를
     # returned_at IS NULL 한 조건으로 판정. 별도 '복귀' 행에 의존하지 않는다.
     _ensure_columns(conn, "admission_events", {
+        "event_time": "TIME",       # 이송 시각
         "returned_at": "DATE",      # 복귀일 (NULL = 아직 병원 밖)
         "returned_by": "TEXT",      # 복귀 처리한 상담사
         "stage_before": "TEXT",     # 나가기 직전 생애주기 단계 → 복귀 시 원상복구
@@ -1806,7 +1810,7 @@ CONSULT_FIELDS = (
     "consult_result", "consult_result_reason",
     "admission_status", "admission_date",
     "rejection_reason", "rejection_reason_detail", "hold_reason",
-    "discharge_due_date", "discharge_date",
+    "discharge_due_date", "discharge_date", "discharge_destination", "discharge_reason",
     "disuse_screening_note",
     # 회복기 불가 → 같은 재단·외부 시설 연계 안내 (수요 캡처율 KPI)
     "external_referral", "external_referral_note",
@@ -1889,7 +1893,8 @@ def update_consultation(cid: int, **fields):
 _META_FIELDS = ("consult_result", "consult_result_reason",
                 "admission_status", "admission_date", "rejection_reason",
                 "rejection_reason_detail", "hold_reason",
-                "discharge_due_date", "discharge_date")
+                "discharge_due_date", "discharge_date",
+                "discharge_destination", "discharge_reason")
 
 
 def delete_consultation(cid: int):
@@ -2110,6 +2115,7 @@ def list_consultations(*, date_from=None, date_to=None,
                c.admission_purpose, c.consult_result, c.consult_result_reason,
                c.admission_status, c.admission_date,
                c.discharge_due_date, c.discharge_date,
+               c.discharge_destination, c.discharge_reason,
                c.import_source,
                p.id AS patient_id, p.name AS patient_name, p.gender,
                p.address_full, p.residence_sido, p.residence_sigungu,
@@ -4509,15 +4515,16 @@ AWAY_EVENT_TYPES = ("응급전원", "모병원 외래치료")
 
 
 def create_admission_event(*, consultation_id, event_type=None, event_date=None,
+                           event_time=None,
                            hospital=None, memo=None, created_by=None,
                            stage_before=None) -> int:
     conn = get_db()
     cur = conn.execute(
         """INSERT INTO admission_events
-           (consultation_id, event_type, event_date, hospital, memo, created_by,
+           (consultation_id, event_type, event_date, event_time, hospital, memo, created_by,
             stage_before)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (consultation_id, event_type, event_date, hospital, memo, created_by,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (consultation_id, event_type, event_date, event_time, hospital, memo, created_by,
          stage_before),
     )
     eid = cur.lastrowid

@@ -3156,6 +3156,8 @@ def api_consult_discharge(cid):
             return jsonify({"error": "퇴원일자 형식 오류 (YYYY-MM-DD)"}), 400
         fields["admission_status"] = "퇴원완료"
         fields["discharge_date"] = ddate
+        fields["discharge_destination"] = (payload.get("discharge_destination") or "").strip()[:120]
+        fields["discharge_reason"] = (payload.get("discharge_reason") or "").strip()[:500]
     elif action == "extend":
         due = (payload.get("discharge_due_date") or "").strip()
         if not due:
@@ -3534,6 +3536,69 @@ def ward_view():
         "pending_recent": len(pending_recent),
         "unassigned": len(unassigned),
     }
+    recovery_due_list = sorted(
+        [c for c in admitted if c.get("recovery_due")],
+        key=lambda c: (c.get("phase_dday") if c.get("phase_dday") is not None else 10 ** 6,
+                       c.get("patient_name") or ""),
+    )
+    discharge_due_list = sorted(
+        [c for c in admitted if c.get("discharge_dday") is not None
+         and c["discharge_dday"] <= 30],
+        key=lambda c: (c.get("discharge_dday"), c.get("patient_name") or ""),
+    )
+
+    # 각 날짜의 재원 명부를 복원해 회복기 환자 비율을 계산한다.
+    trend_rows = models.list_consultations(limit=10000)
+    def _ratio_at(snapshot):
+        census = []
+        snapshot_iso = snapshot.isoformat()
+        for con in trend_rows:
+            admitted_on = (con.get("actual_admission_date") or con.get("admission_date") or "")[:10]
+            discharged_on = (con.get("discharge_date") or "")[:10]
+            if not admitted_on or admitted_on > snapshot_iso:
+                continue
+            if discharged_on and discharged_on <= snapshot_iso:
+                continue
+            census.append(con)
+        recovery_count = 0
+        for con in census:
+            if _recovery_status(con).get("label") != "회복기":
+                continue
+            period = compute_admission_period(con.get("diseases"), "회복기")
+            try:
+                admitted_on = date.fromisoformat(
+                    (con.get("actual_admission_date") or con.get("admission_date"))[:10])
+            except (TypeError, ValueError):
+                continue
+            billing_end = (_day_of(admitted_on, period["billing"])
+                           if period and period.get("billing") else None)
+            if billing_end is None or snapshot <= billing_end:
+                recovery_count += 1
+        total = len(census)
+        return {"total": total, "recovery": recovery_count,
+                "ratio": round(recovery_count * 100 / total, 1) if total else 0}
+
+    daily_ratio_trend = []
+    for offset in range(29, -1, -1):
+        snapshot = date.today() - timedelta(days=offset)
+        daily_ratio_trend.append({"label": snapshot.strftime("%m.%d"),
+                                  "date": snapshot.isoformat(), **_ratio_at(snapshot)})
+    monthly_ratio_trend = []
+    current_month = date.today().replace(day=1)
+    for offset in range(11, -1, -1):
+        month_index = current_month.year * 12 + current_month.month - 1 - offset
+        year, month0 = divmod(month_index, 12)
+        month = month0 + 1
+        snapshot = min(date(year, month, calendar.monthrange(year, month)[1]), date.today())
+        monthly_ratio_trend.append({"label": f"{str(year)[2:]}.{month:02d}",
+                                    "date": snapshot.isoformat(), **_ratio_at(snapshot)})
+
+    discharged = models.list_consultations(admission_status="퇴원완료", limit=10000)
+    discharged = sorted(
+        [c for c in discharged if (c.get("discharge_date") or "").strip()],
+        key=lambda c: (c.get("discharge_date") or "", c.get("patient_name") or ""),
+        reverse=True,
+    )[:100]
     doctor_options = sorted({c.get("attending_doctor") for c in rows
                              if (c.get("attending_doctor") or "").strip()})
 
@@ -3564,6 +3629,10 @@ def ward_view():
         ward_f=ward_f, tag_f=tag_f, organism_f=organism_f, any_filter=any_filter,
         WARDS=WARDS, MGMT_TAG_PRESETS=MGMT_TAG_PRESETS, tag_counts=tag_counts,
         doctor_options=doctor_options,
+        roster_open=bool(q or doctor or any_filter),
+        recovery_due_list=recovery_due_list, discharge_due_list=discharge_due_list,
+        daily_ratio_trend=daily_ratio_trend, monthly_ratio_trend=monthly_ratio_trend,
+        discharged=discharged,
     )
 
 
@@ -4001,6 +4070,9 @@ def api_admission_event_create(cid):
             datetime.strptime(event_date, "%Y-%m-%d")
         except ValueError:
             return jsonify({"error": "발생일 형식 오류"}), 400
+    event_time = _valid_time(payload.get("event_time"))
+    if payload.get("event_time") and not event_time:
+        return jsonify({"error": "이송 시각 형식 오류"}), 400
     con = models.get_consultation(cid)
     pid = con["patient_id"] if con else None
     cur_stage = None
@@ -4029,6 +4101,7 @@ def api_admission_event_create(cid):
     eid = models.create_admission_event(
         consultation_id=cid, event_type=event_type,
         event_date=event_date or None,
+        event_time=event_time,
         hospital=(payload.get("hospital") or "").strip() or None,
         memo=(payload.get("memo") or "").strip() or None,
         created_by=g.user.get("display_name"),

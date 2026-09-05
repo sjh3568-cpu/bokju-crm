@@ -57,9 +57,18 @@
             <option value="모병원 외래치료">모병원 외래치료</option>
         </select>
         <input type="date" class="wd-af-date" value="{{ today_str }}">
+        <input type="time" class="wd-af-time">
         <input type="text" class="wd-af-hosp" placeholder="이송 기관">
+        <input type="text" class="wd-af-reason" placeholder="이송 사유">
         <button type="button" class="btn btn-primary btn-xs wd-af-save">기록</button>
         <button type="button" class="btn btn-secondary btn-xs wd-af-cancel">취소</button>
+    </div>
+    <div class="rm-inline rm-inline-discharge" hidden>
+        <input type="date" class="wd-dis-date" value="{{ today_str }}">
+        <input type="text" class="wd-dis-destination" placeholder="퇴원 기관·장소">
+        <input type="text" class="wd-dis-reason" placeholder="퇴원 사유">
+        <button type="button" class="btn btn-primary btn-xs wd-dis-save">퇴원 처리</button>
+        <button type="button" class="btn btn-secondary btn-xs wd-dis-cancel">취소</button>
     </div>
     {% if c.away %}
     <div class="rm-inline rm-inline-back wd-back-cell" hidden>
@@ -122,11 +131,11 @@
         <span class="wd-k-n">{{ kpis.away }}</span>
         <span class="wd-k-l">🚑 외진 중{% if kpis.away_overdue %} <b>지연 {{ kpis.away_overdue }}</b>{% endif %}</span>
     </a>
-    <a class="wd-k {% if not kpis.recovery_due %}zero{% else %}warn{% endif %} {% if filt == 'recdue' %}on{% endif %}" href="/ward?filt=recdue{{ _dq }}#sec-ward">
+    <a class="wd-k {% if not kpis.recovery_due %}zero{% else %}warn{% endif %}" href="#recovery-due-list">
         <span class="wd-k-n">{{ kpis.recovery_due }}</span>
         <span class="wd-k-l">⏱ 회복기 종료 D-30</span>
     </a>
-    <a class="wd-k {% if not kpis.discharge_due_30 %}zero{% else %}warn{% endif %} {% if filt == 'dis30' %}on{% endif %}" href="/ward?filt=dis30{{ _dq }}#sec-ward">
+    <a class="wd-k {% if not kpis.discharge_due_30 %}zero{% else %}warn{% endif %}" href="#discharge-due-list">
         <span class="wd-k-n">{{ kpis.discharge_due_30 }}</span>
         <span class="wd-k-l">🚪 퇴원 예정 D-30</span>
     </a>
@@ -139,6 +148,32 @@
     {% if kpis.pending_recent %}<a href="#sec-pending" class="wd-extchip pend">⚠ 입원일 미확정 {{ kpis.pending_recent }}</a>{% endif %}
 </div>
 {% endif %}
+
+<div class="wd-overview-grid">
+    <section class="card wd-overview">
+        <div class="wd-sec-head"><h3>📈 회복기 환자 비율 추이</h3><span class="muted-sm">재원 환자 기준 · 기준선 40%</span></div>
+        <div class="wd-trend-grid">
+            <div><strong>최근 30일</strong><svg class="wd-ratio-chart" data-series='{{ daily_ratio_trend|tojson }}' viewBox="0 0 620 190" role="img" aria-label="일별 회복기 환자 비율"></svg></div>
+            <div><strong>최근 12개월</strong><svg class="wd-ratio-chart" data-series='{{ monthly_ratio_trend|tojson }}' viewBox="0 0 620 190" role="img" aria-label="월별 회복기 환자 비율"></svg></div>
+        </div>
+    </section>
+    <div class="wd-due-grid">
+        <details class="card wd-due-card" id="recovery-due-list">
+            <summary><span>⏱ 회복기 종료 D-30</span><b>{{ recovery_due_list|length }}명</b></summary>
+            <div class="wd-mini-list">
+            {% for c in recovery_due_list %}<a href="/consult/{{ c.id }}"><strong>{{ c.patient_name }}</strong><span>{{ c.room_number or '호실 미정' }} · {{ c.phase_end_date|krdate }}</span><em>{% if c.phase_dday < 0 %}{{ -c.phase_dday }}일 초과{% else %}D-{{ c.phase_dday }}{% endif %}</em></a>
+            {% else %}<p class="empty">30일 내 종료 대상이 없습니다.</p>{% endfor %}
+            </div>
+        </details>
+        <details class="card wd-due-card" id="discharge-due-list">
+            <summary><span>🚪 퇴원 예정 D-30</span><b>{{ discharge_due_list|length }}명</b></summary>
+            <div class="wd-mini-list">
+            {% for c in discharge_due_list %}<a href="/consult/{{ c.id }}"><strong>{{ c.patient_name }}</strong><span>{{ c.room_number or '호실 미정' }} · {{ c.discharge_due|krdate }}</span><em>{% if c.discharge_dday < 0 %}{{ -c.discharge_dday }}일 초과{% else %}D-{{ c.discharge_dday }}{% endif %}</em></a>
+            {% else %}<p class="empty">30일 내 퇴원 대상이 없습니다.</p>{% endfor %}
+            </div>
+        </details>
+    </div>
+</div>
 
 {# ─── 병동 빠른 조회 + 필터 + 내보내기 ─── #}
 {% set _fq = [] %}
@@ -187,8 +222,12 @@
                class="wd-sort-btn {% if sort == key %}on{% endif %}">{{ label }}</a>
             {% endfor %}
             {% endif %}
+            <button type="button" class="wd-roster-toggle" id="wd-roster-toggle"
+                    aria-expanded="{{ 'true' if roster_open else 'false' }}" aria-controls="wd-roster-body">
+                {{ '명단 접기' if roster_open else '명단 펼치기' }}</button>
         </div>
     </div>
+    <div id="wd-roster-body" {% if not roster_open %}hidden{% endif %}>
     {% if admitted and view == 'room' %}
     {# ── 병실 뷰 — 병동 → 호실 카드 → 침상 ── #}
     {% for w in room_view %}
@@ -294,16 +333,26 @@
                 </tr>
                 <tr class="wd-form-row" hidden>
                     <td colspan="9">
-                        <div class="wd-inline" data-cid="{{ c.id }}">
+                        <div class="wd-inline wd-inline-away" data-cid="{{ c.id }}">
                             <span class="muted-sm">🚑 {{ c.patient_name }} 외진</span>
                             <select class="wd-af-type">
                                 <option value="응급전원">응급전원</option>
                                 <option value="모병원 외래치료">모병원 외래치료</option>
                             </select>
                             <input type="date" class="wd-af-date" value="{{ today_str }}">
-                            <input type="text" class="wd-af-hosp" placeholder="이송 기관 (선택)">
+                            <input type="time" class="wd-af-time">
+                            <input type="text" class="wd-af-hosp" placeholder="이송 기관">
+                            <input type="text" class="wd-af-reason" placeholder="이송 사유">
                             <button type="button" class="btn btn-primary btn-xs wd-af-save">기록</button>
                             <button type="button" class="btn btn-secondary btn-xs wd-af-cancel">취소</button>
+                        </div>
+                        <div class="wd-inline wd-inline-discharge" data-cid="{{ c.id }}" hidden>
+                            <span class="muted-sm">🚪 {{ c.patient_name }} 퇴원</span>
+                            <input type="date" class="wd-dis-date" value="{{ today_str }}">
+                            <input type="text" class="wd-dis-destination" placeholder="퇴원 기관·장소">
+                            <input type="text" class="wd-dis-reason" placeholder="퇴원 사유">
+                            <button type="button" class="btn btn-primary btn-xs wd-dis-save">퇴원 처리</button>
+                            <button type="button" class="btn btn-secondary btn-xs wd-dis-cancel">취소</button>
                         </div>
                     </td>
                 </tr>
@@ -319,6 +368,7 @@
         {% if kpis.pending %}아래 <a href="#sec-pending">입원일 미확정 {{ kpis.pending }}명</a>에서 입원일을 확정하면 이곳에 올라옵니다.{% endif %}{% endif %}
     </div>
     {% endif %}
+    </div>
 </div>
 
 {# ─── ② 외진 중 (KPI '외진' 카드) ─── #}
@@ -332,7 +382,7 @@
     <div class="tbl-wrap">
         <table class="tbl wd-tbl">
             <thead><tr>
-                <th>경과</th><th>환자</th><th>호실</th><th>나간날</th><th>유형 · 간 곳</th>
+                <th>경과</th><th>환자</th><th>호실</th><th>이송 일시</th><th>유형</th><th>이송기관</th><th>사유</th>
                 <th>보호자</th><th>복귀</th>
             </tr></thead>
             <tbody>
@@ -346,8 +396,8 @@
                     </td>
                     <td class="nowrap"><a href="/consult/{{ c.id }}">{{ c.patient_name }}</a></td>
                     <td class="nowrap">{{ c.room_number or '-' }}</td>
-                    <td class="nowrap">{{ a.event_date|krdate if a.event_date else '-' }}</td>
-                    <td>{{ a.event_type }}{% if a.hospital %} → {{ a.hospital }}{% endif %}</td>
+                    <td class="nowrap">{{ a.event_date|krdate if a.event_date else '-' }}{% if a.event_time %} {{ a.event_time[:5] }}{% endif %}</td>
+                    <td>{{ a.event_type }}</td><td>{{ a.hospital or '-' }}</td><td>{{ a.memo or '-' }}</td>
                     <td class="nowrap">{{ c.guardian_name or '' }} {{ c.guardian_phone or '' }}</td>
                     <td class="nowrap wd-back-cell">
                         <input type="date" class="wd-back-date" value="{{ today_str }}"
@@ -363,6 +413,13 @@
     <div class="empty">외진 나가 있는 환자가 없습니다. 전원 재원 중입니다 ✅</div>
     {% endif %}
 </div>
+
+<details class="card wd-sec wd-discharged" id="sec-discharged">
+    <summary>최근 퇴원환자 관리 <span class="wd-n">{{ discharged|length }}</span></summary>
+    <div class="tbl-wrap"><table class="tbl wd-tbl"><thead><tr><th>퇴원일</th><th>환자</th><th>퇴원기관·장소</th><th>퇴원 사유</th><th>담당자</th></tr></thead><tbody>
+    {% for c in discharged %}<tr><td class="nowrap">{{ c.discharge_date|krdate }}</td><td><a href="/consult/{{ c.id }}">{{ c.patient_name }}</a></td><td>{{ c.discharge_destination or '-' }}</td><td>{{ c.discharge_reason or '-' }}</td><td>{{ c.counselor or '-' }}</td></tr>{% else %}<tr><td colspan="5" class="empty">퇴원 기록이 없습니다.</td></tr>{% endfor %}
+    </tbody></table></div>
+</details>
 
 {# ─── ③ 입원일 미확정 — 명부를 실제와 맞추는 입력 큐 ─── #}
 <div class="card wd-sec" id="sec-pending">
@@ -509,6 +566,30 @@
 .wd-sort-btn:hover { border-color:var(--primary); color:var(--primary); }
 .wd-sort-btn.on { background:var(--primary); border-color:var(--primary); color:#fff; }
 .wd-sort-div { width:1px; background:var(--border); margin:2px 4px; }
+.wd-roster-toggle { margin-left:6px; padding:4px 12px; border:1px solid #86efac; border-radius:999px;
+    background:#f0fdf4; color:#166534; font:700 .78em inherit; cursor:pointer; }
+.wd-roster-toggle:hover { background:#dcfce7; border-color:#22c55e; }
+.wd-overview-grid { display:grid; grid-template-columns:minmax(0,2fr) minmax(260px,1fr); gap:12px; margin:12px 0; }
+.wd-overview { min-width:0; }
+.wd-trend-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.wd-trend-grid > div { min-width:0; padding:8px; border:1px solid #e2e8f0; border-radius:8px; background:#fbfdff; }
+.wd-trend-grid strong { display:block; font-size:.82em; color:#334155; margin:0 0 2px 5px; }
+.wd-ratio-chart { display:block; width:100%; height:auto; min-height:150px; overflow:visible; }
+.wd-due-grid { display:grid; gap:10px; align-content:start; }
+.wd-due-card { padding:0; overflow:hidden; }
+.wd-due-card > summary, .wd-discharged > summary { cursor:pointer; list-style:none; display:flex; justify-content:space-between;
+    align-items:center; padding:12px 14px; font-weight:800; color:#334155; }
+.wd-due-card > summary::-webkit-details-marker, .wd-discharged > summary::-webkit-details-marker { display:none; }
+.wd-due-card > summary::after, .wd-discharged > summary::after { content:'＋'; color:#64748b; margin-left:8px; }
+.wd-due-card[open] > summary::after, .wd-discharged[open] > summary::after { content:'−'; }
+.wd-due-card summary b { margin-left:auto; color:#9a3412; font-size:.88em; }
+.wd-mini-list { max-height:210px; overflow:auto; border-top:1px solid #e2e8f0; }
+.wd-mini-list a { display:grid; grid-template-columns:90px 1fr auto; gap:8px; align-items:center;
+    padding:7px 12px; text-decoration:none; color:#334155; border-bottom:1px solid #f1f5f9; font-size:.78em; }
+.wd-mini-list a:hover { background:#f8fafc; }
+.wd-mini-list em { font-style:normal; font-weight:800; color:#b45309; }
+.wd-discharged { padding:0; }
+.wd-discharged .tbl-wrap { border-top:1px solid #e2e8f0; }
 
 /* ── 병실 배치도 ── */
 .rm-ward { margin-bottom:14px; }
@@ -587,12 +668,69 @@
 .wd-admit { display:flex; gap:4px; align-items:center; }
 .wd-old { margin-top:10px; }
 .wd-old > summary { cursor:pointer; font-size:0.84em; color:var(--text-light); }
-@media (max-width: 1000px) { .wd-kpi { grid-template-columns:repeat(2, 1fr); } }
+@media (max-width: 1000px) {
+    .wd-kpi { grid-template-columns:repeat(2, 1fr); }
+    .wd-overview-grid { grid-template-columns:1fr; }
+}
+@media (max-width: 700px) { .wd-trend-grid { grid-template-columns:1fr; } }
 </style>
 
 <script src="/static/js/common.js"></script>
 <script>
 (function () {
+    const rosterBtn = document.getElementById('wd-roster-toggle');
+    const rosterBody = document.getElementById('wd-roster-body');
+    if (rosterBtn && rosterBody) rosterBtn.addEventListener('click', () => {
+        rosterBody.hidden = !rosterBody.hidden;
+        rosterBtn.setAttribute('aria-expanded', String(!rosterBody.hidden));
+        rosterBtn.textContent = rosterBody.hidden ? '명단 펼치기' : '명단 접기';
+    });
+    const openHashDetails = () => {
+        const target = location.hash && document.querySelector(location.hash);
+        if (target && target.tagName === 'DETAILS') target.open = true;
+    };
+    openHashDetails(); window.addEventListener('hashchange', openHashDetails);
+
+    // 회복기 비율 추이 — 40% 기준선과 실제 비율을 같은 축에서 표시
+    document.querySelectorAll('.wd-ratio-chart').forEach(svg => {
+        const data = JSON.parse(svg.dataset.series || '[]');
+        if (!data.length) return;
+        const NS = 'http://www.w3.org/2000/svg', left=42, right=607, top=14, bottom=150;
+        const x = i => data.length === 1 ? (left+right)/2 : left + (right-left)*i/(data.length-1);
+        const y = v => bottom - (bottom-top)*Math.max(0,Math.min(100,v))/100;
+        const el = (tag, attrs, value) => { const n=document.createElementNS(NS,tag); Object.entries(attrs||{}).forEach(([k,v])=>n.setAttribute(k,v)); if(value!==undefined)n.textContent=value; svg.appendChild(n); return n; };
+        [0,20,40,60,80,100].forEach(v => {
+            el('line',{x1:left,y1:y(v),x2:right,y2:y(v),stroke:v===40?'#f59e0b':'#e2e8f0','stroke-width':v===40?2:1,'stroke-dasharray':v===40?'5 4':''});
+            el('text',{x:left-7,y:y(v)+4,'text-anchor':'end',fill:'#64748b','font-size':11},v+'%');
+        });
+        el('polyline',{points:data.map((d,i)=>`${x(i)},${y(d.ratio)}`).join(' '),fill:'none',stroke:'#16a34a','stroke-width':3,'stroke-linecap':'round','stroke-linejoin':'round'});
+        const labelEvery = Math.max(1,Math.ceil(data.length/10));
+        data.forEach((d,i) => {
+            const dot=el('circle',{cx:x(i),cy:y(d.ratio),r:3.5,fill:'#fff',stroke:'#15803d','stroke-width':2});
+            const title=document.createElementNS(NS,'title'); title.textContent=`${d.date}: ${d.ratio}% (${d.recovery}/${d.total}명)`; dot.appendChild(title);
+            if (i%labelEvery===0 || i===data.length-1) {
+                el('text',{x:x(i),y:174,'text-anchor':'middle',fill:'#64748b','font-size':10},d.label);
+                el('text',{x:x(i),y:y(d.ratio)-7,'text-anchor':'middle',fill:'#166534','font-size':10,'font-weight':700},d.ratio+'%');
+            }
+        });
+    });
+
+    const validateAway = form => {
+        const hospital=form.querySelector('.wd-af-hosp').value.trim(), reason=form.querySelector('.wd-af-reason').value.trim();
+        if (!hospital || !reason) { alert('이송기관과 사유를 모두 입력하세요.'); return null; }
+        return {event_type:form.querySelector('.wd-af-type').value,event_date:form.querySelector('.wd-af-date').value,
+            event_time:form.querySelector('.wd-af-time').value,hospital,memo:reason};
+    };
+    const saveDischarge = async (form, name) => {
+        const destination=form.querySelector('.wd-dis-destination').value.trim(), reason=form.querySelector('.wd-dis-reason').value.trim();
+        if (!destination || !reason) { alert('퇴원기관·장소와 퇴원 사유를 모두 입력하세요.'); return; }
+        const save=form.querySelector('.wd-dis-save'); save.disabled=true;
+        try { await api.post(`/api/consult/${form.dataset.cid || form.closest('.rm-bed').dataset.cid}/discharge`, {
+            action:'complete', discharge_date:form.querySelector('.wd-dis-date').value,
+            discharge_destination:destination, discharge_reason:reason});
+            toast(`✓ ${name} 퇴원 처리 완료`,'success'); setTimeout(()=>location.reload(),400);
+        } catch(e) { save.disabled=false; alert('퇴원 처리 실패: '+e.message); }
+    };
     // 외진 복귀 — 나가기 전 상태로 되돌린다
     document.querySelectorAll('.wd-back').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -611,38 +749,32 @@
 
     // 외진 기록 — 행 아래 인라인 폼
     document.querySelectorAll('.wd-away-btn').forEach(btn => {
+        if (btn.closest('.rm-bed')) return;
         const row = btn.closest('tr');
         const formRow = row.nextElementSibling;
-        const form = formRow.querySelector('.wd-inline');
-        btn.addEventListener('click', () => { formRow.hidden = !formRow.hidden; });
+        const form = formRow.querySelector('.wd-inline-away');
+        btn.addEventListener('click', () => { formRow.hidden = !formRow.hidden; form.hidden=false; const d=formRow.querySelector('.wd-inline-discharge'); if(d)d.hidden=true; });
         form.querySelector('.wd-af-cancel').addEventListener('click', () => { formRow.hidden = true; });
         form.querySelector('.wd-af-save').addEventListener('click', async () => {
             const save = form.querySelector('.wd-af-save');
             save.disabled = true;
             try {
-                await api.post(`/api/consult/${form.dataset.cid}/admission-event`, {
-                    event_type: form.querySelector('.wd-af-type').value,
-                    event_date: form.querySelector('.wd-af-date').value,
-                    hospital: form.querySelector('.wd-af-hosp').value.trim(),
-                });
+                const payload=validateAway(form); if(!payload){save.disabled=false;return;}
+                await api.post(`/api/consult/${form.dataset.cid}/admission-event`, payload);
                 toast(`🚑 ${btn.dataset.name} 외진 기록 — 복귀 시 [↩ 복귀]`, 'success');
                 setTimeout(() => location.reload(), 400);
             } catch (e) { save.disabled = false; alert('외진 기록 실패: ' + e.message); }
         });
     });
 
-    // 퇴원 처리
+    // 퇴원 정보 입력
     document.querySelectorAll('.wd-dis').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            if (!confirm(`${btn.dataset.name} 환자를 오늘 퇴원 처리할까요?\n재원 명부에서 빠집니다.`)) return;
-            btn.disabled = true;
-            try {
-                await api.post(`/api/consult/${btn.dataset.cid}/discharge`, { action: 'complete' });
-                toast('✓ 퇴원 처리 완료', 'success');
-                setTimeout(() => location.reload(), 400);
-            } catch (e) { btn.disabled = false; alert('퇴원 처리 실패: ' + e.message); }
+        if (btn.closest('.rm-bed')) return;
+        const row=btn.closest('tr'), formRow=row.nextElementSibling, form=formRow.querySelector('.wd-inline-discharge');
+        btn.addEventListener('click', () => { formRow.hidden=false; form.hidden=false; formRow.querySelector('.wd-inline-away').hidden=true; });
+        form.querySelector('.wd-dis-cancel').addEventListener('click',()=>{formRow.hidden=true;});
+        form.querySelector('.wd-dis-save').addEventListener('click',()=>saveDischarge(form,btn.dataset.name));
         });
-    });
 
     // ── 병실 뷰 침상 카드 ──
     const reload = (msg) => { toast(msg, 'success'); setTimeout(() => location.reload(), 400); };
@@ -653,6 +785,7 @@
         const btnAway = bed.querySelector('.rm-away-btn');
         const btnMove = bed.querySelector('.rm-move');
         const btnDis  = bed.querySelector('.rm-dis');
+        const dischargeForm = bed.querySelector('.rm-inline-discharge');
         const backForm = bed.querySelector('.rm-inline-back');
         const btnBack = bed.querySelector('.rm-back-btn');
         if (btnBack && backForm) {
@@ -666,23 +799,17 @@
             awayForm.querySelector('.wd-af-save').addEventListener('click', async (e) => {
                 e.target.disabled = true;
                 try {
-                    await api.post(`/api/consult/${cid}/admission-event`, {
-                        event_type: awayForm.querySelector('.wd-af-type').value,
-                        event_date: awayForm.querySelector('.wd-af-date').value,
-                        hospital: awayForm.querySelector('.wd-af-hosp').value.trim(),
-                    });
+                    const payload=validateAway(awayForm); if(!payload){e.target.disabled=false;return;}
+                    await api.post(`/api/consult/${cid}/admission-event`, payload);
                     reload(`🚑 ${name} 외진 기록`);
                 } catch (err) { e.target.disabled = false; alert('외진 기록 실패: ' + err.message); }
             });
         }
-        if (btnDis) btnDis.addEventListener('click', async () => {
-            if (!confirm(`${name} 환자를 오늘 퇴원 처리할까요?\n재원 명부에서 빠집니다.`)) return;
-            btnDis.disabled = true;
-            try {
-                await api.post(`/api/consult/${cid}/discharge`, { action: 'complete' });
-                reload('✓ 퇴원 처리 완료');
-            } catch (e) { btnDis.disabled = false; alert('퇴원 처리 실패: ' + e.message); }
-        });
+        if (btnDis && dischargeForm) {
+            btnDis.addEventListener('click',()=>{dischargeForm.hidden=!dischargeForm.hidden; if(awayForm)awayForm.hidden=true;});
+            dischargeForm.querySelector('.wd-dis-cancel').addEventListener('click',()=>{dischargeForm.hidden=true;});
+            dischargeForm.querySelector('.wd-dis-save').addEventListener('click',()=>saveDischarge(dischargeForm,name));
+        }
     });
     // 호실 지정·이동 (미지정 목록 + 침상 카드 공용)
     document.querySelectorAll('.rm-room-save').forEach(btn => {
