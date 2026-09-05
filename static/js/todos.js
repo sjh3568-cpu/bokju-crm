@@ -24,6 +24,7 @@
     var formTitle = document.getElementById('todo-form-title');
     var delBtn = document.getElementById('todo-form-del');
     var delSeriesBtn = document.getElementById('todo-form-del-series');
+    var doneBtn = document.getElementById('todo-form-done');
     var repeatRow = document.getElementById('todo-repeat-row');
     var newBtn = document.getElementById('todo-new-btn');
     var today = newBtn ? newBtn.dataset.today : '';
@@ -58,6 +59,7 @@
         if (formTitle) formTitle.textContent = 'ToDo 추가';
         if (delBtn) delBtn.hidden = true;
         if (delSeriesBtn) delSeriesBtn.hidden = true;
+        if (doneBtn) doneBtn.hidden = true;
         openDrawer();
         setTimeout(function () { form.title.focus(); }, 60);
     }
@@ -84,8 +86,19 @@
         if (formTitle) formTitle.textContent = 'ToDo 수정';
         if (delBtn) delBtn.hidden = false;
         if (delSeriesBtn) delSeriesBtn.hidden = !d.repeat;   // 반복 항목이면 전체 삭제 노출
+        if (doneBtn) {                             // 완료 처리/취소 버튼 (달력 등에서 바로 완료)
+            doneBtn.hidden = false;
+            doneBtn.textContent = (d.done === '1') ? '↩ 완료 취소' : '✓ 완료 처리';
+        }
         openDrawer();
     }
+
+    if (doneBtn) doneBtn.addEventListener('click', function () {
+        var id = form.dataset.id;
+        if (!id) return;
+        var makeDone = doneBtn.textContent.indexOf('취소') === -1;
+        post('/api/todos/' + id + '/toggle', { done: makeDone ? '1' : '0' }).then(reload).catch(fail);
+    });
 
     if (newBtn) newBtn.addEventListener('click', function () { showAdd(); });
     if (newBtn && newBtn.dataset.autoOpen === '1') {

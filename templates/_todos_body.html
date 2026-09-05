@@ -85,6 +85,7 @@
         <label class="tf-field"><span>내용</span>
             <textarea name="note" rows="3" placeholder="상세 내용 (선택)"></textarea></label>
         <div class="tf-actions">
+            <button type="button" class="btn btn-accent btn-sm" id="todo-form-done" hidden>✓ 완료 처리</button>
             <button type="submit" class="btn btn-primary btn-sm">저장</button>
             <button type="button" class="btn btn-danger btn-sm" id="todo-form-del" hidden>삭제</button>
             <button type="button" class="btn btn-danger btn-sm" id="todo-form-del-series" hidden>반복 전체 삭제</button>
@@ -99,7 +100,7 @@ data-end="{{ t.end_date or '' }}" data-stime="{{ t.start_time or '' }}" data-eti
 data-owner="{{ 1 if t.is_owner|default(true) else 0 }}" data-shares="{{ t.share_user_ids|default([])|join(',') }}"
 data-progress="{{ t.progress or 0 }}"
 data-dday="{{ t.dday or 0 }}" data-remind="{{ t.remind_at or '' }}" data-note="{{ t.note or '' }}"
-data-repeat="{{ t.repeat_group or '' }}"
+data-repeat="{{ t.repeat_group or '' }}" data-done="{{ 1 if t.done else 0 }}"
 {%- endmacro %}
 
 {% macro todo_list_item(t) -%}
