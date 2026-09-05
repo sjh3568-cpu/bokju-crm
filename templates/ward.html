@@ -96,7 +96,7 @@
 
 <nav class="wd-tabs" aria-label="재원관리 세부 메뉴">
     <a href="/ward" class="{% if subtab == 'status' %}on{% endif %}">재원 현황</a>
-    <a href="/ward?tab=waiting" class="{% if subtab == 'waiting' %}on{% endif %}">병상 대기 <b>{{ kpis.bed_waiting }}</b></a>
+    <a href="/ward?tab=waiting" class="{% if subtab == 'waiting' %}on{% endif %}">입원 대기 <b>{{ kpis.bed_waiting }}</b></a>
     <a href="/ward?tab=trend" class="{% if subtab == 'trend' %}on{% endif %}">회복기 비율 추이</a>
 </nav>
 
@@ -110,7 +110,7 @@
 </section>
 {% elif subtab == 'waiting' %}
 <section class="card wd-sec wd-waiting">
-    <div class="wd-sec-head"><h3>🛏 병상 대기 환자 <span class="wd-n">{{ bed_waiting|length }}</span></h3><span class="muted-sm">입원 결정 후 병상 배정을 기다리는 환자 · 오래 기다린 순</span></div>
+    <div class="wd-sec-head"><h3>🛏 입원 대기 환자 <span class="wd-n">{{ bed_waiting|length }}</span></h3><span class="muted-sm">입원 결정 후 병상 배정을 기다리는 환자 · 오래 기다린 순</span></div>
     {% if bed_waiting %}<div class="tbl-wrap"><table class="tbl wd-tbl"><thead><tr><th>대기</th><th>환자</th><th>상담일</th><th>예상 입원</th><th>주치의</th><th>주요 질환</th><th>보호자·연락처</th><th>대기 메모</th><th>입원 확정</th></tr></thead><tbody>
     {% for c in bed_waiting %}<tr class="{% if c.wait_days is not none and c.wait_days >= 7 %}wd-over{% endif %}">
         <td class="nowrap"><span class="wd-days {% if c.wait_days is not none and c.wait_days >= 7 %}over{% endif %}">{{ c.wait_days or 0 }}일</span></td>
@@ -120,7 +120,7 @@
         <td class="nowrap">{{ c.guardian_name or '-' }} · {{ c.guardian_phone or '-' }}</td><td>{{ c.hold_reason or '병상 배정 대기' }}</td>
         <td class="nowrap wd-admit" data-cid="{{ c.id }}"><input type="date" class="wd-ad-date" value="{{ c.planned_admission_date or today_str }}"><input type="text" class="wd-ad-room" placeholder="호실" size="5"><button type="button" class="btn btn-primary btn-xs wd-ad-save">입원 확정</button></td>
     </tr>{% endfor %}</tbody></table></div>
-    {% else %}<div class="empty">현재 병상 대기 환자가 없습니다.</div>{% endif %}
+    {% else %}<div class="empty">현재 입원 대기 환자가 없습니다.</div>{% endif %}
 </section>
 {% else %}
 
@@ -170,13 +170,6 @@
                class="wd-sort-btn {% if view == 'room' %}on{% endif %}">🛏 병실</a>
             <a href="?view=list&sort={{ sort }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if doctor %}&doctor={{ doctor|urlencode }}{% endif %}#sec-ward"
                class="wd-sort-btn {% if view != 'room' %}on{% endif %}">☰ 목록</a>
-            {% if view != 'room' %}
-            <span class="wd-sort-div"></span>
-            {% for key, label in [('dday','기한 임박순'), ('room','호실순'), ('stay','재원 오래순'), ('name','이름순')] %}
-            <a href="?view=list&sort={{ key }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if doctor %}&doctor={{ doctor|urlencode }}{% endif %}#sec-ward"
-               class="wd-sort-btn {% if sort == key %}on{% endif %}">{{ label }}</a>
-            {% endfor %}
-            {% endif %}
             <button type="button" class="wd-roster-toggle" id="wd-roster-toggle"
                     aria-expanded="{{ 'true' if roster_open else 'false' }}" aria-controls="wd-roster-body">
                 {{ '명단 접기' if roster_open else '명단 펼치기' }}</button>
@@ -184,30 +177,18 @@
     </div>
     <div class="wd-filter-panel">
         <div class="wd-filter-title"><strong>검색·필터</strong><span>조건을 선택하면 명단이 자동으로 펼쳐집니다.</span></div>
-        <form class="wd-filter-search" method="get" action="/ward">
+        <form class="wd-filter-search wd-filter-compact" method="get" action="/ward">
+            <input type="hidden" name="view" value="list">
             <input type="text" name="q" value="{{ q }}" class="wd-q" placeholder="🔍 환자명 · 호실 · 연락처" autocomplete="off">
             <select class="wd-sel" name="doctor"><option value="">전체 주치의</option>{% for d in doctor_options %}<option value="{{ d }}" {% if doctor == d %}selected{% endif %}>{{ d }}</option>{% endfor %}</select>
+            <select class="wd-sel" name="ward"><option value="">전체 병동</option>{% for w in WARDS %}<option value="{{ w }}" {% if ward_f == w %}selected{% endif %}>{{ w }}</option>{% endfor %}</select>
+            <select class="wd-sel" name="filt"><option value="">전체 환자 구분</option><option value="recovery" {% if filt == 'recovery' %}selected{% endif %}>회복기 ({{ kpis.recovery }})</option><option value="nonrecovery" {% if filt == 'nonrecovery' %}selected{% endif %}>비회복기 ({{ kpis.nonrecovery }})</option><option value="recdue" {% if filt == 'recdue' %}selected{% endif %}>회복기 종료 D-30</option><option value="dis30" {% if filt == 'dis30' %}selected{% endif %}>퇴원 예정 D-30</option><option value="ext1" {% if filt == 'ext1' %}selected{% endif %}>연장 1회</option><option value="ext2" {% if filt == 'ext2' %}selected{% endif %}>연장 2회</option></select>
+            <select class="wd-sel" name="organism"><option value="">균 전체</option><option value="1" {% if organism_f %}selected{% endif %}>균 환자만</option></select>
+            {% if tag_counts %}<select class="wd-sel" name="tag"><option value="">전체 관리 태그</option>{% for t, n in tag_counts.items() %}<option value="{{ t }}" {% if tag_f == t %}selected{% endif %}>{{ t }} ({{ n }})</option>{% endfor %}</select>{% endif %}
             <button class="btn btn-primary btn-sm" type="submit">조회</button>
             {% if q or doctor or any_filter %}<a class="btn btn-secondary btn-sm" href="/ward#sec-ward">초기화</a>{% endif %}
         </form>
-        <div class="wd-filterbar">
-            <div class="wd-wards">
-                <a href="/ward{% if doctor %}?doctor={{ doctor|urlencode }}{% endif %}#sec-ward" class="wd-wardbtn {% if not ward_f %}on{% endif %}">전체</a>
-                {% for w in WARDS %}<a href="/ward?ward={{ w|urlencode }}{{ _dq }}#sec-ward" class="wd-wardbtn {% if ward_f == w %}on{% endif %}">{{ w }}</a>{% endfor %}
-            </div>
-            <div class="wd-filter-extra">
-                <a href="/ward?filt=recovery{{ _dq }}#sec-ward" class="wd-extchip {% if filt == 'recovery' %}on{% endif %}">회복기 {{ kpis.recovery }}</a>
-                <a href="/ward?filt=nonrecovery{{ _dq }}#sec-ward" class="wd-extchip {% if filt == 'nonrecovery' %}on{% endif %}">비회복기 {{ kpis.nonrecovery }}</a>
-                <a href="/ward?filt=recdue{{ _dq }}#sec-ward" class="wd-extchip {% if filt == 'recdue' %}on{% endif %}">⏱ 회복기 종료 D-30 {{ kpis.recovery_due }} <b>미확인 {{ kpis.recovery_due_unchecked }}</b></a>
-                <a href="/ward?filt=dis30{{ _dq }}#sec-ward" class="wd-extchip {% if filt == 'dis30' %}on{% endif %}">🚪 퇴원 예정 D-30 {{ kpis.discharge_due_30 }} <b>미확인 {{ kpis.discharge_due_unchecked }}</b></a>
-                <a href="/ward?organism=1{{ _dq }}#sec-ward" class="wd-extchip {% if organism_f %}on{% endif %}" style="border-color:#fca5a5;color:#b91b1b">🦠 균 환자</a>
-                <a href="/ward?filt=ext1{{ _dq }}#sec-ward" class="wd-extchip t1 {% if filt == 'ext1' %}on{% endif %}">연장 1회 {{ kpis.ext1 }}</a>
-                <a href="/ward?filt=ext2{{ _dq }}#sec-ward" class="wd-extchip t2 {% if filt == 'ext2' %}on{% endif %}">연장 2회 {{ kpis.ext2 }}</a>
-                {% if kpis.pending_recent %}<a href="#sec-pending" class="wd-extchip pend">입원일 미확정 {{ kpis.pending_recent }}</a>{% endif %}
-                {% if tag_counts %}<select class="wd-sel wd-tagsel" onchange="if(this.value)location.href=this.value"><option value="">🏷 관리 태그…</option>{% for t, n in tag_counts.items() %}<option value="/ward?tag={{ t|urlencode }}{{ _dq }}#sec-ward" {% if tag_f == t %}selected{% endif %}>{{ t }} ({{ n }})</option>{% endfor %}</select>{% endif %}
-                <a href="/ward.csv?{% if ward_f %}ward={{ ward_f|urlencode }}&{% endif %}{% if filt %}filt={{ filt }}&{% endif %}{% if tag_f %}tag={{ tag_f|urlencode }}&{% endif %}{% if organism_f %}organism=1&{% endif %}{% if doctor %}doctor={{ doctor|urlencode }}{% endif %}" class="btn btn-secondary btn-sm">⬇ CSV</a>
-            </div>
-        </div>
+        <div class="wd-filter-foot"><span>표 제목을 누르면 해당 기준으로 정렬됩니다.</span><a href="/ward.csv?{% if ward_f %}ward={{ ward_f|urlencode }}&{% endif %}{% if filt %}filt={{ filt }}&{% endif %}{% if tag_f %}tag={{ tag_f|urlencode }}&{% endif %}{% if organism_f %}organism=1&{% endif %}{% if doctor %}doctor={{ doctor|urlencode }}{% endif %}" class="btn btn-secondary btn-sm">⬇ CSV</a></div>
     </div>
     <div id="wd-roster-body" {% if not roster_open %}hidden{% endif %}>
     {% if admitted and view == 'room' %}
@@ -255,8 +236,11 @@
     <div class="tbl-wrap">
         <table class="tbl wd-tbl">
             <thead><tr>
-                <th>호실</th><th>환자</th><th>주치의</th><th>주 진단 · 부 진단</th>
-                <th>입원일</th><th>재원</th><th>수가 구간</th><th>퇴원 예정</th>
+                <th><a class="wd-th-sort {% if sort == 'room' %}on{% endif %}" href="?view=list&sort=room{% if q %}&q={{ q|urlencode }}{% endif %}{% if doctor %}&doctor={{ doctor|urlencode }}{% endif %}{% if ward_f %}&ward={{ ward_f|urlencode }}{% endif %}{% if filt %}&filt={{ filt }}{% endif %}{% if tag_f %}&tag={{ tag_f|urlencode }}{% endif %}{% if organism_f %}&organism=1{% endif %}#sec-ward">호실 ↕</a></th>
+                <th><a class="wd-th-sort {% if sort == 'name' %}on{% endif %}" href="?view=list&sort=name{% if q %}&q={{ q|urlencode }}{% endif %}{% if doctor %}&doctor={{ doctor|urlencode }}{% endif %}{% if ward_f %}&ward={{ ward_f|urlencode }}{% endif %}{% if filt %}&filt={{ filt }}{% endif %}{% if tag_f %}&tag={{ tag_f|urlencode }}{% endif %}{% if organism_f %}&organism=1{% endif %}#sec-ward">환자 ↕</a></th>
+                <th>주치의</th><th>주 진단 · 부 진단</th><th>입원일</th>
+                <th><a class="wd-th-sort {% if sort == 'stay' %}on{% endif %}" href="?view=list&sort=stay{% if q %}&q={{ q|urlencode }}{% endif %}{% if doctor %}&doctor={{ doctor|urlencode }}{% endif %}{% if ward_f %}&ward={{ ward_f|urlencode }}{% endif %}{% if filt %}&filt={{ filt }}{% endif %}{% if tag_f %}&tag={{ tag_f|urlencode }}{% endif %}{% if organism_f %}&organism=1{% endif %}#sec-ward">재원 ↕</a></th>
+                <th><a class="wd-th-sort {% if sort == 'dday' %}on{% endif %}" href="?view=list&sort=dday{% if q %}&q={{ q|urlencode }}{% endif %}{% if doctor %}&doctor={{ doctor|urlencode }}{% endif %}{% if ward_f %}&ward={{ ward_f|urlencode }}{% endif %}{% if filt %}&filt={{ filt }}{% endif %}{% if tag_f %}&tag={{ tag_f|urlencode }}{% endif %}{% if organism_f %}&organism=1{% endif %}#sec-ward">수가 구간 ↕</a></th><th>퇴원 예정</th>
                 {% if filt in ('recdue','dis30') %}<th>안내 확인</th>{% endif %}<th>처리</th>
             </tr></thead>
             <tbody>
@@ -558,6 +542,12 @@
 .wd-filter-title span { color:var(--text-light); font-size:.78em; }
 .wd-filter-search { display:grid; grid-template-columns:minmax(230px,1fr) 160px auto auto; gap:7px; margin-bottom:10px; }
 .wd-filter-search .wd-q { border-radius:7px; }
+.wd-filter-compact { display:flex; flex-wrap:wrap; align-items:center; }
+.wd-filter-compact .wd-q { flex:2 1 250px; width:auto; }
+.wd-filter-compact .wd-sel { flex:1 1 125px; max-width:185px; }
+.wd-filter-foot { display:flex; align-items:center; justify-content:space-between; gap:8px; color:var(--text-light); font-size:.76em; }
+.wd-th-sort { color:inherit; text-decoration:none; white-space:nowrap; }
+.wd-th-sort:hover, .wd-th-sort.on { color:var(--primary); text-decoration:underline; text-underline-offset:3px; }
 .wd-wards { display:flex; gap:5px; flex-wrap:wrap; }
 .wd-wardbtn { padding:5px 11px; border:1px solid var(--border); border-radius:999px;
     background:#fff; color:#475569; text-decoration:none; font-size:0.85em; font-weight:700; }
