@@ -2030,8 +2030,22 @@ def _build_consult_where(*, date_from=None, date_to=None, insurance=None, q=None
         like = f"%{q}%"
         if q_scope == "ward":
             digits = re.sub(r"\D", "", q)
-            cols = ["p.name LIKE ?", "c.room_number LIKE ?", "p.guardian_phone LIKE ?"]
-            qvals = [like, like, like]
+            # 재원관리 통합검색: 표에 보이는 환자·호실뿐 아니라 진단/주치의/
+            # 보호자/모병원/보험/수가구분/균·관리태그까지 한 검색어로 찾는다.
+            search_cols = (
+                "p.name", "c.room_number", "c.attending_doctor", "c.diseases",
+                "c.primary_diagnosis", "c.secondary_diagnosis", "c.special_care",
+                "c.source_hospital", "c.admission_purpose", "c.admission_purpose_category",
+                "c.admission_status", "p.guardian_name", "p.guardian_relation",
+                "p.guardian_phone", "p.address_full", "p.residence_sido",
+                "p.residence_sigungu", "p.insurance_type", "p.mgmt_tags",
+            )
+            cols = [f"COALESCE({col}, '') LIKE ?" for col in search_cols]
+            qvals = [like] * len(search_cols)
+            cols.append("(CASE p.gender WHEN 'M' THEN '남' WHEN 'F' THEN '여' ELSE '미상' END) LIKE ?")
+            qvals.append(like)
+            cols.append("CAST(COALESCE(c.patient_age, '') AS TEXT) LIKE ?")
+            qvals.append(like)
             if digits:
                 # 하이픈 없이 친 번호도 잡는다 (01012345678 → 010-1234-5678)
                 cols.append("REPLACE(REPLACE(p.guardian_phone, '-', ''), ' ', '') LIKE ?")

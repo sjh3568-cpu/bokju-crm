@@ -179,7 +179,7 @@
         <div class="wd-filter-title"><strong>검색·필터</strong><span>조건을 선택하면 명단이 자동으로 펼쳐집니다.</span></div>
         <form class="wd-filter-search wd-filter-compact" method="get" action="/ward">
             <input type="hidden" name="view" value="list">
-            <input type="text" name="q" value="{{ q }}" class="wd-q" placeholder="🔍 환자명 · 호실 · 연락처" autocomplete="off">
+            <input type="text" name="q" value="{{ q }}" class="wd-q" placeholder="🔍 환자·호실·진단·주치의·분류·균·태그 통합검색" autocomplete="off">
             <select class="wd-sel" name="doctor"><option value="">전체 주치의</option>{% for d in doctor_options %}<option value="{{ d }}" {% if doctor == d %}selected{% endif %}>{{ d }}</option>{% endfor %}</select>
             <select class="wd-sel" name="ward"><option value="">전체 병동</option>{% for w in WARDS %}<option value="{{ w }}" {% if ward_f == w %}selected{% endif %}>{{ w }}</option>{% endfor %}</select>
             <select class="wd-sel" name="filt"><option value="">전체 환자 구분</option><option value="recovery" {% if filt == 'recovery' %}selected{% endif %}>회복기 ({{ kpis.recovery }})</option><option value="nonrecovery" {% if filt == 'nonrecovery' %}selected{% endif %}>비회복기 ({{ kpis.nonrecovery }})</option><option value="recdue" {% if filt == 'recdue' %}selected{% endif %}>회복기 종료 D-30</option><option value="dis30" {% if filt == 'dis30' %}selected{% endif %}>퇴원 예정 D-30</option><option value="ext1" {% if filt == 'ext1' %}selected{% endif %}>연장 1회</option><option value="ext2" {% if filt == 'ext2' %}selected{% endif %}>연장 2회</option></select>

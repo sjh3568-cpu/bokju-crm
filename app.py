@@ -3442,7 +3442,32 @@ def ward_view():
     organism_f = (request.args.get("organism") or "").strip() or None  # 내성균 보유
     subtab = (request.args.get("tab") or "status").strip()
 
-    rows = models.list_consultations(admission_status="입원완료", q=q,
+    # 통합검색에서 파생 분류명도 바로 이해한다. DB에 그대로 저장되지 않는
+    # D-30·연장·병동 분류는 기존 필터로 변환하고 검색어 표시는 유지한다.
+    db_q = q
+    q_compact = (q or "").replace(" ", "").lower()
+    if q_compact:
+        if "비회복기" in q_compact:
+            filt, db_q = "nonrecovery", None
+        elif "회복기종료" in q_compact or "회복기d-30" in q_compact:
+            filt, db_q = "recdue", None
+        elif "퇴원예정" in q_compact or "퇴원d-30" in q_compact:
+            filt, db_q = "dis30", None
+        elif q_compact in ("회복기", "s005"):
+            filt, db_q = "recovery", None
+        elif "연장1" in q_compact:
+            filt, db_q = "ext1", None
+        elif "연장2" in q_compact:
+            filt, db_q = "ext2", None
+        elif "균환자" in q_compact or q_compact in ("균", "내성균"):
+            organism_f, db_q = "1", None
+        else:
+            for ward_name in WARDS:
+                if ward_name.replace(" ", "").lower() == q_compact:
+                    ward_f, db_q = ward_name, None
+                    break
+
+    rows = models.list_consultations(admission_status="입원완료", q=db_q,
                                      q_scope="ward", limit=10000)
     if doctor:
         rows = [c for c in rows if (c.get("attending_doctor") or "") == doctor]
