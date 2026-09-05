@@ -1654,12 +1654,12 @@ def _dashboard_calendar_context(uid, year, month, counselor=None):
     last = days[-1]
     buckets = {d.isoformat(): [] for d in days}
 
-    def add(day, kind, title, meta="", href="#", time=""):
+    def add(day, kind, title, meta="", href="#", time="", done=False):
         key = (day or "")[:10]
         if key not in buckets:
             return
         buckets[key].append({"kind": kind, "title": title, "meta": meta,
-                             "href": href, "time": (time or "")[:5]})
+                             "href": href, "time": (time or "")[:5], "done": done})
 
     for row in models.dashboard_calendar_rows(start.isoformat(), last.isoformat(), counselor):
         name = row.get("patient_name") or "환자 미지정"
@@ -1690,7 +1690,8 @@ def _dashboard_calendar_context(uid, year, month, counselor=None):
             meta = ((todo.get("owner_name") or "다른 상담사") + " 공유"
                     if shared else "ToDo")
             add(cursor.isoformat(), "shared" if shared else "todo", todo["title"],
-                meta, f"/todos?view=list&date={cursor.isoformat()}", todo.get("start_time"))
+                meta, f"/todos?view=list&date={cursor.isoformat()}", todo.get("start_time"),
+                done=bool(todo.get("done")))
             cursor += timedelta(days=1)
 
     order = {"admission": 0, "admitted": 0, "discharge": 1, "discharged": 1,
