@@ -107,6 +107,21 @@
     </div>
 </div>
 
+<nav class="wd-tabs" aria-label="재원관리 세부 메뉴">
+    <a href="/ward" class="{% if subtab != 'trend' %}on{% endif %}">재원 현황</a>
+    <a href="/ward?tab=trend" class="{% if subtab == 'trend' %}on{% endif %}">회복기 비율 추이</a>
+</nav>
+
+{% if subtab == 'trend' %}
+<section class="card wd-overview wd-trend-page">
+    <div class="wd-sec-head"><h3>📈 회복기 환자 비율 추이</h3><span class="muted-sm">재원 환자 기준 · 유지 기준선 40%</span></div>
+    <div class="wd-trend-grid">
+        <div><strong>최근 30일 · 일별</strong><svg class="wd-ratio-chart" data-series='{{ daily_ratio_trend|tojson }}' viewBox="0 0 620 190" role="img" aria-label="일별 회복기 환자 비율"></svg></div>
+        <div><strong>최근 12개월 · 월별</strong><svg class="wd-ratio-chart" data-series='{{ monthly_ratio_trend|tojson }}' viewBox="0 0 620 190" role="img" aria-label="월별 회복기 환자 비율"></svg></div>
+    </div>
+</section>
+{% else %}
+
 {# ─── 재원 핵심 지표 — 카드 클릭 시 아래 재원 목록이 해당 항목으로 필터됨 ─── #}
 {% set _dq = ('&doctor=' ~ (doctor|urlencode)) if doctor else '' %}
 <div class="wd-kpi">
@@ -114,13 +129,13 @@
         <span class="wd-k-n">{{ kpis.admitted }}</span>
         <span class="wd-k-l">🏥 총 입원 환자</span>
     </a>
-    <a class="wd-k accent {% if filt == 'recovery' %}on{% endif %}" href="/ward?filt=recovery{{ _dq }}#sec-ward">
-        <span class="wd-k-n">{{ kpis.recovery }}</span>
-        <span class="wd-k-l">회복기 <small>S005</small></span>
+    <a class="wd-k wd-k-mix" href="/ward?tab=trend">
+        <span class="wd-k-split"><b>{{ kpis.recovery }}<small>명 · {{ kpis.recovery_ratio }}%</small></b><b>{{ kpis.nonrecovery }}<small>명 · {{ kpis.nonrecovery_ratio }}%</small></b></span>
+        <span class="wd-k-l"><i class="rec"></i>회복기 <small>S005</small> · <i class="non"></i>비회복기 <small>S006</small></span>
     </a>
-    <a class="wd-k {% if filt == 'nonrecovery' %}on{% endif %}" href="/ward?filt=nonrecovery{{ _dq }}#sec-ward">
-        <span class="wd-k-n">{{ kpis.nonrecovery }}</span>
-        <span class="wd-k-l">비회복기 <small>S006</small></span>
+    <a class="wd-k accent" href="#sec-ward" title="허가병상 {{ kpis.bed_capacity }}병상 기준">
+        <span class="wd-k-n">{{ kpis.bed_occupancy }}<small>%</small></span>
+        <span class="wd-k-l">병상 가동률 · {{ kpis.admitted }}/{{ kpis.bed_capacity }}병상</span>
     </a>
     <a class="wd-k {% if kpis.recovery_ratio_ok %}ok{% else %}danger{% endif %} {% if filt == 'recovery' %}on{% endif %}"
        href="/ward?filt=recovery{{ _dq }}#sec-ward" title="재활의료기관 유지 기준: 회복기 40% 이상 — 클릭 시 회복기 명단">
@@ -130,14 +145,6 @@
     <a class="wd-k {% if not kpis.away %}zero{% elif kpis.away_overdue %}danger{% else %}warn{% endif %}" href="#sec-away">
         <span class="wd-k-n">{{ kpis.away }}</span>
         <span class="wd-k-l">🚑 외진 중{% if kpis.away_overdue %} <b>지연 {{ kpis.away_overdue }}</b>{% endif %}</span>
-    </a>
-    <a class="wd-k {% if not kpis.recovery_due %}zero{% else %}warn{% endif %}" href="#recovery-due-list">
-        <span class="wd-k-n">{{ kpis.recovery_due }}</span>
-        <span class="wd-k-l">⏱ 회복기 종료 D-30</span>
-    </a>
-    <a class="wd-k {% if not kpis.discharge_due_30 %}zero{% else %}warn{% endif %}" href="#discharge-due-list">
-        <span class="wd-k-n">{{ kpis.discharge_due_30 }}</span>
-        <span class="wd-k-l">🚪 퇴원 예정 D-30</span>
     </a>
 </div>
 {% if kpis.ext1 or kpis.ext2 or kpis.pending_recent %}
@@ -149,32 +156,6 @@
 </div>
 {% endif %}
 
-<div class="wd-overview-grid">
-    <section class="card wd-overview">
-        <div class="wd-sec-head"><h3>📈 회복기 환자 비율 추이</h3><span class="muted-sm">재원 환자 기준 · 기준선 40%</span></div>
-        <div class="wd-trend-grid">
-            <div><strong>최근 30일</strong><svg class="wd-ratio-chart" data-series='{{ daily_ratio_trend|tojson }}' viewBox="0 0 620 190" role="img" aria-label="일별 회복기 환자 비율"></svg></div>
-            <div><strong>최근 12개월</strong><svg class="wd-ratio-chart" data-series='{{ monthly_ratio_trend|tojson }}' viewBox="0 0 620 190" role="img" aria-label="월별 회복기 환자 비율"></svg></div>
-        </div>
-    </section>
-    <div class="wd-due-grid">
-        <details class="card wd-due-card" id="recovery-due-list">
-            <summary><span>⏱ 회복기 종료 D-30</span><b>{{ recovery_due_list|length }}명</b></summary>
-            <div class="wd-mini-list">
-            {% for c in recovery_due_list %}<a href="/consult/{{ c.id }}"><strong>{{ c.patient_name }}</strong><span>{{ c.room_number or '호실 미정' }} · {{ c.phase_end_date|krdate }}</span><em>{% if c.phase_dday < 0 %}{{ -c.phase_dday }}일 초과{% else %}D-{{ c.phase_dday }}{% endif %}</em></a>
-            {% else %}<p class="empty">30일 내 종료 대상이 없습니다.</p>{% endfor %}
-            </div>
-        </details>
-        <details class="card wd-due-card" id="discharge-due-list">
-            <summary><span>🚪 퇴원 예정 D-30</span><b>{{ discharge_due_list|length }}명</b></summary>
-            <div class="wd-mini-list">
-            {% for c in discharge_due_list %}<a href="/consult/{{ c.id }}"><strong>{{ c.patient_name }}</strong><span>{{ c.room_number or '호실 미정' }} · {{ c.discharge_due|krdate }}</span><em>{% if c.discharge_dday < 0 %}{{ -c.discharge_dday }}일 초과{% else %}D-{{ c.discharge_dday }}{% endif %}</em></a>
-            {% else %}<p class="empty">30일 내 퇴원 대상이 없습니다.</p>{% endfor %}
-            </div>
-        </details>
-    </div>
-</div>
-
 {# ─── 병동 빠른 조회 + 필터 + 내보내기 ─── #}
 {% set _fq = [] %}
 <div class="wd-filterbar">
@@ -185,6 +166,8 @@
         {% endfor %}
     </div>
     <div class="wd-filter-extra">
+        <a href="/ward?filt=recdue{{ _dq }}#sec-ward" class="wd-extchip {% if filt == 'recdue' %}on{% endif %}">⏱ 회복기 종료 D-30 {{ kpis.recovery_due }} <b>미확인 {{ kpis.recovery_due_unchecked }}</b></a>
+        <a href="/ward?filt=dis30{{ _dq }}#sec-ward" class="wd-extchip {% if filt == 'dis30' %}on{% endif %}">🚪 퇴원 예정 D-30 {{ kpis.discharge_due_30 }} <b>미확인 {{ kpis.discharge_due_unchecked }}</b></a>
         <a href="/ward?organism=1{{ _dq }}#sec-ward" class="wd-extchip {% if organism_f %}on{% endif %}" style="border-color:#fca5a5;color:#b91c1c">🦠 균 환자</a>
         {% if tag_counts %}
         <select class="wd-sel wd-tagsel" onchange="if(this.value)location.href=this.value">
@@ -274,7 +257,8 @@
         <table class="tbl wd-tbl">
             <thead><tr>
                 <th>호실</th><th>환자</th><th>주치의</th><th>주 진단 · 부 진단</th>
-                <th>입원일</th><th>재원</th><th>수가 구간</th><th>퇴원 예정</th><th>처리</th>
+                <th>입원일</th><th>재원</th><th>수가 구간</th><th>퇴원 예정</th>
+                {% if filt in ('recdue','dis30') %}<th>안내 확인</th>{% endif %}<th>처리</th>
             </tr></thead>
             <tbody>
                 {% for c in admitted %}
@@ -318,6 +302,21 @@
                         {% endif %}
                         {% else %}<span class="muted-sm">—</span>{% endif %}
                     </td>
+                    {% if filt == 'recdue' %}
+                    <td class="nowrap wd-follow-cell">
+                        <button type="button" class="btn btn-xs wd-follow-toggle {% if c.recovery_call_at %}btn-secondary done{% else %}btn-primary{% endif %}"
+                                data-cid="{{ c.id }}" data-kind="recovery-call">
+                            {% if c.recovery_call_at %}✓ 보호자 안내 완료{% else %}보호자 재상담 확인{% endif %}</button>
+                        {% if c.recovery_call_at %}<small>{{ c.recovery_call_at[5:16] }} · {{ c.recovery_call_by or '-' }}</small>{% endif %}
+                    </td>
+                    {% elif filt == 'dis30' %}
+                    <td class="nowrap wd-follow-cell">
+                        <button type="button" class="btn btn-xs wd-follow-toggle {% if c.discharge_sms_at %}btn-secondary done{% else %}btn-primary{% endif %}"
+                                data-cid="{{ c.id }}" data-kind="discharge-sms">
+                            {% if c.discharge_sms_at %}✓ 퇴원 문자 완료{% else %}퇴원 문자 확인{% endif %}</button>
+                        {% if c.discharge_sms_at %}<small>{{ c.discharge_sms_at[5:16] }} · {{ c.discharge_sms_by or '-' }}</small>{% endif %}
+                    </td>
+                    {% endif %}
                     <td class="nowrap wd-act">
                         {% if c.away %}
                         <span class="wd-back-cell">
@@ -332,7 +331,7 @@
                     </td>
                 </tr>
                 <tr class="wd-form-row" hidden>
-                    <td colspan="9">
+                    <td colspan="{% if filt in ('recdue','dis30') %}10{% else %}9{% endif %}">
                         <div class="wd-inline wd-inline-away" data-cid="{{ c.id }}">
                             <span class="muted-sm">🚑 {{ c.patient_name }} 외진</span>
                             <select class="wd-af-type">
@@ -478,6 +477,7 @@
     </details>
     {% endif %}
 </div>
+{% endif %}
 
 <style>
 .wd-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
@@ -492,7 +492,11 @@
 .wd-sel { padding:5px 8px; border:1px solid var(--border); border-radius:6px;
     font-family:inherit; font-size:0.86em; }
 
-.wd-kpi { display:grid; grid-template-columns:repeat(7, 1fr); gap:8px; margin:10px 0 10px; }
+.wd-tabs { display:flex; gap:5px; margin:0 0 12px; border-bottom:1px solid var(--border); }
+.wd-tabs a { padding:8px 14px; color:#64748b; text-decoration:none; font-size:.88em; font-weight:700; border-bottom:3px solid transparent; }
+.wd-tabs a:hover { color:var(--primary); }
+.wd-tabs a.on { color:var(--primary); border-bottom-color:var(--primary); }
+.wd-kpi { display:grid; grid-template-columns:repeat(5, 1fr); gap:8px; margin:10px 0 10px; }
 @media(max-width:900px){ .wd-kpi{ grid-template-columns:repeat(4, 1fr); } }
 @media(max-width:560px){ .wd-kpi{ grid-template-columns:repeat(2, 1fr); } }
 .wd-k { display:flex; flex-direction:column; gap:2px; padding:10px 12px; background:#fff;
@@ -500,6 +504,12 @@
 .wd-k:hover { border-color:var(--primary); background:#f0f9ff; }
 .wd-k-n { font-size:1.6em; font-weight:800; color:var(--primary); line-height:1; }
 .wd-k-n small { font-size:0.5em; font-weight:700; }
+.wd-k-split { display:grid; grid-template-columns:1fr 1fr; gap:8px; color:#0f766e; }
+.wd-k-split b { font-size:1.35em; line-height:1; }
+.wd-k-split small { display:block; margin-top:4px; font-size:.48em; color:#64748b; }
+.wd-k-split b + b { color:#b45309; border-left:1px solid #e2e8f0; padding-left:8px; }
+.wd-k-l i { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:3px; }
+.wd-k-l i.rec { background:#14b8a6; } .wd-k-l i.non { background:#f59e0b; margin-left:3px; }
 .wd-k-l { font-size:0.76em; color:#475569; font-weight:600; white-space:nowrap;
     overflow:hidden; text-overflow:ellipsis; }
 .wd-k-l small { color:#94a3b8; font-weight:700; }
@@ -571,6 +581,7 @@
 .wd-roster-toggle:hover { background:#dcfce7; border-color:#22c55e; }
 .wd-overview-grid { display:grid; grid-template-columns:minmax(0,2fr) minmax(260px,1fr); gap:12px; margin:12px 0; }
 .wd-overview { min-width:0; }
+.wd-trend-page { margin-top:8px; }
 .wd-trend-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
 .wd-trend-grid > div { min-width:0; padding:8px; border:1px solid #e2e8f0; border-radius:8px; background:#fbfdff; }
 .wd-trend-grid strong { display:block; font-size:.82em; color:#334155; margin:0 0 2px 5px; }
@@ -666,6 +677,9 @@
     font-family:inherit; font-size:0.86em; padding:3px 6px;
     border:1px solid var(--border); border-radius:5px; }
 .wd-admit { display:flex; gap:4px; align-items:center; }
+.wd-follow-cell { min-width:142px; }
+.wd-follow-cell small { display:block; margin-top:3px; color:#64748b; font-size:.72em; }
+.wd-follow-toggle.done { color:#166534; border-color:#86efac; background:#f0fdf4; }
 .wd-old { margin-top:10px; }
 .wd-old > summary { cursor:pointer; font-size:0.84em; color:var(--text-light); }
 @media (max-width: 1000px) {
@@ -712,6 +726,17 @@
                 el('text',{x:x(i),y:174,'text-anchor':'middle',fill:'#64748b','font-size':10},d.label);
                 el('text',{x:x(i),y:y(d.ratio)-7,'text-anchor':'middle',fill:'#166534','font-size':10,'font-weight':700},d.ratio+'%');
             }
+        });
+    });
+
+    document.querySelectorAll('.wd-follow-toggle').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            btn.disabled=true;
+            try {
+                await api.post(`/api/consult/${btn.dataset.cid}/${btn.dataset.kind}`, {});
+                toast('✓ 안내 확인 상태를 저장했습니다.','success');
+                setTimeout(()=>location.reload(),300);
+            } catch(e) { btn.disabled=false; alert('안내 확인 저장 실패: '+e.message); }
         });
     });
 

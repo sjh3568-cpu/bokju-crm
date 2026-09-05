@@ -538,8 +538,11 @@ def init_db():
         # ── 대시보드 follow-up 추적 (2026-05-26) ──
         # 회복기→비회복기 전환 D-30 알림에 대한 보호자 전화 완료 시각.
         "recovery_call_at": "DATETIME",
+        "recovery_call_by": "TEXT",
         # 퇴원예정 D-30 환자의 1차 병동 면담 완료 시각.
         "discharge_interview_at": "DATETIME",
+        "discharge_sms_at": "DATETIME",
+        "discharge_sms_by": "TEXT",
     })
     # ─── 외진(응급전원·모병원 외래치료) 出/歸 페어링 ───
     # 나감 이벤트 1행이 복귀일까지 들고 있는다 → '지금 나가 있는 환자'를
@@ -1811,6 +1814,8 @@ CONSULT_FIELDS = (
     "admission_status", "admission_date",
     "rejection_reason", "rejection_reason_detail", "hold_reason",
     "discharge_due_date", "discharge_date", "discharge_destination", "discharge_reason",
+    "recovery_call_at", "recovery_call_by", "discharge_interview_at",
+    "discharge_sms_at", "discharge_sms_by",
     "disuse_screening_note",
     # 회복기 불가 → 같은 재단·외부 시설 연계 안내 (수요 캡처율 KPI)
     "external_referral", "external_referral_note",
@@ -1894,7 +1899,9 @@ _META_FIELDS = ("consult_result", "consult_result_reason",
                 "admission_status", "admission_date", "rejection_reason",
                 "rejection_reason_detail", "hold_reason",
                 "discharge_due_date", "discharge_date",
-                "discharge_destination", "discharge_reason")
+                "discharge_destination", "discharge_reason",
+                "recovery_call_at", "recovery_call_by", "discharge_interview_at",
+                "discharge_sms_at", "discharge_sms_by")
 
 
 def delete_consultation(cid: int):
@@ -2116,6 +2123,8 @@ def list_consultations(*, date_from=None, date_to=None,
                c.admission_status, c.admission_date,
                c.discharge_due_date, c.discharge_date,
                c.discharge_destination, c.discharge_reason,
+               c.recovery_call_at, c.recovery_call_by,
+               c.discharge_interview_at, c.discharge_sms_at, c.discharge_sms_by,
                c.import_source,
                p.id AS patient_id, p.name AS patient_name, p.gender,
                p.address_full, p.residence_sido, p.residence_sigungu,

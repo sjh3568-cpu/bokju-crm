@@ -3183,14 +3183,17 @@ def api_consult_discharge(cid):
 
 # ──── 대시보드 follow-up 토글 (회복기 전환 보호자 연락 / 퇴원 1차 면담) ────
 
-def _toggle_follow_up(cid, field, audit_action):
+def _toggle_follow_up(cid, field, audit_action, by_field=None):
     """consultations[field](DATETIME)를 토글 — 비어있으면 현재 시각, 있으면 NULL."""
     existing = models.get_consultation(cid)
     if not existing:
         return jsonify({"error": "not found"}), 404
     cur = existing.get(field)
     new_val = None if cur else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    models.update_consultation_meta(cid, **{field: new_val})
+    updates = {field: new_val}
+    if by_field:
+        updates[by_field] = (g.user.get("display_name") or g.user.get("username")) if new_val else None
+    models.update_consultation_meta(cid, **updates)
     models.log_audit(
         user_id=g.user["id"], username=g.user["username"],
         action=audit_action, target_type="consultation", target_id=cid,
@@ -3202,8 +3205,15 @@ def _toggle_follow_up(cid, field, audit_action):
 @app.route("/api/consult/<int:cid>/recovery-call", methods=["POST"])
 @login_required
 def api_consult_recovery_call(cid):
-    """회복기→비회복기 전환 D-15 환자의 보호자 전화 완료 마킹 토글."""
-    return _toggle_follow_up(cid, "recovery_call_at", "recovery_call")
+    """회복기→비회복기 전환 D-30 환자의 보호자 재상담 완료 마킹 토글."""
+    return _toggle_follow_up(cid, "recovery_call_at", "recovery_call", "recovery_call_by")
+
+
+@app.route("/api/consult/<int:cid>/discharge-sms", methods=["POST"])
+@login_required
+def api_consult_discharge_sms(cid):
+    """퇴원예정 D-30 환자의 보호자 퇴원 안내 문자 발송 확인 토글."""
+    return _toggle_follow_up(cid, "discharge_sms_at", "discharge_sms", "discharge_sms_by")
 
 
 @app.route("/api/consult/<int:cid>/discharge-interview", methods=["POST"])
@@ -3429,6 +3439,7 @@ def ward_view():
     ward_f = (request.args.get("ward") or "").strip() or None      # 병동 빠른 조회
     tag_f = (request.args.get("tag") or "").strip() or None        # 관리 태그
     organism_f = (request.args.get("organism") or "").strip() or None  # 내성균 보유
+    subtab = (request.args.get("tab") or "status").strip()
 
     rows = models.list_consultations(admission_status="입원완료", q=q,
                                      q_scope="ward", limit=10000)
@@ -3515,21 +3526,31 @@ def ward_view():
     nonrecovery_n = sum(1 for c in admitted if c.get("care_phase") == "비회복기")
     total_n = len(admitted)
     recovery_ratio = round(recovery_n / total_n * 100) if total_n else 0
+    bed_capacity = 355
     kpis = {
         "admitted": total_n,
         "recovery": recovery_n,
         "nonrecovery": nonrecovery_n,
         "recovery_ratio": recovery_ratio,
         "recovery_ratio_ok": recovery_ratio >= 40,
+        "nonrecovery_ratio": round(nonrecovery_n / total_n * 100) if total_n else 0,
+        "bed_capacity": bed_capacity,
+        "bed_occupancy": round(total_n / bed_capacity * 100, 1),
         "away": len(away),
         "away_overdue": sum(1 for c in away if c["away"].get("overdue")),
         "recovery_due": sum(1 for c in admitted if c.get("recovery_due")),
+        "recovery_due_unchecked": sum(1 for c in admitted
+                                       if c.get("recovery_due") and not c.get("recovery_call_at")),
         "discharge_soon": sum(1 for c in admitted
                               if c.get("discharge_dday") is not None
                               and c["discharge_dday"] <= 7),
         "discharge_due_30": sum(1 for c in admitted
                                 if c.get("discharge_dday") is not None
                                 and c["discharge_dday"] <= 30),
+        "discharge_due_unchecked": sum(1 for c in admitted
+                                        if c.get("discharge_dday") is not None
+                                        and c["discharge_dday"] <= 30
+                                        and not c.get("discharge_sms_at")),
         "ext1": sum(1 for c in admitted if c.get("ext_tier") == 1),
         "ext2": sum(1 for c in admitted if c.get("ext_tier") == 2),
         "pending": len(pending),
@@ -3615,6 +3636,10 @@ def ward_view():
     # KPI/태그/균 세부 필터 — 목록 표시에 적용
     filt_label = _WARD_FILTS[filt][0] if filt in _WARD_FILTS else None
     admitted_list = _apply_ward_filters(admitted, filt, ward_f, tag_f, organism_f)
+    if filt == "recdue":
+        admitted_list.sort(key=lambda c: (bool(c.get("recovery_call_at")), _dday(c)))
+    elif filt == "dis30":
+        admitted_list.sort(key=lambda c: (bool(c.get("discharge_sms_at")), _dday(c)))
     view = request.args.get("view") or "room"
     if filt in _WARD_FILTS or tag_f or organism_f:
         view = "list"   # 세부 내역을 볼 땐 목록 뷰로
@@ -3633,6 +3658,7 @@ def ward_view():
         recovery_due_list=recovery_due_list, discharge_due_list=discharge_due_list,
         daily_ratio_trend=daily_ratio_trend, monthly_ratio_trend=monthly_ratio_trend,
         discharged=discharged,
+        subtab=subtab,
     )
 
 
