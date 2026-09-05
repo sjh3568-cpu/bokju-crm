@@ -3416,10 +3416,8 @@ def ward_view():
     doctor = (request.args.get("doctor") or "").strip() or None
     sort = request.args.get("sort") or "dday"
     show_old = request.args.get("old") in ("1", "true", "yes")
-    try:
-        ext_filter = int(request.args["ext"]) if request.args.get("ext") not in (None, "") else None
-    except (ValueError, TypeError):
-        ext_filter = None
+    # KPI 카드별 세부 내역 필터 — 재원 목록을 해당 항목으로 좁혀 본다.
+    filt = (request.args.get("filt") or "").strip() or None
 
     rows = models.list_consultations(admission_status="입원완료", q=q,
                                      q_scope="ward", limit=10000)
@@ -3523,17 +3521,30 @@ def ward_view():
     }
     doctor_options = sorted({c.get("attending_doctor") for c in rows
                              if (c.get("attending_doctor") or "").strip()})
-    # 연장 구분 필터 — 목록 표시에만 적용 (병실 뷰·KPI는 전체 기준 유지)
+
+    # KPI 카드별 세부 내역 필터 — 목록 표시에만 적용 (병실 뷰·KPI는 전체 기준 유지)
+    _filts = {
+        "recovery":    ("회복기 (S005)",       lambda c: c.get("care_phase") == "회복기"),
+        "nonrecovery": ("비회복기 (S006)",     lambda c: c.get("care_phase") == "비회복기"),
+        "recdue":      ("회복기 종료 D-30",     lambda c: c.get("recovery_due")),
+        "dis30":       ("퇴원 예정 D-30",       lambda c: c.get("discharge_dday") is not None and c["discharge_dday"] <= 30),
+        "ext1":        ("연장 1회 (1.5년)",     lambda c: c.get("ext_tier") == 1),
+        "ext2":        ("연장 2회 (2년)",       lambda c: c.get("ext_tier") == 2),
+    }
     admitted_list = admitted
-    if ext_filter is not None:
-        admitted_list = [c for c in admitted if c.get("ext_tier") == ext_filter]
+    filt_label = None
+    view = request.args.get("view") or "room"
+    if filt in _filts:
+        filt_label, pred = _filts[filt]
+        admitted_list = [c for c in admitted if pred(c)]
+        view = "list"   # 세부 내역을 볼 땐 목록 뷰로 (배치도 대신 행으로)
     return render_template(
         "ward.html", away=away, admitted=admitted_list,
         room_view=room_view, unassigned=unassigned,
-        view=(request.args.get("view") or "room"),
+        view=view,
         pending=pending_recent, pending_old=pending_old, show_old=show_old,
         kpis=kpis, q=q or "", doctor=doctor or "", sort=sort,
-        ext_filter=ext_filter,
+        filt=filt, filt_label=filt_label,
         doctor_options=doctor_options,
     )
 

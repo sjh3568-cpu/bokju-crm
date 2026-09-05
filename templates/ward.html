@@ -95,33 +95,35 @@
     </div>
 </div>
 
-{# ─── 재원 핵심 지표 — 총입원 · 회복기(S005) · 비회복기(S006) · 회복기비율 · 외진 · 회복기종료 · 퇴원예정 ─── #}
+{# ─── 재원 핵심 지표 — 카드 클릭 시 아래 재원 목록이 해당 항목으로 필터됨 ─── #}
+{% set _dq = ('&doctor=' ~ (doctor|urlencode)) if doctor else '' %}
 <div class="wd-kpi">
-    <a class="wd-k" href="#sec-ward">
+    <a class="wd-k {% if not filt %}on{% endif %}" href="/ward{% if doctor %}?doctor={{ doctor|urlencode }}{% endif %}#sec-ward">
         <span class="wd-k-n">{{ kpis.admitted }}</span>
         <span class="wd-k-l">🏥 총 입원 환자</span>
     </a>
-    <a class="wd-k accent" href="?sort=dday#sec-ward">
+    <a class="wd-k accent {% if filt == 'recovery' %}on{% endif %}" href="/ward?filt=recovery{{ _dq }}#sec-ward">
         <span class="wd-k-n">{{ kpis.recovery }}</span>
         <span class="wd-k-l">회복기 <small>S005</small></span>
     </a>
-    <a class="wd-k" href="#sec-ward">
+    <a class="wd-k {% if filt == 'nonrecovery' %}on{% endif %}" href="/ward?filt=nonrecovery{{ _dq }}#sec-ward">
         <span class="wd-k-n">{{ kpis.nonrecovery }}</span>
         <span class="wd-k-l">비회복기 <small>S006</small></span>
     </a>
-    <div class="wd-k {% if kpis.recovery_ratio_ok %}ok{% else %}danger{% endif %}" title="재활의료기관 유지 기준: 회복기 40% 이상">
+    <a class="wd-k {% if kpis.recovery_ratio_ok %}ok{% else %}danger{% endif %} {% if filt == 'recovery' %}on{% endif %}"
+       href="/ward?filt=recovery{{ _dq }}#sec-ward" title="재활의료기관 유지 기준: 회복기 40% 이상 — 클릭 시 회복기 명단">
         <span class="wd-k-n">{{ kpis.recovery_ratio }}<small>%</small></span>
         <span class="wd-k-l">회복기 비율 {% if kpis.recovery_ratio_ok %}<b>✓ 40%↑</b>{% else %}<b>⚠ 40%↓</b>{% endif %}</span>
-    </div>
+    </a>
     <a class="wd-k {% if not kpis.away %}zero{% elif kpis.away_overdue %}danger{% else %}warn{% endif %}" href="#sec-away">
         <span class="wd-k-n">{{ kpis.away }}</span>
         <span class="wd-k-l">🚑 외진 중{% if kpis.away_overdue %} <b>지연 {{ kpis.away_overdue }}</b>{% endif %}</span>
     </a>
-    <a class="wd-k {% if not kpis.recovery_due %}zero{% else %}warn{% endif %}" href="?sort=dday#sec-ward">
+    <a class="wd-k {% if not kpis.recovery_due %}zero{% else %}warn{% endif %} {% if filt == 'recdue' %}on{% endif %}" href="/ward?filt=recdue{{ _dq }}#sec-ward">
         <span class="wd-k-n">{{ kpis.recovery_due }}</span>
         <span class="wd-k-l">⏱ 회복기 종료 D-30</span>
     </a>
-    <a class="wd-k {% if not kpis.discharge_due_30 %}zero{% else %}warn{% endif %}" href="?sort=dday#sec-ward">
+    <a class="wd-k {% if not kpis.discharge_due_30 %}zero{% else %}warn{% endif %} {% if filt == 'dis30' %}on{% endif %}" href="/ward?filt=dis30{{ _dq }}#sec-ward">
         <span class="wd-k-n">{{ kpis.discharge_due_30 }}</span>
         <span class="wd-k-l">🚪 퇴원 예정 D-30</span>
     </a>
@@ -129,9 +131,8 @@
 {% if kpis.ext1 or kpis.ext2 or kpis.pending_recent %}
 <div class="wd-subkpi">
     <span class="muted-sm">입원 연장:</span>
-    <a href="?ext=1{% if doctor %}&doctor={{ doctor|urlencode }}{% endif %}#sec-ward" class="wd-extchip t1">연장 1회 {{ kpis.ext1 }}</a>
-    <a href="?ext=2{% if doctor %}&doctor={{ doctor|urlencode }}{% endif %}#sec-ward" class="wd-extchip t2">연장 2회 {{ kpis.ext2 }}</a>
-    {% if ext_filter is not none %}<a href="/ward{% if doctor %}?doctor={{ doctor|urlencode }}{% endif %}" class="wd-extchip clear">필터 해제 ✕</a>{% endif %}
+    <a href="/ward?filt=ext1{{ _dq }}#sec-ward" class="wd-extchip t1 {% if filt == 'ext1' %}on{% endif %}">연장 1회 {{ kpis.ext1 }}</a>
+    <a href="/ward?filt=ext2{{ _dq }}#sec-ward" class="wd-extchip t2 {% if filt == 'ext2' %}on{% endif %}">연장 2회 {{ kpis.ext2 }}</a>
     {% if kpis.pending_recent %}<a href="#sec-pending" class="wd-extchip pend">⚠ 입원일 미확정 {{ kpis.pending_recent }}</a>{% endif %}
 </div>
 {% endif %}
@@ -182,7 +183,8 @@
 {# ─── ② 재원 환자 ─── #}
 <div class="card wd-sec" id="sec-ward">
     <div class="wd-sec-head">
-        <h3>🏥 재원 환자 <span class="wd-n">{{ admitted|length }}</span></h3>
+        <h3>🏥 {% if filt_label %}{{ filt_label }}{% else %}재원 환자{% endif %} <span class="wd-n">{{ admitted|length }}</span>
+            {% if filt_label %}<a class="wd-filt-clear" href="/ward{% if doctor %}?doctor={{ doctor|urlencode }}{% endif %}#sec-ward">✕ 전체 보기</a>{% endif %}</h3>
         <div class="wd-sort">
             <a href="?view=room{% if q %}&q={{ q|urlencode }}{% endif %}{% if doctor %}&doctor={{ doctor|urlencode }}{% endif %}#sec-ward"
                class="wd-sort-btn {% if view == 'room' %}on{% endif %}">🛏 병실</a>
@@ -313,8 +315,10 @@
     </div>
     {% else %}
     <div class="empty">
-        재원 중으로 확정된 환자가 없습니다.
-        {% if kpis.pending %}아래 <a href="#sec-pending">입원일 미확정 {{ kpis.pending }}명</a>에서 입원일을 확정하면 이곳에 올라옵니다.{% endif %}
+        {% if filt_label %}‘{{ filt_label }}’에 해당하는 재원 환자가 없습니다.
+        <a href="/ward{% if doctor %}?doctor={{ doctor|urlencode }}{% endif %}#sec-ward">전체 보기</a>
+        {% else %}재원 중으로 확정된 환자가 없습니다.
+        {% if kpis.pending %}아래 <a href="#sec-pending">입원일 미확정 {{ kpis.pending }}명</a>에서 입원일을 확정하면 이곳에 올라옵니다.{% endif %}{% endif %}
     </div>
     {% endif %}
 </div>
@@ -424,6 +428,14 @@
 .wd-ext { display:inline-block; font-size:0.72em; font-weight:800; border-radius:5px; padding:0 5px; margin-left:3px; }
 .wd-ext.t1 { background:#fef9c3; color:#854d0e; }
 .wd-ext.t2 { background:#ffedd5; color:#9a3412; }
+/* 활성 필터 카드/칩 강조 */
+.wd-k.on { outline:2px solid var(--primary); outline-offset:-1px; }
+.wd-k.on .wd-k-l { color:var(--primary); }
+.wd-extchip.on { outline:2px solid currentColor; outline-offset:-1px; }
+.wd-filt-clear { font-size:0.6em; font-weight:700; color:var(--text-light);
+    text-decoration:none; margin-left:8px; padding:2px 8px; border:1px solid var(--border);
+    border-radius:999px; vertical-align:middle; }
+.wd-filt-clear:hover { color:var(--primary); border-color:var(--primary); }
 
 .wd-sec + .wd-sec { margin-top:12px; }
 .wd-sec-head { display:flex; justify-content:space-between; align-items:baseline;
