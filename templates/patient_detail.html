@@ -35,6 +35,9 @@
     </div>
 </div>
 
+{# 이 환자 할 일 — 상담 상세와 동일 카드 (공용 부분템플릿) #}
+{% with pt_id=p.id, pt_name=p.name %}{% include "_patient_todo_card.html" %}{% endwith %}
+
 <!-- ───────── 환자 접촉 이력 ───────── -->
 <div class="card lc-card" data-pid="{{ p.id }}" style="margin-top:12px">
     <h3>통합 접촉 이력 <span class="muted">— 상담·문자·커뮤니케이션 ({{ timeline|length }})</span></h3>

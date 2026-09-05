@@ -2801,8 +2801,11 @@ def patient_detail(pid):
         action="view_patient", target_type="patient", target_id=pid,
         ip=request.remote_addr,
     )
+    patient_todos = _annotate_todos(
+        models.list_todos_for_patient(g.user["id"], pid), date.today())
     return render_template("patient_detail.html", p=p, history=history,
-                           timeline=timeline)
+                           timeline=timeline, patient_todos=patient_todos,
+                           today_str=date.today().isoformat())
 
 
 # ───────────────────── API: 상담 CRUD ─────────────────────
