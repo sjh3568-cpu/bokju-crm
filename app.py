@@ -3416,6 +3416,10 @@ def ward_view():
     doctor = (request.args.get("doctor") or "").strip() or None
     sort = request.args.get("sort") or "dday"
     show_old = request.args.get("old") in ("1", "true", "yes")
+    try:
+        ext_filter = int(request.args["ext"]) if request.args.get("ext") not in (None, "") else None
+    except (ValueError, TypeError):
+        ext_filter = None
 
     rows = models.list_consultations(admission_status="입원완료", q=q,
                                      q_scope="ward", limit=10000)
@@ -3442,6 +3446,7 @@ def ward_view():
         if dw:
             c["discharge_dday"] = dw["days_left"]
             c["discharge_due"] = dw["due_date"]
+        c.update(_extension_tier(c))
         admitted.append(c)
 
     # 외진 이력 — 참고 정보. 재원 경과일·수가 D-day에서 외진 기간을 빼지 않는다.
@@ -3491,26 +3496,44 @@ def ward_view():
     pending_recent = [c for c in pending if _pend_basis(c) >= cutoff]
     pending_old = [c for c in pending if _pend_basis(c) < cutoff]
 
+    recovery_n = sum(1 for c in admitted if c.get("care_phase") == "회복기")
+    nonrecovery_n = sum(1 for c in admitted if c.get("care_phase") == "비회복기")
+    total_n = len(admitted)
+    recovery_ratio = round(recovery_n / total_n * 100) if total_n else 0
     kpis = {
-        "admitted": len(admitted),
+        "admitted": total_n,
+        "recovery": recovery_n,
+        "nonrecovery": nonrecovery_n,
+        "recovery_ratio": recovery_ratio,
+        "recovery_ratio_ok": recovery_ratio >= 40,
         "away": len(away),
         "away_overdue": sum(1 for c in away if c["away"].get("overdue")),
+        "recovery_due": sum(1 for c in admitted if c.get("recovery_due")),
         "discharge_soon": sum(1 for c in admitted
                               if c.get("discharge_dday") is not None
                               and c["discharge_dday"] <= 7),
-        "recovery_due": sum(1 for c in admitted if c.get("recovery_due")),
+        "discharge_due_30": sum(1 for c in admitted
+                                if c.get("discharge_dday") is not None
+                                and c["discharge_dday"] <= 30),
+        "ext1": sum(1 for c in admitted if c.get("ext_tier") == 1),
+        "ext2": sum(1 for c in admitted if c.get("ext_tier") == 2),
         "pending": len(pending),
         "pending_recent": len(pending_recent),
         "unassigned": len(unassigned),
     }
     doctor_options = sorted({c.get("attending_doctor") for c in rows
                              if (c.get("attending_doctor") or "").strip()})
+    # 연장 구분 필터 — 목록 표시에만 적용 (병실 뷰·KPI는 전체 기준 유지)
+    admitted_list = admitted
+    if ext_filter is not None:
+        admitted_list = [c for c in admitted if c.get("ext_tier") == ext_filter]
     return render_template(
-        "ward.html", away=away, admitted=admitted,
+        "ward.html", away=away, admitted=admitted_list,
         room_view=room_view, unassigned=unassigned,
         view=(request.args.get("view") or "room"),
         pending=pending_recent, pending_old=pending_old, show_old=show_old,
         kpis=kpis, q=q or "", doctor=doctor or "", sort=sort,
+        ext_filter=ext_filter,
         doctor_options=doctor_options,
     )
 
@@ -3521,6 +3544,48 @@ def _days_since(datestr):
     except (ValueError, TypeError):
         return None
     return (date.today() - d).days
+
+
+# 입원 연장 분류 — 기본 1년(TOTAL_STAY_DAYS) + 6개월(EXTENSION_DAYS) 연장 최대 2회(≈2년).
+EXTENSION_DAYS = 180
+
+
+def _extension_tier(c):
+    """discharge_due_date(입원연장 시 새 퇴원예정일)가 기본 만료(입원일+1년)를 얼마나
+    넘는지로 연장 횟수 판정. 발병일+2년을 최종 한도로 함께 계산.
+    Returns dict(ext_tier 0/1/2, ext_label, ext_extra_days, ext_cap_date, ext_cap_left)."""
+    out = {"ext_tier": 0, "ext_label": "기본 (1년)", "ext_extra_days": 0,
+           "ext_cap_date": None, "ext_cap_left": None}
+    adm = c.get("admitted_on")
+    dd = (c.get("discharge_due_date") or "").strip()
+    # 최종 진단일(발병일) + 2년 = 절대 한도
+    onset = (c.get("disease_onset") or "").strip()
+    if onset:
+        try:
+            od = datetime.strptime(onset[:10], "%Y-%m-%d").date()
+            cap = od + timedelta(days=730)
+            out["ext_cap_date"] = cap.isoformat()
+            out["ext_cap_left"] = (cap - date.today()).days
+        except (ValueError, TypeError):
+            pass
+    if not adm or not dd:
+        return out
+    try:
+        ad = datetime.strptime(adm[:10], "%Y-%m-%d").date()
+        dr = datetime.strptime(dd[:10], "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return out
+    extra = (dr - ad).days - TOTAL_STAY_DAYS      # 기본 1년 만료 대비 초과일
+    out["ext_extra_days"] = max(0, extra)
+    if extra <= 30:                                # 소폭 조정은 기본으로 흡수
+        out["ext_tier"] = 0
+    elif extra <= EXTENSION_DAYS + 90:             # ≈ +180 → 1회
+        out["ext_tier"] = 1
+        out["ext_label"] = "연장 1회 (1.5년)"
+    else:                                          # ≈ +360 → 2회
+        out["ext_tier"] = 2
+        out["ext_label"] = "연장 2회 (2년)"
+    return out
 
 
 def _room_sort_key(room):

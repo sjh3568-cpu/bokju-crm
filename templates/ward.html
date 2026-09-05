@@ -23,6 +23,7 @@
         <span class="rm-dd {% if c.phase_dday < 0 %}over{% elif c.phase_dday <= 30 %}warn{% endif %}">
             {% if c.phase_dday < 0 %}{{ -c.phase_dday }}일 초과{% else %}D-{{ c.phase_dday }}{% endif %}</span>
         {% endif %}
+        {% if c.ext_tier %}<span class="wd-ext t{{ c.ext_tier }}" title="{{ c.ext_label }}">{{ '연장1' if c.ext_tier == 1 else '연장2' }}</span>{% endif %}
         {% if c.attending_doctor %}<span class="rm-doc">{{ c.attending_doctor }}</span>{% endif %}
     </div>
     <div class="rm-dates">
@@ -94,30 +95,46 @@
     </div>
 </div>
 
-{# ─── 지금 봐야 할 숫자. 0이면 흐리게 빠진다 ─── #}
+{# ─── 재원 핵심 지표 — 총입원 · 회복기(S005) · 비회복기(S006) · 회복기비율 · 외진 · 회복기종료 · 퇴원예정 ─── #}
 <div class="wd-kpi">
+    <a class="wd-k" href="#sec-ward">
+        <span class="wd-k-n">{{ kpis.admitted }}</span>
+        <span class="wd-k-l">🏥 총 입원 환자</span>
+    </a>
+    <a class="wd-k accent" href="?sort=dday#sec-ward">
+        <span class="wd-k-n">{{ kpis.recovery }}</span>
+        <span class="wd-k-l">회복기 <small>S005</small></span>
+    </a>
+    <a class="wd-k" href="#sec-ward">
+        <span class="wd-k-n">{{ kpis.nonrecovery }}</span>
+        <span class="wd-k-l">비회복기 <small>S006</small></span>
+    </a>
+    <div class="wd-k {% if kpis.recovery_ratio_ok %}ok{% else %}danger{% endif %}" title="재활의료기관 유지 기준: 회복기 40% 이상">
+        <span class="wd-k-n">{{ kpis.recovery_ratio }}<small>%</small></span>
+        <span class="wd-k-l">회복기 비율 {% if kpis.recovery_ratio_ok %}<b>✓ 40%↑</b>{% else %}<b>⚠ 40%↓</b>{% endif %}</span>
+    </div>
     <a class="wd-k {% if not kpis.away %}zero{% elif kpis.away_overdue %}danger{% else %}warn{% endif %}" href="#sec-away">
         <span class="wd-k-n">{{ kpis.away }}</span>
         <span class="wd-k-l">🚑 외진 중{% if kpis.away_overdue %} <b>지연 {{ kpis.away_overdue }}</b>{% endif %}</span>
     </a>
-    <a class="wd-k" href="#sec-ward">
-        <span class="wd-k-n">{{ kpis.admitted }}</span>
-        <span class="wd-k-l">🏥 재원 환자</span>
-    </a>
-    <a class="wd-k {% if not kpis.discharge_soon %}zero{% else %}warn{% endif %}" href="?sort=dday#sec-ward">
-        <span class="wd-k-n">{{ kpis.discharge_soon }}</span>
-        <span class="wd-k-l">🚪 퇴원 임박 D-7</span>
-    </a>
     <a class="wd-k {% if not kpis.recovery_due %}zero{% else %}warn{% endif %}" href="?sort=dday#sec-ward">
         <span class="wd-k-n">{{ kpis.recovery_due }}</span>
-        <span class="wd-k-l">⏱ 회복기 전환 D-30</span>
+        <span class="wd-k-l">⏱ 회복기 종료 D-30</span>
     </a>
-    <a class="wd-k {% if not kpis.pending_recent %}zero{% endif %}" href="#sec-pending">
-        <span class="wd-k-n">{{ kpis.pending_recent }}</span>
-        <span class="wd-k-l">⚠ 입원일 미확정</span>
-        {% if pending_old %}<span class="wd-k-sub">과거 {{ pending_old|length }}건 별도</span>{% endif %}
+    <a class="wd-k {% if not kpis.discharge_due_30 %}zero{% else %}warn{% endif %}" href="?sort=dday#sec-ward">
+        <span class="wd-k-n">{{ kpis.discharge_due_30 }}</span>
+        <span class="wd-k-l">🚪 퇴원 예정 D-30</span>
     </a>
 </div>
+{% if kpis.ext1 or kpis.ext2 or kpis.pending_recent %}
+<div class="wd-subkpi">
+    <span class="muted-sm">입원 연장:</span>
+    <a href="?ext=1{% if doctor %}&doctor={{ doctor|urlencode }}{% endif %}#sec-ward" class="wd-extchip t1">연장 1회 {{ kpis.ext1 }}</a>
+    <a href="?ext=2{% if doctor %}&doctor={{ doctor|urlencode }}{% endif %}#sec-ward" class="wd-extchip t2">연장 2회 {{ kpis.ext2 }}</a>
+    {% if ext_filter is not none %}<a href="/ward{% if doctor %}?doctor={{ doctor|urlencode }}{% endif %}" class="wd-extchip clear">필터 해제 ✕</a>{% endif %}
+    {% if kpis.pending_recent %}<a href="#sec-pending" class="wd-extchip pend">⚠ 입원일 미확정 {{ kpis.pending_recent }}</a>{% endif %}
+</div>
+{% endif %}
 
 {# ─── ① 외진 중 — 이 화면의 존재 이유. 항상 최상단 ─── #}
 <div class="card wd-sec" id="sec-away">
@@ -243,6 +260,9 @@
                     </td>
                     <td class="nowrap">{{ c.admitted_on|krdate }}</td>
                     <td class="nowrap">{% if c.stay_days is not none %}{{ c.stay_days }}일{% endif %}
+                        {% if c.ext_tier %}<span class="wd-ext t{{ c.ext_tier }}"
+                            title="{{ c.ext_label }}{% if c.ext_cap_date %} · 진단 후 2년 한도 {{ c.ext_cap_date|krdate }}{% if c.ext_cap_left is not none %} (D-{{ c.ext_cap_left }}){% endif %}{% endif %}">
+                            {{ '연장1' if c.ext_tier == 1 else '연장2' }}</span>{% endif %}
                         {% if c.away_hist %}<span class="muted-sm" title="외진 기간도 재원일에 포함됩니다">🚑{{ c.away_hist.count }}·{{ c.away_hist.days }}일</span>{% endif %}</td>
                     <td class="nowrap">
                         <span class="wd-ph ph-{{ {'회복기':'rec','비회복기':'non','단일구간':'sgl'}.get(c.care_phase,'etc') }}">{{ c.care_phase }}</span>
@@ -370,21 +390,40 @@
 .wd-sel { padding:5px 8px; border:1px solid var(--border); border-radius:6px;
     font-family:inherit; font-size:0.86em; }
 
-.wd-kpi { display:grid; grid-template-columns:repeat(5, 1fr); gap:8px; margin:10px 0 14px; }
+.wd-kpi { display:grid; grid-template-columns:repeat(7, 1fr); gap:8px; margin:10px 0 10px; }
+@media(max-width:900px){ .wd-kpi{ grid-template-columns:repeat(4, 1fr); } }
+@media(max-width:560px){ .wd-kpi{ grid-template-columns:repeat(2, 1fr); } }
 .wd-k { display:flex; flex-direction:column; gap:2px; padding:10px 12px; background:#fff;
     border:1px solid var(--border); border-radius:8px; text-decoration:none; color:inherit; }
 .wd-k:hover { border-color:var(--primary); background:#f0f9ff; }
-.wd-k-n { font-size:1.7em; font-weight:800; color:var(--primary); line-height:1; }
-.wd-k-l { font-size:0.78em; color:#475569; font-weight:600; white-space:nowrap;
+.wd-k-n { font-size:1.6em; font-weight:800; color:var(--primary); line-height:1; }
+.wd-k-n small { font-size:0.5em; font-weight:700; }
+.wd-k-l { font-size:0.76em; color:#475569; font-weight:600; white-space:nowrap;
     overflow:hidden; text-overflow:ellipsis; }
+.wd-k-l small { color:#94a3b8; font-weight:700; }
 .wd-k-l b { background:#b91c1c; color:#fff; border-radius:999px; padding:0 5px; font-size:0.9em; }
 .wd-k-sub { font-size:0.68em; color:var(--text-light); }
+.wd-k.accent .wd-k-n { color:#0f766e; }
+.wd-k.ok { background:#f0fdf4; border-color:#86efac; }
+.wd-k.ok .wd-k-n { color:#15803d; }
+.wd-k.ok .wd-k-l b { background:#16a34a; }
 .wd-k.zero { background:#fafafa; opacity:0.5; }
 .wd-k.zero .wd-k-n { color:var(--text-light); }
 .wd-k.warn { background:#fff7ed; border-color:#fdba74; }
 .wd-k.warn .wd-k-n { color:#9a3412; }
 .wd-k.danger { background:#fef2f2; border-color:#fca5a5; }
 .wd-k.danger .wd-k-n { color:#b91c1c; }
+/* 입원 연장 서브라인 + 배지 */
+.wd-subkpi { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 14px; }
+.wd-extchip { font-size:0.8em; font-weight:700; text-decoration:none; border-radius:999px;
+    padding:3px 10px; border:1px solid var(--border); color:#475569; background:#fff; }
+.wd-extchip.t1 { background:#fef9c3; color:#854d0e; border-color:#fde68a; }
+.wd-extchip.t2 { background:#ffedd5; color:#9a3412; border-color:#fdba74; }
+.wd-extchip.pend { background:#fef2f2; color:#b91c1c; border-color:#fecaca; }
+.wd-extchip.clear { color:var(--text-light); }
+.wd-ext { display:inline-block; font-size:0.72em; font-weight:800; border-radius:5px; padding:0 5px; margin-left:3px; }
+.wd-ext.t1 { background:#fef9c3; color:#854d0e; }
+.wd-ext.t2 { background:#ffedd5; color:#9a3412; }
 
 .wd-sec + .wd-sec { margin-top:12px; }
 .wd-sec-head { display:flex; justify-content:space-between; align-items:baseline;
