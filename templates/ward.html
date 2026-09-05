@@ -177,16 +177,23 @@
     </div>
     <div class="wd-filter-panel">
         <div class="wd-filter-title"><strong>검색·필터</strong><span>조건을 선택하면 명단이 자동으로 펼쳐집니다.</span></div>
-        <form class="wd-filter-search wd-filter-compact" method="get" action="/ward">
+        <form id="ward-filter" class="wd-filter-search" method="get" action="/ward"
+              data-detail-active="{{ 'true' if doctor or any_filter else 'false' }}">
             <input type="hidden" name="view" value="list">
-            <input type="text" name="q" value="{{ q }}" class="wd-q" placeholder="🔍 환자·호실·진단·주치의·분류·균·태그 통합검색" autocomplete="off">
-            <select class="wd-sel" name="doctor"><option value="">전체 주치의</option>{% for d in doctor_options %}<option value="{{ d }}" {% if doctor == d %}selected{% endif %}>{{ d }}</option>{% endfor %}</select>
-            <select class="wd-sel" name="ward"><option value="">전체 병동</option>{% for w in WARDS %}<option value="{{ w }}" {% if ward_f == w %}selected{% endif %}>{{ w }}</option>{% endfor %}</select>
-            <select class="wd-sel" name="filt"><option value="">전체 환자 구분</option><option value="recovery" {% if filt == 'recovery' %}selected{% endif %}>회복기 ({{ kpis.recovery }})</option><option value="nonrecovery" {% if filt == 'nonrecovery' %}selected{% endif %}>비회복기 ({{ kpis.nonrecovery }})</option><option value="recdue" {% if filt == 'recdue' %}selected{% endif %}>회복기 종료 D-30</option><option value="dis30" {% if filt == 'dis30' %}selected{% endif %}>퇴원 예정 D-30</option><option value="ext1" {% if filt == 'ext1' %}selected{% endif %}>연장 1회</option><option value="ext2" {% if filt == 'ext2' %}selected{% endif %}>연장 2회</option></select>
-            <select class="wd-sel" name="organism"><option value="">균 전체</option><option value="1" {% if organism_f %}selected{% endif %}>균 환자만</option></select>
-            {% if tag_counts %}<select class="wd-sel" name="tag"><option value="">전체 관리 태그</option>{% for t, n in tag_counts.items() %}<option value="{{ t }}" {% if tag_f == t %}selected{% endif %}>{{ t }} ({{ n }})</option>{% endfor %}</select>{% endif %}
-            <button class="btn btn-primary btn-sm" type="submit">조회</button>
-            {% if q or doctor or any_filter %}<a class="btn btn-secondary btn-sm" href="/ward#sec-ward">초기화</a>{% endif %}
+            <div class="wd-filter-basic">
+                <input type="text" name="q" value="{{ q }}" class="wd-q" placeholder="🔍 환자·호실·진단·주치의·분류·균·태그 통합검색" autocomplete="off">
+                <button class="btn btn-primary btn-sm" type="submit">조회</button>
+                <button class="btn btn-secondary btn-sm" type="button" id="ward-detail-filter-toggle">상세필터 ▾</button>
+                <a class="btn btn-secondary btn-sm" href="/ward#sec-ward">초기화</a>
+            </div>
+            <div class="wd-detail-filter" id="ward-detail-filter" hidden>
+                <label><span>주치의</span><select class="wd-sel" name="doctor"><option value="">전체</option>{% for d in doctor_options %}<option value="{{ d }}" {% if doctor == d %}selected{% endif %}>{{ d }}</option>{% endfor %}</select></label>
+                <label><span>병동</span><select class="wd-sel" name="ward"><option value="">전체</option>{% for w in WARDS %}<option value="{{ w }}" {% if ward_f == w %}selected{% endif %}>{{ w }}</option>{% endfor %}</select></label>
+                <label><span>환자 구분</span><select class="wd-sel" name="filt"><option value="">전체</option><option value="recovery" {% if filt == 'recovery' %}selected{% endif %}>회복기 ({{ kpis.recovery }})</option><option value="nonrecovery" {% if filt == 'nonrecovery' %}selected{% endif %}>비회복기 ({{ kpis.nonrecovery }})</option><option value="recdue" {% if filt == 'recdue' %}selected{% endif %}>회복기 종료 D-30</option><option value="dis30" {% if filt == 'dis30' %}selected{% endif %}>퇴원 예정 D-30</option><option value="ext1" {% if filt == 'ext1' %}selected{% endif %}>연장 1회</option><option value="ext2" {% if filt == 'ext2' %}selected{% endif %}>연장 2회</option></select></label>
+                <label><span>균 보유</span><select class="wd-sel" name="organism"><option value="">전체</option><option value="1" {% if organism_f %}selected{% endif %}>균 환자만</option></select></label>
+                {% if tag_counts %}<label><span>관리 태그</span><select class="wd-sel" name="tag"><option value="">전체</option>{% for t, n in tag_counts.items() %}<option value="{{ t }}" {% if tag_f == t %}selected{% endif %}>{{ t }} ({{ n }})</option>{% endfor %}</select></label>{% endif %}
+                <button class="btn btn-primary btn-sm" type="submit">상세조건 적용</button>
+            </div>
         </form>
         <div class="wd-filter-foot"><span>표 제목을 누르면 해당 기준으로 정렬됩니다.</span><a href="/ward.csv?{% if ward_f %}ward={{ ward_f|urlencode }}&{% endif %}{% if filt %}filt={{ filt }}&{% endif %}{% if tag_f %}tag={{ tag_f|urlencode }}&{% endif %}{% if organism_f %}organism=1&{% endif %}{% if doctor %}doctor={{ doctor|urlencode }}{% endif %}" class="btn btn-secondary btn-sm">⬇ CSV</a></div>
     </div>
@@ -540,11 +547,14 @@
 .wd-filter-panel { margin:0 0 12px; padding:12px; border:1px solid var(--border); border-radius:10px; background:#fff; }
 .wd-filter-title { display:flex; align-items:baseline; gap:8px; margin-bottom:9px; }
 .wd-filter-title span { color:var(--text-light); font-size:.78em; }
-.wd-filter-search { display:grid; grid-template-columns:minmax(230px,1fr) 160px auto auto; gap:7px; margin-bottom:10px; }
+.wd-filter-search { margin-bottom:10px; }
 .wd-filter-search .wd-q { border-radius:7px; }
-.wd-filter-compact { display:flex; flex-wrap:wrap; align-items:center; }
-.wd-filter-compact .wd-q { flex:2 1 250px; width:auto; }
-.wd-filter-compact .wd-sel { flex:1 1 125px; max-width:185px; }
+.wd-filter-basic { display:flex; gap:7px; align-items:center; }
+.wd-filter-basic .wd-q { flex:1 1 300px; width:auto; }
+.wd-detail-filter { display:grid; grid-template-columns:repeat(5,minmax(125px,1fr)) auto; gap:8px;
+    align-items:end; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
+.wd-detail-filter label { display:flex; flex-direction:column; gap:3px; color:#64748b; font-size:.74em; font-weight:700; }
+.wd-detail-filter .wd-sel { width:100%; background:#fff; }
 .wd-filter-foot { display:flex; align-items:center; justify-content:space-between; gap:8px; color:var(--text-light); font-size:.76em; }
 .wd-th-sort { color:inherit; text-decoration:none; white-space:nowrap; }
 .wd-th-sort:hover, .wd-th-sort.on { color:var(--primary); text-decoration:underline; text-underline-offset:3px; }
@@ -683,13 +693,28 @@
 }
 @media (max-width: 700px) {
     .wd-kpi { grid-template-columns:repeat(2,1fr); }
-    .wd-filter-search { grid-template-columns:1fr 1fr; }
+    .wd-filter-basic { flex-wrap:wrap; }
+    .wd-detail-filter { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 </style>
 
 <script src="/static/js/common.js"></script>
 <script>
 (function () {
+    const filterForm = document.getElementById('ward-filter');
+    const detailFilter = document.getElementById('ward-detail-filter');
+    const detailToggle = document.getElementById('ward-detail-filter-toggle');
+    if (filterForm && detailFilter && detailToggle) {
+        const setDetailOpen = open => {
+            detailFilter.hidden = !open;
+            detailToggle.textContent = open ? '상세필터 ▴' : '상세필터 ▾';
+            localStorage.setItem('wardDetailFilterOpen', open ? '1' : '0');
+        };
+        const active = filterForm.dataset.detailActive === 'true';
+        setDetailOpen(active || localStorage.getItem('wardDetailFilterOpen') === '1');
+        detailToggle.addEventListener('click', () => setDetailOpen(detailFilter.hidden));
+        detailFilter.querySelectorAll('select').forEach(select => select.addEventListener('change', () => filterForm.submit()));
+    }
     const rosterBtn = document.getElementById('wd-roster-toggle');
     const rosterBody = document.getElementById('wd-roster-body');
     if (rosterBtn && rosterBody) rosterBtn.addEventListener('click', () => {
