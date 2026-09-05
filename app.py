@@ -3434,12 +3434,30 @@ def ward_view():
     q = (request.args.get("q") or "").strip() or None
     doctor = (request.args.get("doctor") or "").strip() or None
     sort = request.args.get("sort") or "dday"
+    sort_dir = (request.args.get("dir") or "").lower()
+    if sort_dir not in ("asc", "desc"):
+        sort_dir = "desc" if sort in ("admission", "stay") else "asc"
     show_old = request.args.get("old") in ("1", "true", "yes")
     # KPI 카드별 세부 내역 필터 — 재원 목록을 해당 항목으로 좁혀 본다.
     filt = (request.args.get("filt") or "").strip() or None
     ward_f = (request.args.get("ward") or "").strip() or None      # 병동 빠른 조회
     tag_f = (request.args.get("tag") or "").strip() or None        # 관리 태그
     organism_f = (request.args.get("organism") or "").strip() or None  # 내성균 보유
+    room_f = (request.args.get("room") or "").strip()
+    gender_f = (request.args.get("gender") or "").strip()
+    dx_f = (request.args.get("dx") or "").strip().lower()
+    admission_from = (request.args.get("admission_from") or "").strip()
+    admission_to = (request.args.get("admission_to") or "").strip()
+    discharge_from = (request.args.get("discharge_from") or "").strip()
+    discharge_to = (request.args.get("discharge_to") or "").strip()
+    def _optional_int(name):
+        try:
+            raw = (request.args.get(name) or "").strip()
+            return int(raw) if raw else None
+        except ValueError:
+            return None
+    age_min, age_max = _optional_int("age_min"), _optional_int("age_max")
+    stay_min, stay_max = _optional_int("stay_min"), _optional_int("stay_max")
     subtab = (request.args.get("tab") or "status").strip()
 
     # 통합검색에서 파생 분류명도 바로 이해한다. DB에 그대로 저장되지 않는
@@ -3541,10 +3559,13 @@ def ward_view():
     sorters = {
         "dday": lambda c: (_dday(c), c.get("patient_name") or ""),
         "room": lambda c: (_room_sort_key(c.get("room_number")), c.get("patient_name") or ""),
-        "stay": lambda c: -(c.get("stay_days") or 0),
+        "stay": lambda c: (c.get("stay_days") or 0, c.get("patient_name") or ""),
         "name": lambda c: c.get("patient_name") or "",
+        "admission": lambda c: (c.get("admitted_on") or "", c.get("patient_name") or ""),
+        "discharge": lambda c: (c.get("discharge_due") or ("" if sort_dir == "desc" else "9999-12-31"),
+                                 c.get("patient_name") or ""),
     }
-    admitted.sort(key=sorters.get(sort, sorters["dday"]))
+    admitted.sort(key=sorters.get(sort, sorters["dday"]), reverse=(sort_dir == "desc"))
 
     # 입력 큐 — 오래된 건은 접어둔다. 상담사가 기억하는 최근 건부터 채우게 한다.
     cutoff = (date.today() - timedelta(days=90)).isoformat()
@@ -3669,30 +3690,50 @@ def ward_view():
     # KPI/태그/균 세부 필터 — 목록 표시에 적용
     filt_label = _WARD_FILTS[filt][0] if filt in _WARD_FILTS else None
     admitted_list = _apply_ward_filters(admitted, filt, ward_f, tag_f, organism_f)
-    if filt == "recdue":
+    admitted_list = [c for c in admitted_list
+                     if (not room_f or room_f.lower() in (c.get("room_number") or "").lower())
+                     and (not gender_f or c.get("gender") == gender_f)
+                     and (age_min is None or (c.get("patient_age") is not None and c["patient_age"] >= age_min))
+                     and (age_max is None or (c.get("patient_age") is not None and c["patient_age"] <= age_max))
+                     and (not dx_f or dx_f in " ".join((c.get("dx_primary") or []) + (c.get("dx_secondary") or [])).lower())
+                     and (not admission_from or (c.get("admitted_on") or "") >= admission_from)
+                     and (not admission_to or (c.get("admitted_on") or "") <= admission_to)
+                     and (stay_min is None or (c.get("stay_days") or 0) >= stay_min)
+                     and (stay_max is None or (c.get("stay_days") or 0) <= stay_max)
+                     and (not discharge_from or (c.get("discharge_due") or "") >= discharge_from)
+                     and (not discharge_to or (c.get("discharge_due") or "") <= discharge_to)]
+    if filt == "recdue" and sort == "dday":
         admitted_list.sort(key=lambda c: (bool(c.get("recovery_call_at")), _dday(c)))
-    elif filt == "dis30":
+    elif filt == "dis30" and sort == "dday":
         admitted_list.sort(key=lambda c: (bool(c.get("discharge_sms_at")), _dday(c)))
+    column_filter = bool(room_f or gender_f or dx_f or admission_from or admission_to
+                         or discharge_from or discharge_to or age_min is not None
+                         or age_max is not None or stay_min is not None or stay_max is not None)
     view = request.args.get("view") or "room"
-    if filt in _WARD_FILTS or tag_f or organism_f:
+    if filt in _WARD_FILTS or tag_f or organism_f or column_filter:
         view = "list"   # 세부 내역을 볼 땐 목록 뷰로
-    any_filter = bool(filt in _WARD_FILTS or ward_f or tag_f or organism_f)
+    any_filter = bool(filt in _WARD_FILTS or ward_f or tag_f or organism_f or column_filter)
     return render_template(
         "ward.html", away=away, admitted=admitted_list,
         room_view=room_view, unassigned=unassigned,
         view=view,
         pending=pending_recent, pending_old=pending_old, show_old=show_old,
-        kpis=kpis, q=q or "", doctor=doctor or "", sort=sort,
+        kpis=kpis, q=q or "", doctor=doctor or "", sort=sort, sort_dir=sort_dir,
         filt=filt, filt_label=filt_label,
         ward_f=ward_f, tag_f=tag_f, organism_f=organism_f, any_filter=any_filter,
         WARDS=WARDS, MGMT_TAG_PRESETS=MGMT_TAG_PRESETS, tag_counts=tag_counts,
         doctor_options=doctor_options,
-        roster_open=bool(q or doctor or any_filter),
         recovery_due_list=recovery_due_list, discharge_due_list=discharge_due_list,
         daily_ratio_trend=daily_ratio_trend, monthly_ratio_trend=monthly_ratio_trend,
         discharged=discharged,
         subtab=subtab,
         bed_waiting=bed_waiting,
+        room_f=room_f, gender_f=gender_f, dx_f=dx_f,
+        admission_from=admission_from, admission_to=admission_to,
+        discharge_from=discharge_from, discharge_to=discharge_to,
+        age_min=age_min, age_max=age_max, stay_min=stay_min, stay_max=stay_max,
+        column_filter=column_filter,
+        roster_open=bool(q or doctor or any_filter or request.args.get("view")),
     )
 
 
