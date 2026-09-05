@@ -9,6 +9,7 @@
     <div class="rm-bed-top">
         <a href="/consult/{{ c.id }}" class="rm-name">{{ c.patient_name }}</a>
         <span class="rm-age muted-sm">{% if c.patient_age is not none %}{{ c.patient_age }}{% endif %}{% if c.gender == 'M' %}·남{% elif c.gender == 'F' %}·여{% endif %}</span>
+        {% for t in c.mgmt_tags %}<span class="wd-tag">{{ t }}</span>{% endfor %}
         {% if c.away %}
         <span class="rm-away-tag" title="{{ c.away.event_type }}{% if c.away.hospital %} → {{ c.away.hospital }}{% endif %}">
             🚑 외진{% if c.away.days_out is not none %} {{ c.away.days_out }}일차{% endif %}</span>
@@ -139,11 +140,41 @@
 </div>
 {% endif %}
 
+{# ─── 병동 빠른 조회 + 필터 + 내보내기 ─── #}
+{% set _fq = [] %}
+<div class="wd-filterbar">
+    <div class="wd-wards">
+        <a href="/ward{% if doctor %}?doctor={{ doctor|urlencode }}{% endif %}#sec-ward" class="wd-wardbtn {% if not ward_f %}on{% endif %}">전체</a>
+        {% for w in WARDS %}
+        <a href="/ward?ward={{ w|urlencode }}{{ _dq }}#sec-ward" class="wd-wardbtn {% if ward_f == w %}on{% endif %}">{{ w }}</a>
+        {% endfor %}
+    </div>
+    <div class="wd-filter-extra">
+        <a href="/ward?organism=1{{ _dq }}#sec-ward" class="wd-extchip {% if organism_f %}on{% endif %}" style="border-color:#fca5a5;color:#b91c1c">🦠 균 환자</a>
+        {% if tag_counts %}
+        <select class="wd-sel wd-tagsel" onchange="if(this.value)location.href=this.value">
+            <option value="">🏷 관리 태그…</option>
+            {% for t, n in tag_counts.items() %}
+            <option value="/ward?tag={{ t|urlencode }}{{ _dq }}#sec-ward" {% if tag_f == t %}selected{% endif %}>{{ t }} ({{ n }})</option>
+            {% endfor %}
+        </select>
+        {% endif %}
+        <a href="/ward.csv?{% if ward_f %}ward={{ ward_f|urlencode }}&{% endif %}{% if filt %}filt={{ filt }}&{% endif %}{% if tag_f %}tag={{ tag_f|urlencode }}&{% endif %}{% if organism_f %}organism=1&{% endif %}{% if doctor %}doctor={{ doctor|urlencode }}{% endif %}"
+           class="btn btn-secondary btn-sm">⬇ CSV 내보내기</a>
+    </div>
+</div>
+
 {# ─── ① 재원 환자 (KPI 카드 순서대로: 총입원·회복기·비회복기·비율 필터) ─── #}
 <div class="card wd-sec" id="sec-ward">
     <div class="wd-sec-head">
-        <h3>🏥 {% if filt_label %}{{ filt_label }}{% else %}재원 환자{% endif %} <span class="wd-n">{{ admitted|length }}</span>
-            {% if filt_label %}<a class="wd-filt-clear" href="/ward{% if doctor %}?doctor={{ doctor|urlencode }}{% endif %}#sec-ward">✕ 전체 보기</a>{% endif %}</h3>
+        <h3>🏥
+            {%- set _labels = [] -%}
+            {%- if ward_f %}{% set _ = _labels.append(ward_f) %}{% endif -%}
+            {%- if filt_label %}{% set _ = _labels.append(filt_label) %}{% endif -%}
+            {%- if tag_f %}{% set _ = _labels.append('🏷 ' ~ tag_f) %}{% endif -%}
+            {%- if organism_f %}{% set _ = _labels.append('🦠 균 환자') %}{% endif -%}
+            {% if _labels %}{{ _labels|join(' · ') }}{% else %}재원 환자{% endif %} <span class="wd-n">{{ admitted|length }}</span>
+            {% if any_filter %}<a class="wd-filt-clear" href="/ward{% if doctor %}?doctor={{ doctor|urlencode }}{% endif %}#sec-ward">✕ 전체 보기</a>{% endif %}</h3>
         <div class="wd-sort">
             <a href="?view=room{% if q %}&q={{ q|urlencode }}{% endif %}{% if doctor %}&doctor={{ doctor|urlencode }}{% endif %}#sec-ward"
                class="wd-sort-btn {% if view == 'room' %}on{% endif %}">🛏 병실</a>
@@ -214,6 +245,7 @@
                         {% if c.away %}<span class="wd-mark">🚑</span>{% endif %}
                         <a href="/consult/{{ c.id }}">{{ c.patient_name }}</a>
                         <span class="muted-sm">{% if c.patient_age is not none %}{{ c.patient_age }}{% endif %}{% if c.gender == 'M' %}·남{% elif c.gender == 'F' %}·여{% endif %}</span>
+                        {% for t in c.mgmt_tags %}<span class="wd-tag">{{ t }}</span>{% endfor %}
                     </td>
                     <td class="nowrap">{{ c.attending_doctor or '-' }}</td>
                     <td class="wd-dx" title="주 {{ c.dx_primary|join(', ') }}{% if c.dx_secondary %} / 부 {{ c.dx_secondary|join(', ') }}{% endif %}">
@@ -451,6 +483,19 @@
 .wd-org { display:inline-block; font-size:0.72em; font-weight:800; color:#fff; background:#b91c1c;
     border-radius:5px; padding:0 5px; margin-right:3px; vertical-align:middle; }
 .rm-dx .wd-org { font-size:0.7em; }
+/* 병동 빠른 조회 + 필터 바 */
+.wd-filterbar { display:flex; align-items:center; justify-content:space-between; gap:12px;
+    flex-wrap:wrap; margin:0 0 12px; }
+.wd-wards { display:flex; gap:5px; flex-wrap:wrap; }
+.wd-wardbtn { padding:5px 11px; border:1px solid var(--border); border-radius:999px;
+    background:#fff; color:#475569; text-decoration:none; font-size:0.85em; font-weight:700; }
+.wd-wardbtn:hover { border-color:var(--primary); color:var(--primary); }
+.wd-wardbtn.on { background:var(--primary); color:#fff; border-color:var(--primary); }
+.wd-filter-extra { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.wd-tagsel { padding:5px 9px; border:1px solid var(--border); border-radius:7px; font-size:0.85em; }
+/* 관리 태그 배지 */
+.wd-tag { display:inline-block; font-size:0.7em; font-weight:800; color:#5b21b6;
+    background:#ede9fe; border-radius:5px; padding:0 5px; margin-left:3px; vertical-align:middle; }
 
 .wd-sec + .wd-sec { margin-top:12px; }
 .wd-sec-head { display:flex; justify-content:space-between; align-items:baseline;

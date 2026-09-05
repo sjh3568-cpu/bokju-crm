@@ -33,6 +33,24 @@
         <button type="button" class="btn btn-secondary btn-sm" id="bl-save">블랙리스트 저장</button>
         <span class="bl-msg muted"></span>
     </div>
+    {# 관리 태그 — 이사장 소개·VIP 등. 프리셋 체크 + 자유 추가 #}
+    <div class="pt-tags" data-pid="{{ p.id }}">
+        <span class="pt-tags-label">🏷 관리 태그</span>
+        <div class="pt-tags-opts">
+            {% for t in MGMT_TAG_PRESETS %}
+            <label class="pt-tagchk"><input type="checkbox" name="mgmt_tag" value="{{ t }}" {% if t in p.mgmt_tags %}checked{% endif %}> {{ t }}</label>
+            {% endfor %}
+        </div>
+        <div class="pt-tags-free">
+            {% for t in p.mgmt_tags if t not in MGMT_TAG_PRESETS %}
+            <label class="pt-tagchk custom"><input type="checkbox" name="mgmt_tag" value="{{ t }}" checked> {{ t }}</label>
+            {% endfor %}
+            <input type="text" id="pt-tag-new" placeholder="태그 추가" autocomplete="off">
+            <button type="button" class="btn btn-secondary btn-sm" id="pt-tag-add">+ 추가</button>
+            <button type="button" class="btn btn-primary btn-sm" id="pt-tag-save">태그 저장</button>
+            <span class="pt-tag-msg muted"></span>
+        </div>
+    </div>
 </div>
 
 {# 이 환자 할 일 — 상담 상세와 동일 카드 (공용 부분템플릿) #}
@@ -213,6 +231,39 @@
                 btn.closest('.tl-item').remove();
             } catch (e) { alert('삭제 실패: ' + e.message); }
         });
+    });
+})();
+</script>
+<script>
+(function () {
+    const box = document.querySelector('.pt-tags');
+    if (!box) return;
+    const pid = box.dataset.pid;
+    const msg = box.querySelector('.pt-tag-msg');
+    // 자유 태그 추가 (체크된 새 칩 생성)
+    const newInput = document.getElementById('pt-tag-new');
+    document.getElementById('pt-tag-add').addEventListener('click', () => {
+        const v = (newInput.value || '').trim();
+        if (!v) { newInput.focus(); return; }
+        const lbl = document.createElement('label');
+        lbl.className = 'pt-tagchk custom';
+        lbl.innerHTML = '<input type="checkbox" name="mgmt_tag" checked> ' + v;
+        lbl.querySelector('input').value = v;
+        box.querySelector('.pt-tags-free').insertBefore(lbl, newInput);
+        newInput.value = '';
+    });
+    document.getElementById('pt-tag-save').addEventListener('click', async () => {
+        const tags = Array.from(box.querySelectorAll('input[name="mgmt_tag"]:checked')).map(x => x.value);
+        msg.textContent = '저장 중…';
+        try {
+            const r = await fetch('/api/patient/' + pid + '/tags', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin', body: JSON.stringify({ tags })
+            });
+            if (!r.ok) throw new Error((await r.json()).error || r.status);
+            msg.textContent = '저장됨 ✓';
+            setTimeout(() => { msg.textContent = ''; }, 1500);
+        } catch (e) { msg.textContent = ''; alert('태그 저장 실패: ' + e.message); }
     });
 })();
 </script>

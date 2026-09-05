@@ -403,6 +403,8 @@ def init_db():
         "blacklist": "INTEGER DEFAULT 0",
         "blacklist_reason": "TEXT",
         "blacklist_at": "DATETIME",
+        # 관리 태그 (이사장 소개·VIP 등) — JSON 배열 텍스트
+        "mgmt_tags": "TEXT",
     })
     _ensure_columns(conn, "consultations", {
         # 헤더
@@ -1695,11 +1697,52 @@ def find_or_create_patient(*, name: str, guardian_phone: str | None, **fields) -
     return pid
 
 
+def _parse_tags(raw):
+    try:
+        v = json.loads(raw) if raw else []
+        return [str(t) for t in v] if isinstance(v, list) else []
+    except (ValueError, TypeError):
+        return []
+
+
 def get_patient(pid: int):
     conn = get_db()
     row = conn.execute("SELECT * FROM patients WHERE id = ?", (pid,)).fetchone()
     conn.close()
-    return dict(row) if row else None
+    if not row:
+        return None
+    p = dict(row)
+    p["mgmt_tags"] = _parse_tags(p.get("mgmt_tags"))
+    return p
+
+
+def set_patient_tags(pid: int, tags) -> None:
+    """관리 태그 저장 (공백 제거·중복 제거, 최대 12개)."""
+    clean, seen = [], set()
+    for t in (tags or []):
+        s = str(t).strip()
+        if s and s not in seen:
+            seen.add(s); clean.append(s)
+        if len(clean) >= 12:
+            break
+    conn = get_db()
+    conn.execute("UPDATE patients SET mgmt_tags = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                 (json.dumps(clean, ensure_ascii=False), pid))
+    conn.commit()
+    conn.close()
+
+
+def patient_tags_map(patient_ids):
+    """여러 환자의 관리 태그를 한 번에 조회 — {pid: [tags]}."""
+    ids = [int(x) for x in patient_ids if x]
+    if not ids:
+        return {}
+    conn = get_db()
+    marks = ",".join("?" * len(ids))
+    rows = conn.execute(
+        f"SELECT id, mgmt_tags FROM patients WHERE id IN ({marks})", ids).fetchall()
+    conn.close()
+    return {r["id"]: _parse_tags(r["mgmt_tags"]) for r in rows}
 
 
 def update_patient(pid: int, **fields):

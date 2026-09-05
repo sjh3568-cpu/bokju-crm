@@ -44,6 +44,7 @@ from config import (
     DISEASES_CHECKLIST, DISEASES_GROUPS, GUARDIAN_RELATION_SUGGESTIONS,
     HEARING_OPTIONS, INFO_PROVIDED_OPTIONS,
     COUNSELORS, DISEASES_LAYOUT, OTHERS_LAYOUT, ROOM_CAPACITY,
+    WARDS, MGMT_TAG_PRESETS,
     ROLE_LABELS, SEED_USERS,
     MENUS, MENU_KEYS, MENU_MAX_LEVEL, ROLE_PRESETS, role_preset,
     PERM_HIDDEN, PERM_VIEW, PERM_EDIT, PERM_CREATE,
@@ -844,10 +845,13 @@ def _dashboard_ward_label(room_number):
             started = True
         elif started:
             break
-    if len(digits) >= 3:
-        return f"{digits[0]}병동"
+    # 4자리(1201·1305 등)=앞 2자리 병동(10~13), 3자리(502)=앞 1자리 병동(2~9)
+    if len(digits) >= 4:
+        return f"{int(digits[:2])}병동"
+    if len(digits) == 3:
+        return f"{int(digits[0])}병동"
     if digits:
-        return f"{digits}병동"
+        return f"{int(digits)}병동"
     return room
 
 
@@ -2935,7 +2939,8 @@ def patient_detail(pid):
         models.list_todos_for_patient(g.user["id"], pid), date.today())
     return render_template("patient_detail.html", p=p, history=history,
                            timeline=timeline, patient_todos=patient_todos,
-                           today_str=date.today().isoformat())
+                           today_str=date.today().isoformat(),
+                           MGMT_TAG_PRESETS=MGMT_TAG_PRESETS)
 
 
 # ───────────────────── API: 상담 CRUD ─────────────────────
@@ -3419,6 +3424,9 @@ def ward_view():
     show_old = request.args.get("old") in ("1", "true", "yes")
     # KPI 카드별 세부 내역 필터 — 재원 목록을 해당 항목으로 좁혀 본다.
     filt = (request.args.get("filt") or "").strip() or None
+    ward_f = (request.args.get("ward") or "").strip() or None      # 병동 빠른 조회
+    tag_f = (request.args.get("tag") or "").strip() or None        # 관리 태그
+    organism_f = (request.args.get("organism") or "").strip() or None  # 내성균 보유
 
     rows = models.list_consultations(admission_status="입원완료", q=q,
                                      q_scope="ward", limit=10000)
@@ -3450,6 +3458,11 @@ def ward_view():
         admitted.append(c)
 
     # 외진 이력 — 참고 정보. 재원 경과일·수가 D-day에서 외진 기간을 빼지 않는다.
+    # 관리 태그 + 병동 라벨 부착
+    tag_map = models.patient_tags_map([c.get("patient_id") for c in admitted])
+    for c in admitted:
+        c["mgmt_tags"] = tag_map.get(c.get("patient_id"), [])
+        c["ward_label"] = _dashboard_ward_label(c.get("room_number"))
     hist = models.away_history([c["id"] for c in admitted])
     for c in admitted:
         c["away_hist"] = hist.get(c["id"])
@@ -3471,7 +3484,7 @@ def ward_view():
         beds = [
             {"room": r, "patients": sorted(rooms[ward][r],
                                            key=lambda c: c.get("patient_name") or ""),
-             "empty": max(0, ROOM_CAPACITY - len(rooms[ward][r]))}
+             "empty": max(0, max(ROOM_CAPACITY, len(rooms[ward][r])) - len(rooms[ward][r]))}
             for r in sorted(rooms[ward], key=_room_sort_key)
         ]
         room_view.append({"ward": ward, "rooms": beds,
@@ -3524,22 +3537,23 @@ def ward_view():
     doctor_options = sorted({c.get("attending_doctor") for c in rows
                              if (c.get("attending_doctor") or "").strip()})
 
-    # KPI 카드별 세부 내역 필터 — 목록 표시에만 적용 (병실 뷰·KPI는 전체 기준 유지)
-    _filts = {
-        "recovery":    ("회복기 (S005)",       lambda c: c.get("care_phase") == "회복기"),
-        "nonrecovery": ("비회복기 (S006)",     lambda c: c.get("care_phase") == "비회복기"),
-        "recdue":      ("회복기 종료 D-30",     lambda c: c.get("recovery_due")),
-        "dis30":       ("퇴원 예정 D-30",       lambda c: c.get("discharge_dday") is not None and c["discharge_dday"] <= 30),
-        "ext1":        ("연장 1회 (1.5년)",     lambda c: c.get("ext_tier") == 1),
-        "ext2":        ("연장 2회 (2년)",       lambda c: c.get("ext_tier") == 2),
-    }
-    admitted_list = admitted
-    filt_label = None
+    # 관리 태그 카운트 (필터 칩용)
+    tag_counts = {}
+    for c in admitted:
+        for t in c.get("mgmt_tags", []):
+            tag_counts[t] = tag_counts.get(t, 0) + 1
+
+    # 병동 빠른 조회 — 병실 뷰(배치도)와 목록 모두 적용
+    if ward_f:
+        room_view = [w for w in room_view if w["ward"] == ward_f]
+
+    # KPI/태그/균 세부 필터 — 목록 표시에 적용
+    filt_label = _WARD_FILTS[filt][0] if filt in _WARD_FILTS else None
+    admitted_list = _apply_ward_filters(admitted, filt, ward_f, tag_f, organism_f)
     view = request.args.get("view") or "room"
-    if filt in _filts:
-        filt_label, pred = _filts[filt]
-        admitted_list = [c for c in admitted if pred(c)]
-        view = "list"   # 세부 내역을 볼 땐 목록 뷰로 (배치도 대신 행으로)
+    if filt in _WARD_FILTS or tag_f or organism_f:
+        view = "list"   # 세부 내역을 볼 땐 목록 뷰로
+    any_filter = bool(filt in _WARD_FILTS or ward_f or tag_f or organism_f)
     return render_template(
         "ward.html", away=away, admitted=admitted_list,
         room_view=room_view, unassigned=unassigned,
@@ -3547,8 +3561,101 @@ def ward_view():
         pending=pending_recent, pending_old=pending_old, show_old=show_old,
         kpis=kpis, q=q or "", doctor=doctor or "", sort=sort,
         filt=filt, filt_label=filt_label,
+        ward_f=ward_f, tag_f=tag_f, organism_f=organism_f, any_filter=any_filter,
+        WARDS=WARDS, MGMT_TAG_PRESETS=MGMT_TAG_PRESETS, tag_counts=tag_counts,
         doctor_options=doctor_options,
     )
+
+
+def _ward_admitted_roster(q, doctor):
+    """재원(입원완료·미퇴원·입원일 있음) 환자 목록 — 파생 필드 모두 부착. ward_view/CSV 공유."""
+    rows = models.list_consultations(admission_status="입원완료", q=q,
+                                     q_scope="ward", limit=10000)
+    if doctor:
+        rows = [c for c in rows if (c.get("attending_doctor") or "") == doctor]
+    rows = [c for c in rows if not (c.get("discharge_date") or "").strip()]
+    away_by_cid = {a["consultation_id"]: a for a in models.away_now()}
+    admitted = []
+    for c in rows:
+        adm = (c.get("actual_admission_date") or c.get("admission_date") or "").strip()
+        if not adm:
+            continue
+        c["admitted_on"] = adm
+        c["away"] = away_by_cid.get(c["id"])
+        c["stay_days"] = _days_since(adm)
+        c.update(_care_phase(c))
+        c["recovery_due"] = (c.get("care_phase") == "회복기"
+                             and c.get("phase_dday") is not None and c["phase_dday"] <= 30)
+        dw = _discharge_watch(c)
+        if dw:
+            c["discharge_dday"] = dw["days_left"]
+            c["discharge_due"] = dw["due_date"]
+        c.update(_extension_tier(c))
+        c.update(_split_diagnosis(c))
+        c["ward_label"] = _dashboard_ward_label(c.get("room_number"))
+        admitted.append(c)
+    tag_map = models.patient_tags_map([c.get("patient_id") for c in admitted])
+    for c in admitted:
+        c["mgmt_tags"] = tag_map.get(c.get("patient_id"), [])
+    return admitted
+
+
+@app.route("/ward.csv")
+@admin_required
+def ward_csv():
+    """현재 필터 조건의 재원 명부를 CSV로 — 병동·주치의·수가구간·연장·균·태그 반영."""
+    q = (request.args.get("q") or "").strip() or None
+    doctor = (request.args.get("doctor") or "").strip() or None
+    admitted = _ward_admitted_roster(q, doctor)
+    admitted = _apply_ward_filters(
+        admitted, (request.args.get("filt") or "").strip() or None,
+        (request.args.get("ward") or "").strip() or None,
+        (request.args.get("tag") or "").strip() or None,
+        (request.args.get("organism") or "").strip() or None)
+    admitted.sort(key=lambda c: (_room_sort_key(c.get("room_number")), c.get("patient_name") or ""))
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["병동", "호실", "환자", "나이", "성별", "주치의", "주진단", "부진단",
+                "내성균", "입원일", "재원일수", "수가구간", "D-day", "회복기종료/만료일",
+                "퇴원예정", "연장", "관리태그"])
+    for c in admitted:
+        pd = c.get("phase_dday")
+        dday = ("" if pd is None else (f"D-{pd}" if pd >= 0 else f"{-pd}일초과"))
+        w.writerow([
+            c.get("ward_label") or "", c.get("room_number") or "", c.get("patient_name") or "",
+            c.get("patient_age") if c.get("patient_age") is not None else "",
+            {"M": "남", "F": "여"}.get(c.get("gender"), ""),
+            c.get("attending_doctor") or "",
+            ", ".join(c.get("dx_primary") or []), ", ".join(c.get("dx_secondary") or []),
+            ", ".join(c.get("organisms") or []),
+            c.get("admitted_on") or "",
+            c.get("stay_days") if c.get("stay_days") is not None else "",
+            c.get("care_phase") or "", dday, c.get("phase_end_date") or "",
+            c.get("discharge_due") or "", c.get("ext_label") or "",
+            ", ".join(c.get("mgmt_tags") or []),
+        ])
+    models.log_audit(user_id=g.user["id"], username=g.user["username"],
+                     action="export_csv", target_type="ward",
+                     detail=f"재원 {len(admitted)}건", ip=request.remote_addr)
+    data = buf.getvalue().encode("utf-8-sig")
+    return send_file(io.BytesIO(data), mimetype="text/csv", as_attachment=True,
+                     download_name=f"ward_{datetime.now().strftime('%Y%m%d_%H%M')}.csv")
+
+
+@app.route("/api/patient/<int:pid>/tags", methods=["POST"])
+@login_required
+def api_patient_tags(pid):
+    if not models.get_patient(pid):
+        abort(404)
+    data = request.get_json(silent=True) or request.form
+    tags = data.get("tags")
+    if isinstance(tags, str):
+        tags = [t.strip() for t in tags.split(",")]
+    models.set_patient_tags(pid, tags or [])
+    models.log_audit(user_id=g.user["id"], username=g.user["username"],
+                     action="update_patient", target_type="patient", target_id=pid,
+                     detail="관리 태그 변경", ip=request.remote_addr)
+    return jsonify({"ok": True, "tags": models.get_patient(pid)["mgmt_tags"]})
 
 
 def _days_since(datestr):
@@ -3586,6 +3693,32 @@ def _split_diagnosis(c):
     sc = c.get("special_care") or []
     organisms = [x for x in _ORGANISMS if x in sc]
     return {"dx_primary": primary, "dx_secondary": secondary, "organisms": organisms}
+
+
+# 재원 목록 세부 필터 — (라벨, 판정함수). KPI 카드/칩과 CSV가 공유.
+_WARD_FILTS = {
+    "recovery":    ("회복기 (S005)",   lambda c: c.get("care_phase") == "회복기"),
+    "nonrecovery": ("비회복기 (S006)", lambda c: c.get("care_phase") == "비회복기"),
+    "recdue":      ("회복기 종료 D-30", lambda c: c.get("recovery_due")),
+    "dis30":       ("퇴원 예정 D-30",   lambda c: c.get("discharge_dday") is not None and c["discharge_dday"] <= 30),
+    "ext1":        ("연장 1회 (1.5년)", lambda c: c.get("ext_tier") == 1),
+    "ext2":        ("연장 2회 (2년)",   lambda c: c.get("ext_tier") == 2),
+}
+
+
+def _apply_ward_filters(admitted, filt=None, ward_f=None, tag_f=None, organism_f=None):
+    """재원 목록에 병동·KPI구분·태그·내성균 필터를 순차 적용."""
+    out = admitted
+    if ward_f:
+        out = [c for c in out if c.get("ward_label") == ward_f]
+    if filt in _WARD_FILTS:
+        pred = _WARD_FILTS[filt][1]
+        out = [c for c in out if pred(c)]
+    if tag_f:
+        out = [c for c in out if tag_f in (c.get("mgmt_tags") or [])]
+    if organism_f:
+        out = [c for c in out if c.get("organisms")]
+    return out
 
 
 # 입원 연장 분류 — 기본 1년(TOTAL_STAY_DAYS) + 6개월(EXTENSION_DAYS) 연장 최대 2회(≈2년).
