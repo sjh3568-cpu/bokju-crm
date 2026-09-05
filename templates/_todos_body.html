@@ -34,6 +34,11 @@
             data-auto-open="{{ '1' if auto_new|default(false) else '0' }}">＋ 새 ToDo</button>
 </div>
 
+<p class="todo-scope-hint">
+    💡 여기는 <strong>내 할 일</strong> 전용입니다. 상담·입원·퇴원까지 포함한
+    <strong>전체 일정</strong>은 <a href="/#integrated-calendar" target="_top">대시보드 통합 달력</a>에서 볼 수 있어요.
+</p>
+
 {# 추가/수정 공용 폼 — 우측 슬라이드 드로어 (달력을 가리지 않고 옆에서 기입) #}
 <div class="todo-drawer-backdrop" id="todo-drawer-backdrop" hidden></div>
 <aside class="todo-drawer" id="todo-form-panel" aria-hidden="true">
