@@ -825,7 +825,8 @@ def _care_phase(consultation):
         phase = "미판정"
     # 외진 기간을 빼지 않은 값 그대로 쓴다 (_admission_expiry 주석 참고)
     dday = ax.get("billing_left") if phase == "회복기" else ax.get("total_left")
-    return {"care_phase": phase, "phase_dday": dday,
+    end_date = ax.get("billing_date") if phase == "회복기" else ax.get("total_date")
+    return {"care_phase": phase, "phase_dday": dday, "phase_end_date": end_date,
             "phase_mandatory": bool(ax.get("mandatory"))}
 
 
@@ -3445,6 +3446,7 @@ def ward_view():
             c["discharge_dday"] = dw["days_left"]
             c["discharge_due"] = dw["due_date"]
         c.update(_extension_tier(c))
+        c.update(_split_diagnosis(c))
         admitted.append(c)
 
     # 외진 이력 — 참고 정보. 재원 경과일·수가 D-day에서 외진 기간을 빼지 않는다.
@@ -3555,6 +3557,35 @@ def _days_since(datestr):
     except (ValueError, TypeError):
         return None
     return (date.today() - d).days
+
+
+_ORGANISMS = ("CRE", "VRE", "MRSA")
+
+
+def _split_diagnosis(c):
+    """diseases를 주 진단(회복기재활 입원 질환)·부 진단(기저·기타)으로 분리하고,
+    내성균(CRE/VRE/MRSA) 목록을 뽑는다.
+    Returns dict(dx_primary, dx_secondary, organisms)."""
+    base = set(DISEASES_GROUPS.get("기저질환", []))
+    primary, secondary = [], []
+    for d in (c.get("diseases") or []):
+        s = str(d).strip()
+        if not s:
+            continue
+        if any(kw and (kw in s or s in kw) for kw in base):
+            secondary.append(s)
+        else:
+            primary.append(s)
+    # 폼에 별도 주/부 진단 텍스트가 있으면 앞에 반영
+    pd = (c.get("primary_diagnosis") or "").strip()
+    if pd and pd not in primary:
+        primary.insert(0, pd)
+    sd = (c.get("secondary_diagnosis") or "").strip()
+    if sd and sd not in secondary:
+        secondary.append(sd)
+    sc = c.get("special_care") or []
+    organisms = [x for x in _ORGANISMS if x in sc]
+    return {"dx_primary": primary, "dx_secondary": secondary, "organisms": organisms}
 
 
 # 입원 연장 분류 — 기본 1년(TOTAL_STAY_DAYS) + 6개월(EXTENSION_DAYS) 연장 최대 2회(≈2년).
