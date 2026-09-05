@@ -63,6 +63,17 @@
         </div>
         <label class="tf-field"><span>리마인드</span>
             <input type="datetime-local" name="remind_at"></label>
+        <div class="tf-row" id="todo-repeat-row">
+            <label class="tf-field"><span>반복</span>
+                <select name="repeat">
+                    <option value="none">반복 안 함</option>
+                    <option value="daily">매일</option>
+                    <option value="weekly">매주</option>
+                    <option value="monthly">매월</option>
+                </select></label>
+            <label class="tf-field"><span>반복 종료일</span>
+                <input type="date" name="repeat_until"></label>
+        </div>
         <fieldset class="tf-field todo-share-field">
             <legend>공유자 <small>선택한 상담사에게 알림이 전송됩니다.</small></legend>
             <div class="todo-share-options">
@@ -76,6 +87,7 @@
         <div class="tf-actions">
             <button type="submit" class="btn btn-primary btn-sm">저장</button>
             <button type="button" class="btn btn-danger btn-sm" id="todo-form-del" hidden>삭제</button>
+            <button type="button" class="btn btn-danger btn-sm" id="todo-form-del-series" hidden>반복 전체 삭제</button>
             <button type="button" class="btn btn-secondary btn-sm" id="todo-form-cancel2">취소</button>
         </div>
     </form>
@@ -87,6 +99,7 @@ data-end="{{ t.end_date or '' }}" data-stime="{{ t.start_time or '' }}" data-eti
 data-owner="{{ 1 if t.is_owner|default(true) else 0 }}" data-shares="{{ t.share_user_ids|default([])|join(',') }}"
 data-progress="{{ t.progress or 0 }}"
 data-dday="{{ t.dday or 0 }}" data-remind="{{ t.remind_at or '' }}" data-note="{{ t.note or '' }}"
+data-repeat="{{ t.repeat_group or '' }}"
 {%- endmacro %}
 
 {% macro todo_list_item(t) -%}
@@ -127,7 +140,8 @@ data-dday="{{ t.dday or 0 }}" data-remind="{{ t.remind_at or '' }}" data-note="{
                 </div>
                 {% if c.holiday %}<div class="tc-holiday" title="{{ c.holiday }}">{{ c.holiday }}</div>{% endif %}
                 {% for t in c.todos %}
-                <div class="tc-todo{% if t.done %} done{% endif %}" {{ todo_data(t) }}>
+                <div class="tc-todo{% if t.done %} done{% endif %}"{% if t.is_owner %} draggable="true"{% endif %} {{ todo_data(t) }}>
+                    {% if t.repeat_group %}<span class="tc-repeat" title="반복 일정">🔁</span>{% endif %}
                     {% if t.dday_label %}<span class="tc-dday">{{ t.dday_label }}</span>{% endif %}
                     {% if t.start_time %}<span class="tc-time">{{ t.start_time }}</span>{% endif %}
                     {% if t.patient_name %}<span class="tc-patient">{{ t.patient_name }}</span>{% endif %}

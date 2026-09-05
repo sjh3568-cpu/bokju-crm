@@ -602,6 +602,7 @@ def init_db():
         "end_time": "TEXT",
         "patient_id": "INTEGER",     # 연결된 환자(선택) — 상담/환자 화면에서 만든 할 일
         "patient_name": "TEXT",      # 표시용 스냅샷 (조회 시 JOIN 없이 바로 사용)
+        "repeat_group": "TEXT",      # 반복 일정 시리즈 묶음 id (같은 값=한 반복 그룹)
     })
     conn.execute("""
         CREATE TABLE IF NOT EXISTS todo_shares (
@@ -1274,9 +1275,11 @@ def create_todo(user_id: int, title: str, due_date: str, *, note: str = "",
                 remind_at: str | None = None, end_date: str | None = None,
                 progress: int = 0, dday: bool = False,
                 start_time: str | None = None, end_time: str | None = None,
-                patient_id: int | None = None, patient_name: str | None = None) -> int:
+                patient_id: int | None = None, patient_name: str | None = None,
+                repeat_group: str | None = None) -> int:
     """due_date=시작일(기간 시작), end_date=종료일(선택). start_time/end_time='HH:MM'(선택).
-    progress 0~100(100=완료). patient_id/patient_name = 연결 환자(선택)."""
+    progress 0~100(100=완료). patient_id/patient_name = 연결 환자(선택).
+    repeat_group = 반복 시리즈 묶음 id(선택)."""
     conn = get_db()
     nxt = conn.execute(
         "SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM todos WHERE user_id = ? AND due_date = ?",
@@ -1286,18 +1289,33 @@ def create_todo(user_id: int, title: str, due_date: str, *, note: str = "",
     done = 1 if progress >= 100 else 0
     cur = conn.execute(
         "INSERT INTO todos (user_id, due_date, end_date, start_time, end_time, title, note, "
-        "remind_at, progress, dday, done, done_at, sort_order, patient_id, patient_name) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "remind_at, progress, dday, done, done_at, sort_order, patient_id, patient_name, repeat_group) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (user_id, due_date, end_date or None, start_time or None, end_time or None,
          title, note or None, remind_at or None,
          progress, 1 if dday else 0, done,
          datetime.now().isoformat(timespec="seconds") if done else None, nxt,
-         patient_id or None, patient_name or None),
+         patient_id or None, patient_name or None, repeat_group or None),
     )
     conn.commit()
     tid = cur.lastrowid
     conn.close()
     return tid
+
+
+def delete_todo_series(user_id: int, repeat_group: str) -> int:
+    """반복 시리즈 전체 삭제. 삭제된 개수 반환."""
+    if not repeat_group:
+        return 0
+    conn = get_db()
+    cur = conn.execute(
+        "DELETE FROM todos WHERE user_id = ? AND repeat_group = ?",
+        (user_id, repeat_group),
+    )
+    conn.commit()
+    n = cur.rowcount
+    conn.close()
+    return n
 
 
 def list_todos_for_patient(user_id: int, patient_id: int):

@@ -1848,6 +1848,38 @@ def _valid_time(s, default=None):
         return default
 
 
+def _add_months(d, n):
+    """월 더하기 — 말일 넘침은 해당 월 말일로 보정 (1/31 + 1개월 = 2/28/29)."""
+    m = d.month - 1 + n
+    y = d.year + m // 12
+    m = m % 12 + 1
+    return date(y, m, min(d.day, calendar.monthrange(y, m)[1]))
+
+
+def _repeat_dates(start_iso, freq, until_iso, cap=200):
+    """반복 시작일~종료일 사이의 발생일 목록(ISO). 반복 없음/종료일 없음이면 [start]만."""
+    start = _valid_date(start_iso)
+    until = _valid_date(until_iso)
+    if not start or freq not in ("daily", "weekly", "monthly") or not until:
+        return [start] if start else []
+    s = date.fromisoformat(start)
+    u = date.fromisoformat(until)
+    if u < s:
+        return [start]
+    out, cur = [s], s
+    while len(out) < cap:
+        if freq == "daily":
+            cur = cur + timedelta(days=1)
+        elif freq == "weekly":
+            cur = cur + timedelta(weeks=1)
+        else:
+            cur = _add_months(cur, 1)
+        if cur > u:
+            break
+        out.append(cur)
+    return [d.isoformat() for d in out]
+
+
 def _annotate_todos(todos, today):
     """할 일에 dday_label(마감까지 D-표기)을 붙인다 (dday 사용 항목만)."""
     for t in todos:
@@ -1967,18 +1999,40 @@ def api_todo_create():
     if pid and not pname:
         pat = models.get_patient(pid)
         pname = pat.get("name") if pat else None
+    uid = g.user["id"]
+    shares = data.get("share_user_ids") or []
+    st = _valid_time(data.get("start_time"))
+    et = _valid_time(data.get("end_time"))
+    note = (data.get("note") or "").strip()
+    dday = str(data.get("dday", "")) in ("1", "true", "True", "on")
+
+    # 반복 일정 — repeat(daily/weekly/monthly) + repeat_until 지정 시 각 날짜로 실제 생성.
+    repeat = (data.get("repeat") or "none").strip()
+    repeat_until = _valid_date(data.get("repeat_until"))
+    dates = _repeat_dates(day, repeat, repeat_until)
+    if len(dates) > 1:
+        grp = secrets.token_hex(8)
+        delta_end = (date.fromisoformat(end) - date.fromisoformat(day)).days if end else None
+        first_id = None
+        for i, d0 in enumerate(dates):
+            e0 = (date.fromisoformat(d0) + timedelta(days=delta_end)).isoformat() if delta_end is not None else None
+            tid = models.create_todo(
+                uid, title, d0, end_date=e0, start_time=st, end_time=et,
+                note=note, dday=dday, patient_id=pid, patient_name=pname, repeat_group=grp)
+            if shares:
+                models.sync_todo_shares(tid, uid, shares)
+            if i == 0:
+                first_id = tid
+        return jsonify({"ok": True, "id": first_id, "count": len(dates)})
+
+    # 단일 일정
     tid = models.create_todo(
-        g.user["id"], title, day,
-        end_date=end,
-        start_time=_valid_time(data.get("start_time")),
-        end_time=_valid_time(data.get("end_time")),
-        note=(data.get("note") or "").strip(),
+        uid, title, day, end_date=end, start_time=st, end_time=et, note=note,
         remind_at=(data.get("remind_at") or "").strip() or None,
-        progress=data.get("progress") or 0,
-        dday=str(data.get("dday", "")) in ("1", "true", "True", "on"),
+        progress=data.get("progress") or 0, dday=dday,
         patient_id=pid, patient_name=pname,
     )
-    models.sync_todo_shares(tid, g.user["id"], data.get("share_user_ids") or [])
+    models.sync_todo_shares(tid, uid, shares)
     return jsonify({"ok": True, "id": tid})
 
 
@@ -2037,8 +2091,33 @@ def api_todo_carry(tid):
 @app.route("/api/todos/<int:tid>/delete", methods=["POST"])
 @login_required
 def api_todo_delete(tid):
+    data = request.get_json(silent=True) or request.form
+    # series=1 이면 같은 반복 그룹 전체 삭제
+    if str(data.get("series", "")) in ("1", "true", "True", "on"):
+        t = models.get_todo(tid, g.user["id"])
+        if t and t.get("repeat_group"):
+            n = models.delete_todo_series(g.user["id"], t["repeat_group"])
+            return jsonify({"ok": True, "deleted": n})
     if not models.delete_todo(tid, g.user["id"]):
         abort(404)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/todos/<int:tid>/move", methods=["POST"])
+@login_required
+def api_todo_move(tid):
+    """달력 드래그 이동 — 시작일을 new_date로, 기간(end_date)은 같은 간격 유지."""
+    t = models.get_todo(tid, g.user["id"])
+    if not t:
+        abort(404)
+    new_day = _valid_date((request.get_json(silent=True) or request.form).get("new_date"))
+    if not new_day:
+        return jsonify({"error": "날짜가 올바르지 않습니다."}), 400
+    fields = {"due_date": new_day}
+    if t.get("end_date"):
+        delta = (date.fromisoformat(new_day) - date.fromisoformat(t["due_date"])).days
+        fields["end_date"] = (date.fromisoformat(t["end_date"]) + timedelta(days=delta)).isoformat()
+    models.update_todo(tid, g.user["id"], **fields)
     return jsonify({"ok": True})
 
 
