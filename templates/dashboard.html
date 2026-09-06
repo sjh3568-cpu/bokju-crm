@@ -664,7 +664,7 @@
     </div>
 </div>
 
-<div class="card weekly-report-card">
+<div class="card weekly-report-card" id="weekly-status">
     <div class="dash-section-head">
         <div><h3>주간 상담 현황</h3><span class="muted-sm">{{ weekly_report.period_label }} · 월요일~일요일</span></div>
         <div class="weekly-share-actions" data-export-ignore>
@@ -966,8 +966,8 @@
     const body=document.getElementById('dash-calendar-body');
     if(!button||!body)return;
     const key='bokju_dashboard_calendar_open';
-    let open=false;
-    try{open=localStorage.getItem(key)==='1';}catch(e){}
+    let open=location.hash==='#integrated-calendar';
+    try{open=open||localStorage.getItem(key)==='1';}catch(e){}
     function render(){
         body.hidden=!open;
         button.setAttribute('aria-expanded',open?'true':'false');

@@ -17,7 +17,15 @@
                 {% if current_user %}
                 <nav class="main-nav" aria-label="주 메뉴">
                     {% if P.get('dashboard',0) >= 1 %}
-                    <a href="/" {% if request.path == '/' %}class="active"{% endif %}><span class="nav-icon nav-icon-dashboard">🏠</span>대시보드{% if inbound_badge %}<span class="nav-notice-new" id="nav-inbound-badge" title="미처리 상담 문의">{{ inbound_badge }}</span>{% else %}<span class="nav-notice-new" id="nav-inbound-badge" hidden></span>{% endif %}</a>
+                    <div class="nav-menu-group {% if request.path == '/' %}active{% endif %}">
+                        <a href="/" {% if request.path == '/' %}class="active"{% endif %}><span class="nav-icon nav-icon-dashboard">🏠</span>대시보드{% if inbound_badge %}<span class="nav-notice-new" id="nav-inbound-badge" title="미처리 상담 문의">{{ inbound_badge }}</span>{% else %}<span class="nav-notice-new" id="nav-inbound-badge" hidden></span>{% endif %}</a>
+                        <button type="button" class="nav-menu-toggle" aria-label="대시보드 하위 메뉴" aria-expanded="false">▾</button>
+                        <div class="nav-dropdown">
+                            <a href="/#integrated-calendar"><span>🗓️</span><span><b>통합 달력</b><small>상담·입원·퇴원·To-Do 일정</small></span></a>
+                            <a href="/#admission-schedule"><span>🏥</span><span><b>입원 현황</b><small>과거·오늘·입원예정 조회</small></span></a>
+                            <a href="/#weekly-status"><span>📋</span><span><b>주간 현황</b><small>주간 상담 실적·공유 자료</small></span></a>
+                        </div>
+                    </div>
                     {% endif %}
                     {% if P.get('consult',0) >= 3 %}
                     <a href="/consult/new" {% if request.path == '/consult/new' %}class="active"{% endif %}><span class="nav-icon nav-icon-new">✍️</span>새 상담</a>
