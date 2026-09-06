@@ -70,11 +70,6 @@
             </label>
             {% endif %}
         </div>
-        <div class="admission-status-guide">
-            <span><b>미정</b> 입원 여부를 아직 판단하지 않음</span><span><b>입원대기</b> 입원 결정 후 병상 배정 대기</span>
-            <span><b>입원예정</b> 입원일 확정 후 실제 입원 대기</span><span><b>입원보류</b> 추가 확인이 필요해 결정 보류</span>
-            <span><b>입원취소</b> 환자·병원 사유로 진행 종결</span><span><b>입원완료</b> 실제 입원 확인·재원 관리 전환</span>
-        </div>
         {% if _status == '퇴원완료' %}
         <p class="muted" style="font-size:0.84em; margin:4px 0">입원 후 단계(퇴원)는 상담목록에서 관리합니다. 여기서는 상담 결과만 저장됩니다.</p>
         {% endif %}
@@ -142,9 +137,6 @@
 .status-savebar { display:flex; gap:10px; align-items:center; border-top:1px solid #d1fae5; padding-top:10px; }
 .status-msg.ok { color:var(--success); }
 .status-msg.err { color:var(--danger); }
-.admission-status-guide { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:4px 14px; margin:3px 0 9px; padding:8px 10px; border:1px solid #dbe7df; border-radius:8px; background:#f7faf8; color:#64748b; font-size:.75rem; line-height:1.4; }
-.admission-status-guide span { display:flex; gap:5px; }.admission-status-guide b { flex:0 0 53px; color:#365b47; }
-@media(max-width:720px){.admission-status-guide{grid-template-columns:1fr}}
 @media print {
     @page { size:A4 portrait; margin:11mm; }
     header,footer,.consult-detail-actions,.status-savebar,.pt-todo-card,.ae-add,.ae-del,.ae-back,.calc-modal-box,#calc-fab,#todo-fab,#krpg-fab { display:none!important; }
@@ -158,7 +150,6 @@
     .status-tier { margin-bottom:2mm; }.status-options { margin-bottom:1mm; }
     .status-chip:not(.on),.reason-chip:not(.on) { display:none!important; }
     .status-chip.on,.reason-chip.on { color:#111!important; background:#fff!important; border-color:#777!important; padding:2px 8px!important; }
-    .admission-status-guide { display:none!important; }
     .kv { font-size:8.5pt!important; line-height:1.35!important; }
     .kv dt,.kv dd { padding-top:1.2mm!important; padding-bottom:1.2mm!important; }
     input,select,button { box-shadow:none!important; }

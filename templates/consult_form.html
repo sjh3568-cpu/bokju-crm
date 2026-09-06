@@ -685,6 +685,7 @@
 <form id="consult-form"
       data-edit="{{ '1' if is_edit else '0' }}"
       data-cid="{{ consultation.id if is_edit else '' }}"
+      data-user-id="{{ current_user.id }}"
       data-comm-id="{{ inbox_comm.id if inbox_comm else '' }}">
 
 <!-- ───────── 헤더 (입원예정·주치의·호실·상담일시·상담자) ───────── -->

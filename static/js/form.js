@@ -8,7 +8,8 @@
 
     // 작성 중 임시저장 — 의료정보가 PC에 장기간 남지 않도록 현재 탭(sessionStorage)에만 보관.
     // 새 상담은 새로고침·실수로 페이지 이동 후 같은 탭에서 돌아왔을 때 복원된다.
-    const draftKey = isEdit ? null : 'bokju_consult_draft_v1';
+    const legacyDraftKey = 'bokju_consult_draft_v1';
+    const draftKey = isEdit ? null : legacyDraftKey + '_' + (form.dataset.userId || 'user');
     let draftTimer;
     const draftState = document.createElement('div');
     draftState.className = 'form-draft-state';
@@ -17,8 +18,9 @@
         draftState.textContent = '임시저장 준비';
         form.prepend(draftState);
         try {
-            const saved = JSON.parse(sessionStorage.getItem(draftKey) || 'null');
-            if (saved && Array.isArray(saved.fields)) {
+            const saved = JSON.parse(sessionStorage.getItem(draftKey) || sessionStorage.getItem(legacyDraftKey) || 'null');
+            const restoreDraft = () => {
+                if (!saved || !Array.isArray(saved.fields)) return;
                 saved.fields.forEach(item => {
                     const candidates = Array.from(form.elements).filter(el => el.name === item.name);
                     const el = (item.type === 'radio' || item.type === 'checkbox')
@@ -29,6 +31,23 @@
                     el.dispatchEvent(new Event('change', {bubbles:true}));
                 });
                 draftState.textContent = '임시저장 복원됨 · ' + new Date(saved.at).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+                sessionStorage.setItem(draftKey, JSON.stringify(saved));
+                sessionStorage.removeItem(legacyDraftKey);
+            };
+            if (saved && Array.isArray(saved.fields)) {
+                draftState.textContent = '';
+                const label = document.createElement('span');
+                label.textContent = '임시저장본 있음 · ' + new Date(saved.at).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+                const loadBtn = document.createElement('button');
+                loadBtn.type = 'button'; loadBtn.textContent = '불러오기'; loadBtn.className = 'draft-action';
+                loadBtn.addEventListener('click', restoreDraft);
+                const deleteBtn = document.createElement('button');
+                deleteBtn.type = 'button'; deleteBtn.textContent = '삭제'; deleteBtn.className = 'draft-action muted-action';
+                deleteBtn.addEventListener('click', () => {
+                    sessionStorage.removeItem(draftKey); sessionStorage.removeItem(legacyDraftKey);
+                    draftState.textContent = '임시저장본 삭제됨';
+                });
+                draftState.append(label, loadBtn, deleteBtn);
             }
         } catch (_) {}
         form.addEventListener('input', () => {
@@ -593,7 +612,7 @@
             }
             const res = await api.post(url, payload);
             const targetId = res.id || cid;
-            if (draftKey) sessionStorage.removeItem(draftKey);
+            if (draftKey) { sessionStorage.removeItem(draftKey); sessionStorage.removeItem(legacyDraftKey); }
             location.href = `/consult/${targetId}`;
         } catch (err) {
             toast('저장 실패: ' + err.message, 'error');
