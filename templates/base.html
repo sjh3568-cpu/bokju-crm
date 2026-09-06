@@ -17,33 +17,38 @@
                 {% if current_user %}
                 <nav class="main-nav" aria-label="주 메뉴">
                     {% if P.get('dashboard',0) >= 1 %}
-                    <a href="/" {% if request.path == '/' %}class="active"{% endif %}>대시보드{% if inbound_badge %}<span class="nav-notice-new" id="nav-inbound-badge" title="미처리 상담 문의">{{ inbound_badge }}</span>{% else %}<span class="nav-notice-new" id="nav-inbound-badge" hidden></span>{% endif %}</a>
+                    <a href="/" {% if request.path == '/' %}class="active"{% endif %}><span class="nav-icon">⌂</span>대시보드{% if inbound_badge %}<span class="nav-notice-new" id="nav-inbound-badge" title="미처리 상담 문의">{{ inbound_badge }}</span>{% else %}<span class="nav-notice-new" id="nav-inbound-badge" hidden></span>{% endif %}</a>
                     {% endif %}
                     {% if P.get('consult',0) >= 3 %}
-                    <a href="/consult/new" {% if request.path == '/consult/new' %}class="active"{% endif %}>새 상담</a>
+                    <a href="/consult/new" {% if request.path == '/consult/new' %}class="active"{% endif %}><span class="nav-icon">＋</span>새 상담</a>
                     {% endif %}
                     {% if P.get('consult',0) >= 1 %}
-                    <a href="/consultations" {% if request.path.startswith('/consultations') %}class="active"{% endif %}>상담 목록</a>
+                    <a href="/consultations" {% if request.path.startswith('/consultations') %}class="active"{% endif %}><span class="nav-icon">≡</span>상담 목록</a>
                     {% endif %}
                     {% if P.get('ward',0) >= 1 %}
-                    <a href="/ward" {% if request.path.startswith('/ward') or request.path.startswith('/patients') %}class="active"{% endif %}>재원 관리</a>
+                    <a href="/ward" {% if request.path.startswith('/ward') or request.path.startswith('/patients') %}class="active"{% endif %}><span class="nav-icon">▦</span>재원 관리</a>
                     {% endif %}
                     {% if P.get('sms',0) >= 1 %}
-                    <a href="/sms" {% if request.path.startswith('/sms') %}class="active"{% endif %}>문자</a>
+                    <a href="/sms" {% if request.path.startswith('/sms') %}class="active"{% endif %}><span class="nav-icon">✉</span>문자</a>
                     {% endif %}
                     {% if P.get('stats',0) >= 1 %}
-                    <a href="/stats" {% if request.path.startswith('/stats') %}class="active"{% endif %}>통계</a>
+                    <a href="/stats" {% if request.path.startswith('/stats') %}class="active"{% endif %}><span class="nav-icon">⌁</span>통계</a>
                     {% endif %}
                     {% if P.get('report',0) >= 1 %}
-                    <a href="/report/monthly" {% if request.path.startswith('/report') %}class="active"{% endif %}>월간보고서</a>
+                    <a href="/report/monthly" {% if request.path.startswith('/report') %}class="active"{% endif %}><span class="nav-icon">▤</span>월간보고서</a>
                     {% endif %}
-                    <a href="/notices" {% if request.path.startswith('/notices') %}class="active"{% endif %}>공지사항{% if has_unread_required_notice %}<span class="nav-notice-new">필수</span>{% endif %}</a>
+                    <a href="/notices" {% if request.path.startswith('/notices') %}class="active"{% endif %}><span class="nav-icon">◉</span>공지사항{% if has_unread_required_notice %}<span class="nav-notice-new">필수</span>{% endif %}</a>
                     {% if P.get('users',0) >= 2 %}
                     <a href="/admin/users" {% if request.path.startswith('/admin/users') or request.path.startswith('/admin/password-reset') %}class="active"{% endif %}>사용자 관리{% if password_reset_badge %}<span class="nav-notice-new">{{ password_reset_badge }}</span>{% endif %}</a>
                     <a href="/admin/audit" {% if request.path.startswith('/admin/audit') %}class="active"{% endif %} title="누가 언제 무엇을 조회·입력·수정·삭제했는지">이력 관리</a>
                     {% endif %}
-                    <a href="/help" {% if request.path.startswith('/help') %}class="active"{% endif %} title="메뉴별 작성·등록·관리 방법" style="margin-left:auto">상담 매뉴얼</a>
+                    <a href="/help" {% if request.path.startswith('/help') %}class="active"{% endif %} title="메뉴별 작성·등록·관리 방법" style="margin-left:auto"><span class="nav-icon">?</span>상담 매뉴얼</a>
                 </nav>
+                {% set alert_total = (todo_badge or 0) + (inbound_badge or 0) + (password_reset_badge or 0) + (1 if has_unread_required_notice else 0) %}
+                <div class="header-tools">
+                    <button type="button" class="header-tool-btn" id="alert-center-btn" aria-label="알림센터" aria-expanded="false" data-fixed-count="{{ alert_total - (inbound_badge or 0) }}">♢<b id="alert-total-badge"{% if not alert_total %} hidden{% endif %}>{{ alert_total }}</b></button>
+                    <button type="button" class="header-tool-btn" id="display-settings-btn" aria-label="화면 설정" aria-expanded="false">Aa</button>
+                </div>
                 <span class="user-tag">
                     {{ current_user.display_name }}<small class="role-chip">{{ ROLE_LABELS.get(current_user.role, current_user.role) }}</small>
                     <form action="/logout" method="post" style="display:inline">
@@ -54,6 +59,26 @@
             </div>
         </div>
     </header>
+
+    {% if current_user %}
+    <aside class="header-popover" id="alert-center" hidden>
+        <div class="header-popover-head"><strong>알림센터</strong><button type="button" data-popover-close>✕</button></div>
+        <div class="alert-center-list">
+            <a href="/todos"><span>To-DO List·공유 일정</span><b>{{ todo_badge or 0 }}</b></a>
+            <a href="/#inbound"><span>미처리 상담 문의</span><b id="alert-inbound-count">{{ inbound_badge or 0 }}</b></a>
+            <a href="/notices"><span>필수 공지사항</span><b>{{ 1 if has_unread_required_notice else 0 }}</b></a>
+            {% if current_user.role == 'admin' %}<a href="/admin/password-reset"><span>비밀번호 초기화 요청</span><b>{{ password_reset_badge or 0 }}</b></a>{% endif %}
+        </div>
+        <div class="recent-links"><strong>최근 조회</strong><div id="recent-patient-links"><span class="muted-sm">최근 선택한 상담이 없습니다.</span></div></div>
+    </aside>
+    <aside class="header-popover display-settings" id="display-settings" hidden>
+        <div class="header-popover-head"><strong>화면 보기 설정</strong><button type="button" data-popover-close>✕</button></div>
+        <label>화면 밀도</label><div class="setting-segment" data-setting="density"><button data-value="comfortable">편안하게</button><button data-value="normal">기본</button><button data-value="compact">촘촘하게</button></div>
+        <label>글자 크기</label><div class="setting-segment" data-setting="font"><button data-value="small">작게</button><button data-value="normal">기본</button><button data-value="large">크게</button></div>
+        <label class="contrast-setting"><input type="checkbox" id="contrast-setting"> 고대비 모드</label>
+        <button type="button" class="btn btn-secondary btn-sm" id="display-reset">기본값 복원</button>
+    </aside>
+    {% endif %}
 
     {% if current_user %}
     {# 기간 계산기 — 상담 중 어느 화면에서든 바로 열리는 팝업. 본문은 iframe(embed=1). #}
@@ -334,9 +359,19 @@
     function bucketIcon(b) { return b === '홈페이지' ? '🌐' : (b === '카카오채널' ? '💬' : '📥'); }
     function updateBadge(count) {
         var el = document.getElementById('nav-inbound-badge');
-        if (!el) return;
-        if (count > 0) { el.textContent = count; el.hidden = false; }
-        else { el.textContent = ''; el.hidden = true; }
+        if (el) {
+            if (count > 0) { el.textContent = count; el.hidden = false; }
+            else { el.textContent = ''; el.hidden = true; }
+        }
+        var centerCount = document.getElementById('alert-inbound-count');
+        if (centerCount) centerCount.textContent = count;
+        var centerButton = document.getElementById('alert-center-btn');
+        var totalBadge = document.getElementById('alert-total-badge');
+        if (centerButton && totalBadge) {
+            var total = Number(centerButton.dataset.fixedCount || 0) + Number(count || 0);
+            totalBadge.textContent = total;
+            totalBadge.hidden = total < 1;
+        }
     }
     function check() {
         fetch('/api/inbound/alerts', { credentials: 'same-origin' })
@@ -371,6 +406,36 @@
         check();
     }
     setInterval(check, 60000);   // 1분마다 — 문의 알림은 리마인드보다 빠르게
+})();
+</script>
+<!-- 화면 보기 설정·통합 알림센터·최근 조회는 계정별 브라우저에 저장 -->
+<script>
+(function () {
+    const uid='{{ current_user.id }}', prefKey='bokju_ui_pref_'+uid, recentKey='bokju_recent_consults_'+uid;
+    const body=document.body;
+    const defaults={density:'normal',font:'normal',contrast:false};
+    function read(key,fallback){try{return JSON.parse(localStorage.getItem(key)||'null')||fallback;}catch(e){return fallback;}}
+    function apply(pref){
+        body.classList.remove('ui-density-comfortable','ui-density-normal','ui-density-compact','ui-font-small','ui-font-normal','ui-font-large','ui-high-contrast');
+        body.classList.add('ui-density-'+pref.density,'ui-font-'+pref.font);
+        if(pref.contrast)body.classList.add('ui-high-contrast');
+        document.querySelectorAll('.setting-segment').forEach(group=>group.querySelectorAll('button').forEach(btn=>btn.classList.toggle('active',btn.dataset.value===pref[group.dataset.setting])));
+        const contrast=document.getElementById('contrast-setting');if(contrast)contrast.checked=!!pref.contrast;
+    }
+    let pref={...defaults,...read(prefKey,{})};apply(pref);
+    document.querySelectorAll('.setting-segment button').forEach(btn=>btn.addEventListener('click',()=>{pref[btn.parentElement.dataset.setting]=btn.dataset.value;localStorage.setItem(prefKey,JSON.stringify(pref));apply(pref);}));
+    const contrast=document.getElementById('contrast-setting');if(contrast)contrast.addEventListener('change',()=>{pref.contrast=contrast.checked;localStorage.setItem(prefKey,JSON.stringify(pref));apply(pref);});
+    const reset=document.getElementById('display-reset');if(reset)reset.addEventListener('click',()=>{pref={...defaults};localStorage.setItem(prefKey,JSON.stringify(pref));apply(pref);});
+
+    const pairs=[['alert-center-btn','alert-center'],['display-settings-btn','display-settings']];
+    function closeAll(except){pairs.forEach(([bid,pid])=>{if(pid===except)return;const panel=document.getElementById(pid),btn=document.getElementById(bid);if(panel)panel.hidden=true;if(btn)btn.setAttribute('aria-expanded','false');});}
+    pairs.forEach(([bid,pid])=>{const btn=document.getElementById(bid),panel=document.getElementById(pid);if(!btn||!panel)return;btn.addEventListener('click',e=>{e.stopPropagation();const opening=panel.hidden;closeAll(opening?pid:null);panel.hidden=!opening;btn.setAttribute('aria-expanded',String(opening));});panel.addEventListener('click',e=>e.stopPropagation());});
+    document.querySelectorAll('[data-popover-close]').forEach(btn=>btn.addEventListener('click',()=>closeAll()));
+    document.addEventListener('click',()=>closeAll());document.addEventListener('keydown',e=>{if(e.key==='Escape')closeAll();});
+
+    function cleanLabel(a){return (a.textContent||'').replace(/\s+/g,' ').trim().slice(0,40);}
+    document.addEventListener('click',e=>{const a=e.target.closest('a[href^="/consult/"]');if(!a||/\/edit(?:\?|$)/.test(a.getAttribute('href')))return;const href=a.getAttribute('href');if(!/^\/consult\/\d+/.test(href))return;let items=read(recentKey,[]).filter(x=>x.href!==href);items.unshift({href,label:cleanLabel(a),at:Date.now()});localStorage.setItem(recentKey,JSON.stringify(items.slice(0,8)));});
+    const recent=document.getElementById('recent-patient-links'),items=read(recentKey,[]);if(recent&&items.length){recent.innerHTML='';items.forEach(item=>{const a=document.createElement('a');a.href=item.href;a.textContent=item.label||'상담 상세';recent.appendChild(a);});}
 })();
 </script>
 {% endif %}

@@ -6,6 +6,44 @@
     const isEdit = form.dataset.edit === '1';
     const cid = form.dataset.cid;
 
+    // 작성 중 임시저장 — 의료정보가 PC에 장기간 남지 않도록 현재 탭(sessionStorage)에만 보관.
+    // 새 상담은 새로고침·실수로 페이지 이동 후 같은 탭에서 돌아왔을 때 복원된다.
+    const draftKey = isEdit ? null : 'bokju_consult_draft_v1';
+    let draftTimer;
+    const draftState = document.createElement('div');
+    draftState.className = 'form-draft-state';
+    draftState.setAttribute('aria-live', 'polite');
+    if (!isEdit) {
+        draftState.textContent = '임시저장 준비';
+        form.prepend(draftState);
+        try {
+            const saved = JSON.parse(sessionStorage.getItem(draftKey) || 'null');
+            if (saved && Array.isArray(saved.fields)) {
+                saved.fields.forEach(item => {
+                    const candidates = Array.from(form.elements).filter(el => el.name === item.name);
+                    const el = (item.type === 'radio' || item.type === 'checkbox')
+                        ? candidates.find(x => x.value === item.value) : candidates[0];
+                    if (!el) return;
+                    if (item.type === 'radio' || item.type === 'checkbox') el.checked = !!item.checked;
+                    else el.value = item.value || '';
+                    el.dispatchEvent(new Event('change', {bubbles:true}));
+                });
+                draftState.textContent = '임시저장 복원됨 · ' + new Date(saved.at).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+            }
+        } catch (_) {}
+        form.addEventListener('input', () => {
+            draftState.textContent = '작성 중…'; clearTimeout(draftTimer);
+            draftTimer = setTimeout(() => {
+                const fields = Array.from(form.elements).filter(el => el.name).map(el => ({
+                    name:el.name,type:el.type,value:el.value,checked:el.checked
+                }));
+                try { sessionStorage.setItem(draftKey, JSON.stringify({at:Date.now(),fields}));
+                    draftState.textContent = '임시저장 완료 · ' + new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+                } catch (_) { draftState.textContent = '임시저장 불가'; }
+            }, 700);
+        });
+    }
+
     // 콤보박스 — 입력 + 화살표 클릭 시 드롭다운
     form.querySelectorAll('.combobox').forEach((combo) => {
         const input = combo.querySelector('input[type="text"]');
@@ -555,6 +593,7 @@
             }
             const res = await api.post(url, payload);
             const targetId = res.id || cid;
+            if (draftKey) sessionStorage.removeItem(draftKey);
             location.href = `/consult/${targetId}`;
         } catch (err) {
             toast('저장 실패: ' + err.message, 'error');
