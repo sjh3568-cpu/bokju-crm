@@ -32,21 +32,27 @@
                     <a href="/sms" {% if request.path.startswith('/sms') %}class="active"{% endif %}><span class="nav-icon">✉</span>문자</a>
                     {% endif %}
                     {% if P.get('stats',0) >= 1 %}
-                    <a href="/stats" {% if request.path.startswith('/stats') %}class="active"{% endif %}><span class="nav-icon">⌁</span>통계</a>
-                    {% endif %}
-                    {% if P.get('report',0) >= 1 %}
-                    <a href="/report/monthly" {% if request.path.startswith('/report') %}class="active"{% endif %}><span class="nav-icon">▤</span>월간보고서</a>
+                    <div class="nav-menu-group {% if request.path.startswith('/stats') or request.path.startswith('/report') %}active{% endif %}">
+                        <a href="/stats" {% if request.path.startswith('/stats') %}class="active"{% endif %}><span class="nav-icon">⌁</span>통계</a>
+                        {% if P.get('report',0) >= 1 %}<button type="button" class="nav-menu-toggle" aria-label="통계 하위 메뉴" aria-expanded="false">▾</button>
+                        <div class="nav-dropdown"><a href="/report/monthly" {% if request.path.startswith('/report') %}class="active"{% endif %}><span class="nav-icon">▤</span><span><b>월간보고서</b><small>월별 핵심 실적 보고</small></span></a></div>{% endif %}
+                    </div>
                     {% endif %}
                     <a href="/notices" {% if request.path.startswith('/notices') %}class="active"{% endif %}><span class="nav-icon">◉</span>공지사항{% if has_unread_required_notice %}<span class="nav-notice-new">필수</span>{% endif %}</a>
                     {% if P.get('users',0) >= 2 %}
-                    <a href="/admin/users" {% if request.path.startswith('/admin/users') or request.path.startswith('/admin/password-reset') %}class="active"{% endif %}>사용자 관리{% if password_reset_badge %}<span class="nav-notice-new">{{ password_reset_badge }}</span>{% endif %}</a>
-                    <a href="/admin/audit" {% if request.path.startswith('/admin/audit') %}class="active"{% endif %} title="누가 언제 무엇을 조회·입력·수정·삭제했는지">이력 관리</a>
+                    <div class="nav-menu-group nav-admin-group {% if request.path.startswith('/admin') %}active{% endif %}">
+                        <button type="button" class="nav-admin-button nav-menu-toggle" aria-expanded="false"><span class="nav-icon">⚙</span>관리{% if password_reset_badge %}<span class="nav-notice-new">{{ password_reset_badge }}</span>{% endif %}<span class="nav-caret">▾</span></button>
+                        <div class="nav-dropdown">
+                            <a href="/admin/users" {% if request.path.startswith('/admin/users') or request.path.startswith('/admin/password-reset') %}class="active"{% endif %}><span class="nav-icon">♙</span><span><b>사용자 관리</b><small>계정·권한·초기화 요청</small></span></a>
+                            <a href="/admin/audit" {% if request.path.startswith('/admin/audit') %}class="active"{% endif %}><span class="nav-icon">↻</span><span><b>이력 관리</b><small>조회·등록·변경 기록</small></span></a>
+                        </div>
+                    </div>
                     {% endif %}
-                    <a href="/help" {% if request.path.startswith('/help') %}class="active"{% endif %} title="메뉴별 작성·등록·관리 방법"><span class="nav-icon">?</span>상담 매뉴얼</a>
                 </nav>
                 {% set alert_total = (todo_badge or 0) + (inbound_badge or 0) + (password_reset_badge or 0) + (1 if has_unread_required_notice else 0) %}
                 <div class="header-tools">
                     <button type="button" class="header-tool-btn alert-bell-btn" id="alert-center-btn" aria-label="통합 알림센터" aria-expanded="false" title="통합 알림센터" data-fixed-count="{{ alert_total - (inbound_badge or 0) }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><b id="alert-total-badge"{% if not alert_total %} hidden{% endif %}>{{ alert_total }}</b></button>
+                    <a href="/help" class="header-tool-btn help-tool-btn {% if request.path.startswith('/help') %}active{% endif %}" aria-label="상담 매뉴얼" title="상담 매뉴얼">?</a>
                     <button type="button" class="header-tool-btn" id="display-settings-btn" aria-label="화면 설정" aria-expanded="false">Aa</button>
                 </div>
                 <span class="user-tag">
@@ -430,8 +436,11 @@
     const pairs=[['alert-center-btn','alert-center'],['display-settings-btn','display-settings']];
     function closeAll(except){pairs.forEach(([bid,pid])=>{if(pid===except)return;const panel=document.getElementById(pid),btn=document.getElementById(bid);if(panel)panel.hidden=true;if(btn)btn.setAttribute('aria-expanded','false');});}
     pairs.forEach(([bid,pid])=>{const btn=document.getElementById(bid),panel=document.getElementById(pid);if(!btn||!panel)return;btn.addEventListener('click',e=>{e.stopPropagation();const opening=panel.hidden;closeAll(opening?pid:null);panel.hidden=!opening;btn.setAttribute('aria-expanded',String(opening));});panel.addEventListener('click',e=>e.stopPropagation());});
+    const navGroups=document.querySelectorAll('.nav-menu-group');
+    function closeNavMenus(except){navGroups.forEach(group=>{if(group===except)return;group.classList.remove('open');const btn=group.querySelector('.nav-menu-toggle');if(btn)btn.setAttribute('aria-expanded','false');});}
+    navGroups.forEach(group=>{const btn=group.querySelector('.nav-menu-toggle');if(!btn)return;btn.addEventListener('click',e=>{e.stopPropagation();const opening=!group.classList.contains('open');closeNavMenus(opening?group:null);group.classList.toggle('open',opening);btn.setAttribute('aria-expanded',String(opening));});});
     document.querySelectorAll('[data-popover-close]').forEach(btn=>btn.addEventListener('click',()=>closeAll()));
-    document.addEventListener('click',()=>closeAll());document.addEventListener('keydown',e=>{if(e.key==='Escape')closeAll();});
+    document.addEventListener('click',()=>{closeAll();closeNavMenus();});document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeAll();closeNavMenus();}});
 
     function cleanLabel(a){return (a.textContent||'').replace(/\s+/g,' ').trim().slice(0,40);}
     document.addEventListener('click',e=>{const a=e.target.closest('a[href^="/consult/"]');if(!a||/\/edit(?:\?|$)/.test(a.getAttribute('href')))return;const href=a.getAttribute('href');if(!/^\/consult\/\d+/.test(href))return;let items=read(recentKey,[]).filter(x=>x.href!==href);items.unshift({href,label:cleanLabel(a),at:Date.now()});localStorage.setItem(recentKey,JSON.stringify(items.slice(0,8)));});

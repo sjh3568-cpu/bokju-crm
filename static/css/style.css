@@ -51,6 +51,20 @@ header > .container { max-width:1480px; }
 @keyframes nav-glint { from{left:-55%} to{left:130%} }
 @media(prefers-reduced-motion:reduce){.main-nav a{transition:none}.main-nav a:hover{transform:none}.main-nav a:hover::after{animation:none;opacity:0}}
 .main-nav a.active { color:#fff; background:rgba(255,255,255,.16); border-color:rgba(255,255,255,.25); font-weight:780; box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 3px 10px rgba(0,0,0,.08); }
+.nav-menu-group { position:relative; display:inline-flex; align-items:center; flex:0 0 auto; border:1px solid transparent; border-radius:9px; }
+.nav-menu-group.active { background:rgba(255,255,255,.13); border-color:rgba(255,255,255,.2); }
+.nav-menu-group > a { border-radius:8px 0 0 8px; padding-right:5px; }
+.nav-menu-group > a.active { background:transparent; border-color:transparent; box-shadow:none; }
+.nav-menu-toggle { display:grid; place-items:center; align-self:stretch; min-width:22px; padding:0 5px 0 2px; border:0; border-radius:0 8px 8px 0; background:transparent; color:rgba(255,255,255,.72); cursor:pointer; font:700 .7rem inherit; }
+.nav-menu-toggle:hover,.nav-menu-toggle[aria-expanded="true"] { color:#fff; background:rgba(255,255,255,.12); }
+.nav-admin-button { display:inline-flex; align-items:center; gap:5px; min-height:35px; padding:6px 9px; color:rgba(255,255,255,.82); font-size:.86em; font-weight:650; }
+.nav-caret { margin-left:1px; font-size:.72em; }
+.nav-dropdown { display:none; position:absolute; z-index:160; top:calc(100% + 8px); left:0; width:218px; padding:6px; border:1px solid #d6e1da; border-radius:12px; background:#fff; box-shadow:0 16px 38px rgba(15,23,42,.2); }
+.nav-menu-group.open .nav-dropdown { display:grid; gap:3px; }
+.main-nav .nav-dropdown a { display:flex; gap:9px; width:100%; min-height:0; padding:9px 10px; border:0; border-radius:8px; color:#334155; background:transparent; font-size:.8rem; overflow:visible; }
+.main-nav .nav-dropdown a:hover,.main-nav .nav-dropdown a.active { color:var(--primary); background:#eff8f2; transform:none; box-shadow:none; }
+.main-nav .nav-dropdown a::after { display:none; }
+.nav-dropdown a > span:last-child { display:grid; gap:1px; }.nav-dropdown b { font-size:.8rem; }.nav-dropdown small { color:#829087; font-size:.67rem; font-weight:500; }
 .primary-new-consult { display:inline-flex!important; align-items:center; gap:7px; padding:9px 16px!important;
     border-radius:10px!important; font-weight:800!important; color:#fff!important;
     background:linear-gradient(135deg,#15803d,#0f5f31)!important;
@@ -67,6 +81,9 @@ header > .container { max-width:1480px; }
     border:1px solid rgba(255,255,255,.24); border-radius:9px; background:rgba(255,255,255,.08);
     color:#fff; font:700 .78rem/1 inherit; cursor:pointer; transition:.15s; }
 .header-tool-btn:hover,.header-tool-btn[aria-expanded="true"] { background:rgba(255,255,255,.18); transform:translateY(-1px); }
+.header-tools a.header-tool-btn { text-decoration:none; }
+.help-tool-btn { font-size:1rem; font-weight:850; }
+.help-tool-btn.active { color:#174b2d; background:#fff; }
 .alert-bell-btn svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; }
 .header-tool-btn b { position:absolute; right:-5px; top:-6px; min-width:17px; height:17px; padding:0 4px;
     display:grid; place-items:center; border-radius:9px; background:#ef4444; color:#fff; font-size:.64rem; box-shadow:0 2px 5px rgba(0,0,0,.2); }
@@ -109,7 +126,7 @@ header > .container { max-width:1480px; }
 }
 
 main { flex:1; padding:26px 0 34px; }
-@media(max-width:1380px){.header-inner{flex-wrap:wrap}.main-nav{order:3;flex-basis:100%;justify-content:flex-start;overflow-x:auto;padding:3px 0 2px}.main-nav a{font-size:.84em}.user-tag{margin-left:auto}}
+@media(max-width:1380px){.header-inner{flex-wrap:wrap}.main-nav{order:3;flex-basis:100%;justify-content:flex-start;flex-wrap:wrap;overflow:visible;padding:3px 0 2px}.main-nav a{font-size:.84em}.user-tag{margin-left:auto}}
 @media(max-width:700px){.header-popover,.display-settings{right:12px;top:64px}.header-tools{margin-left:auto}.user-tag{display:none}}
 footer { background: var(--card-bg); border-top: 1px solid var(--border); padding: 12px 0; margin-top: 32px; }
 footer p { color: var(--text-light); font-size: 0.82em; text-align: center; }
