@@ -74,15 +74,7 @@ header > .container { max-width:1480px; }
     box-shadow:0 8px 18px rgba(15,95,49,.32)!important; }
 .primary-new-consult span { font-size:1.2em; line-height:1; }
 .user-tag { color:rgba(255,255,255,.88); font-size:.82em; white-space:nowrap; flex:0 0 auto; }
-.nav-icon { display:inline-grid; place-items:center; flex:0 0 23px; width:23px; height:23px; line-height:1; border:1px solid rgba(255,255,255,.16); border-radius:7px; font-size:.82rem; font-weight:800; opacity:.88; overflow:visible; text-shadow:none; filter:saturate(.58); box-shadow:inset 0 1px 0 rgba(255,255,255,.13),0 1px 3px rgba(0,0,0,.1); }
-.nav-icon-dashboard { background:linear-gradient(145deg,#5376a7,#405f8a); }
-.nav-icon-new { background:linear-gradient(145deg,#4c8a67,#376c50); }
-.nav-icon-list { background:linear-gradient(145deg,#4e859c,#386b80); }
-.nav-icon-ward { background:linear-gradient(145deg,#4f8b83,#396f69); }
-.nav-icon-sms { background:linear-gradient(145deg,#766b9a,#5e537f); }
-.nav-icon-stats,.nav-icon-report { background:linear-gradient(145deg,#a5814d,#806339); }
-.nav-icon-notice { background:linear-gradient(145deg,#a66f54,#865541); }
-.nav-icon-admin,.nav-icon-users,.nav-icon-audit { background:linear-gradient(145deg,#687784,#4d5c68); }
+.nav-icon { display:inline-grid; place-items:center; flex:0 0 19px; width:19px; height:22px; line-height:1; border:0; border-radius:0; background:none; font-size:.88rem; font-weight:800; opacity:.82; overflow:visible; text-shadow:none; filter:saturate(.52) brightness(1.06); box-shadow:none; }
 .main-nav a.active .nav-icon,.main-nav a:hover .nav-icon { opacity:1; }
 .header-tools { display:flex; align-items:center; gap:5px; flex:0 0 auto; }
 .header-tool-btn { position:relative; width:33px; height:33px; display:grid; place-items:center; padding:0;
