@@ -11,6 +11,18 @@
     </div>
 </div>
 
+<nav class="help-menu-guide card" aria-label="메뉴별 간단 안내">
+    <a href="#dashboard"><strong>대시보드</strong><span>오늘의 상담·입원·처리 업무 확인</span></a>
+    <a href="#consult-new"><strong>새 상담</strong><span>신규 환자 상담일지 작성·등록</span></a>
+    <a href="#consult-list"><strong>상담 목록</strong><span>과거 상담 검색·수정·진행 관리</span></a>
+    <a href="#lifecycle"><strong>재원 관리</strong><span>입원 대기부터 재원·외진·퇴원 관리</span></a>
+    <a href="#sms"><strong>문자</strong><span>입원·퇴원 안내 문구 작성·발송</span></a>
+    <a href="#stats"><strong>통계</strong><span>기간별 상담·입원 성과 분석</span></a>
+    <a href="#report"><strong>월간보고서</strong><span>월별 핵심 실적 보고서 작성</span></a>
+    <a href="#notices-guide"><strong>공지사항</strong><span>필수 공지와 공유 일정 확인</span></a>
+    <a href="#admin-guide"><strong>관리 기능</strong><span>사용자 권한·변경 이력 관리</span></a>
+</nav>
+
 <div class="help-toc card">
     <strong>목차</strong>
     <a href="#work-order">업무 처리 순서</a> ·
@@ -399,6 +411,11 @@
 </div>
 
 <style>
+.help-menu-guide { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1px; padding:0; margin-bottom:12px; overflow:hidden; background:#dfe8e2; }
+.help-menu-guide a { display:flex; align-items:center; gap:9px; min-width:0; padding:10px 12px; background:#fff; color:#475569; text-decoration:none; transition:background .15s,color .15s; }
+.help-menu-guide a:hover { background:#f0f8f3; color:var(--primary); }
+.help-menu-guide strong { flex:0 0 82px; color:#173d29; font-size:.85rem; }
+.help-menu-guide span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.76rem; }
 .help-toc { padding:10px 14px; margin-bottom:14px; font-size:0.9em; line-height:1.7; }
 .help-toc a { margin-right:4px; }
 .help-card { margin-bottom:12px; padding:14px 18px; }
@@ -424,6 +441,7 @@
 .help-steps span { color:#64748b; }
 .help-rule { display:flex; flex-wrap:wrap; gap:8px; padding:11px 13px; background:#f0fdf4; border-radius:8px; font-size:.86rem; }
 .help-rule span::before { content:'✓ '; color:#15803d; font-weight:800; }
-@media(max-width:900px){.help-steps{grid-template-columns:1fr}.help-steps li{grid-template-columns:28px 105px 1fr}}
+@media(max-width:900px){.help-menu-guide{grid-template-columns:repeat(2,minmax(0,1fr))}.help-steps{grid-template-columns:1fr}.help-steps li{grid-template-columns:28px 105px 1fr}}
+@media(max-width:600px){.help-menu-guide{grid-template-columns:1fr}}
 </style>
 {% endblock %}
