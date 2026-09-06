@@ -423,10 +423,9 @@
     </div>
     <div class="dash-admission-datebar">
         <div class="dash-admission-quick" aria-label="입원일 빠른 조회">
-            {% for quick in admission_quick_dates %}
-            <a href="/?admission_from={{ quick.from }}&admission_to={{ quick.to }}&admission_scope={{ quick.scope }}#admission-schedule"
-               class="{% if admission_lookup_from == quick.from and admission_lookup_to == quick.to and admission_lookup_scope == quick.scope %}active{% endif %}">{{ quick.label }}</a>
-            {% endfor %}
+            <div class="dash-quick-group past"><b>과거 입원</b>{% for quick in admission_quick_dates if quick.group == 'past' %}<a href="/?admission_from={{ quick.from }}&admission_to={{ quick.to }}&admission_scope={{ quick.scope }}#admission-schedule" class="{% if admission_lookup_from == quick.from and admission_lookup_to == quick.to and admission_lookup_scope == quick.scope %}active{% endif %}">{{ quick.label }}</a>{% endfor %}</div>
+            {% for quick in admission_quick_dates if quick.group == 'today' %}<a href="/?admission_from={{ quick.from }}&admission_to={{ quick.to }}&admission_scope={{ quick.scope }}#admission-schedule" class="dash-quick-today {% if admission_lookup_from == quick.from and admission_lookup_to == quick.to and admission_lookup_scope == quick.scope %}active{% endif %}">{{ quick.label }}</a>{% endfor %}
+            <div class="dash-quick-group future"><b>미래 예정</b>{% for quick in admission_quick_dates if quick.group == 'future' %}<a href="/?admission_from={{ quick.from }}&admission_to={{ quick.to }}&admission_scope={{ quick.scope }}#admission-schedule" class="{% if admission_lookup_from == quick.from and admission_lookup_to == quick.to and admission_lookup_scope == quick.scope %}active{% endif %}">{{ quick.label }}</a>{% endfor %}</div>
         </div>
         <form method="get" action="/" class="dash-admission-date-form">
             <label for="admission-from">기간 직접 선택</label>
@@ -776,8 +775,13 @@
 .dash-admission-datebar { display:flex; align-items:center; justify-content:space-between; gap:10px;
     margin:10px 0; padding:9px 10px; border:1px solid #dce8e0; border-radius:9px; background:#f8fbf9; }
 .dash-admission-quick { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
+.dash-quick-group { display:flex; align-items:center; gap:4px; padding:3px 5px; border:1px solid #dfe7e2; border-radius:10px; background:#fff; }
+.dash-quick-group > b { padding:0 4px; color:#718078; font-size:.68em; white-space:nowrap; }
+.dash-quick-group.future { border-color:#cfe0f1; background:#f7fbff; }
+.dash-quick-group.future > b { color:#42698c; }
 .dash-admission-quick a { padding:6px 10px; border:1px solid var(--border); border-radius:999px;
     background:#fff; color:#475569; text-decoration:none; font-size:.8em; font-weight:750; }
+.dash-admission-quick .dash-quick-today { border-color:#9ecab0; color:#14532d; }
 .dash-admission-quick a:hover { border-color:var(--primary); color:var(--primary); }
 .dash-admission-quick a.active { border-color:var(--primary); background:var(--primary); color:#fff; }
 .dash-admission-date-form { display:flex; align-items:center; gap:6px; }
