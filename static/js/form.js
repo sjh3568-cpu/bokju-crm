@@ -6,10 +6,10 @@
     const isEdit = form.dataset.edit === '1';
     const cid = form.dataset.cid;
 
-    // 작성 중 임시저장 — 의료정보가 PC에 장기간 남지 않도록 현재 탭(sessionStorage)에만 보관.
-    // 새 상담은 새로고침·실수로 페이지 이동 후 같은 탭에서 돌아왔을 때 복원된다.
+    // 새 상담 임시저장 — 상담사 계정별 서버 보관. 여러 환자 초안을 독립적으로 유지한다.
     const legacyDraftKey = 'bokju_consult_draft_v1';
     const draftKey = isEdit ? null : legacyDraftKey + '_' + (form.dataset.userId || 'user');
+    let activeDraftId = null;
     let draftTimer;
     const draftState = document.createElement('div');
     draftState.className = 'form-draft-state';
@@ -17,50 +17,71 @@
     if (!isEdit) {
         draftState.textContent = '임시저장 준비';
         form.prepend(draftState);
-        try {
-            const saved = JSON.parse(sessionStorage.getItem(draftKey) || sessionStorage.getItem(legacyDraftKey) || 'null');
-            const restoreDraft = () => {
-                if (!saved || !Array.isArray(saved.fields)) return;
-                saved.fields.forEach(item => {
-                    const candidates = Array.from(form.elements).filter(el => el.name === item.name);
-                    const el = (item.type === 'radio' || item.type === 'checkbox')
-                        ? candidates.find(x => x.value === item.value) : candidates[0];
-                    if (!el) return;
-                    if (item.type === 'radio' || item.type === 'checkbox') el.checked = !!item.checked;
-                    else el.value = item.value || '';
-                    el.dispatchEvent(new Event('change', {bubbles:true}));
+        const listBtn = document.getElementById('draft-list-btn');
+        const saveBtn = document.getElementById('draft-save-btn');
+        const dialog = document.getElementById('draft-dialog');
+        const list = document.getElementById('draft-list');
+        const count = document.getElementById('draft-count');
+        const fieldsNow = () => Array.from(form.elements).filter(el => el.name).map(el => ({
+            name:el.name, type:el.type, value:el.value, checked:el.checked
+        }));
+        const fieldValue = name => form.elements.namedItem(name)?.value?.trim() || '';
+        const saveDraft = async (announce=false) => {
+            const patientName = fieldValue('patient.name');
+            const guardianPhone = fieldValue('patient.guardian_phone');
+            const result = await api.post('/api/consult-drafts', {
+                id:activeDraftId, fields:fieldsNow(), patient_name:patientName,
+                guardian_phone:guardianPhone,
+                title:patientName ? `${patientName} 환자 상담` : '이름 미입력 상담'
+            });
+            activeDraftId = result.id;
+            draftState.textContent = '서버 임시저장 완료 · ' + new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+            if (announce) toast('현재 상담을 임시저장했습니다.', 'success');
+            refreshDrafts();
+        };
+        const restoreDraft = draft => {
+            (draft.payload || []).forEach(item => {
+                const candidates = Array.from(form.elements).filter(el => el.name === item.name);
+                const el = (item.type === 'radio' || item.type === 'checkbox')
+                    ? candidates.find(x => x.value === item.value) : candidates[0];
+                if (!el) return;
+                if (item.type === 'radio' || item.type === 'checkbox') el.checked = !!item.checked;
+                else el.value = item.value || '';
+                el.dispatchEvent(new Event('change', {bubbles:true}));
+            });
+            activeDraftId = draft.id;
+            draftState.textContent = '임시저장본 불러옴 · ' + (draft.patient_name || '이름 미입력');
+            dialog.close(); window.scrollTo({top:0, behavior:'smooth'});
+        };
+        const esc = value => String(value || '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
+        async function refreshDrafts() {
+            try {
+                const data = await api.get('/api/consult-drafts');
+                const drafts = data.drafts || [];
+                count.textContent = drafts.length; count.hidden = !drafts.length;
+                list.innerHTML = drafts.length ? drafts.map(d => `<div class="draft-item" data-id="${d.id}"><div><strong>${esc(d.patient_name || '이름 미입력 상담')}</strong><small>${esc(d.guardian_phone || '연락처 미입력')} · ${esc((d.updated_at || '').replace('T',' ').slice(0,16))}</small></div><div class="draft-item-actions"><button type="button" class="btn btn-primary btn-xs draft-load">불러오기</button><button type="button" class="btn btn-secondary btn-xs draft-delete">삭제</button></div></div>`).join('') : '<div class="empty">보관 중인 임시저장 상담이 없습니다.</div>';
+                list.querySelectorAll('.draft-item').forEach((row, index) => {
+                    const draft = drafts[index];
+                    row.querySelector('.draft-load').onclick = () => restoreDraft(draft);
+                    row.querySelector('.draft-delete').onclick = async () => {
+                        if (!confirm(`${draft.patient_name || '이름 미입력 상담'} 임시저장본을 삭제할까요?`)) return;
+                        const res = await fetch(`/api/consult-drafts/${draft.id}`, {method:'DELETE'});
+                        if (!res.ok) return toast('임시저장본을 삭제하지 못했습니다.', 'error');
+                        if (activeDraftId === draft.id) activeDraftId = null;
+                        refreshDrafts();
+                    };
                 });
-                draftState.textContent = '임시저장 복원됨 · ' + new Date(saved.at).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
-                sessionStorage.setItem(draftKey, JSON.stringify(saved));
-                sessionStorage.removeItem(legacyDraftKey);
-            };
-            if (saved && Array.isArray(saved.fields)) {
-                draftState.textContent = '';
-                const label = document.createElement('span');
-                label.textContent = '임시저장본 있음 · ' + new Date(saved.at).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
-                const loadBtn = document.createElement('button');
-                loadBtn.type = 'button'; loadBtn.textContent = '불러오기'; loadBtn.className = 'draft-action';
-                loadBtn.addEventListener('click', restoreDraft);
-                const deleteBtn = document.createElement('button');
-                deleteBtn.type = 'button'; deleteBtn.textContent = '삭제'; deleteBtn.className = 'draft-action muted-action';
-                deleteBtn.addEventListener('click', () => {
-                    sessionStorage.removeItem(draftKey); sessionStorage.removeItem(legacyDraftKey);
-                    draftState.textContent = '임시저장본 삭제됨';
-                });
-                draftState.append(label, loadBtn, deleteBtn);
-            }
-        } catch (_) {}
+            } catch (_) { list.innerHTML = '<div class="empty">임시저장 목록을 불러오지 못했습니다.</div>'; }
+        }
         form.addEventListener('input', () => {
             draftState.textContent = '작성 중…'; clearTimeout(draftTimer);
-            draftTimer = setTimeout(() => {
-                const fields = Array.from(form.elements).filter(el => el.name).map(el => ({
-                    name:el.name,type:el.type,value:el.value,checked:el.checked
-                }));
-                try { sessionStorage.setItem(draftKey, JSON.stringify({at:Date.now(),fields}));
-                    draftState.textContent = '임시저장 완료 · ' + new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
-                } catch (_) { draftState.textContent = '임시저장 불가'; }
-            }, 700);
+            draftTimer = setTimeout(() => saveDraft(false).catch(() => { draftState.textContent = '임시저장 실패 · 다시 시도해 주세요'; }), 1500);
         });
+        saveBtn?.addEventListener('click', () => saveDraft(true).catch(err => toast('임시저장 실패: ' + err.message, 'error')));
+        listBtn?.addEventListener('click', () => { refreshDrafts(); dialog.showModal(); });
+        document.getElementById('draft-dialog-close')?.addEventListener('click', () => dialog.close());
+        dialog?.addEventListener('click', e => { if (e.target === dialog) dialog.close(); });
+        refreshDrafts();
     }
 
     // 콤보박스 — 입력 + 화살표 클릭 시 드롭다운
@@ -529,6 +550,7 @@
     // 폼 제출 — JSON으로 변환해서 전송
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
+        clearTimeout(draftTimer);
         const btn = document.getElementById('save-btn');
         btn.disabled = true;
         // 상담 결과 ① 상담 진행 — 재입원/요청/보류/취소 사유 필수
@@ -612,6 +634,9 @@
             }
             const res = await api.post(url, payload);
             const targetId = res.id || cid;
+            if (activeDraftId) {
+                await fetch(`/api/consult-drafts/${activeDraftId}`, {method:'DELETE'}).catch(() => {});
+            }
             if (draftKey) { sessionStorage.removeItem(draftKey); sessionStorage.removeItem(legacyDraftKey); }
             location.href = `/consult/${targetId}`;
         } catch (err) {

@@ -20,8 +20,18 @@
 
 <div class="page-header">
     <h1>{% if is_edit %}상담일지 수정 (#{{ consultation.id }}){% else %}새 상담일지{% endif %}</h1>
-    <a href="{% if is_edit %}/consult/{{ consultation.id }}{% elif inbox_comm %}/#inbound{% else %}/{% endif %}" class="btn-back">← 돌아가기</a>
+    <div class="consult-head-actions">
+        {% if not is_edit %}<button type="button" class="btn btn-secondary btn-sm" id="draft-list-btn">임시저장 목록 <b id="draft-count" hidden></b></button>{% endif %}
+        <a href="{% if is_edit %}/consult/{{ consultation.id }}{% elif inbox_comm %}/#inbound{% else %}/{% endif %}" class="btn-back">← 돌아가기</a>
+    </div>
 </div>
+
+{% if not is_edit %}
+<dialog id="draft-dialog" class="draft-dialog">
+    <div class="draft-dialog-head"><div><h3>임시저장 상담</h3><p>작성하던 상담을 불러오거나 필요 없는 초안을 삭제할 수 있습니다.</p></div><button type="button" id="draft-dialog-close" aria-label="닫기">×</button></div>
+    <div id="draft-list" class="draft-list"><div class="empty">임시저장 목록을 불러오는 중입니다.</div></div>
+</dialog>
+{% endif %}
 
 {% if not is_edit %}
 {# ─── 입원 자격 사전 체크 위저드 — 통화 시작 30초 안에 회복기 가능/불가 판정 ─── #}
@@ -1522,11 +1532,16 @@
 
 <div class="form-actions">
     <a href="{% if is_edit %}/consult/{{ consultation.id }}{% else %}/{% endif %}" class="btn btn-secondary">취소</a>
+    {% if not is_edit %}<button type="button" class="btn btn-secondary" id="draft-save-btn">임시저장</button>{% endif %}
     <button type="submit" class="btn btn-primary" id="save-btn">
         {% if is_edit %}저장{% else %}등록{% endif %}
     </button>
 </div>
 </form>
+
+<style>
+.consult-head-actions{display:flex;align-items:center;gap:8px}.draft-dialog{width:min(620px,calc(100vw - 28px));max-height:min(72vh,680px);padding:0;border:0;border-radius:16px;box-shadow:0 24px 70px rgba(15,23,42,.28)}.draft-dialog::backdrop{background:rgba(15,23,42,.44);backdrop-filter:blur(2px)}.draft-dialog-head{display:flex;justify-content:space-between;align-items:flex-start;padding:18px 20px 14px;border-bottom:1px solid #e3eae6}.draft-dialog-head h3{margin:0;color:#173d29}.draft-dialog-head p{margin:4px 0 0;color:#718078;font-size:.8rem}.draft-dialog-head button{border:0;background:transparent;color:#64748b;font-size:1.7rem;line-height:1;cursor:pointer}.draft-list{display:grid;gap:7px;padding:12px;overflow:auto}.draft-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:12px;border:1px solid #dce6e0;border-radius:10px;background:#fbfdfc}.draft-item strong{display:block;color:#203d2d}.draft-item small{display:block;margin-top:3px;color:#738178}.draft-item-actions{display:flex;gap:5px}.form-draft-state{position:sticky;top:70px;z-index:8;display:flex;align-items:center;gap:7px;width:max-content;max-width:100%;margin:0 0 8px auto;padding:5px 9px;border:1px solid #dce8e1;border-radius:999px;background:rgba(249,252,250,.96);color:#62736a;font-size:.73rem}.form-draft-state:empty{display:none}@media(max-width:620px){.draft-item{grid-template-columns:1fr}.draft-item-actions{justify-content:flex-end}}
+</style>
 
 <style>
 /* 회복기 인정 기준 미니가이드 */

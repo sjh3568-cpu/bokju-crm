@@ -2976,6 +2976,43 @@ def patient_detail(pid):
 
 # ───────────────────── API: 상담 CRUD ─────────────────────
 
+@app.route("/api/consult-drafts", methods=["GET", "POST"])
+@login_required
+def api_consult_drafts():
+    """상담사 개인별 새 상담 임시저장 목록과 저장."""
+    if request.method == "GET":
+        rows = models.list_consultation_drafts(g.user["id"])
+        for row in rows:
+            try:
+                row["payload"] = json.loads(row.pop("payload_json") or "[]")
+            except (TypeError, ValueError):
+                row["payload"] = []
+        return jsonify({"drafts": rows})
+    data = request.get_json(silent=True) or {}
+    fields = data.get("fields")
+    if not isinstance(fields, list) or len(fields) > 500:
+        return jsonify({"error": "임시저장할 상담 내용이 올바르지 않습니다."}), 400
+    draft_id = data.get("id")
+    try:
+        draft_id = int(draft_id) if draft_id else None
+    except (TypeError, ValueError):
+        draft_id = None
+    new_id = models.save_consultation_draft(
+        g.user["id"], fields, draft_id=draft_id,
+        title=(data.get("title") or "")[:100],
+        patient_name=(data.get("patient_name") or "")[:100],
+        guardian_phone=(data.get("guardian_phone") or "")[:50],
+    )
+    return jsonify({"ok": True, "id": new_id, "saved_at": datetime.now().isoformat()})
+
+
+@app.route("/api/consult-drafts/<int:draft_id>", methods=["DELETE"])
+@login_required
+def api_consult_draft_delete(draft_id):
+    if not models.delete_consultation_draft(g.user["id"], draft_id):
+        return jsonify({"error": "임시저장본을 찾을 수 없습니다."}), 404
+    return jsonify({"ok": True})
+
 @app.route("/api/consult", methods=["POST"])
 @login_required
 def api_consult_create():

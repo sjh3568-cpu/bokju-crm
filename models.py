@@ -257,6 +257,19 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_cons_hospital ON consultations(source_hospital);
         CREATE INDEX IF NOT EXISTS idx_cons_diagnosis ON consultations(primary_diagnosis);
 
+        CREATE TABLE IF NOT EXISTS consultation_drafts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            title TEXT,
+            patient_name TEXT,
+            guardian_phone TEXT,
+            payload_json TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_consult_drafts_user_updated
+            ON consultation_drafts(user_id, updated_at DESC);
+
         -- 상담과 분리된 입원 회차. 기존 consultations 필드는 호환을 위해 유지하며
         -- 저장 시 이 테이블에도 동기화한다(1환자 N회 입·퇴원 이력 보존).
         CREATE TABLE IF NOT EXISTS admission_episodes (
@@ -2474,6 +2487,52 @@ def patient_minicard(pid: int) -> dict | None:
     else:
         out["last_days_ago"] = None
     return out
+
+
+def list_consultation_drafts(user_id: int) -> list[dict]:
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT id, title, patient_name, guardian_phone, payload_json,
+                  created_at, updated_at
+           FROM consultation_drafts WHERE user_id = ?
+           ORDER BY updated_at DESC, id DESC""", (user_id,)
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def save_consultation_draft(user_id: int, payload, draft_id=None,
+                            title=None, patient_name=None, guardian_phone=None) -> int:
+    raw = json.dumps(payload, ensure_ascii=False)
+    conn = get_db()
+    if draft_id:
+        cur = conn.execute(
+            """UPDATE consultation_drafts
+               SET title=?, patient_name=?, guardian_phone=?, payload_json=?,
+                   updated_at=CURRENT_TIMESTAMP
+               WHERE id=? AND user_id=?""",
+            (title, patient_name, guardian_phone, raw, draft_id, user_id),
+        )
+        if cur.rowcount:
+            conn.commit(); conn.close()
+            return int(draft_id)
+    cur = conn.execute(
+        """INSERT INTO consultation_drafts
+           (user_id,title,patient_name,guardian_phone,payload_json)
+           VALUES (?,?,?,?,?)""",
+        (user_id, title, patient_name, guardian_phone, raw),
+    )
+    new_id = cur.lastrowid
+    conn.commit(); conn.close()
+    return new_id
+
+
+def delete_consultation_draft(user_id: int, draft_id: int) -> bool:
+    conn = get_db()
+    cur = conn.execute("DELETE FROM consultation_drafts WHERE id=? AND user_id=?",
+                       (draft_id, user_id))
+    conn.commit(); conn.close()
+    return bool(cur.rowcount)
 
 
 def patient_blacklist_info(pid: int) -> dict | None:
