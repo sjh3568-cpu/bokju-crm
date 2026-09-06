@@ -17,34 +17,34 @@
                 {% if current_user %}
                 <nav class="main-nav" aria-label="주 메뉴">
                     {% if P.get('dashboard',0) >= 1 %}
-                    <a href="/" {% if request.path == '/' %}class="active"{% endif %}><span class="nav-icon">⌂</span>대시보드{% if inbound_badge %}<span class="nav-notice-new" id="nav-inbound-badge" title="미처리 상담 문의">{{ inbound_badge }}</span>{% else %}<span class="nav-notice-new" id="nav-inbound-badge" hidden></span>{% endif %}</a>
+                    <a href="/" {% if request.path == '/' %}class="active"{% endif %}><span class="nav-icon nav-icon-dashboard">🏠</span>대시보드{% if inbound_badge %}<span class="nav-notice-new" id="nav-inbound-badge" title="미처리 상담 문의">{{ inbound_badge }}</span>{% else %}<span class="nav-notice-new" id="nav-inbound-badge" hidden></span>{% endif %}</a>
                     {% endif %}
                     {% if P.get('consult',0) >= 3 %}
-                    <a href="/consult/new" {% if request.path == '/consult/new' %}class="active"{% endif %}><span class="nav-icon">＋</span>새 상담</a>
+                    <a href="/consult/new" {% if request.path == '/consult/new' %}class="active"{% endif %}><span class="nav-icon nav-icon-new">✍️</span>새 상담</a>
                     {% endif %}
                     {% if P.get('consult',0) >= 1 %}
-                    <a href="/consultations" {% if request.path.startswith('/consultations') %}class="active"{% endif %}><span class="nav-icon">≡</span>상담 목록</a>
+                    <a href="/consultations" {% if request.path.startswith('/consultations') %}class="active"{% endif %}><span class="nav-icon nav-icon-list">📋</span>상담 목록</a>
                     {% endif %}
                     {% if P.get('ward',0) >= 1 %}
-                    <a href="/ward" {% if request.path.startswith('/ward') or request.path.startswith('/patients') %}class="active"{% endif %}><span class="nav-icon">▦</span>재원 관리</a>
+                    <a href="/ward" {% if request.path.startswith('/ward') or request.path.startswith('/patients') %}class="active"{% endif %}><span class="nav-icon nav-icon-ward">🏥</span>재원 관리</a>
                     {% endif %}
                     {% if P.get('sms',0) >= 1 %}
-                    <a href="/sms" {% if request.path.startswith('/sms') %}class="active"{% endif %}><span class="nav-icon">✉</span>문자</a>
+                    <a href="/sms" {% if request.path.startswith('/sms') %}class="active"{% endif %}><span class="nav-icon nav-icon-sms">💬</span>문자</a>
                     {% endif %}
                     {% if P.get('stats',0) >= 1 %}
                     <div class="nav-menu-group {% if request.path.startswith('/stats') or request.path.startswith('/report') %}active{% endif %}">
-                        <a href="/stats" {% if request.path.startswith('/stats') %}class="active"{% endif %}><span class="nav-icon">⌁</span>통계</a>
+                        <a href="/stats" {% if request.path.startswith('/stats') %}class="active"{% endif %}><span class="nav-icon nav-icon-stats">📊</span>통계</a>
                         {% if P.get('report',0) >= 1 %}<button type="button" class="nav-menu-toggle" aria-label="통계 하위 메뉴" aria-expanded="false">▾</button>
-                        <div class="nav-dropdown"><a href="/report/monthly" {% if request.path.startswith('/report') %}class="active"{% endif %}><span class="nav-icon">▤</span><span><b>월간보고서</b><small>월별 핵심 실적 보고</small></span></a></div>{% endif %}
+                        <div class="nav-dropdown"><a href="/report/monthly" {% if request.path.startswith('/report') %}class="active"{% endif %}><span class="nav-icon nav-icon-report">📈</span><span><b>월간보고서</b><small>월별 핵심 실적 보고</small></span></a></div>{% endif %}
                     </div>
                     {% endif %}
-                    <a href="/notices" {% if request.path.startswith('/notices') %}class="active"{% endif %}><span class="nav-icon">◉</span>공지사항{% if has_unread_required_notice %}<span class="nav-notice-new">필수</span>{% endif %}</a>
+                    <a href="/notices" {% if request.path.startswith('/notices') %}class="active"{% endif %}><span class="nav-icon nav-icon-notice">📢</span>공지사항{% if has_unread_required_notice %}<span class="nav-notice-new">필수</span>{% endif %}</a>
                     {% if P.get('users',0) >= 2 %}
                     <div class="nav-menu-group nav-admin-group {% if request.path.startswith('/admin') %}active{% endif %}">
-                        <button type="button" class="nav-admin-button nav-menu-toggle" aria-expanded="false"><span class="nav-icon">⚙</span>관리{% if password_reset_badge %}<span class="nav-notice-new">{{ password_reset_badge }}</span>{% endif %}<span class="nav-caret">▾</span></button>
+                        <button type="button" class="nav-admin-button nav-menu-toggle" aria-expanded="false"><span class="nav-icon nav-icon-admin">⚙️</span>관리{% if password_reset_badge %}<span class="nav-notice-new">{{ password_reset_badge }}</span>{% endif %}<span class="nav-caret">▾</span></button>
                         <div class="nav-dropdown">
-                            <a href="/admin/users" {% if request.path.startswith('/admin/users') or request.path.startswith('/admin/password-reset') %}class="active"{% endif %}><span class="nav-icon">♙</span><span><b>사용자 관리</b><small>계정·권한·초기화 요청</small></span></a>
-                            <a href="/admin/audit" {% if request.path.startswith('/admin/audit') %}class="active"{% endif %}><span class="nav-icon">↻</span><span><b>이력 관리</b><small>조회·등록·변경 기록</small></span></a>
+                            <a href="/admin/users" {% if request.path.startswith('/admin/users') or request.path.startswith('/admin/password-reset') %}class="active"{% endif %}><span class="nav-icon nav-icon-users">👥</span><span><b>사용자 관리</b><small>계정·권한·초기화 요청</small></span></a>
+                            <a href="/admin/audit" {% if request.path.startswith('/admin/audit') %}class="active"{% endif %}><span class="nav-icon nav-icon-audit">🕘</span><span><b>이력 관리</b><small>조회·등록·변경 기록</small></span></a>
                         </div>
                     </div>
                     {% endif %}
@@ -52,7 +52,7 @@
                 {% set alert_total = (todo_badge or 0) + (inbound_badge or 0) + (password_reset_badge or 0) + (1 if has_unread_required_notice else 0) %}
                 <div class="header-tools">
                     <button type="button" class="header-tool-btn alert-bell-btn" id="alert-center-btn" aria-label="통합 알림센터" aria-expanded="false" title="통합 알림센터" data-fixed-count="{{ alert_total - (inbound_badge or 0) }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><b id="alert-total-badge"{% if not alert_total %} hidden{% endif %}>{{ alert_total }}</b></button>
-                    <a href="/help" class="header-tool-btn help-tool-btn {% if request.path.startswith('/help') %}active{% endif %}" aria-label="상담 매뉴얼" title="상담 매뉴얼">?</a>
+                    <a href="/help" class="header-tool-btn help-tool-btn {% if request.path.startswith('/help') %}active{% endif %}" aria-label="상담 매뉴얼" title="상담 매뉴얼">📖</a>
                     <button type="button" class="header-tool-btn" id="display-settings-btn" aria-label="화면 설정" aria-expanded="false">Aa</button>
                 </div>
                 <span class="user-tag">

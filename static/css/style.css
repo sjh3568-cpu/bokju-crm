@@ -44,20 +44,20 @@ header > .container { max-width:1480px; }
 .logo { color:white; text-decoration:none; font-size:1.26em; font-weight:850; letter-spacing:-.035em; white-space:nowrap; flex:0 0 auto; text-shadow:0 1px 2px rgba(0,0,0,.12); }
 .logo small { font-size: 0.7em; font-weight: 400; opacity: 0.85; margin-left: 6px; }
 .main-nav { display:flex; gap:5px; align-items:center; justify-content:center; flex:1 1 auto; min-width:0; padding:0 4px; }
-.main-nav a { display:inline-flex; align-items:center; flex:0 0 auto; gap:5px; min-height:35px; padding:6px 10px; border:1px solid transparent; border-radius:9px; color:rgba(255,255,255,.8); text-decoration:none; font-size:.86em; font-weight:600; white-space:nowrap; position:relative; overflow:hidden; transition:background .16s,color .16s,border-color .16s,transform .16s,box-shadow .16s; }
+.main-nav a { display:inline-flex; align-items:center; flex:0 0 auto; gap:7px; min-height:39px; padding:6px 10px; border:1px solid transparent; border-radius:10px; color:rgba(255,255,255,.9); text-decoration:none; font-size:.89em; font-weight:680; letter-spacing:-.015em; white-space:nowrap; position:relative; overflow:hidden; text-shadow:0 1px 1px rgba(0,0,0,.13); transition:background .16s,color .16s,border-color .16s,transform .16s,box-shadow .16s; }
 .main-nav a::after { content:""; position:absolute; top:-60%; left:-55%; width:30%; height:220%; background:linear-gradient(90deg,transparent,rgba(255,255,255,.48),transparent); transform:skewX(-18deg); opacity:0; pointer-events:none; }
 .main-nav a:hover { color:#fff; background:rgba(255,255,255,.12); transform:translateY(-1px); }
 .main-nav a:hover::after { opacity:1; animation:nav-glint .48s ease-out; }
 @keyframes nav-glint { from{left:-55%} to{left:130%} }
 @media(prefers-reduced-motion:reduce){.main-nav a{transition:none}.main-nav a:hover{transform:none}.main-nav a:hover::after{animation:none;opacity:0}}
-.main-nav a.active { color:#fff; background:rgba(255,255,255,.16); border-color:rgba(255,255,255,.25); font-weight:780; box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 3px 10px rgba(0,0,0,.08); }
+.main-nav a.active { color:#fff; background:rgba(255,255,255,.17); border-color:rgba(255,255,255,.3); font-weight:800; box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 4px 12px rgba(0,0,0,.12); }
 .nav-menu-group { position:relative; display:inline-flex; align-items:center; flex:0 0 auto; border:1px solid transparent; border-radius:9px; }
 .nav-menu-group.active { background:rgba(255,255,255,.13); border-color:rgba(255,255,255,.2); }
 .nav-menu-group > a { border-radius:8px 0 0 8px; padding-right:5px; }
 .nav-menu-group > a.active { background:transparent; border-color:transparent; box-shadow:none; }
 .nav-menu-toggle { display:grid; place-items:center; align-self:stretch; min-width:22px; padding:0 5px 0 2px; border:0; border-radius:0 8px 8px 0; background:transparent; color:rgba(255,255,255,.72); cursor:pointer; font:700 .7rem inherit; }
 .nav-menu-toggle:hover,.nav-menu-toggle[aria-expanded="true"] { color:#fff; background:rgba(255,255,255,.12); }
-.nav-admin-button { display:inline-flex; align-items:center; gap:5px; min-height:35px; padding:6px 9px; color:rgba(255,255,255,.82); font-size:.86em; font-weight:650; }
+.nav-admin-button { display:inline-flex; align-items:center; gap:7px; min-height:39px; padding:6px 9px; color:rgba(255,255,255,.9); font-size:.89em; font-weight:680; letter-spacing:-.015em; }
 .nav-caret { margin-left:1px; font-size:.72em; }
 .nav-dropdown { display:none; position:absolute; z-index:160; top:calc(100% + 8px); left:0; width:218px; padding:6px; border:1px solid #d6e1da; border-radius:12px; background:#fff; box-shadow:0 16px 38px rgba(15,23,42,.2); }
 .nav-menu-group.open .nav-dropdown { display:grid; gap:3px; }
@@ -74,7 +74,15 @@ header > .container { max-width:1480px; }
     box-shadow:0 8px 18px rgba(15,95,49,.32)!important; }
 .primary-new-consult span { font-size:1.2em; line-height:1; }
 .user-tag { color:rgba(255,255,255,.88); font-size:.82em; white-space:nowrap; flex:0 0 auto; }
-.nav-icon { display:inline-grid; place-items:center; flex:0 0 16px; width:16px; height:17px; line-height:17px; font-size:.9em; font-weight:800; opacity:.82; overflow:visible; }
+.nav-icon { display:inline-grid; place-items:center; flex:0 0 23px; width:23px; height:23px; line-height:1; border:1px solid rgba(255,255,255,.2); border-radius:7px; font-size:.82rem; font-weight:800; opacity:.96; overflow:visible; text-shadow:none; box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 2px 5px rgba(0,0,0,.12); }
+.nav-icon-dashboard { background:linear-gradient(145deg,#2563eb,#1d4ed8); }
+.nav-icon-new { background:linear-gradient(145deg,#16a34a,#15803d); }
+.nav-icon-list { background:linear-gradient(145deg,#0ea5e9,#0369a1); }
+.nav-icon-ward { background:linear-gradient(145deg,#14b8a6,#0f766e); }
+.nav-icon-sms { background:linear-gradient(145deg,#8b5cf6,#6d28d9); }
+.nav-icon-stats,.nav-icon-report { background:linear-gradient(145deg,#f59e0b,#c76b08); }
+.nav-icon-notice { background:linear-gradient(145deg,#f97316,#dc2626); }
+.nav-icon-admin,.nav-icon-users,.nav-icon-audit { background:linear-gradient(145deg,#64748b,#334155); }
 .main-nav a.active .nav-icon,.main-nav a:hover .nav-icon { opacity:1; }
 .header-tools { display:flex; align-items:center; gap:5px; flex:0 0 auto; }
 .header-tool-btn { position:relative; width:33px; height:33px; display:grid; place-items:center; padding:0;
@@ -82,7 +90,7 @@ header > .container { max-width:1480px; }
     color:#fff; font:700 .78rem/1 inherit; cursor:pointer; transition:.15s; }
 .header-tool-btn:hover,.header-tool-btn[aria-expanded="true"] { background:rgba(255,255,255,.18); transform:translateY(-1px); }
 .header-tools a.header-tool-btn { text-decoration:none; }
-.help-tool-btn { font-size:1rem; font-weight:850; }
+.help-tool-btn { font-size:.9rem; font-weight:850; }
 .help-tool-btn.active { color:#174b2d; background:#fff; }
 .alert-bell-btn svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; }
 .header-tool-btn b { position:absolute; right:-5px; top:-6px; min-width:17px; height:17px; padding:0 4px;
