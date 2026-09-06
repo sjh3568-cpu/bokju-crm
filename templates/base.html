@@ -9,7 +9,7 @@
     {% block head_extra %}{% endblock %}
 </head>
 {%- set P = current_user.perms if current_user else {} -%}
-<body class="{% if current_user %}{% if P.get('consult',0) >= 2 %}cw-consult {% endif %}{% if P.get('consult',0) >= 3 %}cc-consult {% endif %}{% if P.get('ward',0) >= 2 %}cw-ward {% endif %}{% if P.get('sms',0) >= 3 %}cc-sms {% endif %}{% endif %}"{% block body_attrs %}{% endblock %}>
+<body class="app-page {% if request.path == '/' %}page-dashboard{% elif request.path.startswith('/consult') %}page-consult{% elif request.path.startswith('/ward') or request.path.startswith('/patients') %}page-ward{% elif request.path.startswith('/stats') %}page-stats{% elif request.path.startswith('/report') %}page-report{% elif request.path.startswith('/notices') %}page-notices{% elif request.path.startswith('/admin') %}page-admin{% elif request.path.startswith('/help') %}page-help{% endif %} {% if current_user %}{% if P.get('consult',0) >= 2 %}cw-consult {% endif %}{% if P.get('consult',0) >= 3 %}cc-consult {% endif %}{% if P.get('ward',0) >= 2 %}cw-ward {% endif %}{% if P.get('sms',0) >= 3 %}cc-sms {% endif %}{% endif %}"{% block body_attrs %}{% endblock %}>
     <header>
         <div class="container">
             <div class="header-inner">
