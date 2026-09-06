@@ -44,8 +44,12 @@
                     {% if P.get('stats',0) >= 1 %}
                     <div class="nav-menu-group {% if request.path.startswith('/stats') or request.path.startswith('/report') %}active{% endif %}">
                         <a href="/stats" {% if request.path.startswith('/stats') %}class="active"{% endif %}><span class="nav-icon nav-icon-stats">📊</span>통계</a>
-                        {% if P.get('report',0) >= 1 %}<button type="button" class="nav-menu-toggle" aria-label="통계 하위 메뉴" aria-expanded="false">▾</button>
-                        <div class="nav-dropdown"><a href="/report/monthly" {% if request.path.startswith('/report') %}class="active"{% endif %}><span class="nav-icon nav-icon-report">📈</span><span><b>월간보고서</b><small>월별 핵심 실적 보고</small></span></a></div>{% endif %}
+                        <button type="button" class="nav-menu-toggle" aria-label="통계 하위 메뉴" aria-expanded="false">▾</button>
+                        <div class="nav-dropdown">
+                            <a href="/stats" {% if request.path == '/stats' %}class="active"{% endif %}><span>📊</span><span><b>통계 대시보드</b><small>상담·입원 핵심 지표</small></span></a>
+                            <a href="/stats/hospitals" {% if request.path.startswith('/stats/hospitals') %}class="active"{% endif %}><span>🏥</span><span><b>모병원 분석</b><small>병원별 환자 유입·입원 성과</small></span></a>
+                            {% if P.get('report',0) >= 1 %}<a href="/report/monthly" {% if request.path.startswith('/report') %}class="active"{% endif %}><span class="nav-icon nav-icon-report">📈</span><span><b>월간보고서</b><small>월별 핵심 실적 보고</small></span></a>{% endif %}
+                        </div>
                     </div>
                     {% endif %}
                     <a href="/notices" {% if request.path.startswith('/notices') %}class="active"{% endif %}><span class="nav-icon nav-icon-notice">📢</span>공지사항{% if has_unread_required_notice %}<span class="nav-notice-new">필수</span>{% endif %}</a>
