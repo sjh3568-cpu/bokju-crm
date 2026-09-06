@@ -65,8 +65,14 @@
     </div>
 </div>
 
-<div class="card" style="margin-top:12px">
-    <h3>최근 발송 이력 ({{ log|length }})</h3>
+<div class="card sms-history" style="margin-top:12px">
+    <div class="sms-history-head"><h3>발송 이력 ({{ log|length }})</h3>
+        <form method="get" action="/sms" class="period-inline-filter">
+            <label>발송일 <span class="date-range"><input type="date" name="from" value="{{ date_from or '' }}"><i>~</i><input type="date" name="to" value="{{ date_to or '' }}"></span></label>
+            <button class="btn btn-secondary btn-sm" type="submit">조회</button>
+            {% if date_from or date_to %}<a class="btn btn-secondary btn-sm" href="/sms">전체</a>{% endif %}
+        </form>
+    </div>
     {% if log %}
     <div class="tbl-wrap">
         <table class="tbl tbl-compact">
@@ -124,6 +130,7 @@
 .sms-msg.err { color:var(--danger); }
 .sms-log-body { max-width:280px; overflow:hidden; text-overflow:ellipsis;
     white-space:nowrap; font-size:0.84em; }
+.sms-history-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; flex-wrap:wrap; }.sms-history-head h3{margin:0}
 </style>
 
 <script>

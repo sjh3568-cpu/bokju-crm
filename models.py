@@ -1178,13 +1178,20 @@ def create_announcement(*, title: str, body: str, target_role: str = "staff",
     return notice_id
 
 
-def list_announcements(user_id: int, role: str, *, include_inactive: bool = False):
+def list_announcements(user_id: int, role: str, *, include_inactive: bool = False,
+                       date_from: str | None = None, date_to: str | None = None):
     conn = get_db()
     where = [] if include_inactive else ["a.active = 1"]
     if not include_inactive:
         where.append("(a.expires_at IS NULL OR a.expires_at = '' OR a.expires_at >= date('now', 'localtime'))")
         where.append("(a.target_role = 'all' OR a.target_role = ?)")
     vals = [] if include_inactive else [role]
+    if date_from:
+        where.append("date(a.created_at, 'localtime') >= date(?)")
+        vals.append(date_from)
+    if date_to:
+        where.append("date(a.created_at, 'localtime') <= date(?)")
+        vals.append(date_to)
     rows = conn.execute(f"""
         SELECT a.*,
                EXISTS(SELECT 1 FROM announcement_reads r
@@ -4703,12 +4710,19 @@ def log_sms(*, consultation_id=None, patient_id=None, template_id=None,
     return sid
 
 
-def list_sms_log(limit: int = 100):
+def list_sms_log(limit: int = 100, *, date_from: str | None = None,
+                 date_to: str | None = None):
     conn = get_db()
-    rows = conn.execute(
-        "SELECT * FROM sms_log ORDER BY created_at DESC, id DESC LIMIT ?",
-        (limit,),
-    ).fetchall()
+    where, vals = [], []
+    if date_from:
+        where.append("date(created_at, 'localtime') >= date(?)")
+        vals.append(date_from)
+    if date_to:
+        where.append("date(created_at, 'localtime') <= date(?)")
+        vals.append(date_to)
+    rows = conn.execute(f"""SELECT * FROM sms_log
+        {('WHERE ' + ' AND '.join(where)) if where else ''}
+        ORDER BY created_at DESC, id DESC LIMIT ?""", [*vals, limit]).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 

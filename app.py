@@ -1304,9 +1304,15 @@ def password_reset_request():
 def notices_view():
     user = current_user()
     is_admin = user.get("role") == "admin"
+    date_from = _valid_date(request.args.get("from"))
+    date_to = _valid_date(request.args.get("to"))
+    if date_from and date_to and date_from > date_to:
+        date_from, date_to = date_to, date_from
     notices = models.list_announcements(
-        user["id"], user.get("role", "staff"), include_inactive=is_admin)
-    return render_template("notices.html", notices=notices, is_admin=is_admin)
+        user["id"], user.get("role", "staff"), include_inactive=is_admin,
+        date_from=date_from, date_to=date_to)
+    return render_template("notices.html", notices=notices, is_admin=is_admin,
+                           date_from=date_from, date_to=date_to)
 
 
 @app.route("/notices/required")
@@ -4608,6 +4614,10 @@ def sms_compose():
     cid = request.args.get("cid", type=int)
     pid = request.args.get("pid", type=int)
     preselect = models.get_consultation(cid) if cid else None
+    date_from = _valid_date(request.args.get("from"))
+    date_to = _valid_date(request.args.get("to"))
+    if date_from and date_to and date_from > date_to:
+        date_from, date_to = date_to, date_from
     # 선택 대상이 최근 200건 밖이면 드롭다운에 옵션이 없어 프리필이 안 된다
     # (인박스 퇴원예정 등 오래된 상담의 '문자' 버튼 진입 케이스) → 목록 맨 앞에 보강.
     if preselect and not any(r["id"] == preselect["id"] for r in recent):
@@ -4621,7 +4631,8 @@ def sms_compose():
         back_url, back_label = "/", "← 대시보드"
     return render_template(
         "sms.html", recent=recent, templates=models.list_sms_templates(),
-        preselect=preselect, log=models.list_sms_log(30),
+        preselect=preselect, log=models.list_sms_log(200, date_from=date_from, date_to=date_to),
+        date_from=date_from, date_to=date_to,
         placeholders=SMS_PLACEHOLDERS,
         gateway_ready=sms_gateway.gateway_configured(),
         back_url=back_url, back_label=back_label,

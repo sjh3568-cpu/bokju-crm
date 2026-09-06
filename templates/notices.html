@@ -12,6 +12,13 @@
     </div>
 </div>
 
+<form method="get" action="/notices" class="card period-inline-filter notice-period-filter">
+    <label>게시일 <span class="date-range"><input type="date" name="from" value="{{ date_from or '' }}"><i>~</i><input type="date" name="to" value="{{ date_to or '' }}"></span></label>
+    <button class="btn btn-secondary btn-sm" type="submit">조회</button>
+    {% if date_from or date_to %}<a class="btn btn-secondary btn-sm" href="/notices">전체</a>{% endif %}
+    <span class="muted-sm">조회 결과 {{ notices|length }}건</span>
+</form>
+
 {% if is_admin %}
 <details id="notice-write" class="card notice-write">
     <summary>새 공지사항 작성</summary>
@@ -67,6 +74,7 @@
 
 <style>
 .notice-head p{margin:3px 0 0}.notice-head-actions{display:flex;align-items:center;gap:9px}.notice-view-switch{display:flex;padding:3px;border:1px solid var(--border);border-radius:9px;background:#f8fafc}.notice-view-switch button{border:0;border-radius:6px;background:transparent;color:var(--text-light);padding:7px 10px;font:inherit;font-size:.8em;font-weight:750;cursor:pointer}.notice-view-switch button.on{background:#fff;color:var(--primary);box-shadow:0 1px 4px rgba(15,23,42,.12)}.notice-write{margin-bottom:14px}.notice-write summary{cursor:pointer;font-weight:800;color:var(--primary)}
+.notice-period-filter{margin-bottom:12px}
 .notice-write form{margin-top:14px}.notice-form-row{display:flex;align-items:end;gap:12px;flex-wrap:wrap;margin-bottom:9px}.notice-form-row label{font-size:.84em;color:var(--text-light);display:flex;flex-direction:column;gap:4px}.notice-form-row select,.notice-form-row input,.notice-title-input,.notice-write textarea{border:1px solid var(--border);border-radius:7px;padding:8px 10px;font:inherit}.notice-form-row .notice-check{flex-direction:row;align-items:center;padding-bottom:8px;color:var(--text);font-weight:650}.notice-title-input,.notice-write textarea{display:block;width:100%;box-sizing:border-box;margin-bottom:8px}.notice-write textarea{resize:vertical;line-height:1.55}
 .notice-list{display:flex;flex-direction:column;gap:10px}.notice-card{margin:0;border-left:4px solid #94a3b8}.notice-card.notice-required{border-left-color:#dc2626}.notice-card.notice-inactive{opacity:.62}.notice-card-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.notice-card h2{font-size:1.06em;margin:8px 0 0}.notice-meta{font-size:.77em;color:var(--text-light);white-space:nowrap}.notice-badge{display:inline-block;padding:2px 7px;border-radius:999px;background:#e2e8f0;color:#475569;font-size:.7em;font-weight:800}.notice-badge.required{background:#fee2e2;color:#b91c1c}.notice-badge.target{background:#dbeafe;color:#1d4ed8}.notice-badge.ended{background:#f1f5f9;color:#64748b}.notice-body{white-space:pre-wrap;line-height:1.7;margin:15px 0;color:#1e293b}.notice-foot{border-top:1px solid var(--border);padding-top:9px;display:flex;align-items:center;gap:10px;font-size:.8em;color:var(--text-light)}.notice-foot form{margin-left:auto}.notice-read{color:#15803d;font-weight:700}.notice-unread{color:#b91c1c;font-weight:800}.notice-ack-stat{font-weight:750;color:#334155}.notice-expand{display:none;border:0;background:transparent;color:var(--primary);font:inherit;font-weight:800;cursor:pointer;margin-left:auto}
 .notice-list.list-view{gap:6px}.notice-list.list-view .notice-card{padding:12px 14px}.notice-list.list-view .notice-card-head{align-items:center}.notice-list.list-view .notice-card h2{display:inline;margin:0 0 0 7px;font-size:.96em}.notice-list.list-view .notice-meta{min-width:175px;text-align:right}.notice-list.list-view .notice-body{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;overflow:hidden;margin:8px 0 6px;color:#64748b;font-size:.87em;line-height:1.5}.notice-list.list-view .notice-card.expanded .notice-body{display:block;color:#1e293b}.notice-list.list-view .notice-foot{padding-top:6px}.notice-list.list-view .notice-expand{display:inline-block}.notice-list.list-view .notice-foot form+.notice-expand{margin-left:0}

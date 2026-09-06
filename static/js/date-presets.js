@@ -73,8 +73,18 @@
         else { const label = end.closest('label'); if (label) label.insertAdjacentElement('afterend', anchor); else end.insertAdjacentElement('afterend', anchor); }
         const togglePanel = e => {
             e.preventDefault(); e.stopPropagation(); const opening = panel.hidden; closeAll(opening ? panel : null);
-            if (opening) { customStart.value = start.value; customEnd.value = end.value; }
-            panel.hidden = !opening; [start, end].forEach(input => input.setAttribute('aria-expanded', String(opening)));
+            if (opening) {
+                customStart.value = start.value; customEnd.value = end.value; panel.hidden = false;
+                if (window.innerWidth > 600) {
+                    const rect = (e.currentTarget?.classList?.contains('date-preset-trigger') ? e.currentTarget : end).getBoundingClientRect();
+                    const panelWidth = Math.min(430, window.innerWidth - 28);
+                    panel.style.left = Math.max(12, Math.min(rect.left, window.innerWidth - panelWidth - 12)) + 'px';
+                    panel.style.top = Math.max(12, Math.min(rect.bottom + 7, window.innerHeight - panel.offsetHeight - 12)) + 'px';
+                } else {
+                    panel.style.left = ''; panel.style.top = '';
+                }
+            } else panel.hidden = true;
+            [start, end].forEach(input => input.setAttribute('aria-expanded', String(opening)));
         };
         [start, end].forEach(input => {
             input.readOnly = true; input.classList.add('date-preset-trigger'); input.title = '눌러서 기간을 선택하세요';
