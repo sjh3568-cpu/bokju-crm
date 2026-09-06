@@ -37,14 +37,30 @@
         const button = document.createElement('button'); button.type = 'button'; button.className = 'date-preset-btn';
         button.innerHTML = '<span>▣</span> 빠른 기간 <i>▾</i>'; button.setAttribute('aria-expanded', 'false');
         const panel = document.createElement('div'); panel.className = 'date-preset-panel'; panel.id = `date-preset-${index}`; panel.hidden = true;
+        const custom = document.createElement('div'); custom.className = 'date-preset-custom';
+        const customTitle = document.createElement('b'); customTitle.textContent = '기간 직접 선택';
+        const customInputs = document.createElement('div'); customInputs.className = 'date-preset-custom-inputs';
+        const customStart = document.createElement('input'); customStart.type = 'date'; customStart.value = start.value;
+        const customSep = document.createElement('span'); customSep.textContent = '~';
+        const customEnd = document.createElement('input'); customEnd.type = 'date'; customEnd.value = end.value;
+        const applyButton = document.createElement('button'); applyButton.type = 'button'; applyButton.textContent = '적용'; applyButton.className = 'date-preset-apply';
+        customInputs.append(customStart, customSep, customEnd, applyButton); custom.append(customTitle, customInputs); panel.appendChild(custom);
+        const applyRange = (a, b) => {
+            start.value = a; end.value = b;
+            [start, end].forEach(el => { el.dispatchEvent(new Event('input', {bubbles:true})); el.dispatchEvent(new Event('change', {bubbles:true})); });
+        };
+        applyButton.addEventListener('click', () => {
+            if (!customStart.value || !customEnd.value) return;
+            if (customStart.value > customEnd.value) [customStart.value, customEnd.value] = [customEnd.value, customStart.value];
+            applyRange(customStart.value, customEnd.value); panel.hidden = true; button.setAttribute('aria-expanded', 'false');
+        });
         sections.forEach(section => {
             const block = document.createElement('section'), heading = document.createElement('b'), choices = document.createElement('div');
             heading.textContent = section.title; choices.className = 'date-preset-choices'; block.append(heading, choices);
             section.items.forEach(([label, getRange]) => {
                 const choice = document.createElement('button'); choice.type = 'button'; choice.textContent = label;
                 choice.addEventListener('click', () => {
-                    [start.value, end.value] = getRange();
-                    [start, end].forEach(el => { el.dispatchEvent(new Event('input', {bubbles:true})); el.dispatchEvent(new Event('change', {bubbles:true})); });
+                    const [a, b] = getRange(); customStart.value = a; customEnd.value = b; applyRange(a, b);
                     panel.hidden = true; button.setAttribute('aria-expanded', 'false');
                 });
                 choices.appendChild(choice);
@@ -54,7 +70,17 @@
         const shared = end.closest('.date-range,.wd-filter-range');
         if (shared && shared.contains(start)) shared.appendChild(anchor);
         else { const label = end.closest('label'); if (label) label.insertAdjacentElement('afterend', anchor); else end.insertAdjacentElement('afterend', anchor); }
-        button.addEventListener('click', e => { e.stopPropagation(); const opening = panel.hidden; closeAll(opening ? panel : null); panel.hidden = !opening; button.setAttribute('aria-expanded', String(opening)); });
+        const togglePanel = e => {
+            e.preventDefault(); e.stopPropagation(); const opening = panel.hidden; closeAll(opening ? panel : null);
+            if (opening) { customStart.value = start.value; customEnd.value = end.value; }
+            panel.hidden = !opening; button.setAttribute('aria-expanded', String(opening));
+        };
+        button.addEventListener('click', togglePanel);
+        [start, end].forEach(input => {
+            input.readOnly = true; input.classList.add('date-preset-trigger'); input.title = '눌러서 기간을 선택하세요';
+            input.addEventListener('click', togglePanel);
+            input.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') togglePanel(e); });
+        });
         panel.addEventListener('click', e => e.stopPropagation());
     }
     let index = 0;
