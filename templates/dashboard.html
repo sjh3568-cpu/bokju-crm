@@ -427,7 +427,7 @@
             {% for quick in admission_quick_dates if quick.group == 'today' %}<a href="/?admission_from={{ quick.from }}&admission_to={{ quick.to }}&admission_scope={{ quick.scope }}#admission-schedule" class="dash-quick-today {% if admission_lookup_from == quick.from and admission_lookup_to == quick.to and admission_lookup_scope == quick.scope %}active{% endif %}">{{ quick.label }}</a>{% endfor %}
             <div class="dash-quick-group future"><b>미래 예정</b>{% for quick in admission_quick_dates if quick.group == 'future' %}<a href="/?admission_from={{ quick.from }}&admission_to={{ quick.to }}&admission_scope={{ quick.scope }}#admission-schedule" class="{% if admission_lookup_from == quick.from and admission_lookup_to == quick.to and admission_lookup_scope == quick.scope %}active{% endif %}">{{ quick.label }}</a>{% endfor %}</div>
         </div>
-        <form method="get" action="/" class="dash-admission-date-form">
+        <form method="get" action="/" class="dash-admission-date-form" data-date-presets="off">
             <label for="admission-from">기간 직접 선택</label>
             <input type="date" id="admission-from" name="admission_from" value="{{ admission_lookup_from }}">
             <span class="dash-date-sep">~</span>
