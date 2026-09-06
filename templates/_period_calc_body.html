@@ -1,30 +1,40 @@
 {# 기간 계산기 본문 — 전체 페이지(period_calc.html)와 팝업(embed) 양쪽에서 사용 #}
-<div class="card">
+<div class="card calc-input-card">
+    <div class="calc-intro">
+        <span class="calc-intro-icon">🧮</span>
+        <span><strong>회복기 입원·재원 기간 확인</strong><small>세 가지 정보를 순서대로 입력하면 적용 수가와 주요 마감일을 계산합니다.</small></span>
+    </div>
     <form class="calc-form" method="get" action="/tools/period-calc">
         {% if request.args.get('embed') == '1' %}<input type="hidden" name="embed" value="1">{% endif %}
         <label>
-            <span>발병일 / 수술일</span>
+            <span class="calc-field-title"><i>1</i>발병일 / 수술일</span>
             <input type="date" name="onset" value="{{ onset }}" required>
+            <small>진단 또는 수술이 발생한 기준일</small>
         </label>
         <label>
-            <span>입원예정일</span>
+            <span class="calc-field-title"><i>2</i>입원예정일</span>
             <input type="date" name="planned" value="{{ planned or today }}" required>
+            <small>복주병원에 입원할 예정일</small>
         </label>
         <label class="calc-group">
-            <span>진단군</span>
+            <span class="calc-field-title"><i>3</i>진단군</span>
             <select name="group" required>
-                <option value="">선택</option>
+                <option value="">진단군을 선택하세요</option>
                 {% for name, _d, desc in groups %}
                 <option value="{{ name }}" {% if group == name %}selected{% endif %}>{{ name }}{% if desc %} — {{ desc }}{% endif %}</option>
                 {% endfor %}
             </select>
+            <small>주 진단에 해당하는 환자군 선택</small>
         </label>
-        <label class="calc-check">
-            <input type="checkbox" name="delayed" value="1" {% if delayed %}checked{% endif %}>
-            <span>급성기 치료로 입원 지연 (S044 검토)</span>
-        </label>
-        <button class="btn btn-primary" type="submit">계산</button>
+        <div class="calc-submit-row">
+            <label class="calc-check">
+                <input type="checkbox" name="delayed" value="1" {% if delayed %}checked{% endif %}>
+                <span><b>급성기 치료로 입원이 지연됐나요?</b><small>해당하면 지연 회복기 S044 가능성을 함께 검토합니다.</small></span>
+            </label>
+            <button class="btn btn-primary calc-submit" type="submit">결과 확인 <span>→</span></button>
+        </div>
     </form>
+    <p class="calc-caution">※ 계산 결과는 상담 지원용입니다. 최종 적용 여부는 진단·급성기 치료 기록과 관련 지침을 함께 확인하세요.</p>
 </div>
 
 {% if plan and not plan.ok %}
@@ -126,14 +136,26 @@
 {% endif %}
 
 <style>
-.calc-form { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; }
-.calc-form label { display:flex; flex-direction:column; gap:4px; font-size:0.86em; color:var(--text-light); }
-.calc-form input, .calc-form select { padding:7px 10px; border:1px solid var(--border);
-    border-radius:6px; font-size:0.95rem; color:var(--text); background:#fff; }
-.calc-form .calc-group { flex:1; min-width:320px; }
+.calc-input-card { padding:18px; border-color:#d5e5db; background:linear-gradient(145deg,#fff 0%,#f7fbf8 100%); }
+.calc-intro { display:flex; align-items:center; gap:11px; margin-bottom:16px; padding-bottom:13px; border-bottom:1px solid #dfebe3; }
+.calc-intro-icon { display:grid; place-items:center; width:38px; height:38px; border-radius:12px; background:#e6f3ea; font-size:1.18rem; }
+.calc-intro strong,.calc-intro small { display:block; }.calc-intro strong { color:#173d29; font-size:1rem; }.calc-intro small { margin-top:2px; color:#718078; font-size:.78rem; }
+.calc-form { display:grid; grid-template-columns:190px 190px minmax(280px,1fr); gap:12px; align-items:start; }
+.calc-form label { display:flex; flex-direction:column; gap:6px; color:var(--text-light); }
+.calc-field-title { display:flex; align-items:center; gap:6px; color:#334b3e; font-size:.82rem; font-weight:750; }
+.calc-field-title i { display:grid; place-items:center; width:19px; height:19px; border-radius:50%; background:#dceee2; color:#166534; font:800 .68rem/1 inherit; }
+.calc-form label > small { color:#87958c; font-size:.69rem; }
+.calc-form input, .calc-form select { width:100%; min-height:42px; padding:8px 11px; border:1px solid #cfdcd4;
+    border-radius:9px; font:600 .9rem inherit; color:var(--text); background:#fff; transition:border-color .15s,box-shadow .15s; }
+.calc-form input:focus,.calc-form select:focus { outline:0; border-color:#4f9b6b; box-shadow:0 0 0 3px rgba(22,163,74,.11); }
+.calc-form .calc-group { min-width:0; }
 .calc-form .calc-group select { width:100%; }
-.calc-check { flex-direction:row !important; align-items:center; gap:6px;
-    padding-bottom:8px; color:var(--text); }
+.calc-submit-row { grid-column:1/-1; display:flex; align-items:center; justify-content:space-between; gap:14px; margin-top:2px; padding-top:12px; border-top:1px dashed #d4e1d8; }
+.calc-check { flex:1; flex-direction:row !important; align-items:center; gap:9px; color:var(--text); cursor:pointer; }
+.calc-check input { flex:0 0 19px; width:19px; min-height:19px; height:19px; padding:0; accent-color:var(--primary-light); }
+.calc-check span b,.calc-check span small { display:block; }.calc-check span b { font-size:.8rem; }.calc-check span small { margin-top:1px; color:#7d8b82; font-size:.7rem; }
+.calc-submit { min-width:132px; min-height:42px; border-radius:10px; font-weight:800; }.calc-submit span { font-size:1.05em; }
+.calc-caution { margin:11px 0 0; color:#7b8980; font-size:.7rem; line-height:1.5; }
 .calc-verdict { display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;
     padding:12px 14px; border-radius:8px; margin-bottom:14px; }
 .calc-verdict.yes { background:#ecfdf5; border:1px solid #6ee7b7; }
@@ -179,7 +201,8 @@
     padding:10px 12px; background:#f8fafc; border-radius:6px; }
 .calc-note.warn { background:#fff7ed; color:#9a3412; }
 @media (max-width:680px) {
-    .calc-form .calc-group { min-width:100%; }
+    .calc-form { grid-template-columns:1fr; }
+    .calc-submit-row { grid-column:1; align-items:stretch; flex-direction:column; }
     .calc-seg { padding:0 6px; }
     .calc-seg b { font-size:0.78em; }
     .calc-seg span { font-size:0.68em; }

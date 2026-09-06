@@ -1774,9 +1774,9 @@ def dashboard():
             {"group": "past", "label": "어제", "from": (today_d - timedelta(days=1)).isoformat(), "to": (today_d - timedelta(days=1)).isoformat(), "scope": "completed"},
             {"group": "past", "label": "그저께", "from": (today_d - timedelta(days=2)).isoformat(), "to": (today_d - timedelta(days=2)).isoformat(), "scope": "completed"},
             {"group": "past", "label": "최근 7일", "from": (today_d - timedelta(days=6)).isoformat(), "to": today_d.isoformat(), "scope": "completed"},
+            {"group": "future", "label": "향후 3일", "from": (today_d + timedelta(days=1)).isoformat(), "to": (today_d + timedelta(days=3)).isoformat(), "scope": "planned"},
             {"group": "future", "label": "향후 7일", "from": (today_d + timedelta(days=1)).isoformat(), "to": (today_d + timedelta(days=7)).isoformat(), "scope": "planned"},
             {"group": "future", "label": "향후 15일", "from": (today_d + timedelta(days=1)).isoformat(), "to": (today_d + timedelta(days=15)).isoformat(), "scope": "planned"},
-            {"group": "future", "label": "향후 30일", "from": (today_d + timedelta(days=1)).isoformat(), "to": (today_d + timedelta(days=30)).isoformat(), "scope": "planned"},
         ],
     })
     open_comms = models.inbox_open_communications()
