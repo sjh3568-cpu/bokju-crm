@@ -1434,6 +1434,14 @@
                           {% if _st == s %}checked{% endif %}> {{ s }}</label>
             {% endfor %}
         </div>
+        <div class="admission-status-guide" aria-label="입원 진행 상태 안내">
+            <span><b>미정</b> 아직 입원 의사나 가능 여부를 판단하지 않은 상태</span>
+            <span><b>입원대기</b> 입원은 결정됐으나 병상 배정을 기다리는 상태</span>
+            <span><b>입원예정</b> 입원일이 정해져 실제 입원을 기다리는 상태</span>
+            <span><b>입원보류</b> 검토·연락 등 추가 확인이 필요해 결정을 잠시 보류한 상태</span>
+            <span><b>입원취소</b> 환자 또는 병원 사유로 입원 진행이 종결된 상태</span>
+            <span><b>입원완료</b> 실제 입원일이 확인되어 재원 관리로 전환된 상태</span>
+        </div>
     </div>
     {% if is_edit and _st and _st not in ADMISSION_STATUSES %}
     <p class="muted" style="font-size:0.86em; margin:0 0 8px">
@@ -1503,6 +1511,13 @@
                placeholder="연계 메모 (선택, 예: 보호자가 직접 알아보기로 함)" style="margin-top:6px">
     </div>
 </div>
+
+<style>
+.admission-status-guide { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:5px 16px; margin-top:8px; padding:10px 12px; border:1px solid #dbe7df; border-radius:9px; background:#f7faf8; color:#64748b; font-size:.78rem; line-height:1.45; }
+.admission-status-guide span { display:flex; align-items:flex-start; gap:6px; }
+.admission-status-guide b { flex:0 0 58px; color:#365b47; }
+@media(max-width:720px){.admission-status-guide{grid-template-columns:1fr}}
+</style>
 
 <div class="form-actions">
     <a href="{% if is_edit %}/consult/{{ consultation.id }}{% else %}/{% endif %}" class="btn btn-secondary">취소</a>
