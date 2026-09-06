@@ -132,6 +132,7 @@ AUDIT_ACTION_LABELS = {
     "add_lifecycle_event": "생애주기 이벤트 추가",
     "delete_lifecycle_event": "생애주기 이벤트 삭제",
     "add_communication": "소통 기록 추가",
+    "inbound_webhook": "인바운드 문의 수신(웹훅)",
     "close_communication": "소통 기록 종료",
     "update_blacklist": "블랙리스트 변경",
     "merge_patient": "환자 병합",
@@ -156,7 +157,7 @@ AUDIT_CATEGORIES = {
     "auth": ("로그인·인증", ["login", "login_fail", "logout"]),
     "create": ("등록", [
         "create_consult", "confirm_admission", "add_admission_event",
-        "add_lifecycle_event", "add_communication",
+        "add_lifecycle_event", "add_communication", "inbound_webhook",
     ]),
     "update": ("수정", [
         "update_consult", "update_status", "update_stage", "update_room",

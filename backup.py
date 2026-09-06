@@ -14,6 +14,7 @@ import logging
 import os
 import sqlite3
 import threading
+import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -24,6 +25,51 @@ logger = logging.getLogger(__name__)
 BACKUP_DIR = Path(os.getenv("BACKUP_DIR") or "./backups")
 BACKUP_HOUR = int(os.getenv("BACKUP_HOUR", "3"))
 KEEP_DAYS = int(os.getenv("BACKUP_KEEP_DAYS", "30"))
+
+
+def verify_database(path) -> dict:
+    """백업을 실제 복구 후보처럼 열어 무결성·핵심 테이블 조회를 확인한다."""
+    result = {"ok": False, "path": str(path), "checked_at": datetime.now().isoformat(timespec="seconds")}
+    try:
+        with sqlite3.connect(str(path), timeout=models.BUSY_TIMEOUT) as conn:
+            check = conn.execute("PRAGMA integrity_check").fetchone()[0]
+            tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            required = {"patients", "consultations", "users", "app_meta"}
+            result.update({"integrity": check, "missing_tables": sorted(required - tables),
+                           "patients": conn.execute("SELECT COUNT(*) FROM patients").fetchone()[0],
+                           "consultations": conn.execute("SELECT COUNT(*) FROM consultations").fetchone()[0]})
+            result["ok"] = check == "ok" and not result["missing_tables"]
+    except Exception as exc:
+        result["error"] = str(exc)
+    return result
+
+
+def latest_status() -> dict:
+    files = sorted(BACKUP_DIR.glob("bokju_*.db"), key=lambda f: f.stat().st_mtime, reverse=True) if BACKUP_DIR.exists() else []
+    saved = models.get_app_meta("backup_last_status", {}) or {}
+    return {**saved, "directory": str(BACKUP_DIR.resolve()), "keep_days": KEEP_DAYS,
+            "file_count": len(files), "latest_file": files[0].name if files else None,
+            "latest_size_mb": round(files[0].stat().st_size / 1024 / 1024, 2) if files else 0}
+
+
+def verify_latest_restore() -> dict:
+    """운영 DB를 덮지 않고 임시 파일로 복원 사전연습을 수행한다."""
+    files = sorted(BACKUP_DIR.glob("bokju_*.db"), key=lambda f: f.stat().st_mtime, reverse=True) if BACKUP_DIR.exists() else []
+    if not files:
+        return {"ok": False, "error": "검증할 백업 파일이 없습니다."}
+    with tempfile.TemporaryDirectory(prefix="bokju_restore_") as tmp:
+        restored = Path(tmp) / "restore_test.db"
+        src = sqlite3.connect(str(files[0]), timeout=models.BUSY_TIMEOUT)
+        dst = sqlite3.connect(str(restored))
+        try:
+            src.backup(dst)
+        finally:
+            dst.close(); src.close()
+        result = verify_database(restored)
+        result["source"] = files[0].name
+        result["mode"] = "임시 복구 검증"
+    models.set_app_meta("backup_restore_test", result)
+    return result
 
 
 def run_backup(tag: str = "daily") -> Path | None:
@@ -45,12 +91,26 @@ def run_backup(tag: str = "daily") -> Path | None:
                 dst_conn.close()
         finally:
             src.close()
+        verification = verify_database(dst)
+        if not verification["ok"]:
+            raise RuntimeError(f"백업 무결성 검사 실패: {verification}")
         size_mb = dst.stat().st_size / 1024 / 1024
         logger.info("백업 완료: %s (%.1f MB)", dst, size_mb)
         _prune()
+        models.set_app_meta("backup_last_status", {
+            "ok": True, "file": dst.name, "size_mb": round(size_mb, 2),
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "integrity": verification.get("integrity"),
+        })
         return dst
-    except Exception:
+    except Exception as exc:
         logger.exception("백업 실패 — 다음 주기에 재시도")
+        try:
+            models.set_app_meta("backup_last_status", {
+                "ok": False, "error": str(exc),
+                "created_at": datetime.now().isoformat(timespec="seconds")})
+        except Exception:
+            pass
         return None
 
 

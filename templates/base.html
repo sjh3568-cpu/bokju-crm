@@ -17,7 +17,7 @@
                 {% if current_user %}
                 <nav class="main-nav" aria-label="주 메뉴">
                     {% if P.get('dashboard',0) >= 1 %}
-                    <a href="/" {% if request.path == '/' %}class="active"{% endif %}>대시보드</a>
+                    <a href="/" {% if request.path == '/' %}class="active"{% endif %}>대시보드{% if inbound_badge %}<span class="nav-notice-new" id="nav-inbound-badge" title="미처리 상담 문의">{{ inbound_badge }}</span>{% else %}<span class="nav-notice-new" id="nav-inbound-badge" hidden></span>{% endif %}</a>
                     {% endif %}
                     {% if P.get('consult',0) >= 3 %}
                     <a href="/consult/new" class="nav-create{% if request.path == '/consult/new' %} active{% endif %}"><span>＋</span> 새 상담</a>
@@ -319,6 +319,58 @@
         check();
     }
     setInterval(check, 120000);  // 2분마다
+})();
+</script>
+<!-- 인바운드 상담 문의 알림 — 홈페이지·카카오 등 채널 문의가 새로 들어오면
+     화면 토스트 + 브라우저 알림 + 대시보드 배지 갱신. 상담사가 홈페이지 관리자에
+     매번 들어가 확인하지 않아도 되도록. 탭이 열려 있으면 60초마다 확인. -->
+<script>
+(function () {
+    var supportsNotification = ('Notification' in window);
+    var SEEN = 'bokju_inbound_seen_{{ current_user.id }}';
+    var primed = false;  // 첫 로드는 알림 없이 현재 목록만 '이미 본 것'으로 기록
+    function seen() { try { return JSON.parse(localStorage.getItem(SEEN) || '[]'); } catch (e) { return []; } }
+    function markSeen(ids) { try { localStorage.setItem(SEEN, JSON.stringify(ids.slice(-500))); } catch (e) {} }
+    function bucketIcon(b) { return b === '홈페이지' ? '🌐' : (b === '카카오채널' ? '💬' : '📥'); }
+    function updateBadge(count) {
+        var el = document.getElementById('nav-inbound-badge');
+        if (!el) return;
+        if (count > 0) { el.textContent = count; el.hidden = false; }
+        else { el.textContent = ''; el.hidden = true; }
+    }
+    function check() {
+        fetch('/api/inbound/alerts', { credentials: 'same-origin' })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (d) {
+                if (!d || !d.items) return;
+                updateBadge(d.count);
+                var done = seen();
+                var ids = d.items.map(function (m) { return m.id; });
+                if (!primed) {           // 첫 폴링: 기존 대기건은 알리지 않음
+                    primed = true; markSeen(ids); return;
+                }
+                d.items.forEach(function (m) {
+                    if (done.indexOf(m.id) !== -1) return;
+                    done.push(m.id);
+                    var who = m.patient_name || m.contact || '';
+                    var title = bucketIcon(m.bucket) + ' 새 ' + (m.bucket || '문의') + (m.blacklist ? ' ⚠' : '');
+                    var body = m.summary + (who ? ' · ' + who : '');
+                    if (window.toast) toast(title + ' — ' + body, m.blacklist ? 'error' : 'info');
+                    if (supportsNotification && Notification.permission === 'granted') {
+                        var n = new Notification(title, { body: body, tag: 'bokju-inbound-' + m.id });
+                        n.onclick = function () { window.focus(); location.href = '/#inbound'; };
+                    }
+                });
+                markSeen(done);
+            })
+            .catch(function () {});
+    }
+    if (supportsNotification && Notification.permission === 'default') {
+        Notification.requestPermission().then(check);
+    } else {
+        check();
+    }
+    setInterval(check, 60000);   // 1분마다 — 문의 알림은 리마인드보다 빠르게
 })();
 </script>
 {% endif %}

@@ -57,6 +57,7 @@ static/css/        style.css (Pretendard, 4 그룹 박스, dx-stretch 등)
 static/js/         common.js, form.js (자동완성, 시군구→시도, 010 포맷, 콤보박스)
 serve.py           운영 진입점 — waitress WSGI (개발용 app.run 대체)
 backup.py          자동 백업 — 기동 시 1회 + 매일 03시, 보관기간 경과분 정리
+homepage_inbox.py  홈페이지 문의 메일 브릿지 — IMAP 폴링 → communications(웹문의/in) 자동등록
 Dockerfile         NAS Container Manager 배포용 이미지
 docker-compose.yml NAS 프로젝트 정의 (볼륨·재시작·헬스체크)
 bokju.db           SQLite (gitignore)
@@ -228,9 +229,30 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
   4개 소스를 시간순 병합. 환자 상세 페이지에 표시.
 - **`/inbox` 통합 인박스** — 재연락 대기(상담요청)·미처리 인바운드·입원안내 예정(D-3)·퇴원 예정을
   채널 무관하게 한곳에. 상담사의 '오늘 할 일'.
-- **카카오 webhook** — `/api/webhook/kakao` (구조만, `.env` KAKAO_WEBHOOK_TOKEN으로 검증).
-  비즈채널 연동 시 보호자 메시지가 인박스에 자동 등록. 실제 페이로드 형식은 연동 시 확정.
-- 인프라 의존 미구현: STT 자동 상담일지(NAS·음성캡처 확정 필요), 팩스 OCR, 웹문의 폼.
+- **카카오톡 채널(오픈빌더 챗봇) → `/api/webhook/kakao/skill`** — 병원 채널의 오픈빌더
+  상담신청 폼(성함·연락처·연락가능시간·거주지·환자나이·상담내용)에 스킬을 붙이면,
+  제출 값이 이 엔드포인트로 와서 communications(카카오/in)로 등록되고 사용자에겐
+  접수 확인 말풍선(SkillResponse v2.0)을 응답. 필드는 별칭 매핑(`_KAKAO_FIELDS`)으로 흡수,
+  연락처는 `_norm_phone`으로 정규화해 환자 자동매칭. 토큰은 스킬 URL `?token=` 또는
+  헤더로 검증. 스킬 URL은 카카오가 외부에서 호출 → 역프록시로 `/api/webhook/*`만 노출.
+- **인바운드 webhook (직수신)** — `/api/webhook/kakao`(범용 카카오 푸시)·`/api/webhook/homepage`(홈페이지
+  문의폼). `.env`의 채널별 토큰(`KAKAO_WEBHOOK_TOKEN`/`HOMEPAGE_WEBHOOK_TOKEN`)으로 검증하고,
+  토큰이 비면 503으로 비활성(기본 안전). 전화번호로 환자 자동매칭 → communications(인바운드) →
+  대시보드 인박스(카카오채널/홈페이지 탭). 보안: `_webhook_guard`가 상수시간 토큰비교
+  (`hmac.compare_digest`)·선택적 IP 화이트리스트(`WEBHOOK_ALLOW_IPS`)·16KB 크기제한·
+  IP당 rate limit(60/분)·감사로그(식별정보 평문 미기록)를 일괄 처리.
+  - **역프록시 노출 원칙**: 외부로 여는 것은 `/api/webhook/*` 한 경로뿐, 나머지 CRM은 사내망 유지.
+    홈페이지폼은 브라우저가 아니라 **홈페이지 서버가 서버-투-서버**로 호출(토큰 노출 금지).
+    연동 규격·nginx allowlist 설정은 [docs/WEBHOOKS.md](docs/WEBHOOKS.md).
+- **빌더형 홈페이지(카페24·아임웹 등) → 이메일 브릿지** ([homepage_inbox.py](homepage_inbox.py)) —
+  서버 코드를 못 건드리는 빌더는 웹훅 푸시가 불가하므로, 빌더의 '새 문의 관리자 메일 알림'을
+  전용 메일함으로 받아 사내망 워커가 IMAP 폴링(`.env` IMAP_*)해 communications(웹문의/in)로 등록.
+  아웃바운드 구조라 외부 포트 개방 불필요(역프록시보다 안전). 설정 없으면 조용히 비활성.
+- **인바운드 알림** — 새 문의(홈페이지·카카오)가 들어오면 로그인한 상담사 브라우저가
+  `/api/inbound/alerts`를 폴링(1분)해 화면 토스트 + 브라우저 알림 + 상단 '대시보드' 배지로 통지.
+  `models.open_inbound_count()` = 전역 배지, `_dashboard_inbound_bucket`로 채널 분류. 상담사가
+  홈페이지 관리자에 직접 들어가 확인하지 않아도 되게 하는 것이 목적.
+- 인프라 의존 미구현: STT 자동 상담일지(NAS·음성캡처 확정 필요), 팩스 OCR, 인박스에서 카톡/문자 직접 회신(아웃바운드).
 
 ## 2026-05-23 상담일지 폼 개선 5종 (사용자 명시 요청)
 

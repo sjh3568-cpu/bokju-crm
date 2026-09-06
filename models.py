@@ -141,6 +141,62 @@ def _migrate_pair_legacy_returns(conn):
     _mark_migration_done(conn, "pair_legacy_returns")
 
 
+def _episode_status(admission_status, admitted_at=None, discharged_at=None):
+    if discharged_at or admission_status == "퇴원완료":
+        return "discharged"
+    if admitted_at or admission_status == "입원완료":
+        return "admitted"
+    if admission_status == "입원대기":
+        return "waiting"
+    return "planned"
+
+
+def _migrate_admission_episodes(conn):
+    """기존 상담의 입원 사실을 회차 테이블에 멱등 이관한다."""
+    rows = conn.execute("""
+        SELECT c.* FROM consultations c
+        WHERE c.admission_status IN ('입원대기','입원예정','입원완료','퇴원완료')
+           OR COALESCE(c.actual_admission_date, c.admission_date, c.discharge_date) IS NOT NULL
+        ORDER BY c.patient_id, COALESCE(c.actual_admission_date, c.admission_date,
+                                        c.planned_admission_date, c.consult_date), c.id
+    """).fetchall()
+    for row in rows:
+        r = dict(row)
+        pid = r["patient_id"]
+        existing = conn.execute("SELECT episode_no FROM admission_episodes WHERE consultation_id=?",
+                                (r["id"],)).fetchone()
+        episode_no = (existing[0] if existing else conn.execute(
+            "SELECT COALESCE(MAX(episode_no),0)+1 FROM admission_episodes WHERE patient_id=?",
+            (pid,)).fetchone()[0])
+        admitted = r.get("actual_admission_date") or r.get("admission_date")
+        conn.execute("""
+            INSERT INTO admission_episodes
+              (patient_id, consultation_id, episode_no, status, wait_started_at,
+               planned_admission_date, planned_admission_time, admitted_at, discharged_at,
+               room_number, discharge_due_date, discharge_destination, discharge_reason)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(consultation_id) DO UPDATE SET
+              status=excluded.status, wait_started_at=excluded.wait_started_at,
+              planned_admission_date=excluded.planned_admission_date,
+              planned_admission_time=excluded.planned_admission_time,
+              admitted_at=excluded.admitted_at, discharged_at=excluded.discharged_at,
+              room_number=excluded.room_number, discharge_due_date=excluded.discharge_due_date,
+              discharge_destination=excluded.discharge_destination,
+              discharge_reason=excluded.discharge_reason, updated_at=CURRENT_TIMESTAMP
+        """, (pid, r["id"], episode_no,
+              _episode_status(r.get("admission_status"), admitted, r.get("discharge_date")),
+              r.get("wait_started_at") or (r.get("consult_date") if r.get("admission_status") == "입원대기" else None),
+              r.get("planned_admission_date"), r.get("planned_admission_time"), admitted,
+              r.get("discharge_date"), r.get("room_number"), r.get("discharge_due_date"),
+              r.get("discharge_destination"), r.get("discharge_reason")))
+    conn.execute("""
+        UPDATE admission_events SET episode_id=(
+          SELECT id FROM admission_episodes e
+          WHERE e.consultation_id=admission_events.consultation_id)
+        WHERE episode_id IS NULL
+    """)
+
+
 def init_db():
     conn = get_db()
     conn.executescript("""
@@ -200,6 +256,30 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_cons_decision ON consultations(decision);
         CREATE INDEX IF NOT EXISTS idx_cons_hospital ON consultations(source_hospital);
         CREATE INDEX IF NOT EXISTS idx_cons_diagnosis ON consultations(primary_diagnosis);
+
+        -- 상담과 분리된 입원 회차. 기존 consultations 필드는 호환을 위해 유지하며
+        -- 저장 시 이 테이블에도 동기화한다(1환자 N회 입·퇴원 이력 보존).
+        CREATE TABLE IF NOT EXISTS admission_episodes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+            consultation_id INTEGER UNIQUE REFERENCES consultations(id) ON DELETE SET NULL,
+            episode_no INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'waiting',
+            wait_started_at DATE,
+            planned_admission_date DATE,
+            planned_admission_time TEXT,
+            admitted_at DATE,
+            discharged_at DATE,
+            room_number TEXT,
+            discharge_due_date DATE,
+            discharge_destination TEXT,
+            discharge_reason TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(patient_id, episode_no)
+        );
+        CREATE INDEX IF NOT EXISTS idx_episode_patient ON admission_episodes(patient_id, episode_no DESC);
+        CREATE INDEX IF NOT EXISTS idx_episode_status ON admission_episodes(status, admitted_at);
 
         CREATE TABLE IF NOT EXISTS source_hospitals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -543,16 +623,27 @@ def init_db():
         "discharge_interview_at": "DATETIME",
         "discharge_sms_at": "DATETIME",
         "discharge_sms_by": "TEXT",
+        # 입원 대기 관리 — 우선순위·병상 요구·연락 이력/다음 연락일
+        "wait_started_at": "DATE",
+        "wait_priority": "TEXT DEFAULT '일반'",
+        "wait_preferred_ward": "TEXT",
+        "wait_bed_requirements": "TEXT",
+        "wait_last_contact_at": "DATETIME",
+        "wait_next_contact_date": "DATE",
+        "wait_contact_by": "TEXT",
+        "wait_cancel_reason": "TEXT",
     })
     # ─── 외진(응급전원·모병원 외래치료) 出/歸 페어링 ───
     # 나감 이벤트 1행이 복귀일까지 들고 있는다 → '지금 나가 있는 환자'를
     # returned_at IS NULL 한 조건으로 판정. 별도 '복귀' 행에 의존하지 않는다.
     _ensure_columns(conn, "admission_events", {
+        "episode_id": "INTEGER REFERENCES admission_episodes(id)",
         "event_time": "TIME",       # 이송 시각
         "returned_at": "DATE",      # 복귀일 (NULL = 아직 병원 밖)
         "returned_by": "TEXT",      # 복귀 처리한 상담사
         "stage_before": "TEXT",     # 나가기 직전 생애주기 단계 → 복귀 시 원상복구
     })
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_admevent_episode ON admission_events(episode_id)")
     _migrate_pair_legacy_returns(conn)
     _migrate_legacy_stages(conn)
     _ensure_columns(conn, "source_hospitals", {
@@ -677,6 +768,7 @@ def init_db():
         "UPDATE consultations SET admission_type = '일반' "
         "WHERE admission_type IS NULL OR admission_type = ''"
     )
+    _migrate_admission_episodes(conn)
 
     for name, icd10, category in DIAGNOSIS_SEED:
         conn.execute(
@@ -1816,6 +1908,9 @@ CONSULT_FIELDS = (
     "discharge_due_date", "discharge_date", "discharge_destination", "discharge_reason",
     "recovery_call_at", "recovery_call_by", "discharge_interview_at",
     "discharge_sms_at", "discharge_sms_by",
+    "wait_started_at", "wait_priority", "wait_preferred_ward",
+    "wait_bed_requirements", "wait_last_contact_at", "wait_next_contact_date",
+    "wait_contact_by", "wait_cancel_reason",
     "disuse_screening_note",
     # 회복기 불가 → 같은 재단·외부 시설 연계 안내 (수요 캡처율 KPI)
     "external_referral", "external_referral_note",
@@ -1876,6 +1971,7 @@ def create_consultation(*, patient_id: int, **fields) -> int:
     cid = cur.lastrowid
     conn.commit()
     conn.close()
+    sync_admission_episode(cid)
     _ensure_master_entry(fields.get("source_hospital"), fields.get("primary_diagnosis"))
     return cid
 
@@ -1891,6 +1987,7 @@ def update_consultation(cid: int, **fields):
     conn.execute(f"UPDATE consultations SET {', '.join(sets)} WHERE id = ?", vals)
     conn.commit()
     conn.close()
+    sync_admission_episode(cid)
     _ensure_master_entry(valid.get("source_hospital"), valid.get("primary_diagnosis"))
 
 
@@ -1901,7 +1998,10 @@ _META_FIELDS = ("consult_result", "consult_result_reason",
                 "discharge_due_date", "discharge_date",
                 "discharge_destination", "discharge_reason",
                 "recovery_call_at", "recovery_call_by", "discharge_interview_at",
-                "discharge_sms_at", "discharge_sms_by")
+                "discharge_sms_at", "discharge_sms_by",
+                "wait_started_at", "wait_priority", "wait_preferred_ward",
+                "wait_bed_requirements", "wait_last_contact_at",
+                "wait_next_contact_date", "wait_contact_by", "wait_cancel_reason")
 
 
 def delete_consultation(cid: int):
@@ -1924,6 +2024,132 @@ def update_consultation_meta(cid: int, **fields):
     conn.execute(f"UPDATE consultations SET {', '.join(sets)} WHERE id = ?", vals)
     conn.commit()
     conn.close()
+    sync_admission_episode(cid)
+
+
+def sync_admission_episode(cid: int):
+    """상담의 입원 관련 필드를 정규화 회차에 dual-write한다."""
+    conn = get_db()
+    row = conn.execute("SELECT * FROM consultations WHERE id=?", (cid,)).fetchone()
+    if not row:
+        conn.close()
+        return None
+    r = dict(row)
+    relevant = (r.get("admission_status") in ("입원대기", "입원예정", "입원완료", "퇴원완료")
+                or r.get("actual_admission_date") or r.get("admission_date") or r.get("discharge_date"))
+    if not relevant:
+        conn.close()
+        return None
+    existing = conn.execute("SELECT id, episode_no FROM admission_episodes WHERE consultation_id=?",
+                            (cid,)).fetchone()
+    if existing:
+        episode_no = existing["episode_no"]
+    else:
+        episode_no = conn.execute(
+            "SELECT COALESCE(MAX(episode_no),0)+1 FROM admission_episodes WHERE patient_id=?",
+            (r["patient_id"],)).fetchone()[0]
+    admitted = r.get("actual_admission_date") or r.get("admission_date")
+    wait_start = r.get("wait_started_at")
+    if r.get("admission_status") == "입원대기" and not wait_start:
+        wait_start = r.get("consult_date")
+        conn.execute("UPDATE consultations SET wait_started_at=? WHERE id=?", (wait_start, cid))
+    conn.execute("""
+        INSERT INTO admission_episodes
+          (patient_id, consultation_id, episode_no, status, wait_started_at,
+           planned_admission_date, planned_admission_time, admitted_at, discharged_at,
+           room_number, discharge_due_date, discharge_destination, discharge_reason)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(consultation_id) DO UPDATE SET
+          status=excluded.status, wait_started_at=excluded.wait_started_at,
+          planned_admission_date=excluded.planned_admission_date,
+          planned_admission_time=excluded.planned_admission_time,
+          admitted_at=excluded.admitted_at, discharged_at=excluded.discharged_at,
+          room_number=excluded.room_number, discharge_due_date=excluded.discharge_due_date,
+          discharge_destination=excluded.discharge_destination,
+          discharge_reason=excluded.discharge_reason, updated_at=CURRENT_TIMESTAMP
+    """, (r["patient_id"], cid, episode_no,
+          _episode_status(r.get("admission_status"), admitted, r.get("discharge_date")),
+          wait_start, r.get("planned_admission_date"), r.get("planned_admission_time"),
+          admitted, r.get("discharge_date"), r.get("room_number"),
+          r.get("discharge_due_date"), r.get("discharge_destination"), r.get("discharge_reason")))
+    eid = conn.execute("SELECT id FROM admission_episodes WHERE consultation_id=?", (cid,)).fetchone()[0]
+    conn.execute("UPDATE admission_events SET episode_id=? WHERE consultation_id=? AND episode_id IS NULL",
+                 (eid, cid))
+    conn.commit()
+    conn.close()
+    return eid
+
+
+def list_admission_episodes(patient_id=None):
+    conn = get_db()
+    sql = "SELECT * FROM admission_episodes"
+    vals = []
+    if patient_id is not None:
+        sql += " WHERE patient_id=?"
+        vals.append(patient_id)
+    rows = conn.execute(sql + " ORDER BY patient_id, episode_no DESC", vals).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def set_app_meta(key, value):
+    conn = get_db()
+    conn.execute("""INSERT INTO app_meta(key,value,updated_at) VALUES(?,?,CURRENT_TIMESTAMP)
+                    ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP""",
+                 (key, json.dumps(value, ensure_ascii=False) if not isinstance(value, str) else value))
+    conn.commit(); conn.close()
+
+
+def get_app_meta(key, default=None):
+    conn = get_db()
+    row = conn.execute("SELECT value FROM app_meta WHERE key=?", (key,)).fetchone()
+    conn.close()
+    if not row:
+        return default
+    try:
+        return json.loads(row[0])
+    except (TypeError, json.JSONDecodeError):
+        return row[0]
+
+
+def data_quality_report():
+    """업무에 영향을 주는 데이터 오류·누락을 환자 단위로 묶어 반환."""
+    conn = get_db()
+    base = """SELECT c.id, c.patient_id, p.name AS patient_name, c.consult_date,
+                     c.admission_status, c.actual_admission_date, c.admission_date,
+                     c.discharge_date, c.discharge_due_date, c.room_number,
+                     p.guardian_phone, c.attending_doctor
+              FROM consultations c JOIN patients p ON p.id=c.patient_id """
+    checks = [
+        ("입원일 누락", "입원완료인데 실제 입원일이 없습니다.",
+         "WHERE c.admission_status='입원완료' AND COALESCE(c.actual_admission_date,c.admission_date,'')=''"),
+        ("호실 누락", "재원 중이지만 호실이 없습니다.",
+         "WHERE c.admission_status='입원완료' AND COALESCE(c.actual_admission_date,c.admission_date,'')<>'' AND COALESCE(c.discharge_date,'')='' AND COALESCE(c.room_number,'')=''"),
+        ("보호자 연락처 누락", "진행 중인 환자의 연락처가 없습니다.",
+         "WHERE c.admission_status IN ('입원대기','입원예정','입원완료') AND COALESCE(p.guardian_phone,'')=''"),
+        ("퇴원일 누락", "퇴원완료인데 실제 퇴원일이 없습니다.",
+         "WHERE c.admission_status='퇴원완료' AND COALESCE(c.discharge_date,'')=''"),
+        ("날짜 역전", "퇴원·예정일이 입원일보다 빠릅니다.",
+         "WHERE COALESCE(c.actual_admission_date,c.admission_date,'')<>'' AND ((COALESCE(c.discharge_date,'')<>'' AND c.discharge_date < COALESCE(c.actual_admission_date,c.admission_date)) OR (COALESCE(c.discharge_due_date,'')<>'' AND c.discharge_due_date < COALESCE(c.actual_admission_date,c.admission_date)))"),
+    ]
+    result = []
+    for title, description, where in checks:
+        count = conn.execute("SELECT COUNT(*) FROM consultations c JOIN patients p ON p.id=c.patient_id " + where).fetchone()[0]
+        rows = [dict(r) for r in conn.execute(base + where + " ORDER BY c.consult_date DESC LIMIT 100").fetchall()]
+        result.append({"title": title, "description": description, "count": count,
+                       "rows": rows, "truncated": count > len(rows)})
+    dupes = [dict(r) for r in conn.execute("""
+        SELECT MIN(c.id) AS id, c.patient_id, p.name AS patient_name,
+               COUNT(*) AS duplicate_count, MAX(c.consult_date) AS consult_date
+        FROM consultations c JOIN patients p ON p.id=c.patient_id
+        WHERE c.admission_status='입원완료' AND COALESCE(c.discharge_date,'')=''
+        GROUP BY c.patient_id HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC
+    """).fetchall()]
+    result.append({"title": "중복 재원", "description": "한 환자에게 미퇴원 입원 회차가 둘 이상입니다.",
+                   "count": len(dupes), "rows": dupes})
+    conn.close()
+    return {"total": sum(x["count"] for x in result), "checks": result,
+            "episode_count": len(list_admission_episodes())}
 
 
 def get_consultation(cid: int):
@@ -4541,13 +4767,14 @@ def create_admission_event(*, consultation_id, event_type=None, event_date=None,
                            event_time=None,
                            hospital=None, memo=None, created_by=None,
                            stage_before=None) -> int:
+    episode_id = sync_admission_episode(consultation_id)
     conn = get_db()
     cur = conn.execute(
         """INSERT INTO admission_events
-           (consultation_id, event_type, event_date, event_time, hospital, memo, created_by,
+           (consultation_id, episode_id, event_type, event_date, event_time, hospital, memo, created_by,
             stage_before)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (consultation_id, event_type, event_date, event_time, hospital, memo, created_by,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (consultation_id, episode_id, event_type, event_date, event_time, hospital, memo, created_by,
          stage_before),
     )
     eid = cur.lastrowid
@@ -4775,6 +5002,16 @@ def inbox_callbacks():
            ORDER BY c.consult_date DESC, c.id DESC""").fetchall()
     conn.close()
     return [_deserialize_consultation(dict(r)) for r in rows]
+
+
+def open_inbound_count():
+    """미처리 인바운드(status='open', 방향 in) 개수 — 전역 배지·알림용 경량 카운트."""
+    conn = get_db()
+    n = conn.execute(
+        "SELECT COUNT(*) FROM communications WHERE status='open' "
+        "AND (direction='in' OR direction IS NULL)").fetchone()[0]
+    conn.close()
+    return n
 
 
 def inbox_open_communications():

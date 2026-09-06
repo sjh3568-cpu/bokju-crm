@@ -496,6 +496,18 @@ tr.ae-open { background:#fff7ed; }
     </dl>
 </div>
 
+{% if admission_episodes %}
+<div class="card">
+    <h3>입원 회차 이력 <span class="muted" style="font-size:.66em">— 같은 환자의 재입원을 별도 회차로 관리</span></h3>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>회차</th><th>상태</th><th>대기 시작</th><th>입원</th><th>퇴원</th><th>호실</th></tr></thead><tbody>
+    {% for e in admission_episodes %}<tr {% if e.consultation_id == c.id %}style="background:#f0fdf4"{% endif %}>
+        <td>{{ e.episode_no }}회</td><td>{{ {'waiting':'입원 대기','planned':'입원 예정','admitted':'재원','discharged':'퇴원'}.get(e.status,e.status) }}</td>
+        <td>{{ e.wait_started_at|krdate if e.wait_started_at else '-' }}</td><td>{{ e.admitted_at|krdate if e.admitted_at else '-' }}</td><td>{{ e.discharged_at|krdate if e.discharged_at else '-' }}</td><td>{{ e.room_number or '-' }}</td>
+    </tr>{% endfor %}
+    </tbody></table></div>
+</div>
+{% endif %}
+
 {% if history|length > 1 %}
 <div class="card">
     <h3>이 환자의 다른 상담 ({{ history|length }})</h3>

@@ -98,9 +98,38 @@
     <a href="/ward" class="{% if subtab == 'status' %}on{% endif %}">재원 현황</a>
     <a href="/ward?tab=waiting" class="{% if subtab == 'waiting' %}on{% endif %}">입원 대기 <b>{{ kpis.bed_waiting }}</b></a>
     <a href="/ward?tab=trend" class="{% if subtab == 'trend' %}on{% endif %}">회복기 비율 추이</a>
+    {% if current_user.role == 'admin' %}<a href="/ward?tab=quality" class="{% if subtab == 'quality' %}on{% endif %}">데이터·백업 점검 {% if quality_report and quality_report.total %}<b>{{ quality_report.total }}</b>{% endif %}</a>{% endif %}
 </nav>
 
-{% if subtab == 'trend' %}
+{% if subtab == 'quality' %}
+<section class="card wd-sec wd-quality">
+    <div class="wd-sec-head"><h3>데이터 품질 점검 <span class="wd-n">{{ quality_report.total }}</span></h3><span class="muted-sm">오류를 수정하면 다음 조회 때 자동으로 정상 처리됩니다.</span></div>
+    <div class="wd-quality-grid">
+    {% for check in quality_report.checks %}
+      <details class="wd-quality-item" {% if check.count %}open{% endif %}>
+        <summary><span>{{ check.title }}</span><b class="{% if check.count %}bad{% else %}ok{% endif %}">{{ check.count }}건</b></summary>
+        <p>{{ check.description }}</p>
+        {% if check.rows %}<div class="tbl-wrap"><table class="tbl"><thead><tr><th>환자</th><th>상담일</th><th>상태</th><th>확인</th></tr></thead><tbody>
+        {% for row in check.rows %}<tr><td>{{ row.patient_name }}</td><td>{{ row.consult_date|krdate }}</td><td>{{ row.admission_status or '-' }}{% if row.duplicate_count %} · {{ row.duplicate_count }}회{% endif %}</td><td><a class="btn btn-secondary btn-xs" href="/consult/{{ row.id }}">수정</a></td></tr>{% endfor %}
+        </tbody></table></div>{% endif %}
+        {% if check.truncated %}<p>최근 100건만 표시합니다. 나머지는 수정 후 순차적으로 나타납니다.</p>{% endif %}
+      </details>
+    {% endfor %}
+    </div>
+</section>
+<section class="card wd-sec wd-backup">
+  <div class="wd-sec-head"><h3>백업 무결성·복구 점검</h3><span class="muted-sm">운영 DB를 덮어쓰지 않는 안전한 복구 사전연습</span></div>
+  <div class="wd-backup-status">
+    <div><small>최근 결과</small><strong class="{% if backup_status.ok %}ok{% else %}bad{% endif %}">{{ '정상' if backup_status.ok else '확인 필요' }}</strong></div>
+    <div><small>최근 파일</small><strong>{{ backup_status.latest_file or '-' }}</strong></div>
+    <div><small>크기·보관</small><strong>{{ backup_status.latest_size_mb }}MB · {{ backup_status.file_count }}개</strong></div>
+    <div><small>입원 회차</small><strong>{{ quality_report.episode_count }}건</strong></div>
+  </div>
+  <p class="muted-sm">저장 위치: {{ backup_status.directory }} · {{ backup_status.keep_days }}일 보관</p>
+  <button type="button" class="btn btn-primary btn-sm wd-backup-run">지금 백업</button>
+  <button type="button" class="btn btn-secondary btn-sm wd-backup-verify">최근 백업 복구 검증</button>
+</section>
+{% elif subtab == 'trend' %}
 <section class="card wd-overview wd-trend-page">
     <div class="wd-sec-head"><h3>📈 회복기 환자 비율 추이</h3><span class="muted-sm">재원 환자 기준 · 유지 기준선 40%</span></div>
     <div class="wd-trend-grid">
@@ -111,14 +140,15 @@
 {% elif subtab == 'waiting' %}
 <section class="card wd-sec wd-waiting">
     <div class="wd-sec-head"><h3>🛏 입원 대기 환자 <span class="wd-n">{{ bed_waiting|length }}</span></h3><span class="muted-sm">입원 결정 후 병상 배정을 기다리는 환자 · 오래 기다린 순</span></div>
-    {% if bed_waiting %}<div class="tbl-wrap"><table class="tbl wd-tbl"><thead><tr><th>대기</th><th>환자</th><th>상담일</th><th>예상 입원</th><th>주치의</th><th>주요 질환</th><th>보호자·연락처</th><th>대기 메모</th><th>입원 확정</th></tr></thead><tbody>
+    {% if bed_waiting %}<div class="tbl-wrap"><table class="tbl wd-tbl"><thead><tr><th>우선순위·대기</th><th>환자</th><th>예상 입원</th><th>선호 병동·병상 조건</th><th>최근·다음 연락</th><th>대기 메모</th><th>저장·입원</th></tr></thead><tbody>
     {% for c in bed_waiting %}<tr class="{% if c.wait_days is not none and c.wait_days >= 7 %}wd-over{% endif %}">
-        <td class="nowrap"><span class="wd-days {% if c.wait_days is not none and c.wait_days >= 7 %}over{% endif %}">{{ c.wait_days or 0 }}일</span></td>
+        <td class="nowrap wd-wait-edit" data-cid="{{ c.id }}"><select class="wd-w-priority"><option {% if (c.wait_priority or '일반') == '긴급' %}selected{% endif %}>긴급</option><option {% if c.wait_priority == '우선' %}selected{% endif %}>우선</option><option {% if (c.wait_priority or '일반') == '일반' %}selected{% endif %}>일반</option></select><span class="wd-days {% if c.wait_days is not none and c.wait_days >= 7 %}over{% endif %}">{{ c.wait_days or 0 }}일</span></td>
         <td class="nowrap"><a href="/consult/{{ c.id }}"><strong>{{ c.patient_name }}</strong></a> <span class="muted-sm">{% if c.patient_age is not none %}{{ c.patient_age }}세{% endif %}{% if c.gender == 'M' %}·남{% elif c.gender == 'F' %}·여{% endif %}</span></td>
-        <td class="nowrap">{{ c.consult_date|krdate }}</td><td class="nowrap">{{ c.planned_admission_date|krdate if c.planned_admission_date else '미정' }} {{ c.planned_admission_time or '' }}</td>
-        <td>{{ c.attending_doctor or '-' }}</td><td class="wd-dx">{{ c.dx_primary[:2]|join(', ') if c.dx_primary else '-' }}</td>
-        <td class="nowrap">{{ c.guardian_name or '-' }} · {{ c.guardian_phone or '-' }}</td><td>{{ c.hold_reason or '병상 배정 대기' }}</td>
-        <td class="nowrap wd-admit" data-cid="{{ c.id }}"><input type="date" class="wd-ad-date" value="{{ c.planned_admission_date or today_str }}"><input type="text" class="wd-ad-room" placeholder="호실" size="5"><button type="button" class="btn btn-primary btn-xs wd-ad-save">입원 확정</button></td>
+        <td class="nowrap">{{ c.planned_admission_date|krdate if c.planned_admission_date else '미정' }} {{ c.planned_admission_time or '' }}<small class="wd-block">상담 {{ c.consult_date|krdate }}</small></td>
+        <td class="wd-wait-edit"><input class="wd-w-ward" value="{{ c.wait_preferred_ward or '' }}" placeholder="선호 병동"><input class="wd-w-req" value="{{ c.wait_bed_requirements or '' }}" placeholder="격리·성별 등 조건"></td>
+        <td class="wd-wait-edit {% if c.contact_overdue %}wd-contact-over{% endif %}"><small>최근 {{ c.wait_last_contact_at[0:16] if c.wait_last_contact_at else '없음' }}{% if c.wait_contact_by %} · {{ c.wait_contact_by }}{% endif %}</small><input type="date" class="wd-w-next" value="{{ c.wait_next_contact_date or '' }}"><button type="button" class="btn btn-secondary btn-xs wd-contact-done">연락 완료</button></td>
+        <td>{{ c.hold_reason or '병상 배정 대기' }}<small class="wd-block">{{ c.guardian_name or '-' }} · {{ c.guardian_phone or '-' }}</small></td>
+        <td class="nowrap wd-admit" data-cid="{{ c.id }}"><button type="button" class="btn btn-secondary btn-xs wd-w-save">대기정보 저장</button><input type="date" class="wd-ad-date" value="{{ c.planned_admission_date or today_str }}"><input type="text" class="wd-ad-room" placeholder="호실" size="5"><button type="button" class="btn btn-primary btn-xs wd-ad-save">입원 확정</button></td>
     </tr>{% endfor %}</tbody></table></div>
     {% else %}<div class="empty">현재 입원 대기 환자가 없습니다.</div>{% endif %}
 </section>
@@ -163,13 +193,14 @@
             {%- if filt_label %}{% set _ = _labels.append(filt_label) %}{% endif -%}
             {%- if tag_f %}{% set _ = _labels.append('🏷 ' ~ tag_f) %}{% endif -%}
             {%- if organism_f %}{% set _ = _labels.append('🦠 균 환자') %}{% endif -%}
-            {% if _labels %}{{ _labels|join(' · ') }}{% else %}재원 환자{% endif %} <span class="wd-n">{{ admitted|length }}</span>
+            {% if _labels %}{{ _labels|join(' · ') }}{% else %}재원 환자{% endif %} <span class="wd-n">{{ total_filtered }}</span>
             {% if any_filter %}<a class="wd-filt-clear" href="/ward{% if doctor %}?doctor={{ doctor|urlencode }}{% endif %}#sec-ward">✕ 전체 보기</a>{% endif %}</h3>
         <div class="wd-sort">
             <a href="?view=room{% if q %}&q={{ q|urlencode }}{% endif %}{% if doctor %}&doctor={{ doctor|urlencode }}{% endif %}#sec-ward"
                class="wd-sort-btn {% if view == 'room' %}on{% endif %}">🛏 병실</a>
             <a href="?view=list&sort={{ sort }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if doctor %}&doctor={{ doctor|urlencode }}{% endif %}#sec-ward"
                class="wd-sort-btn {% if view != 'room' %}on{% endif %}">☰ 목록</a>
+            {% if view == 'list' %}<label class="wd-page-size">표시 <select onchange="location.href='{{ url_with(page=1, page_size='__N__') }}#sec-ward'.replace('__N__',this.value)">{% for n in (30,50,100,200) %}<option value="{{ n }}" {% if page_size == n %}selected{% endif %}>{{ n }}명</option>{% endfor %}</select></label>{% endif %}
             <button type="button" class="wd-roster-toggle" id="wd-roster-toggle"
                     aria-expanded="{{ 'true' if roster_open else 'false' }}" aria-controls="wd-roster-body">
                 {{ '명단 접기' if roster_open else '명단 펼치기' }}</button>
@@ -253,7 +284,7 @@
     </div>
     {% endif %}
     {% elif admitted %}
-    <div class="tbl-wrap">
+    <div class="tbl-wrap wd-roster-scroll">
         <table class="tbl wd-tbl">
             <thead><tr>
                 <th><a class="wd-th-sort {% if sort == 'room' %}on{% endif %}" href="{{ url_with(view='list', sort='room', dir=('desc' if sort == 'room' and sort_dir == 'asc' else 'asc')) }}#sec-ward">호실 {% if sort == 'room' %}{{ '▲' if sort_dir == 'asc' else '▼' }}{% else %}⇅{% endif %}</a></th>
@@ -364,6 +395,11 @@
             </tbody>
         </table>
     </div>
+    {% if total_pages > 1 %}<nav class="wd-pagination" aria-label="재원 목록 페이지">
+      <a class="btn btn-secondary btn-xs {% if page <= 1 %}disabled{% endif %}" href="{{ url_with(page=page-1) }}#sec-ward">이전</a>
+      <span>{{ page }} / {{ total_pages }} 페이지 · 총 {{ total_filtered }}명</span>
+      <a class="btn btn-secondary btn-xs {% if page >= total_pages %}disabled{% endif %}" href="{{ url_with(page=page+1) }}#sec-ward">다음</a>
+    </nav>{% endif %}
     {% else %}
     <div class="empty">
         {% if filt_label %}‘{{ filt_label }}’에 해당하는 재원 환자가 없습니다.
@@ -709,6 +745,25 @@
 .wd-follow-toggle.done { color:#166534; border-color:#86efac; background:#f0fdf4; }
 .wd-old { margin-top:10px; }
 .wd-old > summary { cursor:pointer; font-size:0.84em; color:var(--text-light); }
+.wd-roster-scroll { max-height:68vh; overflow:auto; }
+.wd-roster-scroll .wd-tbl thead th { position:sticky; top:0; z-index:3; background:#f1f5f9; box-shadow:0 1px 0 #cbd5e1; }
+.wd-page-size { display:inline-flex; align-items:center; gap:5px; font-size:.8rem; color:#64748b; }
+.wd-page-size select,.wd-wait-edit input,.wd-wait-edit select { border:1px solid var(--border); border-radius:6px; padding:5px; font:inherit; background:#fff; }
+.wd-pagination { display:flex; justify-content:center; align-items:center; gap:12px; padding:12px; color:#64748b; }
+.wd-pagination .disabled { pointer-events:none; opacity:.4; }
+.wd-wait-edit { min-width:130px; }
+.wd-wait-edit input { display:block; width:100%; margin:3px 0; }
+.wd-wait-edit select { margin-right:5px; }
+.wd-block { display:block; margin-top:4px; color:#64748b; }
+.wd-contact-over { background:#fff7ed !important; box-shadow:inset 3px 0 #f97316; }
+.wd-quality-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.wd-quality-item { border:1px solid var(--border); border-radius:10px; padding:12px; }
+.wd-quality-item summary { cursor:pointer; display:flex; justify-content:space-between; font-weight:700; }
+.wd-quality-item p { color:#64748b; font-size:.84rem; }
+.ok { color:#15803d; }.bad { color:#dc2626; }
+.wd-backup-status { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:10px 0; }
+.wd-backup-status div { background:#f8fafc; border-radius:9px; padding:12px; }
+.wd-backup-status small,.wd-backup-status strong { display:block; }
 @media (max-width: 1000px) {
     .wd-kpi { grid-template-columns:repeat(3, 1fr); }
     .wd-overview-grid { grid-template-columns:1fr; }
@@ -717,6 +772,7 @@
     .wd-kpi { grid-template-columns:repeat(2,1fr); }
     .wd-filter-basic { flex-wrap:wrap; }
     .wd-detail-dates, .wd-detail-options { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .wd-quality-grid,.wd-backup-status { grid-template-columns:1fr; }
 }
 </style>
 
@@ -784,6 +840,26 @@
             } catch(e) { btn.disabled=false; alert('안내 확인 저장 실패: '+e.message); }
         });
     });
+
+    const waitPayload = row => ({
+        wait_priority: row.querySelector('.wd-w-priority').value,
+        wait_preferred_ward: row.querySelector('.wd-w-ward').value.trim(),
+        wait_bed_requirements: row.querySelector('.wd-w-req').value.trim(),
+        wait_next_contact_date: row.querySelector('.wd-w-next').value
+    });
+    document.querySelectorAll('.wd-w-save,.wd-contact-done').forEach(btn => btn.addEventListener('click', async () => {
+        const row=btn.closest('tr'), edit=row.querySelector('.wd-wait-edit[data-cid]');
+        btn.disabled=true;
+        try { const payload=waitPayload(row); if(btn.classList.contains('wd-contact-done'))payload.contact_done=true;
+            await api.post(`/api/consult/${edit.dataset.cid}/waitlist`,payload);
+            toast(btn.classList.contains('wd-contact-done')?'✓ 연락 이력을 저장했습니다.':'✓ 대기 정보를 저장했습니다.','success');
+            setTimeout(()=>location.reload(),350);
+        } catch(e){btn.disabled=false;alert('입원 대기 저장 실패: '+e.message);}
+    }));
+    const backupAction = async (selector,url,done) => { const btn=document.querySelector(selector); if(!btn)return;
+        btn.addEventListener('click',async()=>{btn.disabled=true;btn.textContent='검사 중…';try{await api.post(url,{});toast(done,'success');setTimeout(()=>location.reload(),500);}catch(e){btn.disabled=false;alert(e.message);}}); };
+    backupAction('.wd-backup-run','/api/admin/backup/run','✓ 새 백업과 무결성 검사가 완료되었습니다.');
+    backupAction('.wd-backup-verify','/api/admin/backup/verify','✓ 임시 복구 검증이 완료되었습니다.');
 
     const validateAway = form => {
         const hospital=form.querySelector('.wd-af-hosp').value.trim(), reason=form.querySelector('.wd-af-reason').value.trim();

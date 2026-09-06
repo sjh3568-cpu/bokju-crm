@@ -5,10 +5,13 @@
 """
 import csv
 import hashlib
+import hmac
+import time
 import io
 import json
 import logging
 import os
+import re
 import secrets
 import threading
 import calendar
@@ -136,6 +139,12 @@ def initialize():
         _db_initialized = True
     if os.getenv("BACKUP_ENABLED", "1") == "1":
         backup.start_scheduler()
+    # 홈페이지 문의 메일 브릿지 — IMAP 설정 시에만 활성 (빌더형 홈페이지 대응)
+    try:
+        import homepage_inbox
+        homepage_inbox.start_worker()
+    except Exception:
+        pass
 
 
 @app.before_request
@@ -344,11 +353,19 @@ def _inject_globals():
             password_reset_badge = models.pending_password_reset_count()
         except Exception:
             password_reset_badge = 0
+    # 미처리 인바운드 배지 — 홈페이지·카카오 등 채널 문의 대기 건수 (로그인 시)
+    inbound_badge = 0
+    if _u:
+        try:
+            inbound_badge = models.open_inbound_count()
+        except Exception:
+            inbound_badge = 0
     return {
         "current_user": _u,
         "todo_badge": todo_badge,
         "has_unread_required_notice": bool(pending_notice),
         "password_reset_badge": password_reset_badge,
+        "inbound_badge": inbound_badge,
         "today_str": date.today().isoformat(),   # 날짜 입력 기본값(외진 기록 등)
         "INSURANCE_TYPES": INSURANCE_TYPES,
         "CONSULT_CHANNELS": CONSULT_CHANNELS,
@@ -2729,6 +2746,7 @@ def consult_detail(cid):
         models.list_todos_for_patient(g.user["id"], c["patient_id"]), date.today())
     return render_template("consult_detail.html", c=c, history=history,
                            admission_events=models.list_admission_events(cid),
+                           admission_episodes=models.list_admission_episodes(c["patient_id"]),
                            patient_todos=patient_todos, today_str=date.today().isoformat(),
                            LIFECYCLE_EVENT_TYPES=LIFECYCLE_EVENT_TYPES)
 
@@ -3459,6 +3477,8 @@ def ward_view():
     age_min, age_max = _optional_int("age_min"), _optional_int("age_max")
     stay_min, stay_max = _optional_int("stay_min"), _optional_int("stay_max")
     subtab = (request.args.get("tab") or "status").strip()
+    if subtab == "quality" and g.user.get("role") != "admin":
+        abort(403)
 
     # 통합검색에서 파생 분류명도 바로 이해한다. DB에 그대로 저장되지 않는
     # D-30·연장·병동 분류는 기존 필터로 변환하고 검색어 표시는 유지한다.
@@ -3494,9 +3514,13 @@ def ward_view():
 
     bed_waiting = models.list_consultations(admission_status="입원대기", limit=10000)
     for c in bed_waiting:
-        c["wait_days"] = _days_since(c.get("consult_date"))
+        c["wait_days"] = _days_since(c.get("wait_started_at") or c.get("consult_date"))
+        c["contact_overdue"] = bool(c.get("wait_next_contact_date") and
+                                    c["wait_next_contact_date"] < date.today().isoformat())
         c.update(_split_diagnosis(c))
-    bed_waiting.sort(key=lambda c: (-(c.get("wait_days") or 0), c.get("patient_name") or ""))
+    priority_order = {"긴급": 0, "우선": 1, "일반": 2}
+    bed_waiting.sort(key=lambda c: (priority_order.get(c.get("wait_priority") or "일반", 2),
+                                    -(c.get("wait_days") or 0), c.get("patient_name") or ""))
 
     away_by_cid = {a["consultation_id"]: a for a in models.away_now()}
     admitted, pending = [], []
@@ -3713,6 +3737,24 @@ def ward_view():
     if filt in _WARD_FILTS or tag_f or organism_f or column_filter:
         view = "list"   # 세부 내역을 볼 땐 목록 뷰로
     any_filter = bool(filt in _WARD_FILTS or ward_f or tag_f or organism_f or column_filter)
+    # 목록형만 페이지 단위로 표시한다. 병실 배치도는 전체 병상을 한 번에 보여준다.
+    try:
+        page_size = int(request.args.get("page_size") or 50)
+    except ValueError:
+        page_size = 50
+    if page_size not in (30, 50, 100, 200):
+        page_size = 50
+    try:
+        page = max(1, int(request.args.get("page") or 1))
+    except ValueError:
+        page = 1
+    total_filtered = len(admitted_list)
+    total_pages = max(1, (total_filtered + page_size - 1) // page_size)
+    page = min(page, total_pages)
+    if view == "list":
+        admitted_list = admitted_list[(page - 1) * page_size:page * page_size]
+    quality_report = models.data_quality_report() if subtab == "quality" else None
+    backup_status = backup.latest_status() if subtab == "quality" else None
     return render_template(
         "ward.html", away=away, admitted=admitted_list,
         room_view=room_view, unassigned=unassigned,
@@ -3734,7 +3776,51 @@ def ward_view():
         age_min=age_min, age_max=age_max, stay_min=stay_min, stay_max=stay_max,
         column_filter=column_filter,
         roster_open=bool(q or doctor or any_filter or request.args.get("view")),
+        page=page, page_size=page_size, total_pages=total_pages,
+        total_filtered=total_filtered, quality_report=quality_report,
+        backup_status=backup_status,
     )
+
+
+@app.route("/api/consult/<int:cid>/waitlist", methods=["POST"])
+@login_required
+def api_consult_waitlist(cid):
+    con = models.get_consultation(cid)
+    if not con or con.get("admission_status") != "입원대기":
+        return jsonify({"error": "입원 대기 환자가 아닙니다."}), 404
+    payload = request.get_json(silent=True) or {}
+    allowed = ("wait_priority", "wait_preferred_ward", "wait_bed_requirements",
+               "wait_next_contact_date", "wait_cancel_reason")
+    fields = {k: (payload.get(k) or "").strip() or None for k in allowed if k in payload}
+    priority = fields.get("wait_priority")
+    if priority and priority not in ("긴급", "우선", "일반"):
+        return jsonify({"error": "허용되지 않은 우선순위입니다."}), 400
+    if payload.get("contact_done"):
+        fields["wait_last_contact_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        fields["wait_contact_by"] = g.user.get("display_name") or g.user.get("username")
+    if not fields:
+        return jsonify({"error": "변경할 항목이 없습니다."}), 400
+    models.update_consultation_meta(cid, **fields)
+    models.log_audit(user_id=g.user["id"], username=g.user["username"],
+                     action="update_waitlist", target_type="consultation", target_id=cid,
+                     detail="입원 대기 우선순위·연락 관리", ip=request.remote_addr)
+    return jsonify({"ok": True, **fields})
+
+
+@app.route("/api/admin/backup/run", methods=["POST"])
+@admin_required
+def api_backup_run():
+    path = backup.run_backup("manual")
+    if not path:
+        return jsonify({"error": "백업 생성 또는 무결성 검사에 실패했습니다."}), 500
+    return jsonify({"ok": True, "status": backup.latest_status()})
+
+
+@app.route("/api/admin/backup/verify", methods=["POST"])
+@admin_required
+def api_backup_verify():
+    result = backup.verify_latest_restore()
+    return jsonify(result), (200 if result.get("ok") else 500)
 
 
 def _ward_admitted_roster(q, doctor):
@@ -4274,20 +4360,98 @@ def api_admission_event_delete(event_id):
     return jsonify({"ok": True})
 
 
+@app.route("/api/inbound/alerts")
+@login_required
+def api_inbound_alerts():
+    """미처리 인바운드 알림 피드 — 상담사 브라우저가 주기적으로 폴링.
+    홈페이지·카카오 등 채널 문의가 새로 들어오면 화면 알림으로 띄운다.
+    프론트가 localStorage로 '이미 본 id'를 관리하므로 서버는 현재 대기목록만 반환."""
+    items = []
+    for m in models.inbox_open_communications():
+        items.append({
+            "id": m.get("id"),
+            "channel": m.get("channel") or "기타",
+            "bucket": _dashboard_inbound_bucket(m),
+            "summary": (m.get("summary") or m.get("body") or "새 문의")[:80],
+            "contact": m.get("contact") or "",
+            "patient_name": m.get("patient_name") or "",
+            "blacklist": bool(m.get("blacklist")),
+            "created_at": m.get("occurred_at") or m.get("created_at") or "",
+        })
+    return jsonify({"count": len(items), "items": items})
+
+
+# ───────────────────── 인바운드 webhook (옴니채널 직수신) ─────────────────────
+# 카카오 비즈채널·홈페이지 문의폼이 사내망 CRM으로 보내는 유일한 외부 노출 경로.
+# 보안: 역프록시에서 /api/webhook/* 만 외부로 열고 나머지는 사내망 유지.
+#  ① 채널별 토큰(hmac.compare_digest, 상수시간 비교) ② 선택적 IP 화이트리스트
+#  ③ 요청 크기 제한 ④ IP당 rate limit ⑤ 감사로그(식별정보 평문 미기록).
+
+_WEBHOOK_MAX_BYTES = 16 * 1024          # 인바운드 문의 1건 — 16KB면 충분
+_WEBHOOK_RATE_MAX = 60                   # IP당
+_WEBHOOK_RATE_WINDOW = 60                # 초
+_WEBHOOK_HITS: dict[str, list[float]] = {}
+
+
+def _webhook_rate_limited(ip: str) -> bool:
+    """IP당 슬라이딩 윈도우 rate limit — 외부 노출 경로 남용 완화 (메모리 기반)."""
+    now = time.time()
+    hits = [t for t in _WEBHOOK_HITS.get(ip, []) if now - t < _WEBHOOK_RATE_WINDOW]
+    hits.append(now)
+    _WEBHOOK_HITS[ip] = hits
+    if len(_WEBHOOK_HITS) > 2048:        # 메모리 누수 방지 — 오래된 IP 정리
+        for k in [k for k, v in _WEBHOOK_HITS.items()
+                  if v and now - v[-1] > _WEBHOOK_RATE_WINDOW]:
+            _WEBHOOK_HITS.pop(k, None)
+    return len(hits) > _WEBHOOK_RATE_MAX
+
+
+def _webhook_guard(token_env: str):
+    """공통 웹훅 검문. 통과하면 (payload, None), 막히면 (None, (json, status)).
+    외부에는 내부 사정을 노출하지 않도록 오류 메시지를 최소화한다.
+    """
+    ip = (request.remote_addr or "").strip()
+    # 선택적 IP 화이트리스트 — 설정 시 카카오/홈페이지 서버 IP만 허용
+    allow = [x.strip() for x in os.getenv("WEBHOOK_ALLOW_IPS", "").split(",") if x.strip()]
+    if allow and ip not in allow:
+        return None, (jsonify({"error": "forbidden"}), 403)
+    if _webhook_rate_limited(ip):
+        return None, (jsonify({"error": "rate limited"}), 429)
+    expected = os.getenv(token_env, "").strip()
+    if not expected:                     # 토큰 미설정 = 채널 비활성 (기본 안전)
+        return None, (jsonify({"error": "webhook disabled"}), 503)
+    token = (request.headers.get("X-Webhook-Token") or request.args.get("token") or "")
+    if not hmac.compare_digest(token, expected):
+        return None, (jsonify({"error": "unauthorized"}), 401)
+    raw = request.get_data(cache=True) or b""
+    if len(raw) > _WEBHOOK_MAX_BYTES:
+        return None, (jsonify({"error": "payload too large"}), 413)
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return None, (jsonify({"error": "bad payload"}), 400)
+    return payload, None
+
+
+def _log_webhook(channel: str, pid, comm_id):
+    """웹훅 인바운드 감사 로그 — 식별정보(전화/이름/본문)는 남기지 않는다."""
+    try:
+        models.log_audit(
+            user_id=None, username="webhook", action="inbound_webhook",
+            target_type="communication", target_id=comm_id,
+            detail=f"{channel}/in", ip=request.remote_addr,
+        )
+    except Exception:                    # 감사 실패가 문의 수신을 막지 않도록
+        pass
+
+
 @app.route("/api/webhook/kakao", methods=["POST"])
 def api_webhook_kakao():
-    """카카오 비즈채널 인바운드 webhook 수신 자리 — 구조만 (비즈채널 연동 시 작동).
-    .env의 KAKAO_WEBHOOK_TOKEN으로 호출자 검증. 보호자 번호로 환자 자동 매칭해
-    communications에 인바운드로 기록 → 인박스에 노출.
-    실제 카카오 페이로드 형식은 채널 연동 시 확정 (현재는 범용 형태 수신).
-    """
-    expected = os.getenv("KAKAO_WEBHOOK_TOKEN", "").strip()
-    if not expected:
-        return jsonify({"error": "webhook 미설정 — .env KAKAO_WEBHOOK_TOKEN 필요"}), 503
-    token = request.headers.get("X-Webhook-Token") or request.args.get("token") or ""
-    if token != expected:
-        return jsonify({"error": "unauthorized"}), 401
-    payload = request.get_json(silent=True) or {}
+    """카카오 비즈채널 인바운드 — .env KAKAO_WEBHOOK_TOKEN으로 검증.
+    보호자 번호로 환자 자동 매칭해 communications(인바운드)로 기록 → 인박스 노출.
+    실제 카카오 페이로드 형식은 채널 연동 시 확정 (현재는 범용 형태 수신)."""
+    payload, err = _webhook_guard("KAKAO_WEBHOOK_TOKEN")
+    if err:
+        return err
     phone = (payload.get("phone") or "").strip()
     name = (payload.get("name") or "").strip()
     message = (payload.get("message") or "").strip()
@@ -4298,8 +4462,133 @@ def api_webhook_kakao():
         patient_id=pid, channel="카카오", direction="in",
         contact=phone or name or None,
         summary="카카오 메시지" + (f" · {name}" if name else ""),
-        body=message, status="open", created_by="카카오봇",
+        body=message[:4000], status="open", created_by="카카오봇",
     )
+    _log_webhook("카카오", pid, comm_id)
+    return jsonify({"ok": True, "id": comm_id, "matched_patient": pid})
+
+
+# 카카오 i 오픈빌더 상담신청 폼 → 필드 별칭 매핑 (성함/연락처/… 파라미터 흡수)
+_KAKAO_FIELDS = [
+    ("name",      ("성함", "이름", "name")),
+    ("phone",     ("연락처", "전화", "휴대", "phone", "tel")),
+    ("call_time", ("연락가능", "가능시간", "통화가능", "연락시간")),
+    ("residence", ("거주지", "거주", "주소", "지역")),
+    ("age",       ("환자나이", "나이", "연세", "age")),
+    ("message",   ("상담내용", "문의내용", "상담", "내용", "message")),
+]
+_KAKAO_LABELS = {"call_time": "연락가능시간", "residence": "거주지",
+                 "age": "환자나이", "message": "상담내용"}
+
+
+def _norm_phone(raw: str) -> str:
+    """숫자만 남겨 010-XXXX-XXXX 형태로. 매칭률을 높이되 실패해도 원본 반환."""
+    digits = re.sub(r"\D", "", raw or "")
+    if len(digits) == 11 and digits.startswith("01"):
+        return f"{digits[:3]}-{digits[3:7]}-{digits[7:]}"
+    if len(digits) == 10 and digits.startswith("01"):
+        return f"{digits[:3]}-{digits[3:6]}-{digits[6:]}"
+    return (raw or "").strip()
+
+
+def _kakao_skill_extract(params: dict):
+    """오픈빌더 action.params(구조화 값)에서 상담 필드를 뽑고,
+    누락 없이 body에 모든 값을 라벨과 함께 보존한다."""
+    picked, used = {}, set()
+    for canon, aliases in _KAKAO_FIELDS:
+        for k, v in params.items():
+            if k in used or not v:
+                continue
+            if any(a in k for a in aliases) or k == canon:
+                picked[canon] = str(v).strip()
+                used.add(k)
+                break
+    # 매핑 안 된 나머지 파라미터도 버리지 않고 보존
+    leftovers = {k: v for k, v in params.items()
+                 if k not in used and v and not k.startswith("sys_")}
+    return picked, leftovers
+
+
+@app.route("/api/webhook/kakao/skill", methods=["POST"])
+def api_webhook_kakao_skill():
+    """카카오 i 오픈빌더 '스킬' 콜백 — 챗봇 상담신청 폼 제출을 수신.
+    오픈빌더가 action.params(성함·연락처·연락가능시간·거주지·환자나이·상담내용)를 보내면
+    communications(카카오/인바운드)로 등록하고, 사용자에게는 접수 확인 말풍선을 응답한다.
+    토큰은 스킬 URL의 ?token= 또는 커스텀 헤더 X-Webhook-Token 으로 검증(KAKAO_WEBHOOK_TOKEN).
+    """
+    payload, err = _webhook_guard("KAKAO_WEBHOOK_TOKEN")
+    if err:
+        return err
+
+    def skill_say(text):
+        return jsonify({"version": "2.0",
+                        "template": {"outputs": [{"simpleText": {"text": text}}]}})
+
+    action = payload.get("action") or {}
+    params = action.get("params") or {}
+    # detailParams가 있으면 정제된 value를 우선 사용
+    detail = action.get("detailParams") or {}
+    for k, dv in detail.items():
+        if isinstance(dv, dict) and dv.get("value"):
+            params.setdefault(k, dv["value"])
+    utterance = ((payload.get("userRequest") or {}).get("utterance") or "").strip()
+
+    picked, leftovers = _kakao_skill_extract(params)
+    name = picked.get("name", "")
+    phone = _norm_phone(picked.get("phone", ""))
+    msg = picked.get("message", "") or utterance
+
+    # body: 라벨 붙은 구조화 텍스트로 모든 값 보존
+    lines = []
+    for canon in ("message", "call_time", "residence", "age"):
+        if picked.get(canon):
+            lines.append(f"{_KAKAO_LABELS.get(canon, canon)}: {picked[canon]}")
+    for k, v in leftovers.items():
+        lines.append(f"{k}: {v}")
+    body = "\n".join(lines).strip() or utterance or "상담 신청"
+
+    pid = models.match_patient_by_phone(phone) if phone else None
+    summary = "카카오 상담신청" + (f" · {name}" if name else "")
+    comm_id = models.create_communication(
+        patient_id=pid, channel="카카오", direction="in",
+        contact=phone or name or None,
+        summary=summary[:200], body=body[:4000],
+        status="open", created_by="카카오챗봇",
+    )
+    _log_webhook("카카오", pid, comm_id)
+    return skill_say(
+        f"상담 신청이 접수되었습니다{(' · ' + name) if name else ''}.\n"
+        "평일 09:00~17:30, 토 09:00~12:30 중 순차적으로 전화드리겠습니다. 감사합니다.")
+
+
+@app.route("/api/webhook/homepage", methods=["POST"])
+def api_webhook_homepage():
+    """홈페이지 문의폼 인바운드 — .env HOMEPAGE_WEBHOOK_TOKEN으로 검증.
+    홈페이지 서버가 문의 1건을 서버-투-서버로 POST한다(토큰은 브라우저에 노출 금지).
+    body(JSON): { name, phone, email?, subject?, message } — message 필수.
+    전화번호로 환자 자동 매칭, communications(채널=웹문의, 인바운드)로 기록."""
+    payload, err = _webhook_guard("HOMEPAGE_WEBHOOK_TOKEN")
+    if err:
+        return err
+    name = (payload.get("name") or "").strip()
+    phone = (payload.get("phone") or "").strip()
+    email = (payload.get("email") or "").strip()
+    subject = (payload.get("subject") or "").strip()
+    message = (payload.get("message") or payload.get("content") or "").strip()
+    if not message:
+        return jsonify({"error": "message 필수"}), 400
+    pid = models.match_patient_by_phone(phone)
+    head = subject or "홈페이지 문의"
+    summary = head + (f" · {name}" if name else "")
+    body = message[:4000]
+    if email:
+        body = f"{body}\n\n[이메일] {email}"
+    comm_id = models.create_communication(
+        patient_id=pid, channel="웹문의", direction="in",
+        contact=phone or email or name or None,
+        summary=summary, body=body, status="open", created_by="홈페이지",
+    )
+    _log_webhook("웹문의", pid, comm_id)
     return jsonify({"ok": True, "id": comm_id, "matched_patient": pid})
 
 
