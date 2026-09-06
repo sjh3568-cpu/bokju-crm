@@ -77,7 +77,7 @@
                 customStart.value = start.value; customEnd.value = end.value; panel.hidden = false;
                 if (window.innerWidth > 600) {
                     const rect = (e.currentTarget?.classList?.contains('date-preset-trigger') ? e.currentTarget : end).getBoundingClientRect();
-                    const panelWidth = Math.min(430, window.innerWidth - 28);
+                    const panelWidth = Math.min(360, window.innerWidth - 28);
                     panel.style.left = Math.max(12, Math.min(rect.left, window.innerWidth - panelWidth - 12)) + 'px';
                     panel.style.top = Math.max(12, Math.min(rect.bottom + 7, window.innerHeight - panel.offsetHeight - 12)) + 'px';
                 } else {
