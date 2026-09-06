@@ -1876,7 +1876,7 @@ def healthz():
 @app.route("/help")
 @login_required
 def help_manual():
-    """8개 메뉴 사용 매뉴얼 — 신규 상담사 온보딩·일상 참고용."""
+    """상담 표준 지침 + 현재 CRM 메뉴별 작성·등록·관리 매뉴얼."""
     return render_template("help.html")
 
 

@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}매뉴얼 — 복주 상담실{% endblock %}
+{% block title %}상담 매뉴얼 — 복주 상담실{% endblock %}
 {% block content %}
 <div class="page-header">
-    <h1>📖 사용 매뉴얼 <span class="muted" style="font-size:0.66em">신규 상담사 온보딩 · 일상 업무 참고</span></h1>
+    <h1>상담 매뉴얼 <span class="muted" style="font-size:0.66em">메뉴별 작성·등록·관리 방법 · 상담 표준 지침</span></h1>
     <div style="display:flex; gap:8px">
         <a href="#shopping-flow" class="btn btn-secondary btn-sm">고객 여정</a>
         <a href="#counseling-process" class="btn btn-secondary btn-sm">상담 프로세스</a>
@@ -13,13 +13,14 @@
 
 <div class="help-toc card">
     <strong>목차</strong>
+    <a href="#work-order">업무 처리 순서</a> ·
     <a href="#shopping-flow">🛒 고객 여정 6단계</a> ·
     <a href="#counseling-process">🗣 상담 프로세스 6단계</a> ·
     <a href="#eligibility-table">🏥 회복기 자격표</a> ·
     <a href="#faq10">💬 보호자 자주 묻는 질문 10가지</a> ·
     <a href="#empathy">💗 정서적 공감 4단계</a> ·
     <hr style="margin:6px 0; border:none; border-top:1px dashed #d1d5db">
-    <a href="#menu-map">7개 메뉴 한 줄 요약</a> ·
+    <a href="#menu-map">메뉴 한눈에</a> ·
     <a href="#dashboard">🏠 대시보드</a> ·
     <a href="#inbox">📥 인박스</a> ·
     <a href="#consult-new">✍️ 새 상담</a> ·
@@ -28,7 +29,25 @@
     <a href="#sms">💬 문자</a> ·
     <a href="#stats">📊 통계</a> ·
     <a href="#report">📈 월간보고서</a> ·
+    <a href="#notices-guide">공지사항·공유</a> ·
+    <a href="#admin-guide">사용자·이력·데이터 관리</a> ·
     <a href="#flow">🔄 메뉴 간 흐름</a>
+</div>
+
+<div class="card help-card help-start" id="work-order">
+    <h2>CRM 업무 처리 순서</h2>
+    <p class="help-lead">상담 접수부터 입원·재원·퇴원까지 아래 순서대로 기록하면 같은 내용을 중복 입력하지 않아도 모든 통계와 일정에 연결됩니다.</p>
+    <ol class="help-steps">
+        <li><b>대시보드 확인</b><span>공지 필수 확인 → 오늘 입원·재연락·공유 일정·미처리 문의 확인</span></li>
+        <li><b>새 상담 등록</b><span>환자·보호자 → 모병원·질환·상태 → 유입경로 → 상담 결과 → 입원 진행 순으로 저장</span></li>
+        <li><b>상담 목록 관리</b><span>검색·상세필터로 이전 상담 확인, 보류·취소 사유와 입원예정일 보완</span></li>
+        <li><b>입원 대기 관리</b><span>병상 부족 시 입원 진행을 ‘입원대기’로 변경하고 우선순위·병상 조건·다음 연락일 기록</span></li>
+        <li><b>입원 확정</b><span>실제 입원일과 호실 입력 → 재원명부와 입원 회차에 자동 반영</span></li>
+        <li><b>재원 중 관리</b><span>외진·복귀, 호실 변경, 회복기 전환·퇴원 D-30 안내 확인</span></li>
+        <li><b>퇴원 처리</b><span>퇴원일·퇴원기관·사유 입력, 문자 안내 확인 → 해당 입원 회차 종료</span></li>
+        <li><b>보고·점검</b><span>통계·월간보고서 확인, 관리자는 데이터 품질과 백업 복구 상태 점검</span></li>
+    </ol>
+    <div class="help-rule"><strong>기록 원칙</strong><span>추측하지 않고 확인된 사실만 입력</span><span>상태 변경 시 날짜·사유·담당자까지 기록</span><span>환자 정보는 업무 목적 외 복사·전달 금지</span></div>
 </div>
 
 <div class="card help-card" id="shopping-flow">
@@ -148,7 +167,7 @@
 </div>
 
 <div class="card help-card" id="menu-map">
-    <h2>7개 메뉴 한눈에</h2>
+    <h2>상단 메뉴 한눈에</h2>
     <table class="help-tbl">
         <thead><tr><th>메뉴</th><th>한 줄 요약</th><th>언제 쓰나</th></tr></thead>
         <tbody>
@@ -159,6 +178,10 @@
             <tr><td><a href="/sms">💬 문자</a></td><td>환자군별 정형 문구 1-click 발송</td><td>입원/퇴원 안내</td></tr>
             <tr><td><a href="/stats">📊 통계</a></td><td>자유 기간 깊은 분석 차트</td><td>분기/월 분석</td></tr>
             <tr><td><a href="/report/monthly">📈 월간보고서</a></td><td>임원 회의용 A4 1페이지 자동 보고서</td><td>월초 임원 보고</td></tr>
+            <tr><td><a href="/notices">📢 공지사항</a></td><td>필수 공지 확인과 지난 공지 조회</td><td>로그인 직후·수시</td></tr>
+            {% if current_user.role == 'admin' %}<tr><td><a href="/admin/users">사용자 관리</a></td><td>계정·권한·비밀번호 초기화 요청 관리</td><td>인사·권한 변경 시</td></tr>
+            <tr><td><a href="/admin/audit">이력 관리</a></td><td>조회·등록·수정·삭제 작업 추적</td><td>감사·오류 확인 시</td></tr>{% endif %}
+            <tr><td><a href="/help">상담 매뉴얼</a></td><td>상담 원칙과 메뉴별 사용법</td><td>업무 중 언제든</td></tr>
         </tbody>
     </table>
 </div>
@@ -258,8 +281,8 @@
 
 <div class="card help-card" id="lifecycle">
     <h2>🏥 재원 관리 <a href="/ward" class="help-go">메뉴 열기 →</a></h2>
-    <p class="help-lead">"지금 병원 안에 누가 있고, 누가 외진 나가 있는가."</p>
-    <h4>3섹션</h4>
+    <p class="help-lead">입원 대기부터 현재 재원, 외진·복귀, 회복기 종료 안내와 퇴원까지 입원 이후 업무를 관리합니다.</p>
+    <h4>재원 현황</h4>
     <ol>
         <li><strong>🚑 외진 중</strong> — 복귀 기록이 없는 환자. 경과일·간 곳·보호자 연락처가 한 줄에.
             <strong>[↩ 복귀]</strong> 1클릭으로 처리합니다. 이 화면이 만들어진 이유라 항상 최상단입니다.</li>
@@ -269,6 +292,15 @@
             호실이 없는 환자는 아래 <strong>호실 미지정</strong>에 모여 있고 [호실 지정] 1클릭으로 배치됩니다.</li>
         <li><strong>⚠ 입원일 미확정</strong> — 입원완료로 기록됐지만 실제 입원일이 없어 명부에 못 오른 건.
             <strong>[입원 확정]</strong>을 누르면 재원 명부로 올라가고 D-day가 시작됩니다.</li>
+    </ol>
+    <h4>세부 탭과 관리 순서</h4>
+    <ol>
+        <li><strong>입원 대기</strong> — 긴급·우선·일반 우선순위, 선호 병동·병상 조건, 다음 연락일을 입력하고 통화 후 ‘연락 완료’ 처리</li>
+        <li><strong>재원 목록</strong> — 30·50·100·200명 표시, 고정 헤더, 상세필터와 입·퇴원일 정렬 사용</li>
+        <li><strong>회복기 비율 추이</strong> — 최근 30일·12개월 변화와 40% 기준선 확인</li>
+        <li><strong>D-30 안내</strong> — 회복기 전환은 보호자 재상담, 퇴원 예정은 문자 안내 여부 확인</li>
+        <li><strong>퇴원</strong> — 실제 퇴원일·퇴원기관·사유 입력. 입원 회차가 종료되어 재입원과 구분됨</li>
+        {% if current_user.role == 'admin' %}<li><strong>데이터·백업 점검</strong> — 입원일·호실·연락처 누락과 중복 재원 수정, 백업 생성·복구 검증</li>{% endif %}
     </ol>
     <h4>상태를 따로 관리하지 않습니다</h4>
     <ul>
@@ -325,6 +357,28 @@
     <p class="help-note">가용 데이터 한계: 가동률·재원일·매출은 EMR/청구 연계 시 차후 추가.</p>
 </div>
 
+<div class="card help-card" id="notices-guide">
+    <h2>공지사항·공유 일정 <a href="/notices" class="help-go">공지사항 열기 →</a></h2>
+    <ul>
+        <li>관리자가 ‘필수 확인’으로 등록한 공지는 로그인 후 확인하기 전까지 먼저 표시됩니다.</li>
+        <li>공지사항은 피드형·목록형으로 전환해 보고, 지난 공지도 검색·확인할 수 있습니다.</li>
+        <li>개인 일정은 우측 <strong>To-DO List</strong> 또는 통합 달력의 날짜를 눌러 등록합니다.</li>
+        <li>다른 상담사를 공유자로 선택하면 상대방에게 알림이 가며, 완료 상태도 함께 확인됩니다.</li>
+    </ul>
+</div>
+
+{% if current_user.role == 'admin' %}
+<div class="card help-card" id="admin-guide">
+    <h2>관리자 운영</h2>
+    <table class="help-tbl"><thead><tr><th>메뉴</th><th>등록·관리 방법</th><th>주의</th></tr></thead><tbody>
+        <tr><td><a href="/admin/users">사용자 관리</a></td><td>계정 생성, 역할·메뉴별 권한, 활성 여부, 비밀번호 초기화 요청 처리</td><td>퇴사·이동 시 즉시 비활성</td></tr>
+        <tr><td><a href="/admin/audit">이력 관리</a></td><td>사용자·기간·행위별 조회/등록/수정/삭제 기록 확인</td><td>업무 확인 목적으로만 조회</td></tr>
+        <tr><td><a href="/ward?tab=quality">데이터 품질</a></td><td>누락·날짜 오류·중복 재원을 상담일지에서 수정</td><td>환자 확인 없이 임의 수정 금지</td></tr>
+        <tr><td><a href="/ward?tab=quality">백업 점검</a></td><td>수동 백업 후 무결성 검사, 최근 백업 임시 복구 검증</td><td>정기적으로 실제 복구 가능 여부 확인</td></tr>
+    </tbody></table>
+</div>
+{% endif %}
+
 <div class="card help-card" id="flow">
     <h2>🔄 메뉴 간 데이터 흐름</h2>
     <pre class="help-flow">
@@ -363,5 +417,13 @@
 .help-flow { font-family:'Pretendard',monospace; font-size:0.86em; line-height:1.6;
     padding:14px 18px; background:#f8fafc; border-radius:8px;
     border-left:4px solid #6366f1; white-space:pre; overflow-x:auto; }
+.help-start { border-top:4px solid var(--primary); }
+.help-steps { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px 22px; list-style:none; padding:0!important; counter-reset:manual-step; }
+.help-steps li { counter-increment:manual-step; display:grid; grid-template-columns:28px 118px 1fr; align-items:start; gap:8px; padding:9px; border-bottom:1px solid var(--border); }
+.help-steps li::before { content:counter(manual-step); display:grid; place-items:center; width:24px; height:24px; border-radius:50%; background:var(--primary); color:#fff; font-weight:800; }
+.help-steps span { color:#64748b; }
+.help-rule { display:flex; flex-wrap:wrap; gap:8px; padding:11px 13px; background:#f0fdf4; border-radius:8px; font-size:.86rem; }
+.help-rule span::before { content:'✓ '; color:#15803d; font-weight:800; }
+@media(max-width:900px){.help-steps{grid-template-columns:1fr}.help-steps li{grid-template-columns:28px 105px 1fr}}
 </style>
 {% endblock %}

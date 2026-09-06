@@ -20,7 +20,7 @@
                     <a href="/" {% if request.path == '/' %}class="active"{% endif %}>대시보드{% if inbound_badge %}<span class="nav-notice-new" id="nav-inbound-badge" title="미처리 상담 문의">{{ inbound_badge }}</span>{% else %}<span class="nav-notice-new" id="nav-inbound-badge" hidden></span>{% endif %}</a>
                     {% endif %}
                     {% if P.get('consult',0) >= 3 %}
-                    <a href="/consult/new" class="nav-create{% if request.path == '/consult/new' %} active{% endif %}"><span>＋</span> 새 상담</a>
+                    <a href="/consult/new" {% if request.path == '/consult/new' %}class="active"{% endif %}>새 상담</a>
                     {% endif %}
                     {% if P.get('consult',0) >= 1 %}
                     <a href="/consultations" {% if request.path.startswith('/consultations') %}class="active"{% endif %}>상담 목록</a>
@@ -42,7 +42,7 @@
                     <a href="/admin/users" {% if request.path.startswith('/admin/users') or request.path.startswith('/admin/password-reset') %}class="active"{% endif %}>사용자 관리{% if password_reset_badge %}<span class="nav-notice-new">{{ password_reset_badge }}</span>{% endif %}</a>
                     <a href="/admin/audit" {% if request.path.startswith('/admin/audit') %}class="active"{% endif %} title="누가 언제 무엇을 조회·입력·수정·삭제했는지">이력 관리</a>
                     {% endif %}
-                    <a href="/help" {% if request.path.startswith('/help') %}class="active"{% endif %} title="사용 매뉴얼" style="margin-left:auto; opacity:0.7">❓</a>
+                    <a href="/help" {% if request.path.startswith('/help') %}class="active"{% endif %} title="메뉴별 작성·등록·관리 방법" style="margin-left:auto">상담 매뉴얼</a>
                 </nav>
                 <span class="user-tag">
                     {{ current_user.display_name }}<small class="role-chip">{{ ROLE_LABELS.get(current_user.role, current_user.role) }}</small>

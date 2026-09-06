@@ -43,9 +43,14 @@ header { background:linear-gradient(100deg,#14532d 0%,#0f5f36 100%); color:white
 @keyframes nav-glint { from{left:-55%} to{left:130%} }
 @media(prefers-reduced-motion:reduce){.main-nav a{transition:none}.main-nav a:hover{transform:none}.main-nav a:hover::after{animation:none;opacity:0}}
 .main-nav a.active { color:#fff; background:rgba(255,255,255,.16); border-color:rgba(255,255,255,.22); font-weight:750; }
-.main-nav .nav-create { margin:0 3px; background:#fff; color:var(--primary); border-color:#fff; font-weight:800; box-shadow:0 2px 7px rgba(0,0,0,.12); }
-.main-nav .nav-create:hover,.main-nav .nav-create.active { background:#f0fdf4; color:#0f4a29; border-color:#bbf7d0; }
-.main-nav .nav-create span { font-size:1.15em; line-height:1; }
+.primary-new-consult { display:inline-flex!important; align-items:center; gap:7px; padding:9px 16px!important;
+    border-radius:10px!important; font-weight:800!important; color:#fff!important;
+    background:linear-gradient(135deg,#15803d,#0f5f31)!important;
+    border:1px solid #0b5129!important; box-shadow:0 5px 14px rgba(15,95,49,.25)!important;
+    transition:transform .15s,box-shadow .15s,filter .15s!important; }
+.primary-new-consult:hover { transform:translateY(-1px); filter:brightness(1.08);
+    box-shadow:0 8px 18px rgba(15,95,49,.32)!important; }
+.primary-new-consult span { font-size:1.2em; line-height:1; }
 .user-tag { color:rgba(255,255,255,.88); font-size:.82em; white-space:nowrap; flex:0 0 auto; }
 .user-tag .logout-btn {
     background: transparent; border: 1px solid rgba(255,255,255,0.4);

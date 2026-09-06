@@ -17,7 +17,7 @@
         {% if current_user and current_user.role == 'admin' %}
         <a class="btn btn-secondary btn-sm" href="/consultations.csv?{{ request.query_string.decode() }}">CSV</a>
         {% endif %}
-        <a class="btn btn-primary btn-sm" href="/consult/new">+ 새 상담일지</a>
+        <a class="btn btn-primary btn-sm primary-new-consult" href="/consult/new"><span>＋</span> 새 상담일지</a>
     </div>
 </div>
 

@@ -7,7 +7,7 @@
 {% block content %}
 <div class="page-header">
     <h1>통계 대시보드</h1>
-    <div class="stats-head-actions"><a href="/stats/hospitals?preset=custom&amp;from={{ date_from or '' }}&amp;to={{ date_to or '' }}" class="btn btn-secondary">모병원 분석</a><button type="button" class="btn btn-secondary" onclick="window.print()">A4 보고서 인쇄</button><a href="/consult/new" class="btn btn-primary">+ 새 상담일지</a></div>
+    <div class="stats-head-actions"><a href="/stats/hospitals?preset=custom&amp;from={{ date_from or '' }}&amp;to={{ date_to or '' }}" class="btn btn-secondary">모병원 분석</a><button type="button" class="btn btn-secondary" onclick="window.print()">A4 보고서 인쇄</button><a href="/consult/new" class="btn btn-primary primary-new-consult"><span>＋</span> 새 상담일지</a></div>
 </div>
 
 <form id="period-form" class="period-bar card" method="get" action="/stats">
