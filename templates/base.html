@@ -26,7 +26,17 @@
                     <a href="/consultations" {% if request.path.startswith('/consultations') %}class="active"{% endif %}><span class="nav-icon nav-icon-list">📋</span>상담 목록</a>
                     {% endif %}
                     {% if P.get('ward',0) >= 1 %}
-                    <a href="/ward" {% if request.path.startswith('/ward') or request.path.startswith('/patients') %}class="active"{% endif %}><span class="nav-icon nav-icon-ward">🏥</span>재원 관리</a>
+                    <div class="nav-menu-group {% if request.path.startswith('/ward') or request.path.startswith('/patients') %}active{% endif %}">
+                        <a href="/ward" {% if request.path.startswith('/ward') or request.path.startswith('/patients') %}class="active"{% endif %}><span class="nav-icon nav-icon-ward">🏥</span>재원 관리</a>
+                        <button type="button" class="nav-menu-toggle" aria-label="재원관리 하위 메뉴" aria-expanded="false">▾</button>
+                        <div class="nav-dropdown">
+                            <a href="/ward"><span>🏥</span><span><b>재원 현황</b><small>재원 환자·외진·퇴원 관리</small></span></a>
+                            <a href="/ward?tab=waiting"><span>🛏️</span><span><b>입원 대기</b><small>병상 대기·연락 관리</small></span></a>
+                            <a href="/ward?tab=trend"><span>📈</span><span><b>회복기 비율 추이</b><small>일별·월별 변화 확인</small></span></a>
+                            <a href="/ward?tab=blacklist"><span>⚠️</span><span><b>블랙리스트</b><small>지정 환자·사유 확인</small></span></a>
+                            {% if current_user.role == 'admin' %}<a href="/ward?tab=quality"><span>🛡️</span><span><b>데이터·백업 점검</b><small>품질 오류·복구 상태</small></span></a>{% endif %}
+                        </div>
+                    </div>
                     {% endif %}
                     {% if P.get('sms',0) >= 1 %}
                     <a href="/sms" {% if request.path.startswith('/sms') %}class="active"{% endif %}><span class="nav-icon nav-icon-sms">💬</span>문자</a>

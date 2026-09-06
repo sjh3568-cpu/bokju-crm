@@ -2506,6 +2506,27 @@ def patient_blacklist_info(pid: int) -> dict | None:
     return out
 
 
+def list_blacklisted_patients() -> list[dict]:
+    """현재 블랙리스트로 지정된 환자와 가장 최근 상담 정보를 반환한다."""
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT p.id, p.name, p.gender, p.guardian_name, p.guardian_relation,
+                  p.guardian_phone, p.blacklist_reason, p.blacklist_at,
+                  c.id AS consultation_id, c.consult_date, c.counselor,
+                  c.admission_status, c.source_hospital
+           FROM patients p
+           LEFT JOIN consultations c ON c.id = (
+               SELECT c2.id FROM consultations c2
+               WHERE c2.patient_id = p.id
+               ORDER BY c2.consult_date DESC, c2.id DESC LIMIT 1
+           )
+           WHERE p.blacklist = 1
+           ORDER BY COALESCE(p.blacklist_at, '') DESC, p.name ASC"""
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
 def merge_patients(source_id: int, target_id: int) -> dict:
     """동명이인 병합 — source 환자의 모든 데이터를 target에 통합 후 source 삭제.
     FK 일괄 이전: consultations / lifecycle_events / sms_log / communications /

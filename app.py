@@ -1780,9 +1780,9 @@ def dashboard():
             {"group": "past", "label": "15일 전", "from": (today_d - timedelta(days=15)).isoformat(), "to": (today_d - timedelta(days=15)).isoformat(), "scope": "completed"},
             {"group": "past", "label": "7일 전", "from": (today_d - timedelta(days=7)).isoformat(), "to": (today_d - timedelta(days=7)).isoformat(), "scope": "completed"},
             {"group": "past", "label": "3일 전", "from": (today_d - timedelta(days=3)).isoformat(), "to": (today_d - timedelta(days=3)).isoformat(), "scope": "completed"},
-            {"group": "future", "label": "향후 3일", "from": (today_d + timedelta(days=1)).isoformat(), "to": (today_d + timedelta(days=3)).isoformat(), "scope": "planned"},
-            {"group": "future", "label": "향후 7일", "from": (today_d + timedelta(days=1)).isoformat(), "to": (today_d + timedelta(days=7)).isoformat(), "scope": "planned"},
-            {"group": "future", "label": "향후 15일", "from": (today_d + timedelta(days=1)).isoformat(), "to": (today_d + timedelta(days=15)).isoformat(), "scope": "planned"},
+            {"group": "future", "label": "3일 후", "from": (today_d + timedelta(days=1)).isoformat(), "to": (today_d + timedelta(days=3)).isoformat(), "scope": "planned"},
+            {"group": "future", "label": "7일 후", "from": (today_d + timedelta(days=1)).isoformat(), "to": (today_d + timedelta(days=7)).isoformat(), "scope": "planned"},
+            {"group": "future", "label": "15일 후", "from": (today_d + timedelta(days=1)).isoformat(), "to": (today_d + timedelta(days=15)).isoformat(), "scope": "planned"},
         ],
     })
     open_comms = models.inbox_open_communications()
@@ -3489,6 +3489,8 @@ def ward_view():
     age_min, age_max = _optional_int("age_min"), _optional_int("age_max")
     stay_min, stay_max = _optional_int("stay_min"), _optional_int("stay_max")
     subtab = (request.args.get("tab") or "status").strip()
+    if subtab not in ("status", "waiting", "trend", "blacklist", "quality"):
+        subtab = "status"
     if subtab == "quality" and g.user.get("role") != "admin":
         abort(403)
 
@@ -3767,6 +3769,7 @@ def ward_view():
         admitted_list = admitted_list[(page - 1) * page_size:page * page_size]
     quality_report = models.data_quality_report() if subtab == "quality" else None
     backup_status = backup.latest_status() if subtab == "quality" else None
+    blacklisted = models.list_blacklisted_patients()
     return render_template(
         "ward.html", away=away, admitted=admitted_list,
         room_view=room_view, unassigned=unassigned,
@@ -3781,6 +3784,7 @@ def ward_view():
         daily_ratio_trend=daily_ratio_trend, monthly_ratio_trend=monthly_ratio_trend,
         discharged=discharged,
         subtab=subtab,
+        blacklisted=blacklisted,
         bed_waiting=bed_waiting,
         room_f=room_f, gender_f=gender_f, dx_f=dx_f,
         admission_from=admission_from, admission_to=admission_to,

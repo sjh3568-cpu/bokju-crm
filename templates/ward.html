@@ -98,6 +98,7 @@
     <a href="/ward" class="{% if subtab == 'status' %}on{% endif %}">재원 현황</a>
     <a href="/ward?tab=waiting" class="{% if subtab == 'waiting' %}on{% endif %}">입원 대기 <b>{{ kpis.bed_waiting }}</b></a>
     <a href="/ward?tab=trend" class="{% if subtab == 'trend' %}on{% endif %}">회복기 비율 추이</a>
+    <a href="/ward?tab=blacklist" class="{% if subtab == 'blacklist' %}on{% endif %}">블랙리스트 <b>{{ blacklisted|length }}</b></a>
     {% if current_user.role == 'admin' %}<a href="/ward?tab=quality" class="{% if subtab == 'quality' %}on{% endif %}">데이터·백업 점검 {% if quality_report and quality_report.total %}<b>{{ quality_report.total }}</b>{% endif %}</a>{% endif %}
 </nav>
 
@@ -136,6 +137,21 @@
         <div><strong>최근 30일 · 일별</strong><svg class="wd-ratio-chart" data-series='{{ daily_ratio_trend|tojson }}' viewBox="0 0 1000 260" role="img" aria-label="일별 회복기 환자 비율"></svg></div>
         <div><strong>최근 12개월 · 월별</strong><svg class="wd-ratio-chart" data-series='{{ monthly_ratio_trend|tojson }}' viewBox="0 0 1000 260" role="img" aria-label="월별 회복기 환자 비율"></svg></div>
     </div>
+</section>
+{% elif subtab == 'blacklist' %}
+<section class="card wd-sec wd-blacklist">
+    <div class="wd-sec-head"><h3>⚠ 블랙리스트 환자 <span class="wd-n">{{ blacklisted|length }}</span></h3><span class="muted-sm">지정 사유와 최근 상담을 확인하고 환자 상세에서 수정·해제합니다.</span></div>
+    {% if blacklisted %}<div class="tbl-wrap"><table class="tbl wd-tbl"><thead><tr><th>환자</th><th>보호자·연락처</th><th>지정 사유</th><th>등록일</th><th>최근 상담</th><th>상태</th><th>확인</th></tr></thead><tbody>
+    {% for p in blacklisted %}<tr>
+        <td class="nowrap"><strong>{{ p.name }}</strong>{% if p.gender == 'M' %} <span class="muted-sm">· 남</span>{% elif p.gender == 'F' %} <span class="muted-sm">· 여</span>{% endif %}</td>
+        <td>{{ p.guardian_name or '-' }}{% if p.guardian_relation %} ({{ p.guardian_relation }}){% endif %}<small class="wd-block">{{ p.guardian_phone or '-' }}</small></td>
+        <td>{{ p.blacklist_reason or '사유 미입력' }}</td>
+        <td class="nowrap">{{ p.blacklist_at[0:10]|krdate if p.blacklist_at else '-' }}</td>
+        <td class="nowrap">{{ p.consult_date|krdate if p.consult_date else '상담 이력 없음' }}{% if p.counselor %}<small class="wd-block">{{ p.counselor }}</small>{% endif %}</td>
+        <td>{{ p.admission_status or '-' }}{% if p.source_hospital %}<small class="wd-block">{{ p.source_hospital }}</small>{% endif %}</td>
+        <td class="nowrap"><a class="btn btn-secondary btn-xs" href="/patients/{{ p.id }}">환자 상세</a>{% if p.consultation_id %} <a class="btn btn-secondary btn-xs" href="/consult/{{ p.consultation_id }}">상담 보기</a>{% endif %}</td>
+    </tr>{% endfor %}</tbody></table></div>
+    {% else %}<div class="empty">현재 블랙리스트로 지정된 환자가 없습니다.</div>{% endif %}
 </section>
 {% elif subtab == 'waiting' %}
 <section class="card wd-sec wd-waiting">
