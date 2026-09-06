@@ -3064,7 +3064,8 @@ def dashboard_calendar_rows(first_day: str, last_day: str, counselor: str | None
     return [dict(r) for r in rows]
 
 def dashboard_summary(admission_lookup_from: str | None = None,
-                      admission_lookup_to: str | None = None):
+                      admission_lookup_to: str | None = None,
+                      admission_lookup_scope: str = "all"):
     """양식 기반 통계 — 상담 건수와 입원예정일 등록 건수."""
     conn = get_db()
     now = datetime.now()
@@ -3546,6 +3547,9 @@ def dashboard_summary(admission_lookup_from: str | None = None,
         if admission_lookup_from <= (row.get("admission_display_date") or "") <= admission_lookup_to
         and (_date_value(row.get("admission_display_date")) >= today_d
              or row.get("admission_bucket") == "completed")
+        and (admission_lookup_scope == "all" or row.get("admission_bucket") == admission_lookup_scope)
+        and (admission_lookup_scope != "planned"
+             or row.get("admission_status") in ("입원예정", "입원대기"))
     ]
     admission_selected_groups = {
         "counselor": _group_admissions(admission_selected, "counselor"),

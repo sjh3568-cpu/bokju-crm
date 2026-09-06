@@ -418,14 +418,14 @@
 
 <div class="card" id="admission-schedule">
     <div class="dash-section-head">
-        <h3>입원 환자 현황</h3>
+        <h3>입원 환자 현황 <small class="dash-adm-scope">{{ {'planned':'입원예정','completed':'실제 입원','all':'전체'}.get(admission_lookup_scope,'전체') }}</small></h3>
         <span class="muted">{{ admission_lookup_label }} · {{ admission_lookup|length }}명</span>
     </div>
     <div class="dash-admission-datebar">
         <div class="dash-admission-quick" aria-label="입원일 빠른 조회">
             {% for quick in admission_quick_dates %}
-            <a href="/?admission_from={{ quick.from }}&admission_to={{ quick.to }}#admission-schedule"
-               class="{% if admission_lookup_from == quick.from and admission_lookup_to == quick.to %}active{% endif %}">{{ quick.label }}</a>
+            <a href="/?admission_from={{ quick.from }}&admission_to={{ quick.to }}&admission_scope={{ quick.scope }}#admission-schedule"
+               class="{% if admission_lookup_from == quick.from and admission_lookup_to == quick.to and admission_lookup_scope == quick.scope %}active{% endif %}">{{ quick.label }}</a>
             {% endfor %}
         </div>
         <form method="get" action="/" class="dash-admission-date-form">
@@ -433,6 +433,11 @@
             <input type="date" id="admission-from" name="admission_from" value="{{ admission_lookup_from }}">
             <span class="dash-date-sep">~</span>
             <input type="date" id="admission-to" name="admission_to" value="{{ admission_lookup_to }}">
+            <select name="admission_scope" aria-label="조회 구분">
+                <option value="all" {% if admission_lookup_scope == 'all' %}selected{% endif %}>전체</option>
+                <option value="planned" {% if admission_lookup_scope == 'planned' %}selected{% endif %}>입원예정만</option>
+                <option value="completed" {% if admission_lookup_scope == 'completed' %}selected{% endif %}>실제 입원만</option>
+            </select>
             <button type="submit" class="btn btn-secondary btn-sm">조회</button>
         </form>
     </div>
@@ -779,6 +784,10 @@
 .dash-admission-date-form label { color:var(--text-light); font-size:.76em; font-weight:700; white-space:nowrap; }
 .dash-admission-date-form input { padding:6px 8px; border:1px solid var(--border); border-radius:7px;
     background:#fff; color:var(--text); font:inherit; font-size:.82em; }
+.dash-admission-date-form select { padding:6px 8px; border:1px solid var(--border); border-radius:7px;
+    background:#fff; color:var(--text); font:inherit; font-size:.82em; }
+.dash-adm-scope { display:inline-flex; margin-left:5px; padding:3px 7px; border-radius:999px;
+    background:#dcfce7; color:#166534; font-size:.64em; vertical-align:middle; }
 .dash-date-sep{color:var(--text-light);font-size:.8em}
 @media(max-width:760px){.dash-admission-datebar{align-items:flex-start;flex-direction:column}.dash-admission-date-form{width:100%}.dash-admission-date-form input{flex:1}}
 .dash-filter-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:4px 0 10px; }

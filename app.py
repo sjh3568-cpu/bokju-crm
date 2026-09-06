@@ -1754,23 +1754,29 @@ def dashboard():
         request.args.get("admission_to") or legacy_admission_date, admission_from)
     if admission_from > admission_to:
         admission_from, admission_to = admission_to, admission_from
+    admission_scope = (request.args.get("admission_scope") or "all").strip()
+    if admission_scope not in ("all", "planned", "completed"):
+        admission_scope = "all"
     admission_weekdays = "월화수목금토일"
     def admission_date_label(value):
         parsed = date.fromisoformat(value)
         return parsed.strftime("%Y.%m.%d") + f"({admission_weekdays[parsed.weekday()]})"
-    data = models.dashboard_summary(admission_from, admission_to)
+    data = models.dashboard_summary(admission_from, admission_to, admission_scope)
     data.update({
         "admission_lookup_from": admission_from,
         "admission_lookup_to": admission_to,
+        "admission_lookup_scope": admission_scope,
         "admission_lookup_label": (admission_date_label(admission_from)
                                    if admission_from == admission_to else
                                    f"{admission_date_label(admission_from)} ~ {admission_date_label(admission_to)}"),
         "admission_quick_dates": [
-            {"label": "오늘", "from": today_d.isoformat(), "to": today_d.isoformat()},
-            {"label": "어제", "from": (today_d - timedelta(days=1)).isoformat(), "to": (today_d - timedelta(days=1)).isoformat()},
-            {"label": "그저께", "from": (today_d - timedelta(days=2)).isoformat(), "to": (today_d - timedelta(days=2)).isoformat()},
-            {"label": "최근 7일", "from": (today_d - timedelta(days=6)).isoformat(), "to": today_d.isoformat()},
-            {"label": "최근 30일", "from": (today_d - timedelta(days=29)).isoformat(), "to": today_d.isoformat()},
+            {"label": "오늘", "from": today_d.isoformat(), "to": today_d.isoformat(), "scope": "all"},
+            {"label": "어제", "from": (today_d - timedelta(days=1)).isoformat(), "to": (today_d - timedelta(days=1)).isoformat(), "scope": "completed"},
+            {"label": "그저께", "from": (today_d - timedelta(days=2)).isoformat(), "to": (today_d - timedelta(days=2)).isoformat(), "scope": "completed"},
+            {"label": "최근 7일", "from": (today_d - timedelta(days=6)).isoformat(), "to": today_d.isoformat(), "scope": "completed"},
+            {"label": "향후 7일 예정", "from": (today_d + timedelta(days=1)).isoformat(), "to": (today_d + timedelta(days=7)).isoformat(), "scope": "planned"},
+            {"label": "향후 15일 예정", "from": (today_d + timedelta(days=1)).isoformat(), "to": (today_d + timedelta(days=15)).isoformat(), "scope": "planned"},
+            {"label": "향후 30일 예정", "from": (today_d + timedelta(days=1)).isoformat(), "to": (today_d + timedelta(days=30)).isoformat(), "scope": "planned"},
         ],
     })
     open_comms = models.inbox_open_communications()
