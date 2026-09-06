@@ -42,11 +42,11 @@
                     <a href="/admin/users" {% if request.path.startswith('/admin/users') or request.path.startswith('/admin/password-reset') %}class="active"{% endif %}>사용자 관리{% if password_reset_badge %}<span class="nav-notice-new">{{ password_reset_badge }}</span>{% endif %}</a>
                     <a href="/admin/audit" {% if request.path.startswith('/admin/audit') %}class="active"{% endif %} title="누가 언제 무엇을 조회·입력·수정·삭제했는지">이력 관리</a>
                     {% endif %}
-                    <a href="/help" {% if request.path.startswith('/help') %}class="active"{% endif %} title="메뉴별 작성·등록·관리 방법" style="margin-left:auto"><span class="nav-icon">?</span>상담 매뉴얼</a>
+                    <a href="/help" {% if request.path.startswith('/help') %}class="active"{% endif %} title="메뉴별 작성·등록·관리 방법"><span class="nav-icon">?</span>상담 매뉴얼</a>
                 </nav>
                 {% set alert_total = (todo_badge or 0) + (inbound_badge or 0) + (password_reset_badge or 0) + (1 if has_unread_required_notice else 0) %}
                 <div class="header-tools">
-                    <button type="button" class="header-tool-btn" id="alert-center-btn" aria-label="알림센터" aria-expanded="false" data-fixed-count="{{ alert_total - (inbound_badge or 0) }}">♢<b id="alert-total-badge"{% if not alert_total %} hidden{% endif %}>{{ alert_total }}</b></button>
+                    <button type="button" class="header-tool-btn alert-bell-btn" id="alert-center-btn" aria-label="통합 알림센터" aria-expanded="false" title="통합 알림센터" data-fixed-count="{{ alert_total - (inbound_badge or 0) }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><b id="alert-total-badge"{% if not alert_total %} hidden{% endif %}>{{ alert_total }}</b></button>
                     <button type="button" class="header-tool-btn" id="display-settings-btn" aria-label="화면 설정" aria-expanded="false">Aa</button>
                 </div>
                 <span class="user-tag">
@@ -62,12 +62,12 @@
 
     {% if current_user %}
     <aside class="header-popover" id="alert-center" hidden>
-        <div class="header-popover-head"><strong>알림센터</strong><button type="button" data-popover-close>✕</button></div>
+        <div class="header-popover-head alert-center-head"><span class="alert-center-title"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></i><span><strong>통합 알림센터</strong><small>확인이 필요한 업무를 한곳에서 봅니다</small></span></span><button type="button" data-popover-close aria-label="닫기">✕</button></div>
         <div class="alert-center-list">
-            <a href="/todos"><span>To-DO List·공유 일정</span><b>{{ todo_badge or 0 }}</b></a>
-            <a href="/#inbound"><span>미처리 상담 문의</span><b id="alert-inbound-count">{{ inbound_badge or 0 }}</b></a>
-            <a href="/notices"><span>필수 공지사항</span><b>{{ 1 if has_unread_required_notice else 0 }}</b></a>
-            {% if current_user.role == 'admin' %}<a href="/admin/password-reset"><span>비밀번호 초기화 요청</span><b>{{ password_reset_badge or 0 }}</b></a>{% endif %}
+            <a href="/todos"><span><i class="alert-kind todo">✓</i><em>To-DO List·공유 일정<small>개인 일정과 공유받은 업무</small></em></span><b>{{ todo_badge or 0 }}</b></a>
+            <a href="/#inbound"><span><i class="alert-kind inbound">↙</i><em>미처리 상담 문의<small>확인하지 않은 신규 문의</small></em></span><b id="alert-inbound-count">{{ inbound_badge or 0 }}</b></a>
+            <a href="/notices"><span><i class="alert-kind notice">!</i><em>필수 공지사항<small>확인 서명이 필요한 공지</small></em></span><b>{{ 1 if has_unread_required_notice else 0 }}</b></a>
+            {% if current_user.role == 'admin' %}<a href="/admin/password-reset"><span><i class="alert-kind account">●</i><em>비밀번호 초기화 요청<small>관리자 처리가 필요한 계정</small></em></span><b>{{ password_reset_badge or 0 }}</b></a>{% endif %}
         </div>
         <div class="recent-links"><strong>최근 조회</strong><div id="recent-patient-links"><span class="muted-sm">최근 선택한 상담이 없습니다.</span></div></div>
     </aside>
