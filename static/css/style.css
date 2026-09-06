@@ -610,10 +610,7 @@ select,input,textarea { accent-color:var(--primary-light); }
 .filter-bar label { font-size: 0.78em; }
 
 /* 모든 기간 조회 화면에서 공유하는 빠른 기간 선택기 */
-.date-preset-anchor { position:relative; display:inline-flex; align-items:center; flex:0 0 auto; margin-left:4px; }
-.date-preset-btn { display:inline-flex; align-items:center; gap:5px; min-height:34px; padding:6px 9px; border:1px solid #cfdad3; border-radius:8px; background:#fff; color:#3f594b; font:700 .76rem inherit; white-space:nowrap; cursor:pointer; }
-.date-preset-btn:hover,.date-preset-btn[aria-expanded="true"] { border-color:#66a67c; background:#f0f8f3; color:#14532d; }
-.date-preset-btn > span { color:#328354; }.date-preset-btn i { color:#7b8b81; font-style:normal; font-size:.7em; }
+.date-preset-anchor { position:relative; display:inline-flex; align-items:center; flex:0 0 0; width:0; height:34px; margin:0; }
 .date-preset-panel { position:absolute; z-index:190; top:calc(100% + 7px); right:0; width:min(430px,calc(100vw - 28px)); padding:11px; border:1px solid #ccd9d1; border-radius:13px; background:#fff; box-shadow:0 18px 44px rgba(15,23,42,.2); }
 .date-preset-panel[hidden] { display:none; }
 .date-preset-trigger { cursor:pointer; background-color:#fff!important; }
