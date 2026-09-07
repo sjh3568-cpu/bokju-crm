@@ -2481,7 +2481,7 @@ def api_report_monthly_insight():
         }})
     try:
         from llm import summarize_monthly
-        text = summarize_monthly(data)
+        insight = summarize_monthly(data)
     except Exception as e:
         logger.warning(f"월간 인사이트 실패: {e}")
         return jsonify({"error": f"인사이트 생성 실패: {e}"}), 502
@@ -2490,7 +2490,7 @@ def api_report_monthly_insight():
         action="report_insight", target_type="monthly_report",
         detail=f"{year}-{month:02d}", ip=request.remote_addr,
     )
-    return jsonify({"insight": text})
+    return jsonify({"insight": insight})
 
 
 @app.route("/api/stats/insight", methods=["POST"])
@@ -3272,6 +3272,30 @@ _AI_ARRANGE_OPTS = ["DNR(agree)", "DNR(consult)", "hopeless 확인"]
 _AI_REFERRAL_FLAT = [v for _grp in REFERRAL_SOURCE_GROUPS.values() for v in _grp]
 
 
+def _resolve_facility_master(name, *, nursing=False):
+    """AI가 들은 병원/기관명을 마스터와 대조.
+    반환 (matched_official|None, candidates[list]). 자유텍스트 저장 방지 —
+    정확히 일치할 때만 정식명 확정, 아니면 후보만 제안(상담사가 선택).
+    """
+    name = (name or "").strip()
+    if not name:
+        return None, []
+    lookup = models.autocomplete_nursing_homes if nursing else models.autocomplete_hospitals
+    try:
+        items = (lookup(name, limit=5) or {}).get("items", [])
+    except Exception:
+        items = []
+    if not items:
+        return None, []
+    key = models._hospital_search_key(name)
+    exact = [it["name"] for it in items if models._hospital_search_key(it["name"]) == key]
+    if len(exact) == 1:
+        return exact[0], []
+    if len(exact) > 1:
+        return None, exact[:3]
+    return None, [it["name"] for it in items[:3]]
+
+
 @app.route("/api/consult/ai-fill", methods=["POST"])
 @login_required
 def api_consult_ai_fill():
@@ -3412,13 +3436,46 @@ def api_consult_ai_fill():
     if (v := text_of("cancer_site", 60)):
         put("consultation.cancer_site", v, "암 부위")
 
+    # ── 모병원·추천기관: 마스터 대조 (자유텍스트 저장 금지 — 정식명만) ──
+    suggestions = []
+
+    def resolve_into(raw_name, field, label, *, nursing=False, type_field=None, type_value=None):
+        raw_name = (raw_name or "").strip()
+        if not raw_name:
+            return
+        official, cands = _resolve_facility_master(raw_name, nursing=nursing)
+        if official:                       # 정확 매칭 → 정식명으로 확정
+            put(field, official, label)
+            if type_field and type_value:
+                put(type_field, type_value, "현재 위치")
+        else:                              # 후보 제안(또는 미등록) — 자동 저장 안 함
+            suggestions.append({
+                "label": label, "raw": raw_name, "field": field,
+                "candidates": cands,
+                "type_field": type_field, "type_value": type_value,
+            })
+
+    fac_type = (raw.get("current_facility_type") or "").strip()
+    if (v := text_of("current_hospital", 60)):
+        if fac_type == "입소중":
+            resolve_into(v, "consultation.current_nursing_name", "현재 요양원",
+                         nursing=True, type_field="consultation.current_location_type",
+                         type_value="입소중")
+        elif fac_type in ("입원중", ""):
+            resolve_into(v, "consultation.current_location_name", "현재 병원(모병원)",
+                         type_field="consultation.current_location_type",
+                         type_value="입원중")
+    if (v := text_of("referrer_institution", 60)):
+        resolve_into(v, "consultation.referrer_institution", "추천기관")
+
     summary = text_of("summary", 1000) or ""
     models.log_audit(
         user_id=g.user["id"], username=g.user["username"],
         action="ai_fill_consult", target_type="consultation",
         detail=f"{len(fields)}개 필드", ip=request.remote_addr,
     )
-    return jsonify({"ok": True, "fields": fields, "labels": labels, "summary": summary})
+    return jsonify({"ok": True, "fields": fields, "labels": labels,
+                    "summary": summary, "suggestions": suggestions})
 
 
 @app.route("/api/consult/<int:cid>", methods=["POST"])

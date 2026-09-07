@@ -191,10 +191,15 @@ def summarize_monthly(data: dict) -> dict:
 
     payload = {
         "model": model,
-        "max_tokens": 2000,
+        # Sonnet 5는 적응형 사고가 기본이라 사고 토큰이 max_tokens를 함께 소비한다.
+        # 한도가 빠듯하면 JSON이 중간에 잘리므로 여유를 둔다.
+        "max_tokens": 8000,
         "system": MONTHLY_SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": user_prompt}],
-        "output_config": {"format": {"type": "json_schema", "schema": MONTHLY_SCHEMA}},
+        "output_config": {
+            "effort": "medium",
+            "format": {"type": "json_schema", "schema": MONTHLY_SCHEMA},
+        },
     }
     return _post_json(payload, api_key)
 
@@ -270,6 +275,9 @@ EXTRACT_SYSTEM_PROMPT = """당신은 복주회복병원(입원 전용 재활병�
 - arrange: 사전연명의료 등 배열 (아래 [기타확인 보기] 중, 예: ["DNR(consult)"])
 - referral_detail: 유입경로 세부 배열 (아래 [유입경로 보기] 중 — 어떻게 알고 연락했는지)
 - referrer_person: 소개해 준 사람 이름(문자열, 지인추천·직원소개 등)
+- referrer_institution: 추천·의뢰한 기관/병원 이름(문자열, 들은 그대로 — 정식명 몰라도 됨)
+- current_hospital: 현재 입원/입소 중인 병원·요양원 이름(전원·의뢰 오는 경우, 문자열)
+- current_facility_type: 현재 위치 ("입원중"=병원 / "입소중"=요양원 / "집"=자택)
 - cancer_site: 암 부위(문자열, 암 환자인 경우만)
 - transport: 내원 교통수단 (아래 [교통 보기] 중, 명시된 경우만)
 - admission_purpose: 입원 목적/주요 재활 목표(문자열)
