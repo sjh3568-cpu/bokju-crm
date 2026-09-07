@@ -1718,8 +1718,23 @@
     const resultEl = document.getElementById('ai-memo-result');
 
     function setField(name, value) {
+        // 발병일은 전용 위젯(날짜/자유텍스트)에 바인딩
+        if (name === 'consultation.disease_onset') return setOnset(value);
         const els = form.querySelectorAll('[name="' + name.replace(/"/g, '\\"') + '"]');
         if (!els.length) return false;
+        // 배열 값 → 체크박스군에서 일치하는 항목 체크
+        if (Array.isArray(value)) {
+            let any = false;
+            value.forEach(val => {
+                const box = Array.from(els).find(b => b.value === String(val));
+                if (box && !box.checked) {
+                    box.checked = true;
+                    box.dispatchEvent(new Event('change', { bubbles: true }));
+                    highlight(box.closest('label') || box); any = true;
+                }
+            });
+            return any;
+        }
         const el = els[0];
         if (el.type === 'radio') {
             const m = Array.from(els).find(r => r.value === String(value));
@@ -1731,6 +1746,30 @@
         el.dispatchEvent(new Event('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
         highlight(el); return true;
+    }
+    function setOnset(value) {
+        value = String(value).trim();
+        const dateEl = document.getElementById('onset-date');
+        const textEl = document.getElementById('onset-text');
+        const hiddenEl = document.getElementById('onset-hidden');
+        const unknownChk = document.getElementById('onset-unknown');
+        const isDate = /^\d{4}-\d{2}-\d{2}$/.test(value);
+        if (isDate && dateEl) {                      // 정확한 날짜
+            if (unknownChk) { unknownChk.checked = false; unknownChk.dispatchEvent(new Event('change', { bubbles: true })); }
+            dateEl.style.display = ''; if (textEl) textEl.style.display = 'none';
+            dateEl.value = value; dateEl.dispatchEvent(new Event('change', { bubbles: true }));
+            if (hiddenEl) hiddenEl.value = value;
+            highlight(dateEl); return true;
+        }
+        // 자유 텍스트("3주 전") → '날짜 모름' 모드
+        if (unknownChk) { unknownChk.checked = true; unknownChk.dispatchEvent(new Event('change', { bubbles: true })); }
+        if (textEl) {
+            textEl.style.display = ''; if (dateEl) dateEl.style.display = 'none';
+            textEl.value = value; textEl.dispatchEvent(new Event('input', { bubbles: true }));
+            if (hiddenEl) hiddenEl.value = value;
+            highlight(textEl); return true;
+        }
+        return false;
     }
     function highlight(el) {
         el.classList.add('ai-fill-hi');

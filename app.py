@@ -3283,7 +3283,10 @@ def api_consult_ai_fill():
         raw = llm.extract_consultation(memo, enums={
             "insurance": INSURANCE_TYPES, "channel": CONSULT_CHANNELS,
             "doctor": ATTENDING_DOCTORS, "result": CONSULT_RESULTS,
-            "sido": SIDO_LIST,
+            "sido": SIDO_LIST, "diseases": DISEASES_CHECKLIST,
+            "consciousness": CONSCIOUSNESS_MAIN_OPTIONS,
+            "conversation": CONVERSATION_LEVEL_OPTIONS,
+            "activity_others": ACTIVITY_OTHERS_OPTIONS,
         })
     except Exception as e:
         logger.warning("AI 상담 추출 실패: %s", e)
@@ -3341,6 +3344,28 @@ def api_consult_ai_fill():
         put("consultation.admission_purpose", v, "입원 목적")
     if (v := raw.get("consult_result")) and v in CONSULT_RESULTS:
         put("consultation.consult_result", v, "상담 결과")
+
+    # ── 병명 체크리스트 (배열, 화이트리스트) ──
+    dz = raw.get("diseases")
+    if isinstance(dz, list):
+        picked_dz = [x for x in dz if x in DISEASES_CHECKLIST]
+        if picked_dz:
+            put("consultation.diseases[]", picked_dz, "병명")
+
+    # ── 환자 상태 (라디오·체크박스, 화이트리스트) ──
+    if (v := raw.get("consciousness")) and v in CONSCIOUSNESS_MAIN_OPTIONS:
+        put("consultation.consciousness_main", v, "의식")
+    if (v := raw.get("conversation")) and v in CONVERSATION_LEVEL_OPTIONS:
+        put("consultation.conversation_level", v, "대화")
+    if (v := raw.get("diaper")) and v in ACTIVITY_DIAPER_OPTIONS:
+        put("consultation.activity_diaper", v, "기저귀")
+    if (v := raw.get("wheelchair")) and v in ACTIVITY_WHEELCHAIR_OPTIONS:
+        put("consultation.activity_wheelchair", v, "휠체어")
+    ao = raw.get("activity_others")
+    if isinstance(ao, list):
+        picked_ao = [x for x in ao if x in ACTIVITY_OTHERS_OPTIONS]
+        if picked_ao:
+            put("consultation.activity_others[]", picked_ao, "기타 활동")
 
     summary = text_of("summary", 1000) or ""
     models.log_audit(

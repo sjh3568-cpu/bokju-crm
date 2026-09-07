@@ -186,9 +186,16 @@ EXTRACT_SYSTEM_PROMPT = """당신은 복주회복병원(입원 전용 재활병�
 - insurance_type: 보험유형 (아래 보기 중 하나)
 - consult_channel: 상담방법 (아래 보기 중 하나)
 - attending_doctor: 희망/담당 주치의 (아래 보기 중 하나, 메모에 명시된 경우만)
-- disease_onset: 발병일 (YYYY-MM-DD, 명확할 때만) 또는 발병 시점 설명(문자열)
+- disease_onset: 발병일 (YYYY-MM-DD, 명확할 때만) 또는 발병 시점 설명(문자열, 예: "3주 전")
 - planned_admission_date: 입원예정일 (YYYY-MM-DD, 명확할 때만)
-- diagnosis: 주요 병명/진단 요약(문자열, 자유서술) — 상담일지 병명 상세칸에 들어감
+- diseases: 해당하는 병명들의 배열 — 반드시 아래 [병명 보기] 중 정확히 일치하는 값만.
+  (예: 뇌경색+우측 편마비 → ["뇌경색", "마비-편마비 우"]) 해당 없으면 생략.
+- diagnosis: 병명 보기에 없는 추가 진단·상세(문자열) — 상담일지 병명 상세칸용 (예: 연하장애, 욕창)
+- consciousness: 의식 상태 (아래 [의식 보기] 중 하나)
+- conversation: 대화 수준 (아래 [대화 보기] 중 하나)
+- diaper: 기저귀 사용 ("유" 또는 "무")
+- wheelchair: 휠체어 이동 ("스스로" 또는 "도움")
+- activity_others: 기타 활동 상태 배열 (아래 [기타활동 보기] 중, 예: ["와상"])
 - admission_purpose: 입원 목적/주요 재활 목표(문자열)
 - consult_result: 상담 결과 (아래 보기 중 하나, 메모에 분명할 때만)
 - summary: 통화 핵심 요약 2~4문장(문자열). 환자 상태·요청사항·다음 조치 중심."""
@@ -213,7 +220,11 @@ def extract_consultation(memo: str, *, enums: dict) -> dict:
         f"[상담방법 보기] {', '.join(enums.get('channel', []))}\n"
         f"[주치의 보기] {', '.join(enums.get('doctor', []))}\n"
         f"[상담결과 보기] {', '.join(enums.get('result', []))}\n"
-        f"[시도 보기] {', '.join(enums.get('sido', []))}"
+        f"[시도 보기] {', '.join(enums.get('sido', []))}\n"
+        f"[병명 보기] {', '.join(enums.get('diseases', []))}\n"
+        f"[의식 보기] {', '.join(enums.get('consciousness', []))}\n"
+        f"[대화 보기] {', '.join(enums.get('conversation', []))}\n"
+        f"[기타활동 보기] {', '.join(enums.get('activity_others', []))}"
     )
     user_prompt = f"{guide}\n\n[통화 메모]\n{memo}\n\n위 메모에서 확인되는 값만 JSON으로 출력하세요."
 
