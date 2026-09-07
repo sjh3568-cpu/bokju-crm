@@ -1987,6 +1987,9 @@ def dashboard():
     discharge_due.sort(key=lambda x: x["watch"]["days_left"])
     my_name=(g.user.get('display_name') or '').strip()
     personal_admitted=[c for c in admitted if (c.get('counselor') or '').strip()==my_name]
+    # 내 담당 입원예정 — 예정일 빠른 순. 예정일 미정은 뒤로.
+    my_planned=[c for c in planned_consults if (c.get('counselor') or '').strip()==my_name]
+    my_planned.sort(key=lambda c: (c.get('planned_admission_date') or '9999-99-99'))
     # 재연락 대기(상담요청) 중 내 담당 — 클릭 시 상담 상세로 이어짐
     my_callbacks=[c for c in callbacks if (c.get('counselor') or '').strip()==my_name]
     # 오늘 내 할 일(내 것 + 공유받은 것) — 상단에서 바로 목록 확인
@@ -1996,8 +1999,10 @@ def dashboard():
         my_todos=[]
     data['personal_briefing']={
         'name':my_name or g.user.get('username'),
+        'planned':len(my_planned),
+        'planned_list':my_planned[:5],
         'admitted':len(personal_admitted),
-        'admitted_list':personal_admitted[:6],
+        'admitted_list':personal_admitted[:5],
         'callbacks':len(my_callbacks),
         'callback_list':my_callbacks[:6],
         'todos':[t for t in my_todos if not t.get('done')],

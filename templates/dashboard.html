@@ -313,11 +313,16 @@
 {% set pb = personal_briefing %}
 <div class="pb3">
   <div class="pb3-card">
-    <a class="pb3-head" href="/consultations?counselor={{ pb.name|urlencode }}&admission_status=%EC%9E%85%EC%9B%90%EC%99%84%EB%A3%8C"><span class="pb3-ico">🛏</span><b>나의 입원 환자</b><strong>{{ pb.admitted }}</strong><span class="pb3-more">전체 →</span></a>
+    <a class="pb3-head" href="/consultations?counselor={{ pb.name|urlencode }}&admission_status=%EC%9E%85%EC%9B%90%EC%98%88%EC%A0%95"><span class="pb3-ico">🛏</span><b>나의 입원 환자</b><strong>{{ pb.planned }}</strong><span class="pb3-more">예정 · 전체 →</span></a>
     <ul class="pb3-list">
+      <li class="pb3-grp">입원예정 {{ pb.planned }}</li>
+      {% for c in pb.planned_list %}<li><a href="/patients/{{ c.patient_id }}">{{ c.patient_name }}{% if c.planned_admission_date %} <span class="pb3-sub">{{ c.planned_admission_date[5:] }}</span>{% else %} <span class="pb3-sub">예정일 미정</span>{% endif %}</a></li>
+      {% else %}<li class="pb3-empty">입원예정 환자가 없습니다.</li>{% endfor %}
+      {% if pb.planned > pb.planned_list|length %}<li class="pb3-rest"><a href="/consultations?counselor={{ pb.name|urlencode }}&admission_status=%EC%9E%85%EC%9B%90%EC%98%88%EC%A0%95">+{{ pb.planned - pb.planned_list|length }}명 더 보기</a></li>{% endif %}
+      <li class="pb3-grp">입원완료(재원) {{ pb.admitted }}</li>
       {% for c in pb.admitted_list %}<li><a href="/patients/{{ c.patient_id }}">{{ c.patient_name }}{% if c.room_number %} <span class="pb3-sub">{{ c.room_number }}</span>{% endif %}</a></li>
-      {% else %}<li class="pb3-empty">담당 재원 환자가 없습니다.</li>{% endfor %}
-      {% if pb.admitted > pb.admitted_list|length %}<li class="pb3-rest"><a href="/consultations?counselor={{ pb.name|urlencode }}&admission_status=%EC%9E%85%EC%9B%90%EC%99%84%EB%A3%8C">+{{ pb.admitted - pb.admitted_list|length }}명 더 보기</a></li>{% endif %}
+      {% else %}<li class="pb3-empty">재원 환자가 없습니다.</li>{% endfor %}
+      {% if pb.admitted > pb.admitted_list|length %}<li class="pb3-rest"><a href="/consultations?counselor={{ pb.name|urlencode }}&admission_status=%EC%9E%85%EC%9B%90%EC%99%84%EB%A3%8C">재원 +{{ pb.admitted - pb.admitted_list|length }}명 더 보기</a></li>{% endif %}
     </ul>
   </div>
   <div class="pb3-card">
@@ -355,6 +360,8 @@
 .pb3-time{display:inline-block;min-width:34px;color:#2563eb;font-weight:600;font-variant-numeric:tabular-nums}
 .pb3-shared{font-size:.75em;color:#7c3aed;border:1px solid #ddd6fe;border-radius:6px;padding:0 4px}
 .pb3-empty{padding:10px 12px;color:#9ca3af;font-size:.88em}
+.pb3-grp{padding:5px 12px 2px;font-size:.78em;font-weight:700;color:#6b7280;background:#fbfcfe;border-top:1px solid #f1f5f9;position:sticky;top:0}
+.pb3-grp:first-child{border-top:none}
 .pb3-rest a{color:#2563eb!important;font-size:.85em!important}
 </style>
 </section>
