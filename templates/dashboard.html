@@ -309,9 +309,14 @@
 {% endmacro %}
 {% block title %}대시보드 · 복주 상담CRM{% endblock %}
 {% block content %}
+<section class="personal-briefing"><div class="personal-briefing-head"><div><span>오늘의 개인 브리핑</span><h1>{{ personal_briefing.name }}님의 담당 현황</h1><p>내 담당 환자와 병원 전체 현황을 같은 기준으로 비교합니다.</p></div><details class="start-page-setting"><summary>시작 화면 설정</summary><form method="post" action="{{ url_for('set_start_page') }}"><input type="hidden" name="csrf" value="{{ start_page_csrf }}"><select name="start_page"><option value="dashboard" {% if start_page=='dashboard' %}selected{% endif %}>대시보드</option>{% if current_user.perms.get('consult',0)>=1 %}<option value="consultations" {% if start_page=='consultations' %}selected{% endif %}>상담목록</option>{% endif %}{% if current_user.perms.get('ward',0)>=1 %}<option value="ward" {% if start_page=='ward' %}selected{% endif %}>재원 관리</option>{% endif %}{% if current_user.perms.get('partners',0)>=1 %}<option value="partners" {% if start_page=='partners' %}selected{% endif %}>기관협력</option>{% endif %}</select><button class="btn btn-primary btn-sm">저장</button></form><small>다음 로그인부터 적용됩니다.</small></details></div><div class="personal-briefing-grid"><div class="brief-label"><b>구분</b><span>나의 담당</span><span>병원 전체</span></div><a href="/ward"><b>입원 환자</b><strong>{{ personal_briefing.admitted }}</strong><span>{{ personal_briefing.all_admitted }}명</span></a><a href="/ward?recovery_due=1"><b>회복기 전환 환자</b><strong>{{ personal_briefing.recovery }}</strong><span>{{ personal_briefing.all_recovery }}명</span></a><a href="/ward?discharge_imminent=1"><b>퇴원 예정 환자</b><strong>{{ personal_briefing.discharge }}</strong><span>{{ personal_briefing.all_discharge }}명</span></a></div><p class="personal-briefing-note">나의 담당은 상담일지의 상담사가 <b>{{ personal_briefing.name }}</b>으로 지정된 환자 기준입니다.</p></section>
+{% if cooperation_reminders and account_preferences.get('notify_partner',true) %}
+<link rel="stylesheet" href="{{ url_for('static',filename='css/partners.css') }}">
+{% with reminders=cooperation_reminders,attention=[],csrf=cooperation_csrf %}{% include '_partner_reminders.html' %}{% endwith %}
+{% endif %}
 <div class="page-header dash-head">
     <div>
-        <h1>대시보드 <span class="muted" style="font-size:0.66em">{{ now().strftime('%Y-%m-%d') }}</span></h1>
+        <h1>대시보드 <span class="muted" style="font-size:0.66em">{{ today_header }}</span></h1>
     </div>
     <div class="dash-actions">
         <a href="/consult/new" class="btn btn-primary dash-new-consult primary-new-consult"><span aria-hidden="true">＋</span> 새 상담일지</a>

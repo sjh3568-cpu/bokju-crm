@@ -330,6 +330,12 @@ def init_db():
             resolved_at DATETIME,
             resolved_by INTEGER REFERENCES users(id) ON DELETE SET NULL
         );
+        CREATE TABLE IF NOT EXISTS permission_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES users(id),
+            menu_key TEXT NOT NULL, requested_level INTEGER NOT NULL, reason TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT '대기', created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            resolved_at DATETIME, resolved_by INTEGER REFERENCES users(id)
+        );
         CREATE INDEX IF NOT EXISTS idx_password_reset_pending
             ON password_reset_requests(status, requested_at DESC);
 
@@ -671,6 +677,10 @@ def init_db():
     # 사용자 메뉴별 세부 권한 — {menu_key: level} JSON. NULL이면 role 프리셋을 따른다.
     _ensure_columns(conn, "users", {
         "permissions": "TEXT",
+        "start_page": "TEXT NOT NULL DEFAULT 'dashboard'",
+        "department": "TEXT NOT NULL DEFAULT ''", "position": "TEXT NOT NULL DEFAULT ''",
+        "extension": "TEXT NOT NULL DEFAULT ''", "work_phone": "TEXT NOT NULL DEFAULT ''",
+        "preferences": "TEXT NOT NULL DEFAULT '{}'", "password_changed_at": "DATETIME",
     })
     # 요양원(노인의료복지시설) 별도 마스터 — 보건복지부·국민건강보험공단 데이터.
     # 자동완성·정식명 강제는 병원과 동일 룰을 공유하지만 마스터는 분리.
@@ -942,6 +952,11 @@ def _hydrate_user(row) -> dict:
     eff.update(raw)
     u["perms_raw"] = raw
     u["perms"] = {k: int(eff.get(k, 0)) for k in MENU_KEYS}
+    try:
+        prefs=json.loads(u.get('preferences') or '{}')
+        u['preferences_data']=prefs if isinstance(prefs,dict) else {}
+    except (ValueError,TypeError):
+        u['preferences_data']={}
     return u
 
 
@@ -1004,7 +1019,7 @@ def create_user(username: str, display_name: str, role: str, password: str,
 def set_user_password(user_id: int, password: str):
     conn = get_db()
     conn.execute(
-        "UPDATE users SET password_hash = ? WHERE id = ?",
+        "UPDATE users SET password_hash = ?, password_changed_at=CURRENT_TIMESTAMP WHERE id = ?",
         (generate_password_hash(password), user_id),
     )
     conn.commit()
@@ -1021,6 +1036,46 @@ def set_user_permissions(user_id: int, permissions: dict):
     )
     conn.commit()
     conn.close()
+
+
+def set_user_start_page(user_id: int, start_page: str):
+    conn = get_db()
+    conn.execute("UPDATE users SET start_page=? WHERE id=?", (start_page, user_id))
+    conn.commit()
+    conn.close()
+
+
+def update_own_profile(user_id: int, department: str, position: str, extension: str, work_phone: str):
+    conn=get_db()
+    conn.execute('UPDATE users SET department=?,position=?,extension=?,work_phone=? WHERE id=?',
+                 (department,position,extension,work_phone,user_id))
+    conn.commit();conn.close()
+
+
+def set_user_preferences(user_id: int, preferences: dict):
+    conn=get_db()
+    conn.execute('UPDATE users SET preferences=? WHERE id=?',(json.dumps(preferences,ensure_ascii=False),user_id))
+    conn.commit();conn.close()
+
+
+def create_permission_request(user_id: int, menu_key: str, requested_level: int, reason: str):
+    conn=get_db()
+    exists=conn.execute("SELECT 1 FROM permission_requests WHERE user_id=? AND menu_key=? AND status='대기'",(user_id,menu_key)).fetchone()
+    if exists: conn.close();raise ValueError('해당 메뉴에 처리 대기 중인 요청이 있습니다.')
+    conn.execute('INSERT INTO permission_requests(user_id,menu_key,requested_level,reason) VALUES (?,?,?,?)',(user_id,menu_key,requested_level,reason))
+    conn.commit();conn.close()
+
+
+def list_permission_requests(user_id=None, pending_only=False):
+    conn=get_db();where=[];args=[]
+    if user_id is not None: where.append('r.user_id=?');args.append(user_id)
+    if pending_only: where.append("r.status='대기'")
+    rows=conn.execute('''SELECT r.*,u.username,u.display_name FROM permission_requests r JOIN users u ON u.id=r.user_id'''+((' WHERE '+' AND '.join(where)) if where else '')+' ORDER BY r.id DESC',args).fetchall()
+    conn.close();return [dict(r) for r in rows]
+
+
+def resolve_permission_request(request_id: int, resolver_id: int, status: str):
+    conn=get_db();conn.execute("UPDATE permission_requests SET status=?,resolved_at=CURRENT_TIMESTAMP,resolved_by=? WHERE id=? AND status='대기'",(status,resolver_id,request_id));conn.commit();conn.close()
 
 
 def update_user(user_id: int, display_name: str, role: str,
@@ -4203,16 +4258,10 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
 
 def hospital_admission_analysis(date_from=None, date_to=None, hospital=None, q=None):
     """모병원별 실제 입원 환자 집계와 원자료 목록."""
-    effective_date = ("COALESCE(NULLIF(c.actual_admission_date, ''), "
-                      "NULLIF(c.admission_date, ''), NULLIF(c.planned_admission_date, ''), "
-                      "c.consult_date)")
+    effective_date = "COALESCE(NULLIF(TRIM(c.actual_admission_date), ''), NULLIF(TRIM(c.admission_date), ''))"
     where = ["c.admission_status IN ('입원완료', '퇴원완료')",
              "c.source_hospital IS NOT NULL", "TRIM(c.source_hospital) != ''"]
     vals = []
-    if date_from:
-        where.append(f"{effective_date} >= ?"); vals.append(date_from)
-    if date_to:
-        where.append(f"{effective_date} <= ?"); vals.append(date_to)
     if hospital:
         where.append("c.source_hospital = ?"); vals.append(hospital)
     if q:
@@ -4230,9 +4279,14 @@ def hospital_admission_analysis(date_from=None, date_to=None, hospital=None, q=N
     """, vals).fetchall()
     conn.close()
 
-    seen, details, counts = set(), [], {}
+    seen, details, counts, undated = set(), [], {}, []
     for row in rows:
         item = dict(row)
+        if not item['admission_date']:
+            undated.append(item)
+            continue
+        if (date_from and item['admission_date'] < date_from) or (date_to and item['admission_date'] > date_to):
+            continue
         key = (item["patient_id"], item["source_hospital"], item["admission_date"])
         if key in seen:
             continue
@@ -4246,8 +4300,10 @@ def hospital_admission_analysis(date_from=None, date_to=None, hospital=None, q=N
         counts[item["source_hospital"]] = counts.get(item["source_hospital"], 0) + 1
     hospitals = [{"name": name, "count": count}
                  for name, count in sorted(counts.items(), key=lambda x: (-x[1], x[0]))]
+    candidate_names = sorted(set(counts) | {r['source_hospital'] for r in undated})
     return {"hospitals": hospitals, "rows": details, "total": len(details),
-            "hospital_count": len(hospitals)}
+            "hospital_count": len(hospitals), "undated": undated,
+            "candidates": [{"name": n, "count": counts.get(n,0)} for n in candidate_names]}
 
 
 # ─── 임원 월간 보고서 (Phase 3.5) ───

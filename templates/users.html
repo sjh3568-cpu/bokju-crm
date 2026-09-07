@@ -29,6 +29,10 @@
 </section>
 {% endif %}
 
+{% if permission_requests %}
+<section class="card reset-request-panel"><div class="reset-request-head"><div><h3>메뉴 권한 요청</h3><p>사유를 확인한 뒤 사용자 행에서 실제 권한을 조정하세요.</p></div><span>{{ permission_requests|length }}건 대기</span></div><div class="reset-request-list">{% for r in permission_requests %}<div class="reset-request-item"><span class="reset-request-icon">🔑</span><div><strong>{{ r.display_name or r.username }}</strong><span>{{ r.menu_key }} · {{ ('','조회','수정','등록')[r.requested_level] }} 요청</span><small>{{ r.reason }}</small></div><time>{{ r.created_at[:16] }}</time><a class="btn btn-primary btn-sm" href="#user-{{ r.user_id }}">권한 설정</a><form method="post" action="{{ url_for('admin_permission_request_resolve',request_id=r.id) }}"><button name="status" value="승인" class="btn btn-secondary btn-sm">확인 완료</button><button name="status" value="반려" class="btn btn-secondary btn-sm">반려</button></form></div>{% endfor %}</div></section>
+{% endif %}
+
 <div class="card users-add">
     <h3>새 계정 추가</h3>
     <form method="post" action="/admin/users/create" class="users-add-form" autocomplete="off">

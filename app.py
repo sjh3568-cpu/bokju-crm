@@ -15,6 +15,7 @@ import re
 import secrets
 import threading
 import calendar
+from contextlib import closing
 from functools import lru_cache
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -22,6 +23,7 @@ from urllib.parse import urlencode, urlsplit
 
 from dotenv import load_dotenv
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from werkzeug.security import check_password_hash
 from flask import (
     Flask, abort, flash, g, jsonify, redirect, render_template,
     request, send_file, session, url_for,
@@ -104,6 +106,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+import partnerships
+app.register_blueprint(partnerships.bp)
 app.secret_key = os.getenv("SECRET_KEY") or secrets.token_hex(32)
 app.permanent_session_lifetime = timedelta(hours=int(os.getenv("SESSION_HOURS", "4")))
 _REMEMBER_COOKIE = "bokju_remember"
@@ -129,6 +133,7 @@ def initialize():
         if _db_initialized:
             return
         models.init_db()
+        partnerships.init_schema()
         admin_pw = os.getenv("APP_PASSWORD", "").strip()
         if admin_pw:
             # 비상용 break-glass 계정 (매 부팅 시 .env 비번으로 동기화)
@@ -228,6 +233,9 @@ def _route_requirement(path: str, method: str):
         if path == "/api/consult":             # 신규 상담 저장
             return "consult", PERM_CREATE
         return "consult", PERM_EDIT
+
+    if path.startswith("/partners"):
+        return "partners", (PERM_EDIT if is_write else PERM_VIEW)
 
     # ── 재원 관리 (환자·병동·생애주기·외진) ──
     if path.startswith("/ward") or path.startswith("/patients") \
@@ -338,6 +346,10 @@ def _is_safe_next_url(value):
 @app.context_processor
 def _inject_globals():
     _u = current_user()
+    account_preferences={}
+    if _u:
+        try: account_preferences=models.get_user_by_id(_u['id']).get('preferences_data',{})
+        except Exception: account_preferences={}
     # 나의 할 일 리마인드 배지 — 오늘+지난 미완료 개수 (로그인 시에만 조회)
     todo_badge = 0
     if _u:
@@ -355,18 +367,31 @@ def _inject_globals():
             password_reset_badge = 0
     # 미처리 인바운드 배지 — 홈페이지·카카오 등 채널 문의 대기 건수 (로그인 시)
     inbound_badge = 0
+    command_metrics = {"admit": 0, "discharge": 0, "pending": 0}
     if _u:
         try:
             inbound_badge = models.open_inbound_count()
         except Exception:
             inbound_badge = 0
+        try:
+            with closing(models.get_db()) as _db:
+                _today=date.today().isoformat()
+                command_metrics["admit"]=_db.execute("""SELECT COUNT(DISTINCT patient_id) FROM consultations
+                    WHERE COALESCE(actual_admission_date,admission_date)=? AND admission_status IN ('입원완료','퇴원완료')""",(_today,)).fetchone()[0]
+                command_metrics["discharge"]=_db.execute("SELECT COUNT(DISTINCT patient_id) FROM consultations WHERE discharge_date=?",(_today,)).fetchone()[0]
+            command_metrics["pending"]=inbound_badge
+        except Exception:
+            pass
     return {
         "current_user": _u,
         "todo_badge": todo_badge,
         "has_unread_required_notice": bool(pending_notice),
         "password_reset_badge": password_reset_badge,
         "inbound_badge": inbound_badge,
+        "command_metrics": command_metrics,
+        "account_preferences": account_preferences,
         "today_str": date.today().isoformat(),   # 날짜 입력 기본값(외진 기록 등)
+        "today_header": date.today().strftime('%Y.%m.%d') + f" ({'월화수목금토일'[date.today().weekday()]})",
         "INSURANCE_TYPES": INSURANCE_TYPES,
         "CONSULT_CHANNELS": CONSULT_CHANNELS,
         "ADMISSION_EVENT_TYPES": ADMISSION_EVENT_TYPES,
@@ -418,6 +443,30 @@ def _inject_globals():
         "now": datetime.now,
         "url_with": _url_with,
     }
+
+
+@app.route('/api/global-search')
+@login_required
+def global_search():
+    q=(request.args.get('q') or '').strip()[:80]
+    if len(q)<2:
+        return jsonify(items=[])
+    items=[]
+    if menu_level(current_user(),'consult')>=PERM_VIEW:
+        for row in models.list_consultations(q=q,limit=6):
+            items.append({'kind':'환자·상담','title':row.get('patient_name') or '이름 없음',
+                          'meta':' · '.join(filter(None,[row.get('guardian_phone'),row.get('consult_date'),row.get('admission_status')])),
+                          'url':url_for('consult_detail',cid=row['id'])})
+    if menu_level(current_user(),'partners')>=PERM_VIEW:
+        with closing(models.get_db()) as db:
+            rows=db.execute('''SELECT p.id,COALESCE(p.official_name,h.name) name,
+                COALESCE(d.kind,h.kind) kind,COALESCE(d.address,h.address) address
+                FROM cooperation_partners p JOIN source_hospitals h ON h.id=p.hospital_id
+                LEFT JOIN cooperation_facility_directory d ON d.id=p.directory_id
+                WHERE COALESCE(p.official_name,h.name) LIKE ? ORDER BY p.important DESC,name LIMIT 5''',('%'+q+'%',)).fetchall()
+        items.extend({'kind':'협력기관','title':r['name'],'meta':' · '.join(filter(None,[r['kind'],r['address']])),
+                      'url':url_for('partners.detail',pid=r['id'])} for r in rows)
+    return jsonify(items=items[:10])
 
 
 @app.template_filter("krdate")
@@ -1250,7 +1299,18 @@ def login_view():
             flash("아이디 또는 비밀번호가 올바르지 않습니다.", "error")
             return render_template("login.html"), 401
         login_user(user)
-        next_url = request.args.get("next") or request.form.get("next") or url_for("dashboard")
+        requested_next = request.args.get("next") or request.form.get("next")
+        start_paths = {'default':'/','dashboard':'/','consultations':'/consultations','ward':'/ward','partners':'/partners',
+                       'consult_new':'/consult/new','ward_waiting':'/ward?tab=waiting','ward_trend':'/ward?tab=trend',
+                       'partners_feed':'/partners?view=feed','stats_hospitals':'/stats/hospitals',
+                       'todos':'/todos','sms':'/sms','stats':'/stats','report':'/report/monthly','notices':'/notices'}
+        start_key = user.get('start_page') or 'dashboard'
+        allowed = {'default':'dashboard','dashboard':'dashboard','consultations':'consult','ward':'ward','partners':'partners',
+                   'consult_new':'consult','ward_waiting':'ward','ward_trend':'ward','partners_feed':'partners',
+                   'stats_hospitals':'stats','todos':'dashboard','sms':'sms','stats':'stats','report':'report','notices':'dashboard'}
+        if menu_level(user,allowed.get(start_key,'dashboard')) < PERM_VIEW:
+            start_key='dashboard'
+        next_url = requested_next or start_paths.get(start_key,'/')
         if not _is_safe_next_url(next_url):
             next_url = url_for("dashboard")
         destination = (url_for("notice_required", next=next_url)
@@ -1280,6 +1340,108 @@ def logout_view():
     response = redirect(url_for("login_view"))
     response.delete_cookie(_REMEMBER_COOKIE, path="/", samesite="Lax")
     return response
+
+
+@app.route('/settings/start-page',methods=['POST'])
+@login_required
+def set_start_page():
+    if not secrets.compare_digest(session.get('start_page_csrf',''),request.form.get('csrf','')):
+        abort(400)
+    key=(request.form.get('start_page') or '').strip()
+    options={'default':('dashboard','/'),'dashboard':('dashboard','/'),'consultations':('consult','/consultations'),
+             'consult_new':('consult','/consult/new'),'ward':('ward','/ward'),
+             'ward_waiting':('ward','/ward?tab=waiting'),'ward_trend':('ward','/ward?tab=trend'),
+             'partners':('partners','/partners'),'partners_feed':('partners','/partners?view=feed'),
+             'stats_hospitals':('stats','/stats/hospitals'),'todos':('dashboard','/todos'),
+             'sms':('sms','/sms'),'stats':('stats','/stats'),'report':('report','/report/monthly'),
+             'notices':('dashboard','/notices')}
+    required_level=PERM_CREATE if key=='consult_new' else PERM_VIEW
+    if key not in options or menu_level(current_user(),options[key][0])<required_level:
+        abort(400)
+    models.set_user_start_page(g.user['id'],key)
+    flash('로그인 후 시작 화면을 저장했습니다.','success')
+    return redirect(request.referrer or url_for('dashboard'))
+
+
+@app.route('/account',methods=['GET','POST'])
+@login_required
+def account_settings():
+    token=session.setdefault('account_csrf',secrets.token_hex(32))
+    if request.method=='POST':
+        if not secrets.compare_digest(token,request.form.get('csrf','')):
+            abort(400)
+        user=models.get_user_by_id(g.user['id'])
+        action=(request.form.get('action') or 'password').strip()
+        if action=='profile':
+            values=[(request.form.get(k) or '').strip() for k in ('department','position','extension','work_phone')]
+            if any(len(v)>100 for v in values):
+                flash('입력 길이를 확인해주세요.','error')
+            else:
+                models.update_own_profile(g.user['id'],*values)
+                models.log_audit(user_id=g.user['id'],username=g.user['username'],action='update_own_profile',target_type='user',target_id=g.user['id'],ip=request.remote_addr)
+                flash('내 업무 정보를 저장했습니다.','success')
+            return redirect(url_for('account_settings'))
+        if action=='permission_request':
+            menu_key=(request.form.get('menu_key') or '').strip()
+            try: level=int(request.form.get('requested_level') or 0)
+            except ValueError: level=0
+            reason=(request.form.get('reason') or '').strip()[:500]
+            if menu_key not in MENU_KEYS or level not in (1,2,3) or level>MENU_MAX_LEVEL.get(menu_key,0) or level<=int(user['perms'].get(menu_key,0)):
+                flash('현재 권한보다 높은 권한을 선택해주세요.','error')
+            else:
+                try:
+                    models.create_permission_request(g.user['id'],menu_key,level,reason)
+                    models.log_audit(user_id=g.user['id'],username=g.user['username'],action='request_permission',target_type='user',target_id=g.user['id'],detail=f'{menu_key}:{level}',ip=request.remote_addr)
+                    flash('권한 요청을 관리자에게 전달했습니다.','success')
+                except ValueError as e: flash(str(e),'error')
+            return redirect(url_for('account_settings'))
+        if action=='preferences':
+            prefs=dict(user.get('preferences_data',{}));mode=request.form.get('mode')
+            if mode=='alerts':
+                for key in ('notify_todo','notify_partner','notify_recovery','notify_discharge','notify_inbound'):
+                    prefs[key]=request.form.get(key)=='1'
+            elif mode=='menus':
+                for key in ('show_sms','show_stats','show_partners','show_notices'):
+                    prefs[key]=request.form.get(key)=='1'
+            else:
+                calendar_mine=request.form.get('calendar_mine','')
+                partner_view=request.form.get('partner_view','')
+                ward_tab=request.form.get('ward_tab','')
+                if calendar_mine in ('0','1'): prefs['calendar_mine']=calendar_mine=='1'
+                else: prefs.pop('calendar_mine',None)
+                if partner_view in ('list','feed'): prefs['partner_view']=partner_view
+                else: prefs.pop('partner_view',None)
+                if ward_tab in ('status','waiting','trend','blacklist','quality'): prefs['ward_tab']=ward_tab
+                else: prefs.pop('ward_tab',None)
+            models.set_user_preferences(g.user['id'],prefs);flash('개인 알림과 기본 보기를 저장했습니다.','success')
+            return redirect(url_for('account_settings'))
+        current=request.form.get('current_password') or ''
+        new=request.form.get('new_password') or ''
+        confirm=request.form.get('confirm_password') or ''
+        if not user or not check_password_hash(user['password_hash'],current):
+            models.log_audit(user_id=g.user['id'],username=g.user['username'],action='password_change_fail',
+                             target_type='user',target_id=g.user['id'],detail='현재 비밀번호 불일치',ip=request.remote_addr)
+            flash('현재 비밀번호가 올바르지 않습니다.','error')
+        elif len(new)<_MIN_PW_LEN:
+            flash(f'새 비밀번호는 최소 {_MIN_PW_LEN}자 이상이어야 합니다.','error')
+        elif new!=confirm:
+            flash('새 비밀번호 확인이 일치하지 않습니다.','error')
+        elif check_password_hash(user['password_hash'],new):
+            flash('현재 비밀번호와 다른 새 비밀번호를 입력해주세요.','error')
+        else:
+            models.set_user_password(g.user['id'],new)
+            models.resolve_password_reset_requests(g.user['id'],g.user['id'])
+            models.log_audit(user_id=g.user['id'],username=g.user['username'],action='change_own_password',
+                             target_type='user',target_id=g.user['id'],detail='본인 비밀번호 변경',ip=request.remote_addr)
+            session['account_csrf']=secrets.token_hex(32)
+            flash('비밀번호를 변경했습니다. 다음 로그인부터 새 비밀번호를 사용하세요.','success')
+            return redirect(url_for('account_settings'))
+    user=models.get_user_by_id(g.user['id'])
+    with closing(models.get_db()) as db:
+        recent_logins=[dict(r) for r in db.execute("SELECT created_at,ip FROM audit_log WHERE user_id=? AND action='login' ORDER BY id DESC LIMIT 5",(g.user['id'],))]
+    return render_template('account.html',csrf=session['account_csrf'],min_password_length=_MIN_PW_LEN,
+                           account=user,recent_logins=recent_logins,menus=MENUS,
+                           permission_requests=models.list_permission_requests(g.user['id']))
 
 
 @app.route("/password-reset/request", methods=["POST"])
@@ -1539,7 +1701,19 @@ def admin_users():
         "users.html", users=users, menus=MENUS, perm_labels=PERM_LEVEL_LABELS,
         role_presets=ROLE_PRESETS, menu_max=MENU_MAX_LEVEL,
         password_reset_requests=models.list_pending_password_reset_requests(),
+        permission_requests=models.list_permission_requests(pending_only=True),
     )
+
+
+@app.route('/admin/permission-requests/<int:request_id>',methods=['POST'])
+@admin_required
+def admin_permission_request_resolve(request_id):
+    status=(request.form.get('status') or '').strip()
+    if status not in ('승인','반려'): abort(400)
+    models.resolve_permission_request(request_id,g.user['id'],status)
+    models.log_audit(user_id=g.user['id'],username=g.user['username'],action='resolve_permission_request',target_type='permission_request',target_id=request_id,detail=status,ip=request.remote_addr)
+    flash('권한 요청을 처리했습니다. 권한 변경은 사용자 행에서 별도로 저장해주세요.','success')
+    return redirect(url_for('admin_users'))
 
 
 @app.route("/admin/users/create", methods=["POST"])
@@ -1811,6 +1985,18 @@ def dashboard():
             discharge_due.append({"con": con, "watch": dw})
     recovery_transition_due.sort(key=lambda x: x["watch"]["billing_left"])
     discharge_due.sort(key=lambda x: x["watch"]["days_left"])
+    my_name=(g.user.get('display_name') or '').strip()
+    personal_admitted=[c for c in admitted if (c.get('counselor') or '').strip()==my_name]
+    personal_recovery=[d for d in recovery_transition_due if (d['con'].get('counselor') or '').strip()==my_name]
+    personal_discharge=[d for d in discharge_due if (d['con'].get('counselor') or '').strip()==my_name]
+    data['personal_briefing']={
+        'name':my_name or g.user.get('username'),'admitted':len(personal_admitted),
+        'recovery':len(personal_recovery),'discharge':len(personal_discharge),
+        'all_admitted':len(admitted),'all_recovery':len(recovery_transition_due),
+        'all_discharge':len(discharge_due),
+    }
+    data['start_page_csrf']=session.setdefault('start_page_csrf',secrets.token_hex(32))
+    data['start_page']=models.get_user_by_id(g.user['id']).get('start_page') or 'dashboard'
 
     for cb in callbacks:
         disease_labels = _dashboard_disease_labels(cb)
@@ -1874,7 +2060,9 @@ def dashboard():
     except (TypeError, ValueError):
         cal_year, cal_month = date.today().year, date.today().month
     # 통합 달력 '내 담당만/전체' — 기본 내 담당만. cal_mine=0이면 전체.
-    cal_mine = request.args.get("cal_mine", "1") != "0"
+    prefs=models.get_user_by_id(g.user['id']).get('preferences_data',{})
+    cal_default='1' if prefs.get('calendar_mine',True) else '0'
+    cal_mine = request.args.get("cal_mine", cal_default) != "0"
     cal_counselor = g.user.get("display_name") if cal_mine else None
     data.update(_dashboard_calendar_context(g.user["id"], cal_year, cal_month, cal_counselor))
     return render_template("dashboard.html", **data)
@@ -2250,7 +2438,7 @@ def hospital_stats_view():
         date_from, date_to, hospital=hospital or None, q=q or None)
     return render_template(
         "stats_hospitals.html", preset=preset, date_from=date_from, date_to=date_to,
-        hospital=hospital, q=q, hospitals=overall["hospitals"], data=filtered,
+        hospital=hospital, q=q, hospitals=overall["hospitals"], hospital_candidates=overall["candidates"], data=filtered,
     )
 
 
@@ -3525,7 +3713,12 @@ def ward_view():
             return None
     age_min, age_max = _optional_int("age_min"), _optional_int("age_max")
     stay_min, stay_max = _optional_int("stay_min"), _optional_int("stay_max")
-    subtab = (request.args.get("tab") or "status").strip()
+    sido_f = (request.args.get("sido") or "").strip()
+    stay_period = (request.args.get("stay_period") or "").strip()
+    if stay_period not in _WARD_STAY_PERIODS:
+        stay_period = ""
+    ward_prefs=models.get_user_by_id(g.user['id']).get('preferences_data',{})
+    subtab = (request.args.get("tab") or ward_prefs.get('ward_tab') or "status").strip()
     if subtab not in ("status", "waiting", "trend", "blacklist", "quality"):
         subtab = "status"
     if subtab == "quality" and g.user.get("role") != "admin":
@@ -3765,23 +3958,12 @@ def ward_view():
     # KPI/태그/균 세부 필터 — 목록 표시에 적용
     filt_label = _WARD_FILTS[filt][0] if filt in _WARD_FILTS else None
     admitted_list = _apply_ward_filters(admitted, filt, ward_f, tag_f, organism_f)
-    admitted_list = [c for c in admitted_list
-                     if (not room_f or room_f.lower() in (c.get("room_number") or "").lower())
-                     and (not gender_f or c.get("gender") == gender_f)
-                     and (age_min is None or (c.get("patient_age") is not None and c["patient_age"] >= age_min))
-                     and (age_max is None or (c.get("patient_age") is not None and c["patient_age"] <= age_max))
-                     and (not dx_f or dx_f in " ".join((c.get("dx_primary") or []) + (c.get("dx_secondary") or [])).lower())
-                     and (not admission_from or (c.get("admitted_on") or "") >= admission_from)
-                     and (not admission_to or (c.get("admitted_on") or "") <= admission_to)
-                     and (stay_min is None or (c.get("stay_days") or 0) >= stay_min)
-                     and (stay_max is None or (c.get("stay_days") or 0) <= stay_max)
-                     and (not discharge_from or (c.get("discharge_due") or "") >= discharge_from)
-                     and (not discharge_to or (c.get("discharge_due") or "") <= discharge_to)]
+    admitted_list = _apply_ward_column_filters(admitted_list)
     if filt == "recdue" and sort == "dday":
         admitted_list.sort(key=lambda c: (bool(c.get("recovery_call_at")), _dday(c)))
     elif filt == "dis30" and sort == "dday":
         admitted_list.sort(key=lambda c: (bool(c.get("discharge_sms_at")), _dday(c)))
-    column_filter = bool(room_f or gender_f or dx_f or admission_from or admission_to
+    column_filter = bool(room_f or gender_f or dx_f or sido_f or stay_period or admission_from or admission_to
                          or discharge_from or discharge_to or age_min is not None
                          or age_max is not None or stay_min is not None or stay_max is not None)
     view = request.args.get("view") or "room"
@@ -3815,6 +3997,7 @@ def ward_view():
         kpis=kpis, q=q or "", doctor=doctor or "", sort=sort, sort_dir=sort_dir,
         filt=filt, filt_label=filt_label,
         ward_f=ward_f, tag_f=tag_f, organism_f=organism_f, any_filter=any_filter,
+        organism_options=_ORGANISMS,
         WARDS=WARDS, MGMT_TAG_PRESETS=MGMT_TAG_PRESETS, tag_counts=tag_counts,
         doctor_options=doctor_options,
         recovery_due_list=recovery_due_list, discharge_due_list=discharge_due_list,
@@ -3824,6 +4007,9 @@ def ward_view():
         blacklisted=blacklisted,
         bed_waiting=bed_waiting,
         room_f=room_f, gender_f=gender_f, dx_f=dx_f,
+        sido_f=sido_f, stay_period=stay_period, stay_periods=_WARD_STAY_PERIODS,
+        ward_csv_url=url_for("ward_csv") + ("?" + urlencode(request.args.to_dict()) if request.args else ""),
+        dx_options=list(_WARD_DIAGNOSES),
         admission_from=admission_from, admission_to=admission_to,
         discharge_from=discharge_from, discharge_to=discharge_to,
         age_min=age_min, age_max=age_max, stay_min=stay_min, stay_max=stay_max,
@@ -3921,12 +4107,13 @@ def ward_csv():
         (request.args.get("ward") or "").strip() or None,
         (request.args.get("tag") or "").strip() or None,
         (request.args.get("organism") or "").strip() or None)
+    admitted = _apply_ward_column_filters(admitted)
     admitted.sort(key=lambda c: (_room_sort_key(c.get("room_number")), c.get("patient_name") or ""))
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["병동", "호실", "환자", "나이", "성별", "주치의", "주진단", "부진단",
                 "내성균", "입원일", "재원일수", "수가구간", "D-day", "회복기종료/만료일",
-                "퇴원예정", "연장", "관리태그"])
+                "퇴원예정", "연장", "관리태그", "지역(시도)", "재원기간 기준", "기준 도달일", "재원기간 D-day"])
     for c in admitted:
         pd = c.get("phase_dday")
         dday = ("" if pd is None else (f"D-{pd}" if pd >= 0 else f"{-pd}일초과"))
@@ -3942,6 +4129,9 @@ def ward_csv():
             c.get("care_phase") or "", dday, c.get("phase_end_date") or "",
             c.get("discharge_due") or "", c.get("ext_label") or "",
             ", ".join(c.get("mgmt_tags") or []),
+            c.get("residence_sido") or "",
+            _WARD_STAY_PERIODS.get(request.args.get("stay_period"), ""),
+            c.get("stay_milestone_date") or "", c.get("stay_milestone_dday") or "",
         ])
     models.log_audit(user_id=g.user["id"], username=g.user["username"],
                      action="export_csv", target_type="ward",
@@ -3975,12 +4165,12 @@ def _days_since(datestr):
     return (date.today() - d).days
 
 
-_ORGANISMS = ("CRE", "VRE", "MRSA")
+_ORGANISMS = ("CRE", "VRE", "CPE", "MRSA", "MRAB", "MRPA")
 
 
 def _split_diagnosis(c):
     """diseases를 주 진단(회복기재활 입원 질환)·부 진단(기저·기타)으로 분리하고,
-    내성균(CRE/VRE/MRSA) 목록을 뽑는다.
+    내성균 목록을 뽑는다.
     Returns dict(dx_primary, dx_secondary, organisms)."""
     base = set(DISEASES_GROUPS.get("기저질환", []))
     primary, secondary = [], []
@@ -4015,6 +4205,101 @@ _WARD_FILTS = {
 }
 
 
+# 재원관리에서 선택하는 핵심 질환과 기존 입력 표현의 대응.
+_WARD_DIAGNOSES = {
+    "뇌경색": ("뇌경색",),
+    "뇌출혈": ("뇌출혈",),
+    "척수손상": ("척수손상",),
+    "대퇴부골절": ("대퇴부골절", "대퇴골골절"),
+    "고관절 골절": ("고관절골절",),
+    "골반골절": ("골반골절",),
+    "하지절단": ("하지절단", "하지부위절단"),
+    "양측무릎슬관절": ("양측무릎슬관절", "양측슬관절치환술", "양측무릎관절치환술"),
+    "비사용증후군": ("비사용증후군",),
+    "파킨슨": ("파킨슨",),
+    "폐렴": ("폐렴",),
+    "신생물": ("신생물",),
+    "심장질환": ("심장질환",),
+}
+
+
+def _ward_matches_diagnosis(c, diagnosis):
+    if not diagnosis:
+        return True
+    aliases = _WARD_DIAGNOSES.get(diagnosis)
+    if not aliases:
+        return False
+    values = (c.get("dx_primary") or []) + (c.get("dx_secondary") or [])
+    # 호흡질환의 상세에 입력된 폐렴도 검색한다.
+    values = values + [c.get("lung_detail") or ""]
+    return any(alias in "".join(str(value).split())
+               for value in values for alias in aliases)
+
+
+_WARD_STAY_PERIODS = {"6": "6개월", "12": "1년", "18": "1년 6개월", "24": "2년"}
+
+
+def _ward_stay_milestone(admitted_on, months, today=None):
+    """달력상 입원 기념일 기준: 이전 D-, 당일 D-Day, 이후 D+."""
+    try:
+        admitted_date = date.fromisoformat(admitted_on or "")
+        today = today or date.today()
+        if admitted_date > today:
+            return {}
+        due = _add_months(admitted_date, int(months))
+    except (ValueError, TypeError, OverflowError):
+        return {}
+    delta = (today - due).days
+    return {"stay_milestone_date": due.isoformat(), "stay_milestone_delta": delta,
+            "stay_milestone_dday": "D-Day" if delta == 0 else f"D{delta:+d}"}
+
+
+def _apply_ward_column_filters(admitted):
+    """화면과 CSV에 동일한 상세조건을 적용한다."""
+    room_f = (request.args.get("room") or "").strip()
+    gender_f = (request.args.get("gender") or "").strip()
+    dx_f = (request.args.get("dx") or "").strip().lower()
+    admission_from = (request.args.get("admission_from") or "").strip()
+    admission_to = (request.args.get("admission_to") or "").strip()
+    discharge_from = (request.args.get("discharge_from") or "").strip()
+    discharge_to = (request.args.get("discharge_to") or "").strip()
+    def _optional_int(name):
+        try:
+            raw = (request.args.get(name) or "").strip()
+            return int(raw) if raw else None
+        except ValueError:
+            return None
+    age_min, age_max = _optional_int("age_min"), _optional_int("age_max")
+    stay_min, stay_max = _optional_int("stay_min"), _optional_int("stay_max")
+    sido_f = (request.args.get("sido") or "").strip()
+    stay_period = (request.args.get("stay_period") or "").strip()
+    if stay_period not in _WARD_STAY_PERIODS:
+        stay_period = ""
+    admitted = [c for c in admitted
+                     if (not room_f or room_f.lower() in (c.get("room_number") or "").lower())
+                     and (not gender_f or c.get("gender") == gender_f)
+                     and (age_min is None or (c.get("patient_age") is not None and c["patient_age"] >= age_min))
+                     and (age_max is None or (c.get("patient_age") is not None and c["patient_age"] <= age_max))
+                     and _ward_matches_diagnosis(c, dx_f)
+                     and (not admission_from or (c.get("admitted_on") or "") >= admission_from)
+                     and (not admission_to or (c.get("admitted_on") or "") <= admission_to)
+                     and (stay_min is None or (c.get("stay_days") or 0) >= stay_min)
+                     and (stay_max is None or (c.get("stay_days") or 0) <= stay_max)
+                     and (not discharge_from or (c.get("discharge_due") or "") >= discharge_from)
+                     and (not discharge_to or (c.get("discharge_due") or "") <= discharge_to)]
+    if sido_f:
+        admitted = [c for c in admitted
+                    if _sido_short(c.get("residence_sido")) == _sido_short(sido_f)]
+    if stay_period:
+        selected = []
+        for c in admitted:
+            milestone = _ward_stay_milestone(c.get("admitted_on"), stay_period)
+            if milestone and abs(milestone["stay_milestone_delta"]) <= 30:
+                selected.append(dict(c, **milestone))
+        admitted = selected
+    return admitted
+
+
 def _apply_ward_filters(admitted, filt=None, ward_f=None, tag_f=None, organism_f=None):
     """재원 목록에 병동·KPI구분·태그·내성균 필터를 순차 적용."""
     out = admitted
@@ -4025,8 +4310,10 @@ def _apply_ward_filters(admitted, filt=None, ward_f=None, tag_f=None, organism_f
         out = [c for c in out if pred(c)]
     if tag_f:
         out = [c for c in out if tag_f in (c.get("mgmt_tags") or [])]
-    if organism_f:
+    if organism_f == "1":
         out = [c for c in out if c.get("organisms")]
+    elif organism_f:
+        out = [c for c in out if organism_f in (c.get("organisms") or [])]
     return out
 
 

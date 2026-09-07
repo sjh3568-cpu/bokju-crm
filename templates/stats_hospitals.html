@@ -13,7 +13,7 @@
     <label class="hospital-select">모병원
         <select name="hospital">
             <option value="">전체 모병원</option>
-            {% for h in hospitals %}<option value="{{ h.name }}" {% if hospital == h.name %}selected{% endif %}>{{ h.name }} ({{ h.count }}명)</option>{% endfor %}
+            {% for h in hospital_candidates %}<option value="{{ h.name }}" {% if hospital == h.name %}selected{% endif %}>{{ h.name }} ({{ h.count }}명)</option>{% endfor %}
         </select>
     </label>
     <label>환자·병원 검색<input type="search" name="q" value="{{ q }}" placeholder="환자명 또는 병원명"></label>
@@ -27,6 +27,8 @@
     <div class="stat-card"><div class="label">조회 기간</div><div class="value date-value">{{ date_from }}<br>~ {{ date_to }}</div></div>
 </div>
 
+<p class="muted">입원 건수는 실제 입원일 기준입니다. 같은 환자·같은 입원일은 한 건, 재입원은 별도 집계합니다. 입원예정일·상담일로 대체하지 않습니다.</p>
+{% if data.undated %}<details class="card" style="padding:16px;margin-bottom:16px"><summary>입원일 미확정 {{ data.undated|length }}건 (전체 기간 · 집계 제외)</summary><div class="table-wrap"><table class="tbl"><thead><tr><th>환자</th><th>모병원</th><th>상담일</th><th>상태</th></tr></thead><tbody>{% for r in data.undated %}<tr><td><a href="/patients/{{ r.patient_id }}">{{ r.patient_name }}</a></td><td>{{ r.source_hospital }}</td><td>{{ r.consult_date }}</td><td>{{ r.admission_status }}</td></tr>{% endfor %}</tbody></table></div></details>{% endif %}
 <div class="hospital-layout">
     <section class="card hospital-summary">
         <div class="panel-title"><h2>모병원별 입원 인원</h2><span>중복 상담 제외</span></div>
@@ -53,7 +55,7 @@
                 {% for r in data.rows %}
                 <tr>
                     <td class="nowrap">{{ r.admission_date or '-' }}</td>
-                    <td><a href="/patient/{{ r.patient_id }}">{{ r.patient_name }}</a></td>
+                    <td><a href="/patients/{{ r.patient_id }}">{{ r.patient_name }}</a></td>
                     <td class="nowrap">{{ r.gender or '-' }} · {% if r.patient_age is not none %}{{ r.patient_age }}세{% else %}-{% endif %}</td>
                     <td>{{ r.source_hospital }}</td>
                     <td title="{{ r.disease_summary }}">{{ r.disease_summary or '-' }}</td>

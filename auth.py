@@ -74,6 +74,11 @@ def logout_user():
 def current_user():
     if not session.get("user_id"):
         return None
+    if "partners" not in session.get("perms", {}) or not session.get("cooperation_permissions_v2"):
+        user = get_user(session.get("username", ""))
+        if user:
+            session["perms"] = user["perms"]
+            session["cooperation_permissions_v2"] = True
     return {
         "id": session["user_id"],
         "username": session["username"],

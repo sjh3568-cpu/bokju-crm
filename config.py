@@ -114,6 +114,9 @@ ROLE_LABELS = {"admin": "어드민", "staff": "상담사", "viewer": "조회"}
 # audit_log.action → 화면 표시 라벨. models.log_audit으로 새 action을 남기면 여기에도 추가한다.
 # (라벨이 없으면 이력 관리 화면에 action 원문이 그대로 표시된다.)
 AUDIT_ACTION_LABELS = {
+    "view_cooperation": "기관협력 조회",
+    "update_cooperation": "기관협력 변경",
+    "export_cooperation": "기관협력 명단 내보내기",
     "login": "로그인",
     "login_fail": "로그인 실패",
     "logout": "로그아웃",
@@ -197,6 +200,7 @@ MENUS = [
     ("dashboard", "대시보드",  PERM_VIEW),
     ("consult",   "상담",       PERM_CREATE),
     ("ward",      "재원 관리",  PERM_EDIT),
+    ("partners",  "기관협력",   PERM_EDIT),
     ("sms",       "문자",       PERM_CREATE),
     ("stats",     "통계",       PERM_VIEW),
     ("report",    "월간보고서", PERM_VIEW),
@@ -209,11 +213,11 @@ MENU_MAX_LEVEL = {k: mx for k, _, mx in MENUS}
 ROLE_PRESETS = {
     "admin":  {k: MENU_MAX_LEVEL[k] for k in MENU_KEYS},  # 모든 메뉴 최대 권한
     "staff":  {
-        "dashboard": PERM_VIEW, "consult": PERM_CREATE, "ward": PERM_EDIT,
+        "dashboard": PERM_VIEW, "consult": PERM_CREATE, "ward": PERM_EDIT, "partners": PERM_VIEW,
         "sms": PERM_CREATE, "stats": PERM_VIEW, "report": PERM_VIEW, "users": PERM_HIDDEN,
     },
     "viewer": {
-        "dashboard": PERM_VIEW, "consult": PERM_VIEW, "ward": PERM_VIEW,
+        "dashboard": PERM_VIEW, "consult": PERM_VIEW, "ward": PERM_VIEW, "partners": PERM_VIEW,
         "sms": PERM_HIDDEN, "stats": PERM_VIEW, "report": PERM_VIEW, "users": PERM_HIDDEN,
     },
 }

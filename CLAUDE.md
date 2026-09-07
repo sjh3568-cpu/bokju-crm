@@ -282,3 +282,19 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
   `BACKUP_KEEP_DAYS`(기본 30일) 경과분 자동 삭제. SQLite 온라인 백업 API라 무중단.
 - **첫 셋업**: `.env`에 `APP_PASSWORD`/`SECRET_KEY` 설정 → `python app.py` → admin 계정 자동 생성 (.env의 `APP_PASSWORD` 사용)
 - **재시작 시 주의**: 템플릿 변경은 즉시 반영 (Jinja 자동 리로드), config.py·models.py 변경은 서버 재시작 필요
+
+## 2026-09-07 기관협력 관리
+
+- `partnerships.py` Blueprint `/partners`: 마스터 병원 연결, 협력 담당자, 방문·연락 이력, 다음 일정, 기간별 상담·입원 명단/CSV.
+- 초기화: `app.initialize()`에서 `models.init_db()` 다음 `partnerships.init_schema()` 호출. `cooperation_*` 4개 테이블, 핵심 2기관 마스터 기반 등록. 기존 상담 데이터는 변경하지 않음.
+- `partners` 메뉴 권한 추가(조회/수정), 기존 로그인 세션은 새 키 누락 시 DB의 권한을 다시 로드.
+- 집계: `referrer_institution`(실제 연계)와 `source_hospital`(이전 병원)을 명시적으로 구분. 상담은 상담일, 입원은 실제 입원일 기준. 환자+입원일로 입원 중복 제거.
+- 후속 일정: 7일 전~기한 초과를 대시보드/기관목록에서 표시. 활동 저장 시 설정 주기로 후속 일정 생성(기존 동일 유형 미완료 일정은 중복 생성하지 않음). 명시 날짜는 별도 일정 생성.
+- 검증: `.venv-linux/bin/python -m unittest discover -s tests -v` (임시 DB, 실제 자료 사용하지 않음).
+- 전국 기관 검색은 `cooperation_facility_directory`에서 공식기관코드로 구분한다. 2026.3 심평원 원본 중 의원·병원·종합병원·상급종합 39,490곳을 적재했다. 동명 기관을 주소별로 보존한다.
+- 기관 목록은 피드/표 전환, 상세는 동일 출처 iframe 모달. 기간 입력을 포함한 모든 날짜 입력은 공통 `date-presets.js` 빠른 달력을 사용한다.
+- 상담사 역할의 기관협력 기본 권한은 조회. 방문 담당자/관리자에게만 수정 권한을 부여한다.
+- 통계 모병원 분석도 기관협력과 같이 실제 입원일만 사용하며, 입원일 미확정은 기간 집계에서 제외해 별도 표시한다.
+- 협력기관 기본 보기는 목록형. 공식 상세정보는 2026.3 시설·진료과목·특수진료 XLSX를 기관코드로 연결해 진료과목, 입원 병상 합계, 간호간병통합서비스(KH)를 표시한다. 수동 `specialties`/`strengths`와 공식정보를 덮어쓰지 않고 함께 표시한다.
+- `cooperation_agreements`: 기관별 업무협약서 메타데이터(문서명, 체결/만료, 상태, 상대 담당자, 문서 보관 위치, 비고). 파일 자체를 DB에 저장하지 않는다.
+- 상세자료 갱신: `.venv-linux/bin/python tools/import_cooperation_facility_details.py <2026.3 XLSX 폴더> --updated-at 2026-03`.

@@ -1,6 +1,6 @@
 // 기간 범위 입력이 있는 화면에 공통 빠른 조회 선택기를 붙인다.
 (() => {
-    const pairs = [['from', 'to'], ['admission_from', 'admission_to'], ['discharge_from', 'discharge_to']];
+    const pairs = [['from', 'to'], ['start', 'end'], ['date_from', 'date_to'], ['admission_from', 'admission_to'], ['discharge_from', 'discharge_to']];
     const pad = n => String(n).padStart(2, '0');
     const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     const day = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
@@ -34,7 +34,7 @@
         });
     }
     function mount(form, start, end, index) {
-        if (form.dataset.datePresets === 'off') return;
+        if (form.dataset.datePresets === 'off' || start._datePresetPanel || end._datePresetPanel || start.disabled || end.disabled || start.readOnly || end.readOnly) return;
         const anchor = document.createElement('span'); anchor.className = 'date-preset-anchor';
         const panel = document.createElement('div'); panel.className = 'date-preset-panel'; panel.id = `date-preset-${index}`; panel.hidden = true;
         const custom = document.createElement('div'); custom.className = 'date-preset-custom';
@@ -94,11 +94,48 @@
         });
         panel.addEventListener('click', e => e.stopPropagation());
     }
+    function mountSingle(form, input, index) {
+        if (form.dataset.datePresets === 'off' || input._datePresetPanel || input.disabled || input.readOnly || input.closest('.date-preset-panel')) return;
+        const panel = document.createElement('div'); panel.className = 'date-preset-panel'; panel.id = `date-preset-${index}`; panel.hidden = true;
+        const title = document.createElement('b'); title.textContent = '날짜 선택';
+        const custom = document.createElement('input'); custom.type = 'date'; custom.value = input.value;
+        custom.min = input.min; custom.max = input.max; custom.setAttribute('aria-label', '날짜 직접 선택');
+        const apply = document.createElement('button'); apply.type = 'button'; apply.textContent = '적용'; apply.className = 'date-preset-apply';
+        const line = document.createElement('div'); line.className = 'date-preset-custom-inputs'; line.append(custom, apply);
+        const section = document.createElement('section'), choices = document.createElement('div'); choices.className = 'date-preset-choices';
+        const applyDate = value => {
+            if ((input.min && value < input.min) || (input.max && value > input.max)) { custom.reportValidity(); return; }
+            input.value = value; ['input','change'].forEach(type => input.dispatchEvent(new Event(type,{bubbles:true})));
+            panel.hidden = true; input.setAttribute('aria-expanded','false');
+        };
+        const addMonths = n => { const d = new Date(year, month+n, 1, 12); d.setDate(Math.min(today.getDate(),new Date(year,month+n+1,0).getDate())); return iso(d); };
+        const shortcuts = [['오늘',iso(today)],['어제',iso(day(today,-1))],['내일',iso(day(today,1))],['1주 후',iso(day(today,7))],['2주 후',iso(day(today,14))],['1개월 후',addMonths(1)],['3개월 후',addMonths(3)]];
+        shortcuts.forEach(([label,value]) => {
+            const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
+            button.disabled = Boolean((input.min && value < input.min) || (input.max && value > input.max));
+            button.addEventListener('click',() => applyDate(value)); choices.append(button);
+        });
+        if (!input.required) { const clear = document.createElement('button'); clear.type='button'; clear.textContent='날짜 지우기'; clear.addEventListener('click',()=>{ input.value=''; ['input','change'].forEach(type=>input.dispatchEvent(new Event(type,{bubbles:true}))); closeAll(); }); choices.append(clear); }
+        apply.addEventListener('click',() => { if (custom.value && custom.reportValidity()) applyDate(custom.value); });
+        section.append(title,line,choices); panel.append(section);
+        const anchor = document.createElement('span'); anchor.className='date-preset-anchor'; anchor.append(panel);
+        (input.closest('label') || input).insertAdjacentElement('afterend',anchor);
+        input._datePresetPanel=panel; input.readOnly=true; input.classList.add('date-preset-trigger'); input.setAttribute('aria-controls',panel.id); input.setAttribute('aria-expanded','false');
+        const toggle = event => {
+            event.preventDefault(); event.stopPropagation(); const opening=panel.hidden; closeAll();
+            panel.hidden=!opening; input.setAttribute('aria-expanded',String(opening));
+            if (opening) { custom.value=input.value; const rect=input.getBoundingClientRect();
+                if(window.innerWidth>600){panel.style.left=Math.max(12,Math.min(rect.left,window.innerWidth-372))+'px';panel.style.top=Math.max(12,Math.min(rect.bottom+7,window.innerHeight-panel.offsetHeight-12))+'px';}
+            }
+        };
+        input.addEventListener('click',toggle); input.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' ')toggle(e)}); panel.addEventListener('click',e=>e.stopPropagation());
+    }
     let index = 0;
     document.querySelectorAll('form').forEach(form => pairs.forEach(([a, b]) => {
         const start = form.querySelector(`input[type="date"][name="${a}"]`), end = form.querySelector(`input[type="date"][name="${b}"]`);
         if (start && end) mount(form, start, end, ++index);
     }));
+    document.querySelectorAll('form').forEach(form => [...form.querySelectorAll('input[type="date"]')].forEach(input => mountSingle(form,input,++index)));
     document.addEventListener('click', () => closeAll());
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAll(); });
 })();
