@@ -3264,6 +3264,93 @@ def api_consult_create():
     return jsonify({"ok": True, "id": cid, "patient_id": pid})
 
 
+@app.route("/api/consult/ai-fill", methods=["POST"])
+@login_required
+def api_consult_ai_fill():
+    """통화 메모 → 상담일지 필드 초안. Claude가 뽑은 값을 config로 검증·화이트리스트해
+    폼 필드명(dotted)으로 돌려준다. 자동 저장 없음 — 상담사가 검토·수정 후 저장.
+    개인정보(메모 원문)는 감사로그에 남기지 않는다."""
+    payload = request.get_json(silent=True) or {}
+    memo = (payload.get("memo") or "").strip()
+    if not memo:
+        return jsonify({"error": "통화 메모를 입력하세요."}), 400
+    if len(memo) > 6000:
+        memo = memo[:6000]
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        return jsonify({"error": "AI 기능 미설정 (ANTHROPIC_API_KEY 없음)"}), 503
+    try:
+        import llm
+        raw = llm.extract_consultation(memo, enums={
+            "insurance": INSURANCE_TYPES, "channel": CONSULT_CHANNELS,
+            "doctor": ATTENDING_DOCTORS, "result": CONSULT_RESULTS,
+            "sido": SIDO_LIST,
+        })
+    except Exception as e:
+        logger.warning("AI 상담 추출 실패: %s", e)
+        return jsonify({"error": "AI 처리에 실패했습니다. 잠시 후 다시 시도하세요."}), 502
+
+    fields, labels = {}, {}
+
+    def put(name, value, label):
+        fields[name] = value
+        labels[name] = label
+
+    def text_of(key, cap=500):
+        v = raw.get(key)
+        return (str(v).strip()[:cap]) if v not in (None, "") else None
+
+    # ── 환자 기본 ──
+    if (v := text_of("name", 40)):
+        put("patient.name", v, "환자명")
+    g_ = (raw.get("gender") or "").strip()
+    if g_ in ("남", "M", "남자"):
+        put("patient.gender", "M", "성별")
+    elif g_ in ("여", "F", "여자"):
+        put("patient.gender", "F", "성별")
+    if (v := text_of("guardian_name", 40)):
+        put("patient.guardian_name", v, "보호자명")
+    if (v := text_of("guardian_relation", 20)):
+        put("patient.guardian_relation", v, "보호자 관계")
+    if raw.get("guardian_phone"):
+        put("patient.guardian_phone", _norm_phone(str(raw["guardian_phone"])), "연락처")
+    if (v := raw.get("residence_sido")) and v in SIDO_LIST:
+        put("patient.residence_sido", v, "거주 시/도")
+        if (sg := text_of("residence_sigungu", 30)):
+            put("patient.residence_sigungu", sg, "거주 시/군/구")
+    if (v := raw.get("insurance_type")) and v in INSURANCE_TYPES:
+        put("patient.insurance_type", v, "보험유형")
+
+    # ── 상담 ──
+    age = raw.get("age")
+    try:
+        if age is not None and 0 <= int(age) <= 120:
+            put("consultation.patient_age", int(age), "나이")
+    except (ValueError, TypeError):
+        pass
+    if (v := raw.get("consult_channel")) and v in CONSULT_CHANNELS:
+        put("consultation.consult_channel", v, "상담방법")
+    if (v := raw.get("attending_doctor")) and v in ATTENDING_DOCTORS:
+        put("consultation.attending_doctor", v, "주치의")
+    if (v := text_of("disease_onset", 60)):
+        put("consultation.disease_onset", v, "발병일")
+    if (v := raw.get("planned_admission_date")) and _valid_date(str(v)[:10], None):
+        put("consultation.planned_admission_date", str(v)[:10], "입원예정일")
+    if (v := text_of("diagnosis", 800)):
+        put("consultation.disease_detail", v, "병명·진단 상세")
+    if (v := text_of("admission_purpose", 500)):
+        put("consultation.admission_purpose", v, "입원 목적")
+    if (v := raw.get("consult_result")) and v in CONSULT_RESULTS:
+        put("consultation.consult_result", v, "상담 결과")
+
+    summary = text_of("summary", 1000) or ""
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="ai_fill_consult", target_type="consultation",
+        detail=f"{len(fields)}개 필드", ip=request.remote_addr,
+    )
+    return jsonify({"ok": True, "fields": fields, "labels": labels, "summary": summary})
+
+
 @app.route("/api/consult/<int:cid>", methods=["POST"])
 @login_required
 def api_consult_update(cid):

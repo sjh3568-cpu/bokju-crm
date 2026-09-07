@@ -163,6 +163,108 @@ def summarize_monthly(data: dict) -> str:
     raise RuntimeError(f"Claude 호출 실패: {last_err}")
 
 
+EXTRACT_SYSTEM_PROMPT = """당신은 복주회복병원(입원 전용 재활병원) 상담실의 입력 보조 AI입니다.
+상담사가 통화하며 급히 적은 '통화 메모'를 읽고, 상담일지 양식의 해당 칸에 들어갈 값을
+구조화해 뽑아냅니다.
+
+절대 규칙:
+1. **오직 JSON 객체 하나만** 출력. 마크다운·설명·코드펜스 금지.
+2. 메모에서 **명시적으로 확인되는 값만** 채운다. 추측·창작 금지. 모르면 그 키를 아예 넣지 않는다.
+3. 열거형은 반드시 주어진 보기 중 하나와 **정확히 일치**하는 문자열만. 애매하면 생략.
+4. 개인정보를 지어내지 말 것. 메모에 없는 이름·번호·주소를 만들지 말 것.
+5. 의료법 위반 표현(효과 단정·완치 보장 등) 금지.
+
+출력 가능한 키와 형식(모르는 키는 생략):
+- name: 환자 이름(문자열)
+- gender: "남" 또는 "여"
+- age: 환자 나이(정수, 만나이 기준 숫자만)
+- guardian_name: 보호자 이름
+- guardian_relation: 보호자 관계(예: 배우자/자녀/형제/부모)
+- guardian_phone: 연락처(010-0000-0000 형식으로 정규화)
+- residence_sido: 거주 시/도 (아래 시도 보기 중 하나)
+- residence_sigungu: 거주 시/군/구 (문자열)
+- insurance_type: 보험유형 (아래 보기 중 하나)
+- consult_channel: 상담방법 (아래 보기 중 하나)
+- attending_doctor: 희망/담당 주치의 (아래 보기 중 하나, 메모에 명시된 경우만)
+- disease_onset: 발병일 (YYYY-MM-DD, 명확할 때만) 또는 발병 시점 설명(문자열)
+- planned_admission_date: 입원예정일 (YYYY-MM-DD, 명확할 때만)
+- diagnosis: 주요 병명/진단 요약(문자열, 자유서술) — 상담일지 병명 상세칸에 들어감
+- admission_purpose: 입원 목적/주요 재활 목표(문자열)
+- consult_result: 상담 결과 (아래 보기 중 하나, 메모에 분명할 때만)
+- summary: 통화 핵심 요약 2~4문장(문자열). 환자 상태·요청사항·다음 조치 중심."""
+
+
+def extract_consultation(memo: str, *, enums: dict) -> dict:
+    """통화 메모 → 상담일지 필드 초안(dict). 값 검증은 호출측(app)이 config로 수행.
+
+    enums: {"insurance": [...], "channel": [...], "doctor": [...],
+            "result": [...], "sido": [...]} — 프롬프트에 보기로 제시.
+    """
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise RuntimeError("ANTHROPIC_API_KEY 미설정")
+    memo = (memo or "").strip()
+    if not memo:
+        return {}
+
+    model = os.getenv("CLAUDE_MODEL", DEFAULT_MODEL)
+    guide = (
+        f"[보험유형 보기] {', '.join(enums.get('insurance', []))}\n"
+        f"[상담방법 보기] {', '.join(enums.get('channel', []))}\n"
+        f"[주치의 보기] {', '.join(enums.get('doctor', []))}\n"
+        f"[상담결과 보기] {', '.join(enums.get('result', []))}\n"
+        f"[시도 보기] {', '.join(enums.get('sido', []))}"
+    )
+    user_prompt = f"{guide}\n\n[통화 메모]\n{memo}\n\n위 메모에서 확인되는 값만 JSON으로 출력하세요."
+
+    payload = {
+        "model": model,
+        "max_tokens": 1200,
+        "temperature": 0,
+        "system": EXTRACT_SYSTEM_PROMPT,
+        "messages": [{"role": "user", "content": user_prompt}],
+    }
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
+
+    last_err: Exception | None = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            r = requests.post(CLAUDE_URL, headers=headers, json=payload, timeout=60)
+            if r.status_code == 429:
+                time.sleep(RETRY_DELAY * attempt)
+                continue
+            r.raise_for_status()
+            text = r.json()["content"][0]["text"].strip()
+            return _parse_json_object(text)
+        except Exception as e:
+            last_err = e
+            logger.warning(f"Claude 추출 실패 (시도 {attempt}): {e}")
+            if attempt < MAX_RETRIES:
+                time.sleep(RETRY_DELAY)
+    raise RuntimeError(f"Claude 호출 실패: {last_err}")
+
+
+def _parse_json_object(text: str) -> dict:
+    """LLM 응답에서 JSON 객체를 방어적으로 추출 (코드펜스·앞뒤 잡텍스트 제거)."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("```", 2)[1] if "```" in text[3:] else text.strip("`")
+        text = text.split("\n", 1)[-1] if text.lower().startswith("json") else text
+    start, end = text.find("{"), text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        text = text[start:end + 1]
+    try:
+        data = json.loads(text)
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, ValueError):
+        logger.warning("LLM JSON 파싱 실패")
+        return {}
+
+
 def _compact(data: dict) -> dict:
     """프롬프트 토큰 절약 — 카운트가 0인 라벨/긴 꼬리 제거."""
     def top(arr, n=8):

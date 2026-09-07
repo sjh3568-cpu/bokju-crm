@@ -136,6 +136,7 @@ AUDIT_ACTION_LABELS = {
     "delete_lifecycle_event": "생애주기 이벤트 삭제",
     "add_communication": "소통 기록 추가",
     "inbound_webhook": "인바운드 문의 수신(웹훅)",
+    "ai_fill_consult": "통화 메모 AI 자동 채움",
     "close_communication": "소통 기록 종료",
     "update_blacklist": "블랙리스트 변경",
     "merge_patient": "환자 병합",
