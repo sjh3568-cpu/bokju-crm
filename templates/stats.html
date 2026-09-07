@@ -165,17 +165,10 @@
 </div>
 </div>{# /stats-report-sheet #}
 
-<!-- Claude 자동 인사이트 -->
-<div class="card insight-card">
-    <div class="insight-head">
-        <h3>AI 자동 인사이트</h3>
-        {% if insight_enabled %}
-        <button id="btn-insight" class="btn btn-accent btn-sm" type="button">인사이트 생성</button>
-        {% else %}
-        <span class="note">ANTHROPIC_API_KEY 미설정 — .env에 키를 추가하면 활성화됩니다.</span>
-        {% endif %}
-    </div>
-    <div id="insight-out" class="insight-body empty">기간을 선택한 뒤 [인사이트 생성]을 눌러주세요.</div>
+<!-- AI 해석은 월간보고서로 일원화 (전월·전년 대비가 월 단위에서만 성립) -->
+<div class="card insight-link">
+    <span>전월·전년 대비 <strong>AI 분석</strong>은 월간보고서에서 제공합니다.</span>
+    <a href="/report/monthly" class="btn btn-secondary btn-sm">월간보고서 열기 →</a>
 </div>
 
 <style>
@@ -255,16 +248,12 @@
     .combined-chart-box, .combined-chart-box.equal { grid-template-columns:1fr; }
 }
 
-.insight-card { margin-top:10px; padding:12px; }
-.insight-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
-.insight-head h3 { font-size:0.95em; }
-.insight-body { white-space:pre-wrap; line-height:1.55; font-size:0.9em; padding:10px 12px; background:#f8fafc; border-radius:6px; min-height:50px; }
-.insight-body.empty { color:var(--text-light); }
-.insight-body.loading { color:var(--text-light); font-style:italic; }
+.insight-link { margin-top:10px; padding:10px 12px; display:flex; justify-content:space-between;
+                align-items:center; gap:10px; font-size:0.88em; color:var(--text-light); }
 @page { size:A4 landscape; margin:8mm; }
 @media print {
     body { background:#fff !important; }
-    header, nav, .sidebar, .topbar, .page-header, .period-bar, .section-heading, .chart-grid, .insight-card { display:none !important; }
+    header, nav, .sidebar, .topbar, .page-header, .period-bar, .section-heading, .chart-grid, .insight-link { display:none !important; }
     body .container, main, .content { width:auto !important; max-width:none !important; margin:0 !important; padding:0 !important; }
     .stats-report-sheet { display:grid; grid-template-columns:repeat(3,1fr); gap:3mm; height:190mm; overflow:hidden; }
     .stats-print-title { display:block; grid-column:1/-1; text-align:center; height:12mm; }
@@ -897,38 +886,6 @@
     }
 
     // ─── 인사이트 ───
-    const btnInsight = document.getElementById('btn-insight');
-    if (btnInsight) {
-        btnInsight.addEventListener('click', async () => {
-            const params = new URLSearchParams(window.location.search);
-            const out = document.getElementById('insight-out');
-            out.classList.remove('empty');
-            out.classList.add('loading');
-            out.textContent = '인사이트 생성 중... (수 초 소요)';
-            btnInsight.disabled = true;
-            try {
-                const r = await fetch('/api/stats/insight', {
-                    method: 'POST',
-                    headers: { 'content-type': 'application/json' },
-                    body: JSON.stringify({
-                        from: params.get('from') || {{ (date_from or '')|tojson }},
-                        to: params.get('to') || {{ (date_to or '')|tojson }},
-                    }),
-                });
-                const j = await r.json();
-                out.classList.remove('loading');
-                if (j.error) {
-                    out.textContent = '오류: ' + j.error;
-                } else {
-                    out.textContent = j.insight || '응답이 비어 있습니다.';
-                }
-            } catch (e) {
-                out.classList.remove('loading');
-                out.textContent = '오류: ' + e.message;
-            }
-            btnInsight.disabled = false;
-        });
-    }
 
     loadStats();
 })();

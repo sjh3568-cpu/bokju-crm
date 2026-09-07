@@ -1,6 +1,6 @@
-"""Claude API — 통계 인사이트 자동 요약 (Phase 3).
+"""Claude API — 월간 보고서 AI 해석 + 상담일지 자동 채움.
 
-집계 결과 dict를 받아 상담실장에게 도움 되는 한국어 코멘트를 생성한다.
+AI 해석은 월간 보고서 한 곳으로 일원화한다 (전월·전년 대비가 월 단위에서만 성립).
 환자 개인정보(이름/연락처)는 절대 전달하지 않는다 — 집계 카운트만.
 """
 import json
@@ -20,67 +20,6 @@ INSIGHT_MODEL = "claude-sonnet-5"
 MAX_RETRIES = 2
 RETRY_DELAY = 4
 
-SYSTEM_PROMPT = """당신은 재활병원 상담실의 통계 분석가입니다.
-복주회복병원(인덕의료재단) 상담실은 입원 전용 재활병원으로, 입원경로/거주지/병명/보험/연령 분포를 본다.
-
-다음 원칙으로 응답:
-1. **3~5문장**의 자연스러운 한국어 단락 형식
-2. 가장 눈에 띄는 변화·비율·분포만 짚는다 (모든 항목 나열 X)
-3. 입원경로/병명/거주지/연령 중 가장 의미 있는 1~2개 인사이트에 집중
-4. **숫자는 정확히 인용** (예: "온라인 유입이 12건으로 전체의 40%")
-5. 마지막 1문장은 **실무 시사점** (예: "온라인 카페 활동을 강화할 시점", "고관절 골절 환자가 증가 추세")
-6. 의료법 준수 — "효과 보장", "완치", "최고" 같은 광고성 표현 금지
-7. 환자 개인 식별 시도 금지, 추측·과장 금지, 데이터에 없는 정보 만들지 말 것
-8. JSON·마크다운 X. 줄글로만."""
-
-
-def summarize_stats(data: dict, *, date_from: str | None, date_to: str | None) -> str:
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY 미설정")
-
-    model = os.getenv("CLAUDE_MODEL", DEFAULT_MODEL)
-    summary_payload = _compact(data)
-
-    user_prompt = f"""기간: {date_from or '전체'} ~ {date_to or '전체'}
-총 상담: {data['summary']['total']}건, 입원예정 등록: {data['summary']['planned']}건 ({data['summary']['plan_rate']}%)
-
-집계 데이터:
-{json.dumps(summary_payload, ensure_ascii=False, indent=2)}
-
-위 데이터를 기반으로 상담실장이 보기 좋은 인사이트 단락(3~5문장)을 작성하세요."""
-
-    payload = {
-        "model": model,
-        "max_tokens": 700,
-        "temperature": 0.3,
-        "system": SYSTEM_PROMPT,
-        "messages": [{"role": "user", "content": user_prompt}],
-    }
-    headers = {
-        "x-api-key": api_key,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-    }
-
-    last_err: Exception | None = None
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            r = requests.post(CLAUDE_URL, headers=headers, json=payload, timeout=60)
-            if r.status_code == 429:
-                time.sleep(RETRY_DELAY * attempt)
-                continue
-            r.raise_for_status()
-            data = r.json()
-            return data["content"][0]["text"].strip()
-        except Exception as e:
-            last_err = e
-            logger.warning(f"Claude 호출 실패 (시도 {attempt}): {e}")
-            if attempt < MAX_RETRIES:
-                time.sleep(RETRY_DELAY)
-    raise RuntimeError(f"Claude 호출 실패: {last_err}")
-
-
 MONTHLY_SYSTEM_PROMPT = """당신은 복주회복병원(인덕의료재단·입원전용 재활병원) 상담실 데이터를 임원에게 보고하는 분석가입니다.
 A4 1장짜리 월간 보고서에 들어갈 해석 문구를 작성합니다. 표와 그래프는 이미 화면에 그려져 있으니,
 당신은 **그 숫자가 무엇을 뜻하는지**만 씁니다.
@@ -93,6 +32,10 @@ A4 1장짜리 월간 보고서에 들어갈 해석 문구를 작성합니다. �
 3. **왜 그런지, 그래서 뭘 해야 하는지**까지 간다. 현상 서술에서 멈추지 마라.
 4. 분포 순위("가장 많은 병명은 X")는 그 자체로 인사이트가 아니다.
    순위가 **바뀌었을 때**, 또는 **물량과 전환율이 어긋날 때**만 언급 가치가 있다.
+4-1. 지역·모병원·상담자 성과 테이블은 **전환율의 전월/전년 변화**를 먼저 보라.
+   물량은 그대로인데 전환율만 떨어진 항목이 가장 중요한 신호다.
+4-2. 상담자별 수치는 개인 평가가 아니다. 순위를 매기거나 특정인을 단정적으로
+   평가하지 말고, 편차가 크면 배분·교육·케이스 난이도 관점에서만 언급하라.
 5. 분석 대상 기간 밖의 달을 사실처럼 말하지 마라. 다음 달 액션을 제안하는 것은 되지만,
    데이터가 없는 달의 실적을 언급하면 안 된다.
 6. 진행중(입원 미확정) 비율이 높은 달은 전환율이 아직 확정이 아니다.
@@ -125,6 +68,14 @@ MONTHLY_SCHEMA = {
             "type": "string",
             "description": "병명그룹·연령 구성 변화 해석 2~3문장. 전년 동월 대비 구성이 어떻게 달라졌는지 중심.",
         },
+        "pipeline_comment": {
+            "type": "string",
+            "description": "상담 결과 단계·요일 분포·모병원 유입 해석 2~3문장. 미확정 물량이 어디에 쌓여 있는지, 상담량의 요일 편중, 신규 모병원 유입의 의미 중심.",
+        },
+        "operation_comment": {
+            "type": "string",
+            "description": "운영·데이터 품질 해석 2~3문장. 지역·모병원·상담자 성과의 전환율 변화, 요일 편중, 입력 누락 중 실제 조치가 가능한 것만.",
+        },
         "alerts": {
             "type": "array",
             "items": {"type": "string"},
@@ -132,7 +83,7 @@ MONTHLY_SCHEMA = {
         },
     },
     "required": ["headline", "overview", "trend_comment", "channel_comment",
-                 "portfolio_comment", "alerts"],
+                 "portfolio_comment", "pipeline_comment", "operation_comment", "alerts"],
     "additionalProperties": False,
 }
 
@@ -174,6 +125,25 @@ def summarize_monthly(data: dict) -> dict:
         "연령대": cmp_rows(data["breakdowns"]["연령대"]),
         "취소사유": [{"사유": x["label"], "건수": x["count"]}
                  for x in (data["by_rejection_reason"] or [])[:5]],
+        "성과_전환율_3기간": {
+            cat: [{"항목": r["label"], "상담": r["cur"], "전환율%": r["cur_rate"],
+                   "전월상담": r["prev"], "전월전환율%": r["prev_rate"],
+                   "전년상담": r["yoy"], "전년전환율%": r["yoy_rate"]}
+                  for r in rows]
+            for cat, rows in (data.get("performance") or {}).items()
+        },
+        "운영지표": {
+            cat: [{"구분": r["label"], "이번달": r["cur"], "전월": r["prev"]} for r in rows]
+            for cat, rows in (data.get("ops") or {}).items()
+        },
+        "상담결과_단계": [{"단계": x["label"], "이번달": x["cur"], "전월": x["prev"]}
+                     for x in (data.get("pipeline") or [])],
+        "신규_모병원_수": data.get("new_hospitals"),
+        "모병원_의뢰_Top": [{"모병원": x["label"], "의뢰": x["count"]}
+                      for x in (data.get("by_source_hospital") or [])[:6]],
+        "재단시설_연계": data.get("referral_capture"),
+        "입력_누락률": [{"항목": x["label"], "누락%": x["rate"]}
+                   for x in (q.get("missing_fields") or [])],
         "데이터성숙도": {
             "진행중_건수": q.get("pending"),
             "진행중_비율%": q.get("pending_rate"),
@@ -192,8 +162,9 @@ def summarize_monthly(data: dict) -> dict:
     payload = {
         "model": model,
         # Sonnet 5는 적응형 사고가 기본이라 사고 토큰이 max_tokens를 함께 소비한다.
-        # 한도가 빠듯하면 JSON이 중간에 잘리므로 여유를 둔다.
-        "max_tokens": 8000,
+        # 한도에 걸리면 구조화 출력이 JSON을 억지로 닫아 뒤쪽 필드가 빈 문자열로
+        # 나오므로(에러가 아니라 조용히 비어버린다) 넉넉히 잡는다.
+        "max_tokens": 16000,
         "system": MONTHLY_SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": user_prompt}],
         "output_config": {
@@ -205,23 +176,50 @@ def summarize_monthly(data: dict) -> dict:
 
 
 def _post_json(payload: dict, api_key: str) -> dict:
-    """구조화 출력 호출 — 스키마가 보장되므로 방어적 파싱 불필요."""
+    """구조화 출력 호출 — 스키마가 보장되므로 방어적 파싱 불필요.
+
+    스트리밍으로 받는다. max_tokens가 크고 사고 시간이 길어 단일 응답을 기다리면
+    읽기 타임아웃에 걸린다. 스트리밍은 청크 단위로 타임아웃이 갱신돼 안전하다.
+    """
     headers = {
         "x-api-key": api_key,
         "anthropic-version": "2023-06-01",
         "content-type": "application/json",
     }
+    body = dict(payload, stream=True)
+
     last_err: Exception | None = None
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            r = requests.post(CLAUDE_URL, headers=headers, json=payload, timeout=90)
-            if r.status_code == 429:
-                time.sleep(RETRY_DELAY * attempt)
-                continue
-            r.raise_for_status()
-            body = r.json()
-            text = next(b["text"] for b in body["content"] if b["type"] == "text")
-            return json.loads(text)
+            with requests.post(CLAUDE_URL, headers=headers, json=body,
+                               stream=True, timeout=(10, 90)) as r:
+                if r.status_code == 429:
+                    time.sleep(RETRY_DELAY * attempt)
+                    continue
+                r.raise_for_status()
+                chunks: list[str] = []
+                stop_reason = None
+                for line in r.iter_lines(decode_unicode=True):
+                    if not line or not line.startswith("data: "):
+                        continue
+                    event = json.loads(line[6:])
+                    etype = event.get("type")
+                    if etype == "content_block_delta":
+                        delta = event.get("delta") or {}
+                        if delta.get("type") == "text_delta":
+                            chunks.append(delta.get("text", ""))
+                    elif etype == "message_delta":
+                        stop_reason = (event.get("delta") or {}).get("stop_reason")
+                    elif etype == "error":
+                        raise RuntimeError(event.get("error", {}).get("message", "stream error"))
+                if stop_reason == "max_tokens":
+                    # 구조화 출력은 이 경우에도 파싱 가능한 JSON을 돌려주지만
+                    # 뒤쪽 필드가 비어 있다. 조용히 넘기지 않는다.
+                    logger.warning("Claude 응답이 max_tokens에서 잘림 — 뒤쪽 필드가 비었을 수 있음")
+                text = "".join(chunks).strip()
+                if not text:
+                    raise RuntimeError("빈 응답")
+                return json.loads(text)
         except Exception as e:
             last_err = e
             logger.warning(f"Claude 호출 실패 (시도 {attempt}): {e}")
@@ -367,22 +365,3 @@ def _parse_json_object(text: str) -> dict:
     except (json.JSONDecodeError, ValueError):
         logger.warning("LLM JSON 파싱 실패")
         return {}
-
-
-def _compact(data: dict) -> dict:
-    """프롬프트 토큰 절약 — 카운트가 0인 라벨/긴 꼬리 제거."""
-    def top(arr, n=8):
-        return [{"label": x["label"], "count": x["count"]} for x in (arr or [])[:n] if x.get("count")]
-    return {
-        "입원경로_그룹": top(data.get("by_referral_type"), 5),
-        "입원경로_세부": top(data.get("by_referral_detail"), 8),
-        "병명_그룹": top(data.get("by_disease_group"), 5),
-        "병명_상위": top(data.get("by_disease"), 10),
-        "거주지_시도": top(data.get("by_sido"), 8),
-        "거주지_시군구": top(data.get("by_sigungu_top"), 8),
-        "보험유형": top(data.get("by_insurance"), 8),
-        "연령대": top(data.get("by_age"), 8),
-        "상담방법": top(data.get("by_channel"), 5),
-        "상담자별": top(data.get("by_counselor"), 8),
-        "성별": top(data.get("by_gender"), 5),
-    }

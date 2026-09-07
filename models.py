@@ -682,6 +682,13 @@ def init_db():
         "extension": "TEXT NOT NULL DEFAULT ''", "work_phone": "TEXT NOT NULL DEFAULT ''",
         "preferences": "TEXT NOT NULL DEFAULT '{}'", "password_changed_at": "DATETIME",
     })
+    _ensure_columns(conn, "communications", {
+        "assigned_user_id": "INTEGER REFERENCES users(id)",
+        "priority": "TEXT NOT NULL DEFAULT 'normal'",
+        "updated_at": "DATETIME",
+        "resolved_at": "DATETIME",
+    })
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_comm_assignee ON communications(assigned_user_id, status)")
     # 요양원(노인의료복지시설) 별도 마스터 — 보건복지부·국민건강보험공단 데이터.
     # 자동완성·정식명 강제는 병원과 동일 룰을 공유하지만 마스터는 분리.
     conn.execute("""
@@ -4444,13 +4451,17 @@ def aggregate_monthly(year: int, month: int) -> dict:
             "suffix": suffix,
         }
 
+    # 순서는 보고서 하단 섹션 순서와 맞춘다 — 카드에서 눈이 내려가면 바로 근거가 나오도록.
     kpis = [
         kpi("총 상담", s_this["total"], s_prev["total"], s_yoy["total"], suffix="건"),
         kpi("입원완료", s_this["completed"], s_prev["completed"], s_yoy["completed"], suffix="건"),
         kpi("전환율", s_this["conversion_rate"], s_prev["conversion_rate"],
             s_yoy["conversion_rate"], suffix="%"),
+        kpi("활성 채널", active_channels, len(prev_data["by_referral_detail"]),
+            len(yoy_data["by_referral_detail"]), suffix="종"),
         kpi("입원취소", s_this["cancelled"], s_prev["cancelled"], s_yoy["cancelled"], suffix="건"),
-        kpi("입원보류", s_this["pending"], s_prev["pending"], s_yoy["pending"], suffix="건"),
+        # pending = 상담완료(입원 미정) + 입원보류 → '입원보류'로 부르면 오해를 준다
+        kpi("진행중", s_this["pending"], s_prev["pending"], s_yoy["pending"], suffix="건"),
         # 일평균 = total / 월 일수
         {
             "label": "일평균",
@@ -4462,8 +4473,6 @@ def aggregate_monthly(year: int, month: int) -> dict:
             "suffix": "건/일",
         },
         kpi("신규 모병원", new_hospitals, 0, suffix="곳"),  # 전월 비교 의미 약해 prev 0 표기
-        kpi("활성 채널", active_channels, len(prev_data["by_referral_detail"]),
-            len(yoy_data["by_referral_detail"]), suffix="종"),
     ]
 
     # 최근 15개월 추이 — 이번 달까지만 (미래 달은 자름)
@@ -4498,6 +4507,49 @@ def aggregate_monthly(year: int, month: int) -> dict:
         "연령대": _breakdown("by_age"),
     }
 
+    # 성과 테이블 — 물량뿐 아니라 전환율까지 3개 기간 비교 (지역·모병원·상담자)
+    def _perf_compare(key, limit=6):
+        cur = {x["label"]: x for x in (this_data.get(key) or [])}
+        prv = {x["label"]: x for x in (prev_data.get(key) or [])}
+        yoy = {x["label"]: x for x in (yoy_data.get(key) or [])}
+        labels = sorted(cur, key=lambda l: (-cur[l]["total"], l))[:limit]
+        return [{
+            "label": l,
+            "cur": cur[l]["total"], "cur_rate": cur[l]["rate"],
+            "prev": prv.get(l, {}).get("total", 0), "prev_rate": prv.get(l, {}).get("rate"),
+            "yoy": yoy.get(l, {}).get("total", 0), "yoy_rate": yoy.get(l, {}).get("rate"),
+        } for l in labels]
+
+    performance = {
+        "지역": _perf_compare("by_region_performance"),
+        "모병원": _perf_compare("by_hospital_performance"),
+        "상담자": _perf_compare("by_counselor_performance"),
+    }
+
+    # 운영 지표 — 리드타임·요일·시간대·상담단계 (전월 대비 포함)
+    def _simple_compare(key, limit=8):
+        prv = {x["label"]: x["count"] for x in (prev_data.get(key) or [])}
+        return [{"label": x["label"], "cur": x["count"], "prev": prv.get(x["label"], 0)}
+                for x in (this_data.get(key) or [])[:limit]]
+
+    # 상담 결과 파이프라인 — 입원완료·입원취소·진행중 KPI를 뒷받침하는 단계별 분포
+    _prev_status = {x["label"]: x["count"] for x in (prev_data.get("by_status") or [])}
+    pipeline = [{"label": x["label"], "cur": x["count"], "prev": _prev_status.get(x["label"], 0)}
+                for x in (this_data.get("by_status") or [])
+                if x["count"] or _prev_status.get(x["label"])]
+
+    def _has_signal(rows):
+        """한 칸에 95% 이상 몰렸거나 전부 0이면 미입력 필드 — 해석 가치가 없다."""
+        total = sum(r["cur"] for r in rows)
+        return bool(total) and max(r["cur"] for r in rows) < total * 0.95
+
+    ops = {k: v for k, v in {
+        "상담_입원_리드타임": _simple_compare("by_admission_lead"),
+        "상담단계": _simple_compare("by_consult_result"),
+        "요일별": _simple_compare("by_weekday"),
+        "전화시간대": _simple_compare("by_phone_hour", limit=6),
+    }.items() if _has_signal(v)}
+
     # 데이터 성숙도 — 진행중 비율이 높으면 이번 달 전환율은 아직 확정이 아니다
     _pending_rate = (round(100.0 * s_this["pending"] / s_this["total"], 1)
                      if s_this["total"] else 0.0)
@@ -4519,6 +4571,10 @@ def aggregate_monthly(year: int, month: int) -> dict:
         "kpis": kpis,
         "trend": trend,
         "breakdowns": breakdowns,
+        "performance": performance,
+        "ops": ops,
+        "pipeline": pipeline,
+        "new_hospitals": new_hospitals,
         "quality": quality,
         "this": this_data,
         "prev": prev_data,
@@ -4953,15 +5009,55 @@ def get_communication(comm_id):
 def update_communication(comm_id, **fields):
     valid = {k: v for k, v in fields.items()
              if k in ("status", "summary", "body", "follow_up_at",
-                      "patient_id", "consultation_id", "channel")}
+                      "patient_id", "consultation_id", "channel",
+                      "assigned_user_id", "priority")}
     if not valid:
         return
     sets = [f"{k} = ?" for k in valid]
     conn = get_db()
-    conn.execute(f"UPDATE communications SET {', '.join(sets)} WHERE id = ?",
+    extra = ", updated_at = CURRENT_TIMESTAMP"
+    if valid.get("status") == "done":
+        extra += ", resolved_at = CURRENT_TIMESTAMP"
+    elif "status" in valid:
+        extra += ", resolved_at = NULL"
+    conn.execute(f"UPDATE communications SET {', '.join(sets)}{extra} WHERE id = ?",
                  list(valid.values()) + [comm_id])
     conn.commit()
     conn.close()
+
+
+def inbox_communications(*, status="active", channel="", assignee="", q="", limit=300):
+    conn=get_db(); where=["(m.direction='in' OR m.direction IS NULL)"]; vals=[]
+    if status == "active": where.append("m.status IN ('open','in_progress','waiting')")
+    elif status in ("open","in_progress","waiting","done"):
+        where.append("m.status=?"); vals.append(status)
+    if channel: where.append("m.channel=?"); vals.append(channel)
+    if assignee == "unassigned": where.append("m.assigned_user_id IS NULL")
+    elif assignee.isdigit(): where.append("m.assigned_user_id=?"); vals.append(int(assignee))
+    if q:
+        where.append("(COALESCE(p.name,'') LIKE ? OR COALESCE(m.contact,'') LIKE ? OR COALESCE(m.summary,'') LIKE ? OR COALESCE(m.body,'') LIKE ?)")
+        vals.extend([f"%{q}%"]*4)
+    rows=conn.execute(f"""SELECT m.*,p.name patient_name,p.blacklist,p.blacklist_reason,
+        u.display_name assignee_name,
+        CAST((julianday('now','localtime')-julianday(COALESCE(m.occurred_at,m.created_at)))*24*60 AS INTEGER) elapsed_minutes
+        FROM communications m LEFT JOIN patients p ON p.id=m.patient_id
+        LEFT JOIN users u ON u.id=m.assigned_user_id
+        WHERE {' AND '.join(where)}
+        ORDER BY CASE m.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 ELSE 2 END,
+        CASE WHEN m.follow_up_at IS NOT NULL AND m.follow_up_at!='' THEN 0 ELSE 1 END,
+        COALESCE(m.occurred_at,m.created_at) ASC LIMIT ?""",[*vals,limit]).fetchall()
+    conn.close(); return [dict(r) for r in rows]
+
+
+def inbox_summary():
+    conn=get_db(); row=conn.execute("""SELECT
+      SUM(CASE WHEN status IN ('open','in_progress','waiting') THEN 1 ELSE 0 END) active,
+      SUM(CASE WHEN status='open' THEN 1 ELSE 0 END) open,
+      SUM(CASE WHEN assigned_user_id IS NULL AND status IN ('open','in_progress','waiting') THEN 1 ELSE 0 END) unassigned,
+      SUM(CASE WHEN follow_up_at<=date('now','localtime') AND status IN ('open','in_progress','waiting') THEN 1 ELSE 0 END) callback_due,
+      SUM(CASE WHEN status IN ('open','in_progress','waiting') AND julianday('now','localtime')-julianday(COALESCE(occurred_at,created_at))>=1 THEN 1 ELSE 0 END) delayed
+      FROM communications WHERE direction='in' OR direction IS NULL""").fetchone();conn.close()
+    return {k:int(row[k] or 0) for k in row.keys()}
 
 
 def delete_communication(comm_id):

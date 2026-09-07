@@ -13,7 +13,8 @@
         <h1>임원 월간 보고서 <span class="muted" style="font-size:0.65em">복주회복병원 상담실</span></h1>
         <div class="period-line">
             대상: <strong>{{ y }}년 {{ '%02d'|format(m) }}월</strong>
-            <span class="muted">({{ data['from'] }} ~ {{ data['to'] }}) · 전월 비교: {{ data.prev_from }} ~ {{ data.prev_to }}</span>
+            <span class="muted">({{ data['from'] }} ~ {{ data['to'] }})
+                · 전월 {{ data.prev_from[:7] }} · 전년 동월 {{ data.yoy_from[:7] }} 대비</span>
         </div>
     </div>
     <form method="get" action="/report/monthly" class="month-picker no-print">
@@ -28,182 +29,178 @@
     </form>
 </div>
 
-<!-- 섹션 1: KPI 8장 한 줄 -->
+<!-- 총평 -->
+<div class="report-card insight-card">
+    <div class="insight-head">
+        <h3>AI 총평</h3>
+        {% if insight_enabled %}
+        <button id="btn-insight" class="btn btn-accent btn-sm no-print" type="button">인사이트 생성</button>
+        {% else %}
+        <span class="note">ANTHROPIC_API_KEY 미설정</span>
+        {% endif %}
+    </div>
+    <div id="ai-headline" class="ai-headline" hidden></div>
+    <div id="ai-overview" class="insight-body empty">[인사이트 생성]을 누르면 전월·전년 대비 해석이 각 섹션에 채워집니다. (1분 내외)</div>
+    <div id="ai-alerts" class="ai-alerts" hidden></div>
+</div>
+
+<!-- KPI: 전월 + 전년 동월 -->
 <div class="kpi-grid">
     {% for k in data.kpis %}
     <div class="kpi-card">
         <div class="kpi-label">{{ k.label }}</div>
         <div class="kpi-value">{{ k.value }}<span class="kpi-suffix">{{ k.suffix }}</span></div>
         <div class="kpi-delta">
-            {% if k.delta_pct is none %}
-                <span class="muted">전월 0</span>
-            {% elif k.delta_pct > 0 %}
-                <span class="up">▲ {{ k.delta_pct }}%</span>
-            {% elif k.delta_pct < 0 %}
-                <span class="down">▼ {{ k.delta_pct|abs }}%</span>
-            {% else %}
-                <span class="muted">변화 없음</span>
-            {% endif %}
-            <span class="muted prev">전월 {{ k.prev }}{{ k.suffix }}</span>
+            <span class="cmp">
+                <span class="cmp-tag">전월</span>
+                {% if k.delta_pct is none %}<span class="muted">—</span>
+                {% elif k.delta_pct > 0 %}<span class="up">▲{{ k.delta_pct }}%</span>
+                {% elif k.delta_pct < 0 %}<span class="down">▼{{ k.delta_pct|abs }}%</span>
+                {% else %}<span class="muted">0%</span>{% endif %}
+            </span>
+            <span class="cmp">
+                <span class="cmp-tag">전년</span>
+                {% if k.yoy_delta_pct is none %}<span class="muted">—</span>
+                {% elif k.yoy_delta_pct > 0 %}<span class="up">▲{{ k.yoy_delta_pct }}%</span>
+                {% elif k.yoy_delta_pct < 0 %}<span class="down">▼{{ k.yoy_delta_pct|abs }}%</span>
+                {% else %}<span class="muted">0%</span>{% endif %}
+            </span>
         </div>
     </div>
     {% endfor %}
 </div>
 
-<!-- 섹션 2: AI 임원 요약 -->
-<div class="report-card insight-card">
-    <div class="insight-head">
-        <h3>AI 임원 요약</h3>
-        {% if insight_enabled %}
-        <button id="btn-insight" class="btn btn-accent btn-sm no-print" type="button">생성</button>
-        {% else %}
-        <span class="note">ANTHROPIC_API_KEY 미설정</span>
-        {% endif %}
-    </div>
-    <div id="insight-out" class="insight-body empty">상단 [생성] 버튼을 눌러 이번 달 인사이트를 받으세요. (5초 내외)</div>
+<!-- 추이: 15개월 상담·입원·전환율 -->
+<div class="report-card">
+    <h3><span class="kpi-tag">총 상담 · 입원완료 · 전환율</span> 추이
+        <span class="muted" style="font-size:0.78em">(최근 {{ data.trend|length }}개월)</span></h3>
+    <div class="trend-wrap"><canvas id="ch-trend"></canvas></div>
+    <div class="ai-note" id="ai-trend" hidden></div>
 </div>
 
-<!-- 섹션 3+4: 채널 ROI + 모병원 Top (2열) -->
 <div class="report-grid">
+    <!-- 유입경로: 물량 vs 전환율 -->
     <div class="report-card">
-        <h3>채널별 입원 전환 ROI
-            <span class="muted no-print" style="font-size:0.66em">— 행 클릭 시 해당 채널의 이번 달 상담 목록 열림</span>
-        </h3>
-        {% set rows = data.channel.groups + data.channel.details %}
-        {% set _qs_from = data['from'] %}
-        {% set _qs_to = data['to'] %}
-        {% if data.channel.groups or data.channel.details %}
-        <table class="report-tbl rpt-drill">
-            <thead><tr><th>채널</th><th>상담</th><th>입원완료</th><th>전환율</th></tr></thead>
+        <h3><span class="kpi-tag">활성 채널 {{ data.this.by_referral_detail|length }}종</span> 유입경로별 물량과 전환율</h3>
+        <div class="chan-wrap"><canvas id="ch-channel"></canvas></div>
+        {% if data.channel.details %}
+        <table class="report-tbl rpt-drill compact">
+            <thead><tr><th>세부 채널</th><th>상담</th><th>입원</th><th>전환율</th></tr></thead>
             <tbody>
-                {% if data.channel.groups %}
-                <tr class="group-head"><td colspan="4">[그룹]</td></tr>
-                {% for r in data.channel.groups %}
-                <tr class="rpt-row" data-href="/consultations?referral_type={{ r.label|urlencode }}&from={{ _qs_from }}&to={{ _qs_to }}">
+                {% for r in data.channel.details[:5] %}
+                <tr class="rpt-row" data-href="/consultations?q={{ r.label|urlencode }}&from={{ data['from'] }}&to={{ data['to'] }}">
                     <td>{{ r.label }} <span class="rpt-arrow no-print">›</span></td>
                     <td class="num">{{ r.total }}</td>
                     <td class="num">{{ r.completed }}</td>
                     <td class="num"><strong>{{ r.rate }}%</strong></td>
                 </tr>
                 {% endfor %}
-                {% endif %}
-                {% if data.channel.details %}
-                <tr class="group-head"><td colspan="4">[세부]</td></tr>
-                {% for r in data.channel.details %}
-                <tr class="rpt-row" data-href="/consultations?q={{ r.label|urlencode }}&from={{ _qs_from }}&to={{ _qs_to }}">
-                    <td>{{ r.label }} <span class="rpt-arrow no-print">›</span></td>
-                    <td class="num">{{ r.total }}</td>
-                    <td class="num">{{ r.completed }}</td>
-                    <td class="num">{{ r.rate }}%</td>
-                </tr>
-                {% endfor %}
-                {% endif %}
             </tbody>
         </table>
-        {% else %}
-        <div class="empty-mini">데이터 없음</div>
         {% endif %}
+        <div class="ai-note" id="ai-channel" hidden></div>
     </div>
 
+    <!-- 환자 구성: 전월·전년 대비 -->
     <div class="report-card">
-        <h3>모병원 Top 10 <span class="muted" style="font-size:0.78em">(현재 입원중·입소중 환자 기준)</span></h3>
-        {% if data.by_source_hospital %}
-        <table class="report-tbl rpt-drill">
-            <thead><tr><th>모병원</th><th>의뢰</th></tr></thead>
+        <h3>환자 구성 변화 <span class="muted" style="font-size:0.78em">(전월 / 전년 동월 대비)</span></h3>
+        {% for cat in ['병명그룹', '연령대'] %}
+        {% set rows = data.breakdowns[cat] %}
+        {% if rows %}
+        <table class="report-tbl compact bd-tbl">
+            <thead><tr>
+                <th>{{ cat }}</th><th>이번달</th><th>전월</th><th>전년</th>
+                {% if cat == '병명그룹' %}<th>전환율</th>{% endif %}
+            </tr></thead>
             <tbody>
-                {% for r in data.by_source_hospital %}
-                <tr class="rpt-row" data-href="/consultations?q={{ r.label|urlencode }}&from={{ _qs_from }}&to={{ _qs_to }}">
-                    <td>{{ r.label }} <span class="rpt-arrow no-print">›</span></td>
-                    <td class="num">{{ r.count }}</td>
+                {% for r in rows[:4] %}
+                <tr>
+                    <td>{{ r.label }}</td>
+                    <td class="num"><strong>{{ r.cur }}</strong></td>
+                    <td class="num">{{ r.prev }}
+                        {% if r.delta_pct is not none %}<span class="mini-delta {{ 'up' if r.delta_pct > 0 else ('down' if r.delta_pct < 0 else '') }}">{{ '%+.0f'|format(r.delta_pct) }}%</span>{% endif %}
+                    </td>
+                    <td class="num">{{ r.yoy }}
+                        {% if r.yoy_delta_pct is not none %}<span class="mini-delta {{ 'up' if r.yoy_delta_pct > 0 else ('down' if r.yoy_delta_pct < 0 else '') }}">{{ '%+.0f'|format(r.yoy_delta_pct) }}%</span>{% endif %}
+                    </td>
+                    {% if cat == '병명그룹' %}<td class="num">{% if r.rate is not none %}{{ r.rate }}%{% else %}—{% endif %}</td>{% endif %}
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
-        {% else %}
-        <div class="empty-mini">기록된 모병원 없음 — 폼 "현재 병원/요양원" 입력 시 자동 집계됩니다.</div>
         {% endif %}
+        {% endfor %}
+        <div class="ai-note" id="ai-portfolio" hidden></div>
     </div>
 </div>
 
-<!-- 섹션 5+6: 거절 사유 + 환자 포트폴리오 (2열) -->
-<div class="report-grid">
+<!-- KPI 뒷받침: 입원완료·취소·진행중 / 일평균 / 신규 모병원 -->
+<div class="report-grid grid-3">
     <div class="report-card">
-        <h3>입원취소 사유</h3>
+        <h3><span class="kpi-tag">진행중 · 입원취소</span> 상담 결과 단계
+            <span class="muted" style="font-size:0.78em">(전월 대비)</span></h3>
+        <div class="pipe-wrap"><canvas id="ch-pipeline"></canvas></div>
         {% set total_cancelled = data.this.summary.cancelled %}
         {% if data.by_rejection_reason %}
-        <table class="report-tbl rpt-drill">
-            <thead><tr><th>사유</th><th>건수</th><th>비율</th></tr></thead>
+        <table class="report-tbl compact rpt-drill">
+            <thead><tr><th>취소 사유</th><th>건수</th></tr></thead>
             <tbody>
-                {% for r in data.by_rejection_reason %}
+                {% for r in data.by_rejection_reason[:3] %}
                 <tr class="rpt-row" data-href="/consultations?admission_status=입원취소&q={{ r.label|urlencode }}&from={{ data['from'] }}&to={{ data['to'] }}">
                     <td>{{ r.label }} <span class="rpt-arrow no-print">›</span></td>
                     <td class="num">{{ r.count }}</td>
-                    <td class="num">{{ ((r.count / total_cancelled * 100)|round(1)) if total_cancelled else 0 }}%</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% elif total_cancelled %}
+        <div class="sec-note">입원취소 {{ total_cancelled }}건 — 사유 미입력, 상담 상세에서 라벨링 필요</div>
+        {% else %}
+        <div class="sec-note">이번 달 입원취소 없음</div>
+        {% endif %}
+    </div>
+
+    <div class="report-card">
+        <h3><span class="kpi-tag">일평균 {{ data.this.summary.active_day_avg }}건</span> 요일별 상담
+            <span class="muted" style="font-size:0.78em">영업 {{ data.this.summary.active_days }}일</span>
+        </h3>
+        <div class="wd-wrap"><canvas id="ch-weekday"></canvas></div>
+    </div>
+
+    <div class="report-card">
+        <h3><span class="kpi-tag">신규 모병원 {{ data.new_hospitals }}곳</span> 의뢰 Top</h3>
+        {% set hosp = data.performance['모병원'] %}
+        {% if hosp %}
+        <table class="report-tbl compact rpt-drill">
+            <thead><tr><th>모병원</th><th>상담</th><th>전월</th><th>전환율</th></tr></thead>
+            <tbody>
+                {% for r in hosp[:5] %}
+                <tr class="rpt-row" data-href="/consultations?q={{ r.label|urlencode }}&from={{ data['from'] }}&to={{ data['to'] }}">
+                    <td>{{ r.label }} <span class="rpt-arrow no-print">›</span></td>
+                    <td class="num">{{ r.cur }}</td>
+                    <td class="num">{{ r.prev }}</td>
+                    <td class="num"><strong>{{ r.cur_rate }}%</strong></td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
         {% else %}
-        <div class="empty-mini">{% if total_cancelled %}취소 사유 미입력 {{ total_cancelled }}건 — 상담 상세에서 라벨링 필요{% else %}이번 달 입원취소 없음{% endif %}</div>
-        {% endif %}
-    </div>
-
-    <div class="report-card">
-        <h3>환자 포트폴리오</h3>
-        <div class="mini-charts">
-            <div class="mini-chart"><div class="mini-title">병명 그룹</div><canvas id="mc-disease"></canvas></div>
-            <div class="mini-chart"><div class="mini-title">보험 유형</div><canvas id="mc-insurance"></canvas></div>
-            <div class="mini-chart"><div class="mini-title">연령대</div><canvas id="mc-age"></canvas></div>
-        </div>
-    </div>
-</div>
-
-<!-- 회복기 불가 → 같은 재단·외부 시설 연계 (수요 캡처) -->
-<div class="report-grid">
-    <div class="report-card">
-        <h3>같은 재단 시설 캡처율
-            <span class="muted" style="font-size:0.78em">— 회복기 불가 환자 중 경도요양병원·복주요양원 연계 비율</span>
-        </h3>
-        {% set rc = data.referral_capture %}
-        {% if rc and rc.no_admit_total %}
-        <div class="capture-summary">
-            <div class="cap-num"><strong>{{ rc.rate }}%</strong></div>
-            <div class="cap-detail">
-                회복기 불가 <strong>{{ rc.no_admit_total }}건</strong> 중
-                <strong>{{ rc.with_referral }}건</strong> 같은 재단·외부 시설 안내
-                <br><span class="muted">미안내 {{ rc.no_admit_total - rc.with_referral }}건 = 잠재 이탈</span>
-            </div>
-        </div>
-        {% else %}
-        <div class="empty-mini">이번 달 회복기 불가 케이스 없음</div>
-        {% endif %}
-    </div>
-    <div class="report-card">
-        <h3>안내한 시설 분포</h3>
-        {% if data.by_external_referral %}
-        <table class="report-tbl">
-            <thead><tr><th>시설</th><th>건수</th></tr></thead>
-            <tbody>
-                {% for r in data.by_external_referral %}
-                <tr><td>{{ r.label }}</td><td class="num">{{ r.count }}</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        {% else %}
-        <div class="empty-mini">기록된 연계 없음 — 상담 폼 '타 기관 연계 안내' 또는 위저드 체크 시 자동 집계</div>
+        <div class="empty-mini">기록된 모병원 없음 — 상담 폼 '현재 병원/요양원' 입력 시 집계</div>
         {% endif %}
     </div>
 </div>
+<div class="ai-note ai-note-solo" id="ai-pipeline" hidden></div>
 
-<style>
-.capture-summary { display:flex; gap:14px; align-items:center; padding:8px 4px; }
-.cap-num { font-size:2.2em; font-weight:700; color:var(--primary); line-height:1; }
-.cap-detail { font-size:0.86em; line-height:1.5; flex:1; }
-</style>
-
-<!-- 섹션 7: 데이터 부재 안내 -->
-<div class="data-gap-note no-print">
-    <strong>※ 차후 단계</strong>: 가동률·평균재원일·매출은 EMR/청구 시스템 연계 또는 월말 수기 입력 도입 시 추가됩니다.
+<!-- 운영 해석 + 데이터 성숙도 -->
+<div class="ai-note ai-note-solo" id="ai-operation" hidden></div>
+{% set q = data.quality %}
+{% set rc = data.referral_capture %}
+<div class="quality-bar {% if q.immature %}warn{% endif %}">
+    {% if q.immature %}<strong>※ 이번 달 전환율은 미확정</strong> — 진행중 {{ q.pending }}건({{ q.pending_rate }}%)이 아직 입원/취소로 확정되지 않았습니다.
+    {% else %}진행중 {{ q.pending }}건({{ q.pending_rate }}%){% endif %}
+    {% if q.cancel_unlabeled %} · 취소사유 미입력 {{ q.cancel_unlabeled }}건{% endif %}
+    {% if rc and rc.no_admit_total %} · 회복기 불가 {{ rc.no_admit_total }}건 중 재단 시설 연계 {{ rc.rate }}%{% endif %}
+    {% if q.missing_fields %} · 입력 누락: {% for f in q.missing_fields[:3] %}{{ f.label }} {{ f.rate }}%{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
 </div>
 
 <style>
@@ -213,75 +210,102 @@
     .month-picker { display:flex; gap:6px; align-items:center; }
     .month-picker input, .month-picker select { padding:4px 8px; border:1px solid var(--border); border-radius:6px; font-family:inherit; }
 
-    .kpi-grid { display:grid; grid-template-columns: repeat(8, 1fr); gap:6px; margin-bottom:10px; }
+    .kpi-grid { display:grid; grid-template-columns: repeat(8, 1fr); gap:6px; margin:8px 0 10px; }
     .kpi-card { background:#fff; border:1px solid var(--border); border-radius:7px; padding:7px 9px; }
     .kpi-label { font-size:0.7em; color:var(--text-light); margin-bottom:2px; line-height:1.2; }
     .kpi-value { font-size:1.25em; font-weight:700; color:var(--primary); line-height:1.1; }
     .kpi-suffix { font-size:0.55em; font-weight:500; color:var(--text-light); margin-left:1px; }
-    .kpi-delta { font-size:0.7em; margin-top:3px; line-height:1.3; display:flex; flex-direction:column; gap:0; }
+    .kpi-delta { font-size:0.68em; margin-top:3px; line-height:1.35; display:flex; flex-direction:column; }
+    .kpi-delta .cmp-tag { color:var(--text-light); margin-right:3px; }
     .kpi-delta .up { color:var(--success); font-weight:600; }
     .kpi-delta .down { color:var(--danger); font-weight:600; }
-    .kpi-delta .prev { font-size:0.92em; }
     @media (max-width: 1100px) { .kpi-grid { grid-template-columns: repeat(4, 1fr); } }
     @media (max-width: 600px)  { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
 
     .report-grid { display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:8px; }
     @media (max-width: 900px) { .report-grid { grid-template-columns: 1fr; } }
 
-    .report-card { background:#fff; border:1px solid var(--border); border-radius:7px; padding:10px 12px; }
+    .report-card { background:#fff; border:1px solid var(--border); border-radius:7px; padding:10px 12px; margin-top:8px; }
     .report-card h3 { font-size:0.92em; margin-bottom:6px; font-weight:600; }
     .report-tbl { width:100%; border-collapse:collapse; font-size:0.85em; }
     .report-tbl th, .report-tbl td { padding:4px 8px; border-bottom:1px solid var(--border); }
     .report-tbl th { text-align:left; color:var(--text-light); font-weight:600; font-size:0.78em; text-transform:uppercase; background:#f8fafc; }
     .report-tbl td.num { text-align:right; font-variant-numeric: tabular-nums; }
-    .report-tbl tr.group-head td { font-size:0.76em; font-weight:600; color:var(--text-light); padding:5px 8px 2px; background:#f8fafc; }
-    .empty-mini { padding:14px 6px; text-align:center; color:var(--text-light); font-size:0.88em; }
+    .report-tbl.compact th, .report-tbl.compact td { padding:3px 6px; }
+    .bd-tbl { margin-bottom:6px; }
+    .mini-delta { font-size:0.82em; margin-left:3px; color:var(--text-light); }
+    .mini-delta.up { color:var(--success); }
+    .mini-delta.down { color:var(--danger); }
     .rpt-drill tbody tr.rpt-row { cursor:pointer; transition:background 0.1s; }
     .rpt-drill tbody tr.rpt-row:hover { background:#eef2ff; }
     .rpt-drill .rpt-arrow { color:#9ca3af; font-size:0.78em; margin-left:3px; opacity:0; transition:opacity 0.1s; }
     .rpt-drill tbody tr.rpt-row:hover .rpt-arrow { opacity:1; color:var(--primary); }
-    @media print {
-        .rpt-drill tbody tr.rpt-row { cursor:default; background:transparent !important; }
-        .rpt-drill .rpt-arrow { display:none; }
-    }
 
     .insight-card { margin-top:8px; }
     .insight-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
     .insight-head h3 { font-size:0.92em; }
-    .insight-body { white-space:pre-wrap; line-height:1.55; font-size:0.9em; padding:10px 12px; background:#f8fafc; border-radius:6px; min-height:50px; }
+    .insight-body { line-height:1.55; font-size:0.9em; padding:10px 12px; background:#f8fafc; border-radius:6px; }
     .insight-body.empty, .insight-body.loading { color:var(--text-light); }
     .insight-body.loading { font-style:italic; }
+    .ai-headline { font-size:1.08em; font-weight:700; color:var(--primary); margin-bottom:5px; line-height:1.35; }
+    .ai-alerts { display:flex; flex-wrap:wrap; gap:5px; margin-top:7px; }
+    .ai-alerts span { font-size:0.8em; padding:3px 8px; border-radius:99px; background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; }
 
-    .mini-charts { display:grid; grid-template-columns: repeat(3, 1fr); gap:6px; }
-    .mini-chart { display:flex; flex-direction:column; align-items:stretch; }
-    .mini-title { font-size:0.78em; color:var(--text-light); text-align:center; margin-bottom:2px; }
-    .mini-chart canvas { width:100% !important; height:120px !important; }
+    .trend-wrap { height:170px; }
+    .chan-wrap { height:130px; margin-bottom:4px; }
+    .kpi-tag { display:inline-block; padding:1px 6px; margin-right:4px; border-radius:4px;
+               background:#eef2ff; color:var(--primary); font-size:0.86em; font-weight:700; }
+    .sec-note { margin-top:5px; padding:4px 7px; background:#f8fafc; border-radius:4px;
+                font-size:0.8em; color:var(--text-light); }
+    .pipe-wrap { height:104px; }
+    .wd-wrap { height:104px; }
+    .report-grid.grid-3 { grid-template-columns: repeat(3, 1fr); }
+    @media (max-width: 900px) { .report-grid.grid-3 { grid-template-columns: 1fr; } }
+    .empty-mini { padding:14px 6px; text-align:center; color:var(--text-light); font-size:0.88em; }
 
-    .data-gap-note { margin-top:10px; padding:8px 12px; background:#fefce8; border:1px solid #fde68a; border-radius:6px; font-size:0.82em; color:#92400e; }
+    .ai-note { margin-top:7px; padding:7px 10px; border-left:3px solid var(--primary); background:#f8fafc;
+               font-size:0.84em; line-height:1.5; color:var(--text); border-radius:0 5px 5px 0; }
+
+    .ai-note-solo { margin-top:8px; background:#fff; border:1px solid var(--border); border-left:3px solid var(--primary); }
+
+    .quality-bar { margin-top:8px; padding:7px 12px; background:#f8fafc; border:1px solid var(--border);
+                   border-radius:6px; font-size:0.82em; color:var(--text-light); }
+    .quality-bar.warn { background:#fffbeb; border-color:#fde68a; color:#92400e; }
 }
 
-/* 인쇄 — A4 1장 안에 들어가도록 */
+/* 인쇄 — A4 1장 */
 @media print {
     .no-print, header, footer, .flash-list { display:none !important; }
     body, main { background:#fff !important; }
-    .container { max-width:none; padding:0 8mm; }
-    .page-header { margin-bottom:6px; }
-    .page-header h1 { font-size:14pt; }
-    .period-line { font-size:9pt; }
-    .kpi-grid { grid-template-columns: repeat(8, 1fr) !important; gap:4px; margin-bottom:6px; }
-    .kpi-card { padding:4px 6px; box-shadow:none; }
-    .kpi-label { font-size:7pt; }
-    .kpi-value { font-size:11pt; }
-    .kpi-delta { font-size:7pt; }
-    .report-grid { grid-template-columns: 1fr 1fr !important; gap:5px; margin-top:5px; }
-    .report-card { padding:6px 8px; box-shadow:none; page-break-inside:avoid; }
-    .report-card h3 { font-size:9pt; margin-bottom:3px; }
-    .report-tbl { font-size:8pt; }
-    .report-tbl th, .report-tbl td { padding:2px 5px; }
-    .insight-body { font-size:8.5pt; padding:6px 8px; min-height:auto; }
-    .mini-chart canvas { height:90px !important; }
-    .data-gap-note { display:none; }
-    @page { size:A4; margin:8mm; }
+    .container { max-width:none; padding:0 6mm; }
+    .page-header { margin-bottom:4px; }
+    .page-header h1 { font-size:13pt; }
+    .period-line { font-size:8pt; }
+    .kpi-grid { grid-template-columns: repeat(8, 1fr) !important; gap:3px; margin:5px 0; }
+    .kpi-card { padding:3px 5px; box-shadow:none; border:1px solid #ddd; }
+    .kpi-label { font-size:6.5pt; }
+    .kpi-value { font-size:10pt; }
+    .kpi-delta { font-size:6pt; }
+    .report-grid { grid-template-columns: 1fr 1fr !important; gap:4px; margin-top:4px; }
+    .report-card { padding:5px 7px; box-shadow:none; border:1px solid #ddd; margin-top:4px; page-break-inside:avoid; }
+    .report-card h3 { font-size:8.5pt; margin-bottom:2px; }
+    .report-tbl { font-size:7.5pt; }
+    .report-tbl th, .report-tbl td { padding:1.5px 4px; }
+    .insight-body { font-size:8pt; padding:5px 7px; }
+    .ai-headline { font-size:9.5pt; }
+    .ai-note { font-size:7.5pt; padding:4px 7px; margin-top:4px; }
+    .ai-alerts span { font-size:7pt; padding:1px 5px; }
+    .quality-bar { font-size:7pt; padding:4px 7px; margin-top:4px; }
+    .trend-wrap { height:105px; }
+    .chan-wrap { height:88px; }
+    .pipe-wrap, .wd-wrap { height:70px; }
+    .kpi-tag { padding:0 4px; font-size:8pt; background:#eef2ff !important;
+               -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .sec-note { font-size:7pt; padding:3px 5px; margin-top:3px; }
+    .report-grid.grid-3 { grid-template-columns: repeat(3, 1fr) !important; }
+    .rpt-drill tbody tr.rpt-row { cursor:default; background:transparent !important; }
+    .rpt-drill .rpt-arrow { display:none; }
+    @page { size:A4; margin:7mm; }
 }
 </style>
 
@@ -291,75 +315,166 @@
     Chart.defaults.font.size = 10;
     Chart.defaults.plugins.legend.labels.boxWidth = 8;
 
-    const PALETTE = ['#14532d','#16a34a','#2563eb','#f59e0b','#dc2626','#9333ea','#0891b2','#65a30d','#db2777','#475569'];
+    const GREEN = '#16a34a', BLUE = '#2563eb', AMBER = '#f59e0b';
+    const trend = {{ data.trend|tojson }};
+    const channel = {{ data.breakdowns['유입경로']|tojson }};
 
-    function makeMini(canvasId, items) {
-        const ctx = document.getElementById(canvasId);
-        if (!ctx) return;
-        if (!items || !items.length) {
-            const c = ctx.getContext('2d');
-            c.fillStyle = '#94a3b8'; c.textAlign = 'center'; c.textBaseline = 'middle';
-            c.font = '11px Pretendard'; c.fillText('데이터 없음', ctx.width/2, ctx.height/2);
-            return;
-        }
-        new Chart(ctx, {
-            type: 'doughnut',
+    // 추이 — 상담·입원 막대 + 전환율 선
+    const tctx = document.getElementById('ch-trend');
+    if (tctx && trend.length) {
+        new Chart(tctx, {
             data: {
-                labels: items.map(x => x.label),
-                datasets: [{
-                    data: items.map(x => x.count),
-                    backgroundColor: items.map((_, i) => PALETTE[i % PALETTE.length]),
-                    borderWidth: 1, borderColor: '#fff',
-                }],
+                labels: trend.map(x => x.label.slice(2)),
+                datasets: [
+                    { type:'bar', label:'상담', data: trend.map(x => x.consults),
+                      backgroundColor:'#cbd5e1', order:3 },
+                    { type:'bar', label:'입원완료', data: trend.map(x => x.admissions),
+                      backgroundColor: GREEN, order:2 },
+                    { type:'line', label:'전환율(%)', data: trend.map(x => x.rate),
+                      borderColor: AMBER, backgroundColor: AMBER, borderWidth:2,
+                      pointRadius:2, yAxisID:'y1', tension:0.25, order:1 },
+                ],
             },
             options: {
-                responsive: true, maintainAspectRatio: false,
-                cutout: '55%',
-                plugins: {
-                    legend: { position: 'bottom', labels: { boxWidth: 8, padding: 3, font: { size: 9 } } },
-                    tooltip: { callbacks: { label: ctx => {
-                        const v = ctx.parsed;
-                        const total = ctx.dataset.data.reduce((a,b)=>a+b,0);
-                        const pct = total ? (100*v/total).toFixed(1) : '0';
-                        return `${ctx.label}: ${v} (${pct}%)`;
-                    }}}
+                responsive:true, maintainAspectRatio:false,
+                interaction:{ mode:'index', intersect:false },
+                scales: {
+                    y: { beginAtZero:true, ticks:{ font:{size:9} }, grid:{ color:'#f1f5f9' } },
+                    y1: { position:'right', beginAtZero:true, ticks:{ font:{size:9}, callback:v=>v+'%' },
+                          grid:{ display:false } },
+                    x: { ticks:{ font:{size:8.5} }, grid:{ display:false } },
                 },
+                plugins: { legend:{ position:'bottom', labels:{ padding:6, font:{size:9} } } },
             },
         });
     }
 
-    makeMini('mc-disease', {{ data.by_disease_group|tojson }});
-    makeMini('mc-insurance', {{ data.by_insurance|tojson }});
-    makeMini('mc-age', {{ data.by_age|tojson }});
+    // 유입경로 — 이번달/전월/전년 막대 + 전환율 선
+    const cctx = document.getElementById('ch-channel');
+    if (cctx && channel.length) {
+        new Chart(cctx, {
+            data: {
+                labels: channel.map(x => x.label),
+                datasets: [
+                    { type:'bar', label:'이번달', data: channel.map(x => x.cur), backgroundColor: BLUE },
+                    { type:'bar', label:'전월', data: channel.map(x => x.prev), backgroundColor:'#bfdbfe' },
+                    { type:'bar', label:'전년', data: channel.map(x => x.yoy), backgroundColor:'#e2e8f0' },
+                    { type:'line', label:'전환율(%)', data: channel.map(x => x.rate),
+                      borderColor: AMBER, backgroundColor: AMBER, borderWidth:2,
+                      pointRadius:3, yAxisID:'y1', tension:0.2 },
+                ],
+            },
+            options: {
+                responsive:true, maintainAspectRatio:false,
+                interaction:{ mode:'index', intersect:false },
+                scales: {
+                    y: { beginAtZero:true, ticks:{ font:{size:9} }, grid:{ color:'#f1f5f9' } },
+                    y1: { position:'right', beginAtZero:true, ticks:{ font:{size:9}, callback:v=>v+'%' },
+                          grid:{ display:false } },
+                    x: { ticks:{ font:{size:9} }, grid:{ display:false } },
+                },
+                plugins: { legend:{ position:'bottom', labels:{ padding:6, font:{size:9} } } },
+            },
+        });
+    }
 
-    // AI 인사이트
+    // 상담 결과 단계 — 가로 누적 막대 (이번달 / 전월)
+    const pipeline = {{ data.pipeline|tojson }};
+    const pctx = document.getElementById('ch-pipeline');
+    if (pctx && pipeline.length) {
+        const STAGE = ['#94a3b8', '#f59e0b', GREEN, '#dc2626', '#64748b', '#a78bfa', '#0891b2'];
+        new Chart(pctx, {
+            type: 'bar',
+            data: {
+                labels: ['이번달', '전월'],
+                datasets: pipeline.map((x, i) => ({
+                    label: x.label, data: [x.cur, x.prev],
+                    backgroundColor: STAGE[i % STAGE.length], borderWidth: 0,
+                })),
+            },
+            options: {
+                indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+                scales: {
+                    x: { stacked: true, beginAtZero: true, ticks:{ font:{size:9} }, grid:{ color:'#f1f5f9' } },
+                    y: { stacked: true, ticks:{ font:{size:9} }, grid:{ display:false } },
+                },
+                plugins: { legend:{ position:'bottom', labels:{ padding:5, font:{size:8.5} } } },
+            },
+        });
+    }
+
+    // 요일별 상담 — 이번달 vs 전월
+    const weekday = {{ (data.ops.get('요일별') or [])|tojson }};
+    const wctx = document.getElementById('ch-weekday');
+    if (wctx && weekday.length) {
+        new Chart(wctx, {
+            type: 'bar',
+            data: {
+                labels: weekday.map(x => x.label),
+                datasets: [
+                    { label:'이번달', data: weekday.map(x => x.cur), backgroundColor: BLUE },
+                    { label:'전월', data: weekday.map(x => x.prev), backgroundColor:'#e2e8f0' },
+                ],
+            },
+            options: {
+                responsive:true, maintainAspectRatio:false,
+                scales: {
+                    y: { beginAtZero:true, ticks:{ font:{size:9} }, grid:{ color:'#f1f5f9' } },
+                    x: { ticks:{ font:{size:9} }, grid:{ display:false } },
+                },
+                plugins: { legend:{ position:'bottom', labels:{ padding:5, font:{size:8.5} } } },
+            },
+        });
+    }
+
+    // AI 인사이트 — 총평 + 섹션별 코멘트
     const btnInsight = document.getElementById('btn-insight');
     if (btnInsight) {
+        const overview = document.getElementById('ai-overview');
+        const slots = { trend_comment:'ai-trend', channel_comment:'ai-channel',
+                        portfolio_comment:'ai-portfolio', pipeline_comment:'ai-pipeline',
+                        operation_comment:'ai-operation' };
         btnInsight.addEventListener('click', async () => {
-            const out = document.getElementById('insight-out');
-            out.classList.remove('empty');
-            out.classList.add('loading');
-            out.textContent = '인사이트 생성 중... (수 초 소요)';
+            overview.classList.remove('empty');
+            overview.classList.add('loading');
+            overview.textContent = '전월·전년 데이터를 해석하는 중... (1분 내외, 창을 닫지 마세요)';
             btnInsight.disabled = true;
             try {
                 const r = await fetch('/api/report/monthly/insight', {
-                    method: 'POST',
-                    headers: {'content-type': 'application/json'},
+                    method:'POST', headers:{'content-type':'application/json'},
                     body: JSON.stringify({year: {{ y }}, month: {{ m }}}),
                 });
                 const j = await r.json();
-                out.classList.remove('loading');
-                if (j.error) out.textContent = '오류: ' + j.error;
-                else out.textContent = j.insight || '응답이 비어 있습니다.';
+                overview.classList.remove('loading');
+                if (j.error) { overview.textContent = '오류: ' + j.error; }
+                else {
+                    const ins = j.insight || {};
+                    overview.textContent = ins.overview || '응답이 비어 있습니다.';
+                    const hl = document.getElementById('ai-headline');
+                    if (ins.headline) { hl.textContent = ins.headline; hl.hidden = false; }
+                    for (const [key, id] of Object.entries(slots)) {
+                        const el = document.getElementById(id);
+                        if (el && ins[key]) { el.textContent = ins[key]; el.hidden = false; }
+                    }
+                    const al = document.getElementById('ai-alerts');
+                    if (ins.alerts && ins.alerts.length) {
+                        al.innerHTML = '';
+                        ins.alerts.forEach(a => {
+                            const s = document.createElement('span');
+                            s.textContent = a;
+                            al.appendChild(s);
+                        });
+                        al.hidden = false;
+                    }
+                }
             } catch (e) {
-                out.classList.remove('loading');
-                out.textContent = '오류: ' + e.message;
+                overview.classList.remove('loading');
+                overview.textContent = '오류: ' + e.message;
             }
             btnInsight.disabled = false;
         });
     }
 
-    // 채널 ROI·모병원·취소사유 표 행 클릭 → 필터된 상담 목록 드릴다운
     document.querySelectorAll('.rpt-drill tr.rpt-row').forEach(tr => {
         tr.addEventListener('click', () => {
             const href = tr.dataset.href;

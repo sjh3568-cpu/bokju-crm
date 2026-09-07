@@ -218,6 +218,25 @@ class CooperationTests(unittest.TestCase):
         self.assertIsNotNone(main.authenticate('testadmin','new-password'))
         self.assertEqual(self.scalar("SELECT COUNT(*) FROM audit_log WHERE action='change_own_password'"),1)
 
+    def test_unified_inbox_create_filter_assign_and_complete(self):
+        page=self.client.get('/inbox')
+        self.assertEqual(page.status_code,200)
+        self.assertIn('통합 상담 인박스',page.get_data(as_text=True))
+        with self.client.session_transaction() as s: csrf=s['inbox_csrf']
+        response=self.client.post('/inbox',data={'csrf':csrf,'action':'create','channel':'전화',
+            'priority':'urgent','contact':'010-1234-5678','summary':'입원 가능 여부 문의',
+            'body':'보호자 전화 문의','follow_up_at':'2026-09-08'})
+        self.assertEqual(response.status_code,302)
+        db=models.get_db();row=dict(db.execute("SELECT * FROM communications WHERE summary='입원 가능 여부 문의'").fetchone());db.close()
+        self.assertEqual(row['assigned_user_id'],self.user['id'])
+        self.assertEqual(row['priority'],'urgent')
+        filtered=self.client.get('/inbox?status=open&channel=전화&q=입원').get_data(as_text=True)
+        self.assertIn('010-1234-5678',filtered)
+        response=self.client.post('/inbox',data={'csrf':csrf,'action':'update','comm_id':row['id'],
+            'status':'done','priority':'normal','assigned_user_id':str(self.user['id'])})
+        self.assertEqual(response.status_code,302)
+        self.assertEqual(self.scalar(f"SELECT COUNT(*) FROM communications WHERE id={row['id']} AND status='done' AND resolved_at IS NOT NULL"),1)
+
     def test_schema_idempotent_and_master_only(self):
         coop.init_schema()
         self.assertEqual(self.scalar('SELECT COUNT(*) FROM cooperation_partners'),2)

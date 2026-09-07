@@ -1301,12 +1301,12 @@ def login_view():
         login_user(user)
         requested_next = request.args.get("next") or request.form.get("next")
         start_paths = {'default':'/','dashboard':'/','consultations':'/consultations','ward':'/ward','partners':'/partners',
-                       'consult_new':'/consult/new','ward_waiting':'/ward?tab=waiting','ward_trend':'/ward?tab=trend',
+                       'inbox':'/inbox','consult_new':'/consult/new','ward_waiting':'/ward?tab=waiting','ward_trend':'/ward?tab=trend',
                        'partners_feed':'/partners?view=feed','stats_hospitals':'/stats/hospitals',
                        'todos':'/todos','sms':'/sms','stats':'/stats','report':'/report/monthly','notices':'/notices'}
         start_key = user.get('start_page') or 'dashboard'
         allowed = {'default':'dashboard','dashboard':'dashboard','consultations':'consult','ward':'ward','partners':'partners',
-                   'consult_new':'consult','ward_waiting':'ward','ward_trend':'ward','partners_feed':'partners',
+                   'inbox':'dashboard','consult_new':'consult','ward_waiting':'ward','ward_trend':'ward','partners_feed':'partners',
                    'stats_hospitals':'stats','todos':'dashboard','sms':'sms','stats':'stats','report':'report','notices':'dashboard'}
         if menu_level(user,allowed.get(start_key,'dashboard')) < PERM_VIEW:
             start_key='dashboard'
@@ -1349,7 +1349,7 @@ def set_start_page():
         abort(400)
     key=(request.form.get('start_page') or '').strip()
     options={'default':('dashboard','/'),'dashboard':('dashboard','/'),'consultations':('consult','/consultations'),
-             'consult_new':('consult','/consult/new'),'ward':('ward','/ward'),
+             'inbox':('dashboard','/inbox'),'consult_new':('consult','/consult/new'),'ward':('ward','/ward'),
              'ward_waiting':('ward','/ward?tab=waiting'),'ward_trend':('ward','/ward?tab=trend'),
              'partners':('partners','/partners'),'partners_feed':('partners','/partners?view=feed'),
              'stats_hospitals':('stats','/stats/hospitals'),'todos':('dashboard','/todos'),
@@ -2414,7 +2414,6 @@ def stats_view():
     return render_template(
         "stats.html",
         preset=preset, date_from=date_from, date_to=date_to,
-        insight_enabled=bool(os.getenv("ANTHROPIC_API_KEY")),
     )
 
 
@@ -2477,7 +2476,8 @@ def api_report_monthly_insight():
     if not data["this"]["summary"]["total"]:
         return jsonify({"insight": {
             "headline": "", "overview": "이번 달 상담 기록이 없어 인사이트를 생성할 수 없습니다.",
-            "trend_comment": "", "channel_comment": "", "portfolio_comment": "", "alerts": [],
+            "trend_comment": "", "channel_comment": "", "portfolio_comment": "",
+            "pipeline_comment": "", "operation_comment": "", "alerts": [],
         }})
     try:
         from llm import summarize_monthly
@@ -2491,31 +2491,6 @@ def api_report_monthly_insight():
         detail=f"{year}-{month:02d}", ip=request.remote_addr,
     )
     return jsonify({"insight": insight})
-
-
-@app.route("/api/stats/insight", methods=["POST"])
-@login_required
-def api_stats_insight():
-    if not os.getenv("ANTHROPIC_API_KEY"):
-        return jsonify({"error": "Claude API 키가 설정되지 않았습니다."}), 503
-    payload = request.get_json(silent=True) or {}
-    date_from = payload.get("from") or None
-    date_to = payload.get("to") or None
-    data = models.aggregate_stats(date_from, date_to)
-    if not data["summary"]["total"]:
-        return jsonify({"insight": "분석할 상담 기록이 없습니다."})
-    try:
-        from llm import summarize_stats
-        text = summarize_stats(data, date_from=date_from, date_to=date_to)
-    except Exception as e:
-        logger.warning(f"Claude 인사이트 실패: {e}")
-        return jsonify({"error": f"인사이트 생성 실패: {e}"}), 502
-    models.log_audit(
-        user_id=g.user["id"], username=g.user["username"],
-        action="stats_insight", target_type="stats",
-        detail=f"{date_from}~{date_to}", ip=request.remote_addr,
-    )
-    return jsonify({"insight": text})
 
 
 # ───────────────────── 상담 ─────────────────────
@@ -4745,6 +4720,46 @@ def api_blacklist_check():
 # ───────────────────── 옴니채널 — 커뮤니케이션 ─────────────────────
 # (구 /inbox 라우트는 2026-05-25 대시보드로 통합되어 제거됨.
 #  models.inbox_callbacks·inbox_open_communications 등 함수는 대시보드가 사용 중)
+
+@app.route('/inbox',methods=['GET','POST'])
+@login_required
+def unified_inbox():
+    if menu_level(current_user(),'dashboard')<PERM_VIEW: abort(403)
+    token=session.setdefault('inbox_csrf',secrets.token_hex(32))
+    if request.method=='POST':
+        if not secrets.compare_digest(token,request.form.get('csrf','')): abort(400)
+        if menu_level(current_user(),'consult')<PERM_EDIT: abort(403)
+        action=(request.form.get('action') or '').strip()
+        if action=='create':
+            channel=(request.form.get('channel') or '').strip()
+            summary=(request.form.get('summary') or '').strip()
+            if channel not in COMM_CHANNELS or not summary:
+                flash('채널과 문의 요약을 입력해주세요.','error')
+            else:
+                cid=models.create_communication(channel=channel,direction='in',contact=(request.form.get('contact') or '').strip() or None,
+                    summary=summary[:200],body=(request.form.get('body') or '').strip()[:3000] or None,
+                    follow_up_at=(request.form.get('follow_up_at') or '').strip() or None,
+                    occurred_at=(request.form.get('occurred_at') or '').strip() or None,created_by=g.user['display_name'])
+                models.update_communication(cid,assigned_user_id=g.user['id'],priority=(request.form.get('priority') if request.form.get('priority') in ('normal','high','urgent') else 'normal'))
+                flash('새 문의를 통합 인박스에 등록했습니다.','success')
+        elif action=='update':
+            try: cid=int(request.form.get('comm_id') or 0)
+            except ValueError: cid=0
+            comm=models.get_communication(cid)
+            if not comm: abort(404)
+            status=request.form.get('status') if request.form.get('status') in ('open','in_progress','waiting','done') else 'open'
+            assignee=(request.form.get('assigned_user_id') or '').strip()
+            priority=request.form.get('priority') if request.form.get('priority') in ('normal','high','urgent') else 'normal'
+            models.update_communication(cid,status=status,assigned_user_id=(int(assignee) if assignee.isdigit() else None),priority=priority,
+                follow_up_at=(request.form.get('follow_up_at') or '').strip() or None)
+            models.log_audit(user_id=g.user['id'],username=g.user['username'],action='update_inbox',target_type='communication',target_id=cid,detail=f'{status}/{priority}',ip=request.remote_addr)
+            flash('문의 처리 상태를 저장했습니다.','success')
+        return redirect(request.form.get('return_to') if _is_safe_next_url(request.form.get('return_to')) else url_for('unified_inbox'))
+    filters={k:(request.args.get(k) or '').strip() for k in ('status','channel','assignee','q')}
+    if not filters['status']: filters['status']='active'
+    users=[u for u in models.list_users() if u.get('active') and u.get('role') in ('admin','staff')]
+    return render_template('inbox.html',rows=models.inbox_communications(**filters),summary=models.inbox_summary(),
+        callbacks=models.inbox_callbacks(),users=users,filters=filters,csrf=token)
 
 
 @app.route("/api/communication", methods=["POST"])
