@@ -1987,13 +1987,21 @@ def dashboard():
     discharge_due.sort(key=lambda x: x["watch"]["days_left"])
     my_name=(g.user.get('display_name') or '').strip()
     personal_admitted=[c for c in admitted if (c.get('counselor') or '').strip()==my_name]
-    personal_recovery=[d for d in recovery_transition_due if (d['con'].get('counselor') or '').strip()==my_name]
-    personal_discharge=[d for d in discharge_due if (d['con'].get('counselor') or '').strip()==my_name]
+    # 재연락 대기(상담요청) 중 내 담당 — 클릭 시 상담 상세로 이어짐
+    my_callbacks=[c for c in callbacks if (c.get('counselor') or '').strip()==my_name]
+    # 오늘 내 할 일(내 것 + 공유받은 것) — 상단에서 바로 목록 확인
+    try:
+        my_todos=models.list_todos(g.user['id'], today_d.isoformat())
+    except Exception:
+        my_todos=[]
     data['personal_briefing']={
-        'name':my_name or g.user.get('username'),'admitted':len(personal_admitted),
-        'recovery':len(personal_recovery),'discharge':len(personal_discharge),
-        'all_admitted':len(admitted),'all_recovery':len(recovery_transition_due),
-        'all_discharge':len(discharge_due),
+        'name':my_name or g.user.get('username'),
+        'admitted':len(personal_admitted),
+        'admitted_list':personal_admitted[:6],
+        'callbacks':len(my_callbacks),
+        'callback_list':my_callbacks[:6],
+        'todos':[t for t in my_todos if not t.get('done')],
+        'todo_done':sum(1 for t in my_todos if t.get('done')),
     }
     data['start_page_csrf']=session.setdefault('start_page_csrf',secrets.token_hex(32))
     data['start_page']=models.get_user_by_id(g.user['id']).get('start_page') or 'dashboard'

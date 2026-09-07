@@ -309,7 +309,55 @@
 {% endmacro %}
 {% block title %}대시보드 · 복주 상담CRM{% endblock %}
 {% block content %}
-<section class="personal-briefing"><div class="personal-briefing-head"><div><span>오늘의 개인 브리핑</span><h1>{{ personal_briefing.name }}님의 담당 현황</h1><p>내 담당 환자와 병원 전체 현황을 같은 기준으로 비교합니다.</p></div><details class="start-page-setting"><summary>시작 화면 설정</summary><form method="post" action="{{ url_for('set_start_page') }}"><input type="hidden" name="csrf" value="{{ start_page_csrf }}"><select name="start_page"><option value="dashboard" {% if start_page=='dashboard' %}selected{% endif %}>대시보드</option>{% if current_user.perms.get('consult',0)>=1 %}<option value="consultations" {% if start_page=='consultations' %}selected{% endif %}>상담목록</option>{% endif %}{% if current_user.perms.get('ward',0)>=1 %}<option value="ward" {% if start_page=='ward' %}selected{% endif %}>재원 관리</option>{% endif %}{% if current_user.perms.get('partners',0)>=1 %}<option value="partners" {% if start_page=='partners' %}selected{% endif %}>기관협력</option>{% endif %}</select><button class="btn btn-primary btn-sm">저장</button></form><small>다음 로그인부터 적용됩니다.</small></details></div><div class="personal-briefing-grid"><div class="brief-label"><b>구분</b><span>나의 담당</span><span>병원 전체</span></div><a href="/ward"><b>입원 환자</b><strong>{{ personal_briefing.admitted }}</strong><span>{{ personal_briefing.all_admitted }}명</span></a><a href="/ward?recovery_due=1"><b>회복기 전환 환자</b><strong>{{ personal_briefing.recovery }}</strong><span>{{ personal_briefing.all_recovery }}명</span></a><a href="/ward?discharge_imminent=1"><b>퇴원 예정 환자</b><strong>{{ personal_briefing.discharge }}</strong><span>{{ personal_briefing.all_discharge }}명</span></a></div><p class="personal-briefing-note">나의 담당은 상담일지의 상담사가 <b>{{ personal_briefing.name }}</b>으로 지정된 환자 기준입니다.</p></section>
+<section class="personal-briefing"><div class="personal-briefing-head"><div><span>오늘의 개인 브리핑</span><h1>{{ personal_briefing.name }}님의 오늘</h1><p>내 담당 환자와 오늘 할 일입니다 — 항목을 누르면 상세로 이어집니다. 병원 전체 현황은 아래에서 확인하세요.</p></div><details class="start-page-setting"><summary>시작 화면 설정</summary><form method="post" action="{{ url_for('set_start_page') }}"><input type="hidden" name="csrf" value="{{ start_page_csrf }}"><select name="start_page"><option value="dashboard" {% if start_page=='dashboard' %}selected{% endif %}>대시보드</option>{% if current_user.perms.get('consult',0)>=1 %}<option value="consultations" {% if start_page=='consultations' %}selected{% endif %}>상담목록</option>{% endif %}{% if current_user.perms.get('ward',0)>=1 %}<option value="ward" {% if start_page=='ward' %}selected{% endif %}>재원 관리</option>{% endif %}{% if current_user.perms.get('partners',0)>=1 %}<option value="partners" {% if start_page=='partners' %}selected{% endif %}>기관협력</option>{% endif %}</select><button class="btn btn-primary btn-sm">저장</button></form><small>다음 로그인부터 적용됩니다.</small></details></div>
+{% set pb = personal_briefing %}
+<div class="pb3">
+  <div class="pb3-card">
+    <a class="pb3-head" href="/consultations?counselor={{ pb.name|urlencode }}&admission_status=%EC%9E%85%EC%9B%90%EC%99%84%EB%A3%8C"><span class="pb3-ico">🛏</span><b>나의 입원 환자</b><strong>{{ pb.admitted }}</strong><span class="pb3-more">전체 →</span></a>
+    <ul class="pb3-list">
+      {% for c in pb.admitted_list %}<li><a href="/patients/{{ c.patient_id }}">{{ c.patient_name }}{% if c.room_number %} <span class="pb3-sub">{{ c.room_number }}</span>{% endif %}</a></li>
+      {% else %}<li class="pb3-empty">담당 재원 환자가 없습니다.</li>{% endfor %}
+      {% if pb.admitted > pb.admitted_list|length %}<li class="pb3-rest"><a href="/consultations?counselor={{ pb.name|urlencode }}&admission_status=%EC%9E%85%EC%9B%90%EC%99%84%EB%A3%8C">+{{ pb.admitted - pb.admitted_list|length }}명 더 보기</a></li>{% endif %}
+    </ul>
+  </div>
+  <div class="pb3-card">
+    <a class="pb3-head" href="/consultations?counselor={{ pb.name|urlencode }}&consult_result=%EC%83%81%EB%8B%B4%EC%9A%94%EC%B2%AD"><span class="pb3-ico">📞</span><b>재연락 대기</b><strong>{{ pb.callbacks }}</strong><span class="pb3-more">전체 →</span></a>
+    <ul class="pb3-list">
+      {% for cb in pb.callback_list %}<li><a href="/consult/{{ cb.id }}">{{ cb.patient_name }}{% if cb.consult_result_reason %} <span class="pb3-sub">{{ cb.consult_result_reason }}</span>{% endif %}</a></li>
+      {% else %}<li class="pb3-empty">재연락 대기가 없습니다.</li>{% endfor %}
+      {% if pb.callbacks > pb.callback_list|length %}<li class="pb3-rest"><a href="/consultations?counselor={{ pb.name|urlencode }}&consult_result=%EC%83%81%EB%8B%B4%EC%9A%94%EC%B2%AD">+{{ pb.callbacks - pb.callback_list|length }}건 더 보기</a></li>{% endif %}
+    </ul>
+  </div>
+  <div class="pb3-card">
+    <a class="pb3-head" href="/todos"><span class="pb3-ico">🗒</span><b>오늘 할 일</b><strong>{{ pb.todos|length }}</strong><span class="pb3-more">{% if pb.todo_done %}완료 {{ pb.todo_done }} · {% endif %}전체 →</span></a>
+    <ul class="pb3-list">
+      {% for t in pb.todos[:6] %}<li><a href="/todos">{% if t.start_time %}<span class="pb3-time">{{ t.start_time[:5] }}</span> {% endif %}{{ t.title }}{% if t.patient_name %} <span class="pb3-sub">{{ t.patient_name }}</span>{% endif %}{% if not t.is_owner %} <span class="pb3-shared">공유</span>{% endif %}</a></li>
+      {% else %}<li class="pb3-empty">오늘 할 일이 없습니다.</li>{% endfor %}
+      {% if pb.todos|length > 6 %}<li class="pb3-rest"><a href="/todos">+{{ pb.todos|length - 6 }}건 더 보기</a></li>{% endif %}
+    </ul>
+  </div>
+</div>
+<style>
+.pb3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:4px}
+@media(max-width:800px){.pb3{grid-template-columns:1fr}}
+.pb3-card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden}
+.pb3-head{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#f8fafc;border-bottom:1px solid #eef2f7;text-decoration:none;color:#1f2937}
+.pb3-head:hover{background:#eff6ff}
+.pb3-ico{font-size:1.1em}
+.pb3-head b{flex:1;font-size:.95em}
+.pb3-head strong{font-size:1.35em;color:#2563eb}
+.pb3-more{font-size:.8em;color:#6b7280;white-space:nowrap}
+.pb3-list{list-style:none;margin:0;padding:6px 0;max-height:220px;overflow-y:auto}
+.pb3-list li{padding:0}
+.pb3-list li a{display:block;padding:6px 12px;text-decoration:none;color:#374151;font-size:.9em;border-left:3px solid transparent}
+.pb3-list li a:hover{background:#f9fafb;border-left-color:#93c5fd}
+.pb3-sub{color:#6b7280;font-size:.9em}
+.pb3-time{display:inline-block;min-width:34px;color:#2563eb;font-weight:600;font-variant-numeric:tabular-nums}
+.pb3-shared{font-size:.75em;color:#7c3aed;border:1px solid #ddd6fe;border-radius:6px;padding:0 4px}
+.pb3-empty{padding:10px 12px;color:#9ca3af;font-size:.88em}
+.pb3-rest a{color:#2563eb!important;font-size:.85em!important}
+</style>
+</section>
 {% if cooperation_reminders and account_preferences.get('notify_partner',true) %}
 <link rel="stylesheet" href="{{ url_for('static',filename='css/partners.css') }}">
 {% with reminders=cooperation_reminders,attention=[],csrf=cooperation_csrf %}{% include '_partner_reminders.html' %}{% endwith %}
