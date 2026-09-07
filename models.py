@@ -4408,6 +4408,9 @@ def aggregate_monthly(year: int, month: int) -> dict:
 
     this_data = aggregate_stats(f, t)
     prev_data = aggregate_stats(pf, pt)
+    # 전년 동월 — 계절성과 실제 성장 구분용
+    yf, yt = _month_range(year - 1, month)
+    yoy_data = aggregate_stats(yf, yt)
 
     # 채널 ROI는 이번 달 데이터에서만
     where_sql = "WHERE c.consult_date >= ? AND c.consult_date <= ?"
@@ -4427,43 +4430,99 @@ def aggregate_monthly(year: int, month: int) -> dict:
 
     s_this = this_data["summary"]
     s_prev = prev_data["summary"]
+    s_yoy = yoy_data["summary"]
 
-    # KPI 8장 (절대값 + 전월 대비 ±)
-    def kpi(name, curr, prev, *, suffix=""):
+    # KPI — 절대값 + 전월 대비 ± + 전년 동월 대비 ±
+    def kpi(name, curr, prev, yoy=None, *, suffix=""):
         return {
             "label": name,
             "value": curr,
             "prev": prev,
+            "yoy": yoy,
             "delta_pct": _delta_pct(float(curr), float(prev)),
+            "yoy_delta_pct": None if yoy is None else _delta_pct(float(curr), float(yoy)),
             "suffix": suffix,
         }
 
     kpis = [
-        kpi("총 상담", s_this["total"], s_prev["total"], suffix="건"),
-        kpi("입원완료", s_this["completed"], s_prev["completed"], suffix="건"),
-        kpi("전환율", s_this["conversion_rate"], s_prev["conversion_rate"], suffix="%"),
-        kpi("입원취소", s_this["cancelled"], s_prev["cancelled"], suffix="건"),
-        kpi("입원보류", s_this["pending"], s_prev["pending"], suffix="건"),
+        kpi("총 상담", s_this["total"], s_prev["total"], s_yoy["total"], suffix="건"),
+        kpi("입원완료", s_this["completed"], s_prev["completed"], s_yoy["completed"], suffix="건"),
+        kpi("전환율", s_this["conversion_rate"], s_prev["conversion_rate"],
+            s_yoy["conversion_rate"], suffix="%"),
+        kpi("입원취소", s_this["cancelled"], s_prev["cancelled"], s_yoy["cancelled"], suffix="건"),
+        kpi("입원보류", s_this["pending"], s_prev["pending"], s_yoy["pending"], suffix="건"),
         # 일평균 = total / 월 일수
         {
             "label": "일평균",
             "value": round(s_this["total"] / 30, 1),
             "prev": round(s_prev["total"] / 30, 1),
+            "yoy": round(s_yoy["total"] / 30, 1),
             "delta_pct": _delta_pct(s_this["total"] / 30, s_prev["total"] / 30),
+            "yoy_delta_pct": _delta_pct(s_this["total"] / 30, s_yoy["total"] / 30),
             "suffix": "건/일",
         },
         kpi("신규 모병원", new_hospitals, 0, suffix="곳"),  # 전월 비교 의미 약해 prev 0 표기
-        kpi("활성 채널", active_channels, len(prev_data["by_referral_detail"]), suffix="종"),
+        kpi("활성 채널", active_channels, len(prev_data["by_referral_detail"]),
+            len(yoy_data["by_referral_detail"]), suffix="종"),
     ]
+
+    # 최근 15개월 추이 — 이번 달까지만 (미래 달은 자름)
+    _trend_all = this_data.get("monthly_trend") or []
+    _cur_key = f"{year:04d}-{month:02d}"
+    _idx = next((i for i, x in enumerate(_trend_all) if x["label"] == _cur_key),
+                len(_trend_all) - 1)
+    trend = _trend_all[max(0, _idx - 14):_idx + 1]
+
+    # 분야별 흐름 — 이번달·전월·전년동월 건수 + 이번 달 전환율
+    def _breakdown(key, perf=None, limit=6):
+        cur = {x["label"]: x["count"] for x in (this_data.get(key) or [])}
+        prv = {x["label"]: x["count"] for x in (prev_data.get(key) or [])}
+        yoy = {x["label"]: x["count"] for x in (yoy_data.get(key) or [])}
+        rates = {x["label"]: x["rate"] for x in (perf or [])}
+        labels = sorted(cur, key=lambda l: (-cur[l], l))[:limit]
+        return [{
+            "label": l,
+            "cur": cur.get(l, 0),
+            "prev": prv.get(l, 0),
+            "yoy": yoy.get(l, 0),
+            "delta_pct": _delta_pct(cur.get(l, 0), prv.get(l, 0)),
+            "yoy_delta_pct": _delta_pct(cur.get(l, 0), yoy.get(l, 0)),
+            "rate": rates.get(l),
+        } for l in labels]
+
+    breakdowns = {
+        "유입경로": _breakdown("by_referral_type", channel["groups"]),
+        "병명그룹": _breakdown("by_disease_group",
+                            this_data.get("by_disease_group_performance")),
+        "보험유형": _breakdown("by_insurance"),
+        "연령대": _breakdown("by_age"),
+    }
+
+    # 데이터 성숙도 — 진행중 비율이 높으면 이번 달 전환율은 아직 확정이 아니다
+    _pending_rate = (round(100.0 * s_this["pending"] / s_this["total"], 1)
+                     if s_this["total"] else 0.0)
+    _reason_logged = sum(r["count"] for r in this_data["by_rejection_reason"])
+    quality = {
+        "pending": s_this["pending"],
+        "pending_rate": _pending_rate,
+        "immature": _pending_rate >= 40.0,
+        "cancel_unlabeled": max(0, s_this["cancelled"] - _reason_logged),
+        "missing_fields": [x for x in this_data.get("by_missing_field", []) if x["count"]],
+    }
 
     return {
         "year": year,
         "month": month,
         "from": f, "to": t,
         "prev_from": pf, "prev_to": pt,
+        "yoy_from": yf, "yoy_to": yt,
         "kpis": kpis,
+        "trend": trend,
+        "breakdowns": breakdowns,
+        "quality": quality,
         "this": this_data,
         "prev": prev_data,
+        "yoy": yoy_data,
         "channel": channel,
         "by_source_hospital": this_data["by_source_hospital"],
         "by_rejection_reason": this_data["by_rejection_reason"],

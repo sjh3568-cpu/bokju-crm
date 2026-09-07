@@ -2475,7 +2475,10 @@ def api_report_monthly_insight():
         return jsonify({"error": "year/month 필수"}), 400
     data = models.aggregate_monthly(year, month)
     if not data["this"]["summary"]["total"]:
-        return jsonify({"insight": "이번 달 상담 기록이 없어 인사이트를 생성할 수 없습니다."})
+        return jsonify({"insight": {
+            "headline": "", "overview": "이번 달 상담 기록이 없어 인사이트를 생성할 수 없습니다.",
+            "trend_comment": "", "channel_comment": "", "portfolio_comment": "", "alerts": [],
+        }})
     try:
         from llm import summarize_monthly
         text = summarize_monthly(data)
@@ -3264,6 +3267,11 @@ def api_consult_create():
     return jsonify({"ok": True, "id": cid, "patient_id": pid})
 
 
+# AI 자동채움 화이트리스트 — 사전연명의료(ARRANGE)·유입경로 세부(그룹 평탄화)
+_AI_ARRANGE_OPTS = ["DNR(agree)", "DNR(consult)", "hopeless 확인"]
+_AI_REFERRAL_FLAT = [v for _grp in REFERRAL_SOURCE_GROUPS.values() for v in _grp]
+
+
 @app.route("/api/consult/ai-fill", methods=["POST"])
 @login_required
 def api_consult_ai_fill():
@@ -3287,6 +3295,12 @@ def api_consult_ai_fill():
             "consciousness": CONSCIOUSNESS_MAIN_OPTIONS,
             "conversation": CONVERSATION_LEVEL_OPTIONS,
             "activity_others": ACTIVITY_OTHERS_OPTIONS,
+            "hearing": HEARING_OPTIONS,
+            "mobility_active": ACTIVITY_ACTIVE_OPTIONS,
+            "diet": DIET_TYPES, "wound_care": WOUND_CARE_OPTIONS,
+            "special_care": SPECIAL_CARE_OPTIONS, "therapy": THERAPY_OPTIONS,
+            "arrange": _AI_ARRANGE_OPTS, "transport": TRANSPORT_OPTIONS,
+            "referral_detail": _AI_REFERRAL_FLAT,
         })
     except Exception as e:
         logger.warning("AI 상담 추출 실패: %s", e)
@@ -3366,6 +3380,37 @@ def api_consult_ai_fill():
         picked_ao = [x for x in ao if x in ACTIVITY_OTHERS_OPTIONS]
         if picked_ao:
             put("consultation.activity_others[]", picked_ao, "기타 활동")
+
+    # ── 추가 상태·처치·유입경로 (배열/단일, 화이트리스트) ──
+    def put_list(key, name, allowed, label):
+        vals = raw.get(key)
+        if isinstance(vals, list):
+            picked = [x for x in vals if x in allowed]
+            if picked:
+                put(name, picked, label)
+
+    def put_one(key, name, allowed, label):
+        v = raw.get(key)
+        if v in allowed:
+            put(name, v, label)
+
+    put_list("hearing", "consultation.hearing_options[]", HEARING_OPTIONS, "청력")
+    put_list("mobility_active", "consultation.activity_active[]", ACTIVITY_ACTIVE_OPTIONS, "능동 이동")
+    put_one("caregiver", "consultation.caregiver_status", CAREGIVER_OPTIONS, "간병")
+    put_one("bed", "consultation.bed_type", BED_OPTIONS, "침상")
+    put_list("diet", "consultation.diet_types[]", DIET_TYPES, "식이")
+    put_one("swallow_test", "consultation.swallow_test", ("유", "무"), "연하검사")
+    put_list("wound_care", "consultation.wound_care[]", WOUND_CARE_OPTIONS, "창상 처치")
+    put_list("special_care", "consultation.special_care[]", SPECIAL_CARE_OPTIONS, "특수 처치")
+    put_list("therapy", "consultation.therapy[]", THERAPY_OPTIONS, "재활치료")
+    put_list("arrange", "consultation.arrange_items[]", _AI_ARRANGE_OPTS, "기타 확인")
+    put_list("referral_detail", "consultation.referral_source_detail[]", _AI_REFERRAL_FLAT, "유입경로")
+    if (v := raw.get("transport")) and v in TRANSPORT_OPTIONS:
+        put("consultation.transport_method[]", [v], "교통수단")
+    if (v := text_of("referrer_person", 40)):
+        put("consultation.referrer_person", v, "소개자")
+    if (v := text_of("cancer_site", 60)):
+        put("consultation.cancer_site", v, "암 부위")
 
     summary = text_of("summary", 1000) or ""
     models.log_audit(
