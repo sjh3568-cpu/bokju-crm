@@ -710,6 +710,20 @@
         <button type="button" class="btn btn-primary" id="ai-memo-fill">✨ AI로 채우기</button>
         <span id="ai-memo-status" class="muted-sm" aria-live="polite"></span>
     </div>
+    <details class="ai-memo-guide">
+        <summary>💡 이렇게 적으면 잘 채워져요 (순서·형식 자유, 모르면 생략)</summary>
+        <ul class="aim-guide-list">
+            <li>👤 환자 <b>나이·성별</b> (이름 알면)</li>
+            <li>📞 보호자 <b>이름·관계·연락처</b></li>
+            <li>📍 <b>거주지</b> (시/군구)</li>
+            <li>💳 <b>보험유형</b> (장기요양·건보·의료급여 등)</li>
+            <li>🩺 <b>주 병명·발병 시점</b> (예: 뇌경색 3주 전)</li>
+            <li>🛏 상태: 의식/대화 · <b>거동</b>(기저귀·휠체어·와상) · <b>삼킴</b></li>
+            <li>🏥 <b>희망 주치의·입원 시기</b> · <b>유입경로</b>(어떻게 알고 연락)</li>
+            <li>⚑ 특이사항·요청</li>
+        </ul>
+        <div class="aim-guide-ex">예) “어머니 78세 뇌경색 우측 편마비, 삼킴 나쁨, 3주 전 발병. 딸 김미영 010-2345-6789, 포항 남구, 장기요양. 기저귀. 정기천 원장 가능한지, 입원 날짜 미정. 네이버 검색 보고 연락.”</div>
+    </details>
     <div id="ai-memo-result" class="ai-memo-result" hidden></div>
 </div>
 <style>
@@ -725,6 +739,14 @@
 .ai-memo-result .aim-list{display:flex;flex-wrap:wrap;gap:6px}
 .ai-memo-result .aim-chip{background:#fff;border:1px solid #a5b4fc;border-radius:999px;padding:2px 9px;font-size:.85em}
 .ai-fill-hi{outline:2px solid #6366f1;outline-offset:1px;background:#eef2ff!important;transition:outline .2s,background .2s}
+.ai-memo-guide{margin-top:8px;font-size:.86em}
+.ai-memo-guide>summary{cursor:pointer;color:#4338ca;font-weight:600;list-style:none;user-select:none}
+.ai-memo-guide>summary::-webkit-details-marker{display:none}
+.ai-memo-guide[open]>summary{margin-bottom:6px}
+.aim-guide-list{margin:0;padding-left:2px;list-style:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:2px 12px}
+.aim-guide-list li{color:#374151}
+.aim-guide-list b{color:#111827}
+.aim-guide-ex{margin-top:7px;padding:7px 9px;background:#fff;border:1px solid #e0e7ff;border-radius:8px;color:#4b5563;line-height:1.5}
 </style>
 {% endif %}
 
