@@ -15,3 +15,20 @@
 @media(max-width:650px){.coop-main-tabs a{flex:1;padding:12px 8px;text-align:center}.coop-directory-search{padding:20px 15px}.coop-search-heading{display:block}.coop-search-heading>strong{display:block;margin-top:8px}.coop-directory-form{grid-template-columns:1fr}.coop-directory-query{grid-column:auto}.coop-directory-form .btn{width:100%}}
 @media(max-width:650px){.coop-today-head,.coop-briefing-head{display:block}.coop-today-kpis{margin-top:12px}.coop-today-kpis b{flex:1;min-width:0}.coop-brief-grid,.coop-brief-columns{grid-template-columns:1fr 1fr}.coop-performance{grid-template-columns:1fr}.coop-performance>span{transform:rotate(90deg);text-align:center}}
 .coop-quality{margin:10px 0 16px;padding:12px;border-radius:8px;background:#fff7ed;color:#9a3412}.coop-quality.good{background:#f0fdf4;color:#166534}
+/* 협력기관 후보 — 실적은 있는데 미등록인 모병원 */
+.coop-candidates{border-left:4px solid #15803d}
+.coop-candidates-head{display:flex;justify-content:space-between;align-items:start;gap:14px;margin-bottom:12px}
+.coop-candidates-head h2{font-size:1.05rem}.coop-candidates-head h2 b{margin-left:4px;color:#15803d}
+.coop-candidate-table td.num{text-align:right;font-variant-numeric:tabular-nums}
+.coop-candidate-table td.num b{color:#166534}
+.coop-candidate-actions{white-space:nowrap}
+.coop-candidate-actions form{display:inline-flex;margin:2px}
+.coop-variant{margin-left:6px;padding:1px 6px;border-radius:9px;background:#eef4f0;color:#5d7a69;font-size:.68rem;font-weight:750;cursor:help}
+.coop-candidate-rest{margin-top:10px}
+/* 등록 기관 실적·방치 표시 */
+.coop-perf-cell{white-space:nowrap;font-size:.85em}.coop-perf-cell b{color:#166534}
+.coop-perf-line{color:#166534;font-size:.85em}
+.coop-neglect-tag{margin-left:6px;padding:1px 7px;border-radius:9px;background:#fef3c7;color:#92400e;font-size:.7rem;font-weight:800;white-space:nowrap}
+.coop-neglected{background:#fffbeb}
+.coop-sort{display:flex;align-items:center;gap:5px}.coop-sort>span{color:var(--text-light);font-size:.76rem;font-weight:750}
+@media(max-width:650px){.coop-candidates-head{display:block}.coop-sort{flex-wrap:wrap;margin:8px 0}}

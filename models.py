@@ -4352,13 +4352,20 @@ def _fold_hospital_abbreviations(keys):
     return mapping
 
 
-def _group_hospital_consultations(rows):
+def _group_hospital_consultations(rows, display_map=None):
     """상담 행을 기관 단위로 합산. 표기 변형(띄어쓰기·약칭)은 한 기관으로 묶는다.
 
-    대표명은 가장 많이 쓰인 표기이고, 환자 수는 표기를 넘어 patient_id로 중복을 제거한다.
+    display_map(=hospital_display_map())을 주면 그 대표명으로 묶는다. 조회 기간
+    안에서만 대표명을 뽑으면 기간마다 대표 표기가 달라져, 같은 기관이 화면끼리
+    다른 이름으로 나오고 이름으로 맞추는 쪽(협력기관 등록 여부 등)이 어긋난다.
+    환자 수는 표기를 넘어 patient_id로 중복을 제거한다.
     """
-    keyed = [(hospital_group_key(r["name"]), r) for r in rows]
-    fold = _fold_hospital_abbreviations(k for k, _ in keyed)
+    if display_map is not None:
+        keyed = [(display_map.get(r["name"], r["name"]), r) for r in rows]
+        fold = {}
+    else:
+        keyed = [(hospital_group_key(r["name"]), r) for r in rows]
+        fold = _fold_hospital_abbreviations(k for k, _ in keyed)
     groups = {}
     for key, r in keyed:
         g = groups.setdefault(fold.get(key, key), {
@@ -4373,9 +4380,10 @@ def _group_hospital_consultations(rows):
             g["latest_consult"] = r["consult_date"]
         g["spellings"][r["name"]] = g["spellings"].get(r["name"], 0) + 1
     items = []
-    for g in groups.values():
+    for group_name, g in groups.items():
         variants = sorted(g["spellings"].items(), key=lambda kv: (-kv[1], -len(kv[0]), kv[0]))
-        item = {"name": variants[0][0], "referrals": g["referrals"], "admissions": g["admissions"],
+        name = group_name if display_map is not None else variants[0][0]
+        item = {"name": name, "referrals": g["referrals"], "admissions": g["admissions"],
                 "patients": len(g["patient_ids"]), "latest_consult": g["latest_consult"],
                 "variants": [{"name": n, "referrals": c} for n, c in variants],
                 "variant_count": len(variants)}
@@ -4446,7 +4454,7 @@ def hospital_referral_overview(date_from=None, date_to=None, q=None):
     rows=conn.execute(f"""SELECT TRIM(source_hospital) name, patient_id, admission_status, consult_date
       FROM consultations WHERE {' AND '.join(where)}""",vals).fetchall()
     conn.close()
-    items=_group_hospital_consultations(rows)
+    items=_group_hospital_consultations(rows,display_map=hospital_display_map())
     total_count=len(items);max_referrals=items[0]['referrals'] if items else 0
     key=_hospital_substring_key(q)
     if key: items=[d for d in items if any(key in _hospital_substring_key(v['name']) for v in d['variants'])]

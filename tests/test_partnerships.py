@@ -363,6 +363,63 @@ class CooperationTests(unittest.TestCase):
         # 1월에 이미 온 병원이라 2월 신규 모병원으로 세면 안 된다 (표기만 달라진 경우 포함)
         self.assertEqual(models._new_hospitals_count(2026,2),0)
 
+    def test_partner_candidates_and_recent_performance(self):
+        """실적 있는 미등록 기관을 후보로 제시하고, 등록/보류가 목록에 반영된다."""
+        recent=date.today()-timedelta(days=20)
+        db=models.get_db()
+        def consult(hospital,when,status='입원완료'):
+            pid=db.execute("INSERT INTO patients(name) VALUES (?)",(f'{hospital}{when}',)).lastrowid
+            db.execute("""INSERT INTO consultations(patient_id,consult_date,admission_status,source_hospital)
+                        VALUES (?,?,?,?)""",(pid,when.isoformat(),status,hospital))
+        for i in range(6):
+            consult('큰유입병원',recent-timedelta(days=i),'입원완료' if i<3 else '상담중')
+        for i in range(2):
+            consult('적지만입원병원',recent-timedelta(days=i))   # 상담 2건뿐이지만 입원 2건
+        consult('한건병원',recent,'상담중')                        # 기준 미달
+        consult('대구굿모닝병원',recent)                            # 이미 등록된 기관
+        db.commit(); db.close()
+
+        db=models.get_db()
+        found,total=coop.partner_candidates(db)
+        names=[h['name'] for h in found]
+        db.close()
+        self.assertIn('큰유입병원',names)
+        self.assertIn('적지만입원병원',names)      # 입원 기준(2건)으로 걸린다
+        self.assertNotIn('한건병원',names)         # 상담 1건·입원 1건은 양쪽 기준 미달
+        self.assertNotIn('대구굿모닝병원',names)   # 이미 협력기관
+        self.assertEqual(total,2)
+
+        page=self.client.get('/partners').get_data(as_text=True)
+        self.assertIn('협력기관으로 관리해야 할 곳',page)
+        self.assertIn('큰유입병원',page)
+        # 보류하면 후보에서 사라지고, 되살리면 다시 나온다
+        self.client.post('/partners/skip-candidate',data={'csrf':'token','name':'적지만입원병원'})
+        db=models.get_db(); found,_=coop.partner_candidates(db); db.close()
+        self.assertNotIn('적지만입원병원',[h['name'] for h in found])
+        self.client.post('/partners/restore-candidates',data={'csrf':'token'})
+        db=models.get_db(); found,_=coop.partner_candidates(db); db.close()
+        self.assertIn('적지만입원병원',[h['name'] for h in found])
+        # 등록하면 협력기관이 되고 후보에서 빠진다
+        response=self.client.post('/partners/add-candidate',data={'csrf':'token','name':'큰유입병원'})
+        self.assertEqual(response.status_code,302)
+        self.assertEqual(self.scalar("SELECT COUNT(*) FROM cooperation_partners p JOIN source_hospitals h ON h.id=p.hospital_id WHERE h.name='큰유입병원'"),1)
+        db=models.get_db(); found,_=coop.partner_candidates(db); db.close()
+        self.assertNotIn('큰유입병원',[h['name'] for h in found])
+        # 등록된 기관 목록에 최근 실적이 붙고, 접촉 기록이 없으니 방문 필요로 잡힌다
+        listing=self.client.get('/partners?sort=performance').get_data(as_text=True)
+        self.assertIn('최근 3개월 실적',listing)
+        self.assertIn('방문 필요',listing)
+
+    def test_candidate_routes_require_write_permission(self):
+        models.set_user_permissions(self.user['id'],{k:(1 if k=='partners' else 0) for k in main.MENU_KEYS})
+        with self.client.session_transaction() as s:
+            s['perms']={k:(1 if k=='partners' else 0) for k in main.MENU_KEYS}
+        for url in ('/partners/add-candidate','/partners/skip-candidate','/partners/restore-candidates'):
+            self.assertIn(self.client.post(url,data={'csrf':'token','name':'무권한병원'}).status_code,(302,403))
+        # 조회 권한만으로는 아무것도 쓰이지 않아야 한다
+        self.assertEqual(self.scalar("SELECT COUNT(*) FROM cooperation_candidate_skips"),0)
+        self.assertEqual(self.scalar("SELECT COUNT(*) FROM source_hospitals WHERE name='무권한병원'"),0)
+
     def test_directory_keeps_same_name_facilities_separate(self):
         entries=[
             {'official_code':'A1','name':'동명의원','kind':'의원','region':'서울특별시','address':'서울 A','phone':'1'},

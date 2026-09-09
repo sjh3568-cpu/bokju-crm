@@ -93,6 +93,9 @@ def init_schema():
             owner TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT '예정', notes TEXT NOT NULL DEFAULT '',
             created_by INTEGER REFERENCES users(id)
         );
+        CREATE TABLE IF NOT EXISTS cooperation_candidate_skips (
+            name TEXT PRIMARY KEY, skipped_on TEXT NOT NULL, created_by INTEGER REFERENCES users(id)
+        );
         ''')
         models._ensure_columns(db, 'cooperation_partners', {
             'specialties': "TEXT NOT NULL DEFAULT ''", 'strengths': "TEXT NOT NULL DEFAULT ''",
@@ -269,6 +272,58 @@ def _period():
     return today.replace(day=1).isoformat(),today.isoformat(),'month'
 
 
+# 협력기관 후보 기준 — 최근 1년 상담 5건 이상 '또는' 입원 2건 이상.
+# 상담 건수만 보면 문경제일병원(상담 12·입원 7·전환율 58%)처럼 적게 보내도
+# 확실히 입원으로 이어지는 기관을 놓친다. 두 조건은 OR로 건다.
+CANDIDATE_MIN_REFERRALS = 5
+CANDIDATE_MIN_ADMISSIONS = 2
+# 기관이 아니어서 방문·협력 대상이 될 수 없는 값. 과거 엑셀 적재분에 '집'처럼
+# 자택 거주를 모병원 칸에 적은 기록이 남아 있다(현재 입력폼은 자택이면 비워 둔다).
+CANDIDATE_EXCLUDED = {'집', '자택', '가정', '자가', '본원', '없음', '무', '미상', '해당없음'}
+CANDIDATE_WINDOW_DAYS = 365
+PERFORMANCE_WINDOW_DAYS = 91  # 최근 3개월
+
+
+def _registered_names(db):
+    """등록된 협력기관 이름을 모병원 표기 통합 기준의 대표명으로 바꾼 집합.
+
+    '대구굿모닝병원'으로 등록해 두고 상담에는 '대구 굿모닝병원'으로 적혀 있으면
+    이름만 비교했을 때 미등록으로 잘못 잡힌다.
+    """
+    mapping = models.hospital_display_map()
+    rows = db.execute('''SELECT COALESCE(p.official_name,h.name) name FROM cooperation_partners p
+                         JOIN source_hospitals h ON h.id=p.hospital_id''')
+    return {mapping.get(r['name'], r['name']) for r in rows}
+
+
+def partner_candidates(db, limit=20):
+    """실적은 있는데 협력기관으로 등록되지 않은 모병원.
+
+    등록이 담당자 기억에만 의존하면 실제로 환자를 보내주는 기관이 목록에서 통째로
+    빠진다 — 도입 시점 기준 상담의 98%가 미등록 기관에서 왔다. 데이터가 후보를
+    먼저 제시하고, 등록 여부는 담당자가 판단한다(자동 등록하지 않는다).
+    """
+    start = (date.today() - timedelta(days=CANDIDATE_WINDOW_DAYS)).isoformat()
+    data = models.hospital_referral_overview(start, date.today().isoformat())
+    registered = _registered_names(db)
+    skipped = {r['name'] for r in db.execute('SELECT name FROM cooperation_candidate_skips')}
+    found = [h for h in data['hospitals']
+             if h['name'] not in registered and h['name'] not in skipped
+             and h['name'].replace(' ', '') not in CANDIDATE_EXCLUDED
+             and (h['referrals'] >= CANDIDATE_MIN_REFERRALS
+                  or h['admissions'] >= CANDIDATE_MIN_ADMISSIONS)]
+    # 방문 우선순위는 상담량보다 실제 입원 기여가 앞선다.
+    found.sort(key=lambda h: (-h['admissions'], -h['referrals'], h['name']))
+    return found[:limit], len(found)
+
+
+def recent_performance():
+    """최근 3개월 모병원 실적 — 등록 기관 목록에 붙여 '실적 대비 방치'를 드러낸다."""
+    start = (date.today() - timedelta(days=PERFORMANCE_WINDOW_DAYS)).isoformat()
+    data = models.hospital_referral_overview(start, date.today().isoformat())
+    return models.hospital_display_map(), {h['name']: h for h in data['hospitals']}
+
+
 def patient_report(db, name, basis, start, end):
     # 실제 추천기관과 이전 병원은 서로 대체하지 않는다.
     field = 'source_hospital' if basis == 'source' else 'referrer_institution'
@@ -344,11 +399,20 @@ def index():
         agreement_total=len(agreements)
     partner_kinds=sorted({p['kind'] for p in partners if p['kind']})
     partner_regions=sorted({p['region'] for p in partners if p['region']})
+    perf_map,perf_stats=recent_performance()
     for p in partners:
         for key in ('last_visit','last_contact'):
             p[key+'_days']=(date.today()-date.fromisoformat(p[key])).days if p[key] else None
         p['visit_cycle_label']=_cycle_label(p['visit_cycle'],p['visit_months'])
         p['contact_cycle_label']=_cycle_label(p['contact_cycle'],p['contact_months'])
+        # 최근 3개월 실적 — 표기 통합 기준으로 상담 데이터와 연결한다.
+        stat=perf_stats.get(perf_map.get(p['name'],p['name'])) or {}
+        p['recent_referrals']=stat.get('referrals',0)
+        p['recent_admissions']=stat.get('admissions',0)
+        last=max(filter(None,(p['last_visit'],p['last_contact'])),default=None)
+        p['inactive_days']=(date.today()-date.fromisoformat(last)).days if last else None
+        # 실적이 있는데 접촉이 끊긴 곳 = 방문 우선순위. 기록이 아예 없으면 가장 위.
+        p['neglected']=bool(p['recent_referrals']) and (p['inactive_days'] is None or p['inactive_days']>=60)
     due=request.args.get('due','')
     cycle_type=request.args.get('cycle_type','visit')
     cycle_filter=request.args.get('cycle','')
@@ -398,12 +462,18 @@ def index():
     agreements=[agreement for agreement in agreements
         if (not agreement_q or agreement_q in ' '.join((agreement['partner_name'] or '',agreement['title'] or '',agreement['counterpart'] or '',agreement['document_location'] or '')).lower())
         and (not agreement_status or agreement['display_status']==agreement_status)]
-    attention=[]
-    for p in selected:
-        last=max(filter(None,(p['last_visit'],p['last_contact'])),default=None)
-        inactive_days=(date.today()-date.fromisoformat(last)).days if last else None
-        if p['important'] and (inactive_days is None or inactive_days>=60):
-            attention.append({**p,'inactive_days':inactive_days})
+    attention=[p for p in selected
+               if (p['important'] or p['neglected'])
+               and (p['inactive_days'] is None or p['inactive_days']>=60)]
+    attention.sort(key=lambda p:(-p['recent_referrals'],-(p['inactive_days'] or 9999)))
+    sort=request.args.get('sort','')
+    if sort=='performance':
+        selected.sort(key=lambda p:(-p['recent_admissions'],-p['recent_referrals'],p['name']))
+    elif sort=='neglected':
+        selected.sort(key=lambda p:(not p['neglected'],-p['recent_referrals'],p['name']))
+    with closing(models.get_db()) as db:
+        candidates,candidate_total=partner_candidates(db)
+        skipped_total=db.execute('SELECT COUNT(*) FROM cooperation_candidate_skips').fetchone()[0]
     _audit('view_cooperation')
     return render_template('partners.html',partners=selected,q=q,master_count=master_count,
         master_kinds=master_kinds,master_regions=master_regions,
@@ -411,7 +481,9 @@ def index():
         reminders=reminders(),csrf=_csrf(),view=('feed' if request.args.get('view',user_prefs.get('partner_view','list'))=='feed' else 'list'),
         due=due,cycle_type=cycle_type,cycle_filter=cycle_filter,cycle_presets=CYCLE_PRESETS,start=start,end=end,
         tab=tab,agreements=agreements,agreement_total=agreement_total,attention=attention,
-        agreement_q=agreement_q,agreement_status=agreement_status)
+        agreement_q=agreement_q,agreement_status=agreement_status,sort=sort,
+        candidates=candidates,candidate_total=candidate_total,skipped_total=skipped_total,
+        candidate_min_referrals=CANDIDATE_MIN_REFERRALS,candidate_min_admissions=CANDIDATE_MIN_ADMISSIONS)
 
 
 
@@ -523,6 +595,72 @@ def add_manual():
     _audit('update_cooperation',pid)
     flash('기관을 협력기관으로 등록했습니다.','success')
     return redirect(url_for('partners.detail',pid=pid))
+
+
+@bp.route('/partners/add-candidate',methods=['POST'])
+@login_required
+def add_candidate():
+    """후보 목록에서 바로 협력기관으로 등록. 마스터에 없는 병원명이면 함께 만든다."""
+    if current_user().get('perms',{}).get('partners',0)<2:
+        abort(403)
+    if request.form.get('csrf') != session.get('cooperation_csrf'):
+        abort(400)
+    try:
+        name=_text('name',True,200)
+    except ValueError as e:
+        flash(str(e),'error')
+        return redirect(url_for('partners.index'))
+    with closing(models.get_db()) as db:
+        row=db.execute('SELECT id FROM source_hospitals WHERE name=?',(name,)).fetchone()
+        if row:
+            h_id=row['id']
+            db.execute('UPDATE source_hospitals SET active=1 WHERE id=?',(h_id,))
+        else:
+            h_id=db.execute('INSERT INTO source_hospitals(name,active) VALUES (?,1)',(name,)).lastrowid
+        db.execute('INSERT OR IGNORE INTO cooperation_partners(hospital_id,official_name) VALUES (?,?)',(h_id,name))
+        db.execute('DELETE FROM cooperation_candidate_skips WHERE name=?',(name,))
+        db.commit()
+        pid=db.execute('SELECT id FROM cooperation_partners WHERE hospital_id=?',(h_id,)).fetchone()['id']
+    _audit('update_cooperation',pid)
+    flash(f'{name}을(를) 협력기관으로 등록했습니다. 담당자·방문 주기를 채워주세요.','success')
+    return redirect(url_for('partners.detail',pid=pid))
+
+
+@bp.route('/partners/skip-candidate',methods=['POST'])
+@login_required
+def skip_candidate():
+    """후보에서 제외(보류). 관리 대상이 아닌 기관이 매번 다시 뜨지 않게 한다."""
+    if current_user().get('perms',{}).get('partners',0)<2:
+        abort(403)
+    if request.form.get('csrf') != session.get('cooperation_csrf'):
+        abort(400)
+    try:
+        name=_text('name',True,200)
+    except ValueError as e:
+        flash(str(e),'error')
+        return redirect(url_for('partners.index'))
+    with closing(models.get_db()) as db:
+        db.execute('INSERT OR REPLACE INTO cooperation_candidate_skips(name,skipped_on,created_by) VALUES (?,?,?)',
+                   (name,date.today().isoformat(),g.user['id']))
+        db.commit()
+    _audit('update_cooperation')
+    flash(f'{name}을(를) 후보에서 제외했습니다.','success')
+    return redirect(url_for('partners.index')+'#partner-candidates')
+
+
+@bp.route('/partners/restore-candidates',methods=['POST'])
+@login_required
+def restore_candidates():
+    """보류한 후보를 모두 되살린다."""
+    if current_user().get('perms',{}).get('partners',0)<2:
+        abort(403)
+    if request.form.get('csrf') != session.get('cooperation_csrf'):
+        abort(400)
+    with closing(models.get_db()) as db:
+        db.execute('DELETE FROM cooperation_candidate_skips')
+        db.commit()
+    flash('보류한 후보를 모두 되살렸습니다.','success')
+    return redirect(url_for('partners.index')+'#partner-candidates')
 
 
 @bp.route('/partners/<int:pid>')

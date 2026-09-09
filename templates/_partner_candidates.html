@@ -1,0 +1,49 @@
+{% if candidates or skipped_total %}
+<section class="card coop-section coop-candidates" id="partner-candidates">
+  <div class="coop-candidates-head">
+    <div>
+      <h2>협력기관으로 관리해야 할 곳 <b>{{ candidate_total }}</b></h2>
+      <p class="muted">최근 1년 상담 {{ candidate_min_referrals }}건 이상 또는 입원 {{ candidate_min_admissions }}건 이상인데 협력기관으로 등록되지 않은 모병원입니다. 입원 기여가 큰 순서로 나옵니다.</p>
+    </div>
+    {% if skipped_total and current_user.perms.get('partners',0)>=2 %}
+    <form method="post" action="{{ url_for('partners.restore_candidates') }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn btn-secondary btn-sm">보류 {{ skipped_total }}곳 되살리기</button>
+    </form>
+    {% endif %}
+  </div>
+  {% if candidates %}
+  <div class="tbl-wrap">
+    <table class="tbl coop-candidate-table">
+      <thead><tr><th>모병원</th><th>상담</th><th>입원</th><th>전환율</th><th>최근 상담일</th><th>처리</th></tr></thead>
+      <tbody>
+        {% for h in candidates %}
+        <tr>
+          <td><b>{{ h.name }}</b>{% if h.variant_count > 1 %}<small class="coop-variant" title="{{ h.variants|map(attribute='name')|join(' · ') }}">표기 {{ h.variant_count }}종</small>{% endif %}</td>
+          <td class="num">{{ h.referrals }}건</td>
+          <td class="num"><b>{{ h.admissions }}건</b></td>
+          <td class="num">{{ h.conversion }}%</td>
+          <td>{{ h.latest_consult|krdate }}</td>
+          <td class="coop-candidate-actions">
+            {% if current_user.perms.get('partners',0)>=2 %}
+            <form method="post" action="{{ url_for('partners.add_candidate') }}">
+              <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="name" value="{{ h.name }}">
+              <button class="btn btn-primary btn-sm">협력기관으로 등록</button>
+            </form>
+            <form method="post" action="{{ url_for('partners.skip_candidate') }}">
+              <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="name" value="{{ h.name }}">
+              <button class="btn btn-secondary btn-sm">보류</button>
+            </form>
+            {% else %}<span class="muted">조회 권한</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if candidate_total > candidates|length %}<p class="muted coop-candidate-rest">기준을 넘는 기관이 {{ candidate_total }}곳입니다. 상위 {{ candidates|length }}곳을 먼저 보여주고, 등록하거나 보류하면 다음 기관이 올라옵니다.</p>{% endif %}
+  {% else %}
+  <p class="muted">기준을 넘는 미등록 기관이 없습니다. 실적 있는 모병원이 모두 협력기관으로 등록되어 있습니다.</p>
+  {% endif %}
+</section>
+{% endif %}
