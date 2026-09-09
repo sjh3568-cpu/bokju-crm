@@ -78,10 +78,11 @@
                 {% set alert_total = (todo_badge or 0) + (inbound_badge or 0) + (password_reset_badge or 0) + (1 if has_unread_required_notice else 0) %}
                 <div class="header-tools">
                     <button type="button" class="header-tool-btn alert-bell-btn" id="alert-center-btn" aria-label="통합 알림센터" aria-expanded="false" title="통합 알림센터" data-fixed-count="{{ alert_total - (inbound_badge or 0) }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><b id="alert-total-badge"{% if not alert_total %} hidden{% endif %}>{{ alert_total }}</b></button>
+                    <a href="/support/" class="header-tool-btn" aria-label="개선 요청·문의" title="개선 요청·문의">✉</a>
                     <a href="/help" class="header-tool-btn help-tool-btn {% if request.path.startswith('/help') %}active{% endif %}" aria-label="상담 매뉴얼" title="상담 매뉴얼">📖</a>
                     <button type="button" class="header-tool-btn" id="display-settings-btn" aria-label="화면 설정" aria-expanded="false">Aa</button>
                 </div>
-                <details class="user-tag account-menu"><summary>{{ current_user.display_name }}<small class="role-chip">{{ ROLE_LABELS.get(current_user.role, current_user.role) }}</small><span>⌄</span></summary><div><a href="{{ url_for('account_settings') }}"><b>⚙ 내 계정 설정</b><small>개인화·권한·비밀번호</small></a><a href="{{ url_for('account_settings') }}#permissions">권한 확인·요청</a><form action="/logout" method="post"><button type="submit">로그아웃</button></form></div></details>
+                <details class="user-tag account-menu"><summary>{{ current_user.display_name }}<small class="role-chip">{{ ROLE_LABELS.get(current_user.role, current_user.role) }}</small><span>⌄</span></summary><div><a href="{{ url_for('account_settings') }}"><b>⚙ 내 계정 설정</b><small>개인화·권한·비밀번호</small></a><a href="{{ url_for('account_settings') }}#permissions">권한 확인·요청</a><a href="/support/">개선 요청·문의</a><form action="/logout" method="post"><button type="submit">로그아웃</button></form></div></details>
                 {% endif %}
             </div>
         </div>
@@ -176,7 +177,7 @@
 
     <footer>
         <div class="container">
-            <p class="app-credit"><span>개발 · {{ app_developer }}</span><span class="app-version">v{{ app_version }}</span></p>
+            <p class="app-credit"><span>개발 · {{ app_developer }}</span><span class="app-version">v{{ app_version }}</span>{% if current_user %}<a href="/support/">개선 요청·문의</a>{% endif %}</p>
             <p>본 시스템은 사내망에서만 동작합니다. 환자 정보는 외부로 전송되지 않습니다.</p>
         </div>
     </footer>

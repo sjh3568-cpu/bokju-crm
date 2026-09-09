@@ -109,7 +109,9 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 import partnerships
+import support_requests
 app.register_blueprint(partnerships.bp)
+app.register_blueprint(support_requests.bp)
 app.secret_key = os.getenv("SECRET_KEY") or secrets.token_hex(32)
 app.permanent_session_lifetime = timedelta(hours=int(os.getenv("SESSION_HOURS", "4")))
 _REMEMBER_COOKIE = "bokju_remember"
@@ -136,6 +138,7 @@ def initialize():
             return
         models.init_db()
         partnerships.init_schema()
+        support_requests.init_schema()
         release_notes.publish_release_notes()
         admin_pw = os.getenv("APP_PASSWORD", "").strip()
         if admin_pw:

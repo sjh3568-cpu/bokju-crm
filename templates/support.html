@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}개선 요청·문의 — 복주 상담실{% endblock %}
+{% block head_extra %}<link rel="stylesheet" href="{{ url_for('static', filename='css/support.css') }}">{% endblock %}
+{% block content %}
+<div class="page-header"><div><h1>개선 요청·문의</h1><p>불편한 점이나 필요한 기능을 알려주세요. {% if manager %}전체 사용자의 요청을 확인하고 답변할 수 있습니다.{% else %}내가 등록한 요청과 관리자 답변을 확인할 수 있습니다.{% endif %}</p></div></div>
+<div class="support-layout">
+<section class="card"><h2>새 요청 등록</h2><p class="muted">환자 이름·연락처 없이 기능과 상황을 설명해주세요. 요청은 작성자와 관리자만 볼 수 있습니다.</p>
+{% if error %}<p role="alert" class="flash error">{{ error }}</p>{% endif %}
+<form method="post" class="support-form">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<label>요청 유형<select name="category" required>{% for c in categories %}<option {% if values.get('category')==c %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></label>
+<label>제목<input name="title" maxlength="120" required value="{{ values.get('title','') }}" placeholder="예: 상담목록에서 검색 조건을 저장하고 싶어요"></label>
+<label>내용<textarea name="body" rows="7" maxlength="5000" required placeholder="어느 화면에서 무엇을 하려 했는지, 어떤 점이 불편한지 알려주세요.">{{ values.get('body','') }}</textarea></label>
+<p class="muted">사용 중인 버전 v{{ app_version }}이 함께 기록됩니다.</p><button class="btn btn-primary">요청 등록</button>
+</form></section>
+<section class="card"><h2>{{ '전체 요청' if manager else '내 요청' }}</h2>
+<form method="get" class="support-filter"><label>처리 상태 <select name="status"><option value="">전체</option>{% for s in statuses %}<option {% if status==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></label><button class="btn btn-secondary">조회</button></form>
+{% for t in tickets %}<a class="support-item" href="{{ url_for('support.detail',ticket_id=t.id) }}"><span>{{ t.category }} · <b>{{ t.status }}</b></span><strong>#{{ t.id }} {{ t.title }}</strong><small>{{ t.author }} · {{ t.updated_local }}</small></a>{% else %}<p class="muted">표시할 요청이 없습니다.</p>{% endfor %}
+<nav class="support-pagination" aria-label="요청 목록 페이지">{% if page>1 %}<a href="{{ url_for('support.index',page=page-1,status=status) }}">← 이전</a>{% endif %}<span>{{ page }} 페이지</span>{% if has_next %}<a href="{{ url_for('support.index',page=page+1,status=status) }}">다음 →</a>{% endif %}</nav>
+</section></div>
+{% endblock %}

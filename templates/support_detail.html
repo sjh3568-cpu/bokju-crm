@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}요청 #{{ ticket.id }} — 복주 상담실{% endblock %}
+{% block head_extra %}<link rel="stylesheet" href="{{ url_for('static', filename='css/support.css') }}">{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('support.index') }}">← 개선 요청·문의 목록</a></p>
+<section class="card"><p>{{ ticket.category }} · <b>{{ ticket.status }}</b> · v{{ ticket.version }}</p><h1>#{{ ticket.id }} {{ ticket.title }}</h1><p class="muted">{{ ticket.author }} · {{ ticket.created_local }}</p><div class="support-body">{{ ticket.body }}</div></section>
+<section class="card"><h2>답변·처리 내역</h2>{% for reply in replies %}<article class="support-reply"><p><b>{{ reply.author }}</b> · {{ reply.status }} · {{ reply.created_local }}</p><div class="support-body">{{ reply.body }}</div></article>{% else %}<p class="muted">아직 답변이 없습니다. 관리자가 확인한 뒤 이곳에 안내를 남깁니다.</p>{% endfor %}</section>
+{% if manager %}<section class="card"><h2>답변 작성</h2>{% if error %}<p class="flash error" role="alert">{{ error }}</p>{% endif %}<form method="post" class="support-form"><input type="hidden" name="csrf" value="{{ csrf }}"><label>처리 상태<select name="status">{% for s in statuses %}<option {% if values.get('status',ticket.status)==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></label><label>답변<textarea name="body" rows="5" maxlength="5000" required placeholder="확인 결과와 진행 계획을 안내해주세요.">{{ values.get('body','') }}</textarea></label><button class="btn btn-primary">답변·상태 저장</button></form></section>{% endif %}
+{% endblock %}

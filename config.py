@@ -4,7 +4,7 @@
 """
 
 # 화면에 표시하는 CRM 제품 정보. 릴리스 시 APP_VERSION을 갱신한다.
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 APP_DEVELOPER = "미래전략실 신재희"
 
 # 보험유형 — 사용자 정의 10종
@@ -154,6 +154,8 @@ AUDIT_ACTION_LABELS = {
     "delete_user": "계정 삭제",
     "reset_password": "비밀번호 초기화",
     "toggle_user_active": "계정 활성/비활성",
+    "create_support": "개선 요청·문의 등록",
+    "reply_support": "개선 요청·문의 답변",
     "create_notice": "공지 등록",
     "update_notice": "공지 상태 변경",
     "ack_notice": "공지 확인",
@@ -179,6 +181,7 @@ AUDIT_CATEGORIES = {
         "create_user", "update_user", "delete_user", "reset_password",
         "toggle_user_active",
     ]),
+    "support": ("개선 요청·문의", ["create_support", "reply_support"]),
     "notice": ("공지사항", ["create_notice", "update_notice", "ack_notice"]),
 }
 AUDIT_CATEGORY_OTHER = "other"
