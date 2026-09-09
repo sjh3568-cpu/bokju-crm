@@ -31,6 +31,7 @@ from flask import (
 
 import backup
 import models
+import release_notes
 from auth import (
     admin_required, authenticate, current_user, is_locked_out,
     login_required, login_user, logout_user, menu_level,
@@ -135,6 +136,7 @@ def initialize():
             return
         models.init_db()
         partnerships.init_schema()
+        release_notes.publish_release_notes()
         admin_pw = os.getenv("APP_PASSWORD", "").strip()
         if admin_pw:
             # 비상용 break-glass 계정 (매 부팅 시 .env 비번으로 동기화)
