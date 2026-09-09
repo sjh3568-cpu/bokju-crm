@@ -140,6 +140,8 @@ main { flex:1; padding:26px 0 34px; }
 @media(max-width:700px){.header-popover,.display-settings{right:12px;top:64px}.logo{font-size:1.08em;padding-right:12px}.command-status{overflow-x:auto}.global-search{order:3;flex-basis:100%}.main-nav{order:4;flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px}.main-nav>a[href="/notices"],.main-nav>.nav-admin-group,.main-nav>a[href="/sms"],.main-nav>.nav-menu-group:has(>a[href="/stats"]){display:none}.main-nav a{padding-inline:7px}.header-tools{margin-left:auto}.header-tools .help-tool-btn,#display-settings-btn{display:none}.account-menu{display:block}.account-menu .role-chip{display:none}.header-new-consult{position:fixed;right:16px;bottom:16px;z-index:75;padding:12px 16px;border:1px solid #b7dcc5;box-shadow:0 8px 25px rgba(15,81,48,.3)}}
 footer { background: var(--card-bg); border-top: 1px solid var(--border); padding: 12px 0; margin-top: 32px; }
 footer p { color: var(--text-light); font-size: 0.82em; text-align: center; }
+.app-credit { display:flex; justify-content:center; align-items:center; flex-wrap:wrap; gap:6px 12px; margin:0 0 5px; }
+.app-version { padding:2px 7px; border:1px solid var(--border); border-radius:6px; font-size:.92em; white-space:nowrap; }
 
 /* Page Header */
 .page-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; flex-wrap:wrap; gap:10px; position:relative; padding-left:13px; }

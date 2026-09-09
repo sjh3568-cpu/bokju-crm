@@ -36,6 +36,7 @@ from auth import (
     login_required, login_user, logout_user, menu_level,
 )
 from config import (
+    APP_VERSION, APP_DEVELOPER,
     ACTIVITY_ACTIVE_OPTIONS, ACTIVITY_DIAPER_OPTIONS, ACTIVITY_OTHERS_OPTIONS,
     ACTIVITY_WHEELCHAIR_OPTIONS, ADMISSION_DOCS, ADMISSION_STATUSES,
     AUDIT_ACTION_LABELS, AUDIT_CATEGORIES, AUDIT_CATEGORY_OTHER,
@@ -384,6 +385,8 @@ def _inject_globals():
             pass
     return {
         "current_user": _u,
+        "app_version": APP_VERSION,
+        "app_developer": APP_DEVELOPER,
         "todo_badge": todo_badge,
         "has_unread_required_notice": bool(pending_notice),
         "password_reset_badge": password_reset_badge,
