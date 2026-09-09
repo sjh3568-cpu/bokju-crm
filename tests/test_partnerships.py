@@ -317,6 +317,30 @@ class CooperationTests(unittest.TestCase):
         self.assertIn('<th colspan="2">전월</th>',report)
         self.assertIn('<th colspan="2">전년</th>',report)
 
+    def test_hospital_overview_merges_spelling_variants(self):
+        """띄어쓰기·약칭은 한 기관으로 합치되, 접미사가 다르면 따로 센다."""
+        rows=[{'name':n,'patient_id':pid,'admission_status':st,'consult_date':d} for n,pid,st,d in [
+            ('대구 굿모닝병원',1,'입원완료','2026-03-02'),
+            ('대구굿모닝병원',1,'상담중','2026-03-05'),   # 같은 환자 다른 표기 → 환자는 1명
+            ('대구굿모닝',2,'입원완료','2026-03-07'),     # 약칭 → 후보가 하나뿐이라 흡수
+            ('안동병원',3,'입원완료','2026-03-03'),
+            ('안동의료원',4,'상담중','2026-03-04'),       # 접미사가 달라 별개 기관
+            ('굿모닝병원',5,'상담중','2026-03-06'),       # 대구·평택 어느 쪽인지 알 수 없어 별개
+        ]]
+        items=models._group_hospital_consultations(rows)
+        by_name={i['name']:i for i in items}
+        merged=by_name['대구 굿모닝병원']
+        self.assertEqual(merged['referrals'],3)
+        self.assertEqual(merged['admissions'],2)
+        self.assertEqual(merged['patients'],2)
+        self.assertEqual(merged['variant_count'],3)
+        self.assertEqual(merged['latest_consult'],'2026-03-07')
+        self.assertEqual(by_name['안동병원']['referrals'],1)
+        self.assertEqual(by_name['안동의료원']['referrals'],1)
+        self.assertEqual(by_name['굿모닝병원']['referrals'],1)
+        self.assertEqual(len(items),4)
+        self.assertEqual(models._fold_hospital_abbreviations({'안동','안동병원','안동의료원'}),{})
+
     def test_directory_keeps_same_name_facilities_separate(self):
         entries=[
             {'official_code':'A1','name':'동명의원','kind':'의원','region':'서울특별시','address':'서울 A','phone':'1'},

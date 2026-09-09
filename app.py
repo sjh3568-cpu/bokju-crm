@@ -3781,12 +3781,15 @@ def lifecycle_board():
     if hospital:
         pid_set = set()
         if all_rows:
+            # 표기 변형('대구 굿모닝병원'·'대구굿모닝')을 모두 포함 — 순위표 건수와 목록이 어긋나지 않게.
+            variants = models.hospital_name_variants(hospital)
             conn = models.get_db()
             placeholders = ",".join("?" * len(all_rows))
+            marks = ",".join("?" * len(variants))
             rows = conn.execute(
                 f"SELECT DISTINCT patient_id FROM consultations "
-                f"WHERE patient_id IN ({placeholders}) AND source_hospital = ?",
-                [p["id"] for p in all_rows] + [hospital],
+                f"WHERE patient_id IN ({placeholders}) AND TRIM(source_hospital) IN ({marks})",
+                [p["id"] for p in all_rows] + variants,
             ).fetchall()
             pid_set = {r["patient_id"] for r in rows}
             conn.close()

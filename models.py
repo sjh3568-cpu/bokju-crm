@@ -4313,31 +4313,112 @@ def hospital_admission_analysis(date_from=None, date_to=None, hospital=None, q=N
             "candidates": [{"name": n, "count": counts.get(n,0)} for n in candidate_names]}
 
 
+# 기관 종류 접미사 — 약칭('대구굿모닝')을 정식 표기('대구굿모닝병원')로 접을 때만 쓴다.
+# 긴 것부터 두어 '대학교병원'이 '병원'보다 먼저 걸리게 한다.
+_HOSPITAL_KIND_SUFFIXES = ("상급종합병원", "종합병원", "대학교병원", "대학병원",
+                           "한방병원", "요양병원", "재활병원", "의료원", "병원", "의원")
+
+
+def hospital_group_key(value):
+    """모병원 표기 통합 키 — 공백·문장부호만 제거한다.
+
+    접미사는 절대 지우지 않는다. `_hospital_search_key`는 '병원'·'의료원'을 지워서
+    안동병원과 안동의료원이 같은 키가 되는데, 둘은 다른 기관이라 집계를 합치면 안 된다.
+    약칭 흡수는 `_fold_hospital_abbreviations`가 후보가 하나일 때만 따로 처리한다.
+    """
+    raw = (value or "").strip()
+    return _hospital_substring_key(canonical_hospital_name(raw) or raw)
+
+
+def _fold_hospital_abbreviations(keys):
+    """접미사 없는 약칭 키 → 정식 표기 키 매핑.
+
+    '대구굿모닝'은 '대구굿모닝병원'이 유일한 후보이므로 접는다. 반대로 '안동'처럼
+    안동병원·안동의료원 둘 다 후보면 어느 쪽인지 알 수 없으므로 접지 않고 남긴다.
+    """
+    keyset = set(keys)
+    mapping = {}
+    for key in keyset:
+        if not key or any(key.endswith(s) for s in _HOSPITAL_KIND_SUFFIXES):
+            continue
+        candidates = [key + s for s in _HOSPITAL_KIND_SUFFIXES if key + s in keyset]
+        if len(candidates) == 1:
+            mapping[key] = candidates[0]
+    return mapping
+
+
+def _group_hospital_consultations(rows):
+    """상담 행을 기관 단위로 합산. 표기 변형(띄어쓰기·약칭)은 한 기관으로 묶는다.
+
+    대표명은 가장 많이 쓰인 표기이고, 환자 수는 표기를 넘어 patient_id로 중복을 제거한다.
+    """
+    keyed = [(hospital_group_key(r["name"]), r) for r in rows]
+    fold = _fold_hospital_abbreviations(k for k, _ in keyed)
+    groups = {}
+    for key, r in keyed:
+        g = groups.setdefault(fold.get(key, key), {
+            "referrals": 0, "admissions": 0, "patient_ids": set(),
+            "latest_consult": None, "spellings": {}})
+        g["referrals"] += 1
+        if r["admission_status"] in ("입원완료", "퇴원완료"):
+            g["admissions"] += 1
+        if r["patient_id"] is not None:
+            g["patient_ids"].add(r["patient_id"])
+        if (r["consult_date"] or "") > (g["latest_consult"] or ""):
+            g["latest_consult"] = r["consult_date"]
+        g["spellings"][r["name"]] = g["spellings"].get(r["name"], 0) + 1
+    items = []
+    for g in groups.values():
+        variants = sorted(g["spellings"].items(), key=lambda kv: (-kv[1], -len(kv[0]), kv[0]))
+        item = {"name": variants[0][0], "referrals": g["referrals"], "admissions": g["admissions"],
+                "patients": len(g["patient_ids"]), "latest_consult": g["latest_consult"],
+                "variants": [{"name": n, "referrals": c} for n, c in variants],
+                "variant_count": len(variants)}
+        item["conversion"] = round(100 * item["admissions"] / item["referrals"], 1) if item["referrals"] else 0
+        items.append(item)
+    items.sort(key=lambda d: (-d["referrals"], -d["admissions"], d["name"]))
+    return items
+
+
+def hospital_name_variants(name):
+    """DB에 실제로 있는 같은 기관의 표기 변형 전부.
+
+    상담목록 필터가 대표 표기 하나만 잡아 '순위표 12건 → 목록 4건'이 되는 것을 막는다.
+    """
+    raw = (name or "").strip()
+    if not raw:
+        return []
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT DISTINCT TRIM(source_hospital) name FROM consultations "
+        "WHERE source_hospital IS NOT NULL AND TRIM(source_hospital)!=''").fetchall()
+    conn.close()
+    keys = {r["name"]: hospital_group_key(r["name"]) for r in rows}
+    fold = _fold_hospital_abbreviations(set(keys.values()) | {hospital_group_key(raw)})
+    target = hospital_group_key(raw)
+    target = fold.get(target, target)
+    matched = [n for n, k in keys.items() if fold.get(k, k) == target]
+    return matched or [raw]
+
+
 def hospital_referral_overview(date_from=None, date_to=None, q=None):
     """모병원별 상담의뢰 코호트와 그중 입원완료 수. 상담일 기준 기간 집계.
 
+    표기가 흔들려도('대구 굿모닝병원'·'대구굿모닝병원'·'대구굿모닝') 한 기관으로 합산한다.
     q를 주면 병원명 부분일치로 걸러 낸다. KPI는 걸러 낸 기관 기준이고,
     막대 기준값(max_referrals)만 전체 1위를 유지해 검색해도 규모 감각이 남는다.
     """
-    where=["c.source_hospital IS NOT NULL","TRIM(c.source_hospital)!=''"];vals=[]
-    if date_from: where.append("c.consult_date>=?");vals.append(date_from)
-    if date_to: where.append("c.consult_date<=?");vals.append(date_to)
+    where=["source_hospital IS NOT NULL","TRIM(source_hospital)!=''"];vals=[]
+    if date_from: where.append("consult_date>=?");vals.append(date_from)
+    if date_to: where.append("consult_date<=?");vals.append(date_to)
     conn=get_db()
-    rows=conn.execute(f"""SELECT TRIM(c.source_hospital) name,
-      COUNT(*) referrals,
-      SUM(CASE WHEN c.admission_status IN ('입원완료','퇴원완료') THEN 1 ELSE 0 END) admissions,
-      COUNT(DISTINCT c.patient_id) patients,
-      MAX(c.consult_date) latest_consult
-      FROM consultations c WHERE {' AND '.join(where)}
-      GROUP BY TRIM(c.source_hospital)
-      ORDER BY referrals DESC, admissions DESC, name ASC""",vals).fetchall()
-    conn.close();items=[]
-    for r in rows:
-        d=dict(r);d['conversion']=round(100*d['admissions']/d['referrals'],1) if d['referrals'] else 0
-        items.append(d)
+    rows=conn.execute(f"""SELECT TRIM(source_hospital) name, patient_id, admission_status, consult_date
+      FROM consultations WHERE {' AND '.join(where)}""",vals).fetchall()
+    conn.close()
+    items=_group_hospital_consultations(rows)
     total_count=len(items);max_referrals=items[0]['referrals'] if items else 0
-    key=(q or '').strip().lower()
-    if key: items=[d for d in items if key in (d['name'] or '').lower()]
+    key=_hospital_substring_key(q)
+    if key: items=[d for d in items if any(key in _hospital_substring_key(v['name']) for v in d['variants'])]
     return {'hospitals':items,'hospital_count':len(items),'total_count':total_count,
             'max_referrals':max_referrals,'q':(q or '').strip(),
             'referrals':sum(x['referrals'] for x in items),'admissions':sum(x['admissions'] for x in items),
