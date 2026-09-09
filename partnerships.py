@@ -471,6 +471,7 @@ def index():
     with closing(models.get_db()) as db:
         candidates,candidate_total=partner_candidates(db)
         skipped_total=db.execute('SELECT COUNT(*) FROM cooperation_candidate_skips').fetchone()[0]
+        unlinked_count=db.execute('SELECT COUNT(*) FROM cooperation_partners WHERE directory_id IS NULL').fetchone()[0]
     _audit('view_cooperation')
     return render_template('partners.html',partners=selected,q=q,master_count=master_count,
         master_kinds=master_kinds,master_regions=master_regions,
@@ -480,7 +481,8 @@ def index():
         tab=tab,agreements=agreements,agreement_total=agreement_total,attention=attention,
         agreement_q=agreement_q,agreement_status=agreement_status,sort=sort,
         candidates=candidates,candidate_total=candidate_total,skipped_total=skipped_total,
-        candidate_min_referrals=CANDIDATE_MIN_REFERRALS,candidate_min_admissions=CANDIDATE_MIN_ADMISSIONS)
+        candidate_min_referrals=CANDIDATE_MIN_REFERRALS,candidate_min_admissions=CANDIDATE_MIN_ADMISSIONS,
+        unlinked_count=unlinked_count)
 
 
 
@@ -574,6 +576,36 @@ def _match_directory(db, name):
     cands=db.execute("SELECT * FROM cooperation_facility_directory WHERE active=1 "
                      "AND name LIKE ? ESCAPE '\\' ORDER BY name LIMIT 3",('%'+like+'%',)).fetchall()
     return cands[0] if len(cands)==1 else None
+
+
+def _directory_candidates(db, name, limit=6):
+    """명부 미연결 협력기관을 위한 후보 목록 — 관리자가 직접 골라 연결하도록."""
+    name=(name or '').strip()
+    if not name:
+        return []
+    like=name.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
+    rows=db.execute("SELECT id,name,kind,region,address,bed_count FROM cooperation_facility_directory "
+                    "WHERE active=1 AND name LIKE ? ESCAPE '\\' ORDER BY name LIMIT ?",('%'+like+'%',limit)).fetchall()
+    return [dict(r) for r in rows]
+
+
+@bp.route('/partners/<int:pid>/link-directory',methods=['POST'])
+@login_required
+def link_directory(pid):
+    """관리자가 협력기관을 심평원 명부 기관과 수동 연결 — 이후 정보 자동 기입."""
+    did=request.form.get('directory_id','')
+    with closing(models.get_db()) as db:
+        if not db.execute('SELECT id FROM cooperation_partners WHERE id=?',(pid,)).fetchone():
+            abort(404)
+        d=db.execute('SELECT id,name FROM cooperation_facility_directory WHERE id=? AND active=1',(did,)).fetchone() if did else None
+        if not d:
+            flash('연결할 명부 기관을 선택해주세요.','error')
+            return redirect(url_for('partners.detail',pid=pid))
+        db.execute('UPDATE cooperation_partners SET directory_id=?,official_name=? WHERE id=?',(d['id'],d['name'],pid))
+        db.commit()
+    _audit('update_cooperation',pid)
+    flash(f'심평원 명부(“{d["name"]}”)와 연결했습니다. 종별·병상·진료과가 자동 기입됩니다.','success')
+    return redirect(url_for('partners.detail',pid=pid))
 
 
 @bp.route('/partners/add-manual',methods=['POST'])
@@ -710,6 +742,8 @@ def detail(pid):
     basis='source' if request.args.get('basis')=='source' else 'referral'
     with closing(models.get_db()) as db:
         p=_partner(db,pid)
+        # 명부 미연결이면 관리자가 고를 후보를 준비 (경고 배너에 노출)
+        dir_candidates=[] if p['directory_id'] else _directory_candidates(db,p['name'])
         activities=[dict(r) for r in db.execute('SELECT * FROM cooperation_activities WHERE partner_id=? ORDER BY happened_on DESC,id DESC',(pid,))]
         contacts=[dict(r) for r in db.execute('SELECT * FROM cooperation_contacts WHERE partner_id=? ORDER BY is_primary DESC,status="재직" DESC,id',(pid,))]
         tasks=[dict(r) for r in db.execute('SELECT * FROM cooperation_tasks WHERE partner_id=? ORDER BY completed_on IS NOT NULL,due_on,id',(pid,))]
@@ -750,6 +784,7 @@ def detail(pid):
         documents=documents,visit_plans=visit_plans,quality=quality,
         consultations=consultations,admissions=admissions,undated=undated,start=start,end=end,period=period,basis=basis,
         csrf=_csrf(),today=date.today().isoformat(),kinds=KINDS,performance=performance,
+        dir_unlinked=not p['directory_id'],dir_candidates=dir_candidates,
         embedded=request.args.get('embedded')=='1',cycle_presets=CYCLE_PRESETS)
 
 

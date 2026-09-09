@@ -5,6 +5,7 @@
 <div class="page-header"><h1>기관협력 관리</h1><span class="muted">방문·연락 이력과 다음 일정</span></div>
 <nav class="coop-main-tabs"><a class="{{ 'on' if tab=='institutions' }}" href="{{ url_for('partners.index') }}">협력기관 목록</a><a class="{{ 'on' if tab=='agreements' }}" href="{{ url_for('partners.index',tab='agreements') }}">업무협약 목록 <b>{{ agreement_total }}</b></a></nav>
 {% if tab=='institutions' %}
+{% if unlinked_count %}<div class="card coop-unlinked-alert">⚠️ 심평원 명부에 연결되지 않은 협력기관이 <b>{{ unlinked_count }}곳</b> 있습니다 — 종별·병상·진료과가 자동 기입되지 않습니다. 각 기관 상세에서 명부를 선택해 연결하세요.<style>.coop-unlinked-alert{background:#fff8ec;border:1px solid #f5c26b;border-left:4px solid #e8912d;color:#7c4a06;padding:10px 14px;margin-bottom:12px}</style></div>{% endif %}
 {% include '_partner_reminders.html' %}
 {% include '_partner_candidates.html' %}
 {% if current_user.perms.get('partners',0)>=2 %}

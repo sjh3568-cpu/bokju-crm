@@ -7,6 +7,33 @@
 {% set save_url=url_for('partners.save',pid=partner.id) %}
 <link rel="stylesheet" href="{{ url_for('static',filename='css/partners.css') }}">
 <div class="page-header"><div>{% if not embedded %}<a href="/partners">← 기관협력 관리</a>{% endif %}<h1>{% if partner.important %}★ {% endif %}{{ partner.name }}</h1></div></div>
+{% if dir_unlinked %}
+<style>
+.coop-warn{border:1px solid #f5c26b;background:#fff8ec;border-left:4px solid #e8912d}
+.coop-warn-head{font-weight:700;color:#9a5b06;margin-bottom:6px}
+.coop-warn-cands{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+.coop-cand{margin:0}
+.coop-cand button{display:flex;flex-direction:column;align-items:flex-start;text-align:left;gap:2px;max-width:340px;line-height:1.35}
+.coop-cand button span{font-weight:400;color:#6b7280;font-size:.85em}
+</style>
+<section class="card coop-warn" id="dir-link">
+  <div class="coop-warn-head">⚠️ 심평원 명부에 연결되지 않았습니다 — 종별·병상·진료과 정보가 자동 기입되지 않습니다.</div>
+  {% if dir_candidates %}
+  <p class="muted">아래에서 이 기관의 정식 명부를 선택해 연결하면 정보가 자동으로 채워집니다.</p>
+  <div class="coop-warn-cands">
+    {% for d in dir_candidates %}
+    <form method="post" action="{{ url_for('partners.link_directory',pid=partner.id) }}" class="coop-cand">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="directory_id" value="{{ d.id }}">
+      <button class="btn btn-secondary btn-sm" type="submit"><b>{{ d.name }}</b><span>{{ d.kind or '' }}{% if d.bed_count %} · {{ d.bed_count }}병상{% endif %}{% if d.region %} · {{ d.region }}{% endif %}{% if d.address %}<br><small>{{ d.address }}</small>{% endif %}</span></button>
+    </form>
+    {% endfor %}
+  </div>
+  <p class="muted-sm">해당 기관이 없나요? 검색으로 더 찾으려면 <a href="/partners#manual-institution">기관협력 등록 화면</a>에서 정식명으로 다시 등록하세요.</p>
+  {% else %}
+  <p class="muted">이 이름과 일치하는 심평원 명부 기관을 찾지 못했습니다. 입력하신 정보로 관리되며, 정식명이 다르면 <a href="/partners#manual-institution">등록 화면</a>에서 정식명으로 등록해 연결하세요.</p>
+  {% endif %}
+</section>
+{% endif %}
 <nav class="coop-nav"><a href="#briefing">방문 전 브리핑</a><a href="#overview">기관 특징</a><a href="#report">상담·입원 실적</a><a href="#plans">방문계획</a><a href="#documents">자료대장</a><a href="#agreements">업무협약</a><a href="#tasks">다음 일정</a><a href="#activities">방문·연락 이력</a><a href="#contacts">협력 담당자</a><a href="#profile">기관 설정</a></nav>
 <section class="card coop-section coop-briefing" id="briefing"><div class="coop-briefing-head"><div><h2>방문 전 브리핑</h2><p class="muted">방문하거나 연락하기 전에 확인할 핵심 정보입니다.</p></div><button type="button" class="btn btn-secondary btn-sm" onclick="window.print()">브리핑 인쇄</button></div><div class="coop-brief-grid"><div><span>기관 담당</span><b>{{ partner.owner or '미지정' }}</b></div><div><span>핵심 담당자</span><b>{{ contacts[0].name ~ ' · ' ~ contacts[0].department if contacts else '미등록' }}</b></div><div><span>미완료 일정</span><b>{{ tasks|rejectattr('completed_on')|list|length }}건</b></div><div><span>유효 협약</span><b>{{ agreements|selectattr('effective')|list|length }}건</b></div></div><div class="coop-brief-columns"><div><h3>최근 대화·요청</h3>{% for a in activities[:3] %}<p><b>{{ a.happened_on }} · {{ a.kind }}</b><br>{{ a.content }}</p>{% else %}<p class="muted">활동 기록이 없습니다.</p>{% endfor %}</div><div><h3>다가온 일정</h3>{% for t in tasks if not t.completed_on %}<p><b>{{ t.due_on }} · {{ t.dday }}</b><br>{{ t.kind }} · {{ t.title }}</p>{% else %}<p class="muted">미완료 일정이 없습니다.</p>{% endfor %}</div></div></section>
 <section class="card coop-section" id="overview"><h2>기관 주요 특징</h2><div class="coop-feature-grid">
