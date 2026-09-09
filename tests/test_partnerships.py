@@ -341,6 +341,28 @@ class CooperationTests(unittest.TestCase):
         self.assertEqual(len(items),4)
         self.assertEqual(models._fold_hospital_abbreviations({'안동','안동병원','안동의료원'}),{})
 
+    def test_monthly_report_hospital_counts_share_the_same_grouping(self):
+        """월간보고서·통계 대시보드의 모병원 집계도 표기 변형을 합친다."""
+        db=models.get_db()
+        for spelling,day in [('한마음 병원','2026-02-03'),('한마음병원','2026-02-04'),
+                             ('한마음병원','2026-02-05'),('한마음병원','2026-01-06')]:
+            patient=db.execute("INSERT INTO patients(name) VALUES (?)",(f'표기{day}',)).lastrowid
+            db.execute("""INSERT INTO consultations(patient_id,consult_date,admission_status,source_hospital)
+                        VALUES (?,?, '입원완료', ?)""",(patient,day,spelling))
+        db.commit(); db.close()
+        mapping=models.hospital_display_map()
+        self.assertEqual(mapping['한마음 병원'],'한마음병원')  # 대표는 DB 전체에서 더 많이 쓰인 표기
+        stats=models.aggregate_stats('2026-02-01','2026-02-28')
+        labels=[h['label'] for h in stats['by_source_hospital']]
+        self.assertIn('한마음병원',labels)
+        self.assertNotIn('한마음 병원',labels)
+        self.assertEqual(next(h['count'] for h in stats['by_source_hospital'] if h['label']=='한마음병원'),3)
+        perf=next(h for h in stats['by_hospital_performance'] if h['label']=='한마음병원')
+        self.assertEqual(perf['total'],3)
+        self.assertEqual(perf['completed'],3)
+        # 1월에 이미 온 병원이라 2월 신규 모병원으로 세면 안 된다 (표기만 달라진 경우 포함)
+        self.assertEqual(models._new_hospitals_count(2026,2),0)
+
     def test_directory_keeps_same_name_facilities_separate(self):
         entries=[
             {'official_code':'A1','name':'동명의원','kind':'의원','region':'서울특별시','address':'서울 A','phone':'1'},

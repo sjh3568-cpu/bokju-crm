@@ -4028,11 +4028,14 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
             except (ValueError, TypeError):
                 pass
 
-    # 모병원 — 빈값/None 제외 (자택 거주 환자는 모병원 없음)
+    # 모병원 — 빈값/None 제외 (자택 거주 환자는 모병원 없음).
+    # 띄어쓰기·약칭 표기('대구 굿모닝병원'·'대구굿모닝')는 한 기관으로 합산한다.
+    hospital_map = hospital_display_map()
     hospital_counts = {}
     for r in rows:
         v = (r["source_hospital"] or "").strip() if isinstance(r["source_hospital"], str) else None
         if v:
+            v = hospital_map.get(v, v)
             hospital_counts[v] = hospital_counts.get(v, 0) + 1
     by_hospital = _sort_desc(hospital_counts)[:10]
 
@@ -4047,12 +4050,14 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
             reason_counts[v] = reason_counts.get(v, 0) + 1
     by_reason = _sort_desc(reason_counts)
 
-    def _performance(field, *, limit=10):
+    def _performance(field, *, limit=10, label_map=None):
         totals, completes = {}, {}
         for row in rows:
             label = (row[field] or "").strip()
             if not label:
                 continue
+            if label_map:
+                label = label_map.get(label, label)
             totals[label] = totals.get(label, 0) + 1
             if (row["admission_status"] or "").strip() in ("입원완료", "퇴원완료"):
                 completes[label] = completes.get(label, 0) + 1
@@ -4226,7 +4231,7 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
         "by_disease_performance_by_group": _disease_performance_by_group(),
         "by_region_performance": _performance("residence_sigungu"),
         "by_region_performance_by_sido": _region_performance_by_sido(),
-        "by_hospital_performance": _performance("source_hospital"),
+        "by_hospital_performance": _performance("source_hospital", label_map=hospital_map),
         "by_counselor_performance": _performance("counselor"),
         "by_admission_lead": [{"label": label, "count": count}
                               for label, count in lead_buckets.items()],
@@ -4401,6 +4406,32 @@ def hospital_name_variants(name):
     return matched or [raw]
 
 
+def hospital_display_map():
+    """DB 전체의 모병원 표기 → 대표 표기 매핑.
+
+    대표 표기를 기간별로 뽑으면 달마다 흔들려 월간보고서의 전월·전년 비교가
+    어긋난다. 그래서 조회 기간이 아니라 DB 전체 사용 빈도로 한 번에 정한다.
+    """
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT TRIM(source_hospital) name, COUNT(*) n FROM consultations "
+        "WHERE source_hospital IS NOT NULL AND TRIM(source_hospital)!='' "
+        "GROUP BY TRIM(source_hospital)").fetchall()
+    conn.close()
+    keys = {r["name"]: hospital_group_key(r["name"]) for r in rows}
+    fold = _fold_hospital_abbreviations(set(keys.values()))
+    groups = {}
+    for r in rows:
+        key = keys[r["name"]]
+        groups.setdefault(fold.get(key, key), []).append((r["n"], r["name"]))
+    mapping = {}
+    for members in groups.values():
+        rep = sorted(members, key=lambda m: (-m[0], -len(m[1]), m[1]))[0][1]
+        for _, name in members:
+            mapping[name] = rep
+    return mapping
+
+
 def hospital_referral_overview(date_from=None, date_to=None, q=None):
     """모병원별 상담의뢰 코호트와 그중 입원완료 수. 상담일 기준 기간 집계.
 
@@ -4495,28 +4526,33 @@ def _channel_conversion_table(rows):
 
 
 def _new_hospitals_count(year: int, month: int) -> int:
-    """이번 달 처음 등장한 모병원 수. (이전 어느 시점에도 없었던 source_hospital)."""
+    """이번 달 처음 등장한 모병원 수. (이전 어느 시점에도 없었던 source_hospital).
+
+    표기 변형은 한 기관으로 본다 — 쓰던 병원을 '대구굿모닝'처럼 줄여 적은 것이
+    신규 개척으로 잡히면 안 된다.
+    """
     f, t = _month_range(year, month)
+    mapping = hospital_display_map()
     conn = get_db()
-    rows = conn.execute(
+    current = conn.execute(
         """
-        SELECT DISTINCT source_hospital FROM consultations
+        SELECT DISTINCT TRIM(source_hospital) name FROM consultations
         WHERE consult_date BETWEEN ? AND ?
-          AND source_hospital IS NOT NULL AND source_hospital != ''
+          AND source_hospital IS NOT NULL AND TRIM(source_hospital) != ''
         """,
         (f, t),
     ).fetchall()
-    new_count = 0
-    for r in rows:
-        h = r["source_hospital"]
-        prev = conn.execute(
-            "SELECT 1 FROM consultations WHERE source_hospital = ? AND consult_date < ? LIMIT 1",
-            (h, f),
-        ).fetchone()
-        if not prev:
-            new_count += 1
+    before = conn.execute(
+        """
+        SELECT DISTINCT TRIM(source_hospital) name FROM consultations
+        WHERE consult_date < ?
+          AND source_hospital IS NOT NULL AND TRIM(source_hospital) != ''
+        """,
+        (f,),
+    ).fetchall()
     conn.close()
-    return new_count
+    seen = {mapping.get(r["name"], r["name"]) for r in before}
+    return len({mapping.get(r["name"], r["name"]) for r in current} - seen)
 
 
 def aggregate_monthly(year: int, month: int) -> dict:
