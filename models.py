@@ -4034,7 +4034,7 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
     hospital_counts = {}
     for r in rows:
         v = (r["source_hospital"] or "").strip() if isinstance(r["source_hospital"], str) else None
-        if v:
+        if v and is_institution_source(v):
             v = hospital_map.get(v, v)
             hospital_counts[v] = hospital_counts.get(v, 0) + 1
     by_hospital = _sort_desc(hospital_counts)[:10]
@@ -4057,6 +4057,8 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
             if not label:
                 continue
             if label_map:
+                if not is_institution_source(label):
+                    continue
                 label = label_map.get(label, label)
             totals[label] = totals.get(label, 0) + 1
             if (row["admission_status"] or "").strip() in ("입원완료", "퇴원완료"):
@@ -4324,6 +4326,31 @@ _HOSPITAL_KIND_SUFFIXES = ("상급종합병원", "종합병원", "대학교병�
                            "한방병원", "요양병원", "재활병원", "의료원", "병원", "의원")
 
 
+# 모병원 칸에 들어와 있지만 의료기관이 아닌 값. 과거 엑셀 적재분에 자택 거주를
+# '집'으로 적은 기록이 남아 있다(현재 입력폼은 자택이면 모병원을 비워 둔다).
+# 기관 단위 집계·협력 대상 판단 어디에도 끼면 안 되므로 한곳에서 걸러 낸다.
+NON_INSTITUTION_SOURCES = {"집", "자택", "가정", "자가", "본인", "없음", "무",
+                           "미상", "해당없음", "-"}
+
+
+def is_institution_source(value):
+    """모병원 칸의 값이 실제 기관인지. '집' 같은 거주 형태는 기관이 아니다."""
+    return (value or "").strip().replace(" ", "") not in NON_INSTITUTION_SOURCES
+
+
+# 기관연계 표식 — referral_source_detail(다중 선택)에 이 값이 있으면 모병원
+# 진료협력팀이 연계해 준 건이고, 없으면 환자·보호자가 직접 찾아온 건이다.
+REFERRAL_DETAIL_LINKED = "기관연계"
+
+
+def _is_linked_referral(raw_detail):
+    try:
+        items = json.loads(raw_detail or "[]")
+    except (json.JSONDecodeError, TypeError):
+        return False
+    return any(str(x).strip() == REFERRAL_DETAIL_LINKED for x in (items or []))
+
+
 def hospital_group_key(value):
     """모병원 표기 통합 키 — 공백·문장부호만 제거한다.
 
@@ -4370,10 +4397,17 @@ def _group_hospital_consultations(rows, display_map=None):
     for key, r in keyed:
         g = groups.setdefault(fold.get(key, key), {
             "referrals": 0, "admissions": 0, "patient_ids": set(),
+            "linked_referrals": 0, "linked_admissions": 0,
             "latest_consult": None, "spellings": {}})
+        admitted = r["admission_status"] in ("입원완료", "퇴원완료")
+        linked = bool(r.get("linked")) if isinstance(r, dict) else False
         g["referrals"] += 1
-        if r["admission_status"] in ("입원완료", "퇴원완료"):
+        if admitted:
             g["admissions"] += 1
+        if linked:
+            g["linked_referrals"] += 1
+            if admitted:
+                g["linked_admissions"] += 1
         if r["patient_id"] is not None:
             g["patient_ids"].add(r["patient_id"])
         if (r["consult_date"] or "") > (g["latest_consult"] or ""):
@@ -4385,9 +4419,14 @@ def _group_hospital_consultations(rows, display_map=None):
         name = group_name if display_map is not None else variants[0][0]
         item = {"name": name, "referrals": g["referrals"], "admissions": g["admissions"],
                 "patients": len(g["patient_ids"]), "latest_consult": g["latest_consult"],
+                "linked_referrals": g["linked_referrals"], "linked_admissions": g["linked_admissions"],
+                "direct_referrals": g["referrals"] - g["linked_referrals"],
+                "direct_admissions": g["admissions"] - g["linked_admissions"],
                 "variants": [{"name": n, "referrals": c} for n, c in variants],
                 "variant_count": len(variants)}
         item["conversion"] = round(100 * item["admissions"] / item["referrals"], 1) if item["referrals"] else 0
+        item["linked_conversion"] = (round(100 * item["linked_admissions"] / item["linked_referrals"], 1)
+                                     if item["linked_referrals"] else 0)
         items.append(item)
     items.sort(key=lambda d: (-d["referrals"], -d["admissions"], d["name"]))
     return items
@@ -4421,10 +4460,10 @@ def hospital_display_map():
     어긋난다. 그래서 조회 기간이 아니라 DB 전체 사용 빈도로 한 번에 정한다.
     """
     conn = get_db()
-    rows = conn.execute(
+    rows = [r for r in conn.execute(
         "SELECT TRIM(source_hospital) name, COUNT(*) n FROM consultations "
         "WHERE source_hospital IS NOT NULL AND TRIM(source_hospital)!='' "
-        "GROUP BY TRIM(source_hospital)").fetchall()
+        "GROUP BY TRIM(source_hospital)").fetchall() if is_institution_source(r["name"])]
     conn.close()
     keys = {r["name"]: hospital_group_key(r["name"]) for r in rows}
     fold = _fold_hospital_abbreviations(set(keys.values()))
@@ -4451,15 +4490,20 @@ def hospital_referral_overview(date_from=None, date_to=None, q=None):
     if date_from: where.append("consult_date>=?");vals.append(date_from)
     if date_to: where.append("consult_date<=?");vals.append(date_to)
     conn=get_db()
-    rows=conn.execute(f"""SELECT TRIM(source_hospital) name, patient_id, admission_status, consult_date
-      FROM consultations WHERE {' AND '.join(where)}""",vals).fetchall()
+    raw=conn.execute(f"""SELECT TRIM(source_hospital) name, patient_id, admission_status, consult_date,
+      referral_source_detail FROM consultations WHERE {' AND '.join(where)}""",vals).fetchall()
     conn.close()
+    # '집' 같은 비기관 값은 기관 집계에서 뺀다. 기관연계 여부는 여기서 한 번만 판정한다.
+    rows=[{**dict(r),'linked':_is_linked_referral(r['referral_source_detail'])}
+          for r in raw if is_institution_source(r['name'])]
     items=_group_hospital_consultations(rows,display_map=hospital_display_map())
     total_count=len(items);max_referrals=items[0]['referrals'] if items else 0
     key=_hospital_substring_key(q)
     if key: items=[d for d in items if any(key in _hospital_substring_key(v['name']) for v in d['variants'])]
     return {'hospitals':items,'hospital_count':len(items),'total_count':total_count,
             'max_referrals':max_referrals,'q':(q or '').strip(),
+            'linked_referrals':sum(x['linked_referrals'] for x in items),
+            'linked_admissions':sum(x['linked_admissions'] for x in items),
             'referrals':sum(x['referrals'] for x in items),'admissions':sum(x['admissions'] for x in items),
             'conversion':round(100*sum(x['admissions'] for x in items)/sum(x['referrals'] for x in items),1) if sum(x['referrals'] for x in items) else 0}
 
@@ -4559,8 +4603,9 @@ def _new_hospitals_count(year: int, month: int) -> int:
         (f,),
     ).fetchall()
     conn.close()
-    seen = {mapping.get(r["name"], r["name"]) for r in before}
-    return len({mapping.get(r["name"], r["name"]) for r in current} - seen)
+    seen = {mapping.get(r["name"], r["name"]) for r in before if is_institution_source(r["name"])}
+    return len({mapping.get(r["name"], r["name"]) for r in current
+                if is_institution_source(r["name"])} - seen)
 
 
 def aggregate_monthly(year: int, month: int) -> dict:

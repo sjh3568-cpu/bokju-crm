@@ -277,9 +277,7 @@ def _period():
 # 확실히 입원으로 이어지는 기관을 놓친다. 두 조건은 OR로 건다.
 CANDIDATE_MIN_REFERRALS = 5
 CANDIDATE_MIN_ADMISSIONS = 2
-# 기관이 아니어서 방문·협력 대상이 될 수 없는 값. 과거 엑셀 적재분에 '집'처럼
-# 자택 거주를 모병원 칸에 적은 기록이 남아 있다(현재 입력폼은 자택이면 비워 둔다).
-CANDIDATE_EXCLUDED = {'집', '자택', '가정', '자가', '본원', '없음', '무', '미상', '해당없음'}
+# 비기관 값('집' 등) 제외는 models.is_institution_source가 단일 기준이다.
 CANDIDATE_WINDOW_DAYS = 365
 PERFORMANCE_WINDOW_DAYS = 91  # 최근 3개월
 
@@ -309,7 +307,6 @@ def partner_candidates(db, limit=20):
     skipped = {r['name'] for r in db.execute('SELECT name FROM cooperation_candidate_skips')}
     found = [h for h in data['hospitals']
              if h['name'] not in registered and h['name'] not in skipped
-             and h['name'].replace(' ', '') not in CANDIDATE_EXCLUDED
              and (h['referrals'] >= CANDIDATE_MIN_REFERRALS
                   or h['admissions'] >= CANDIDATE_MIN_ADMISSIONS)]
     # 방문 우선순위는 상담량보다 실제 입원 기여가 앞선다.

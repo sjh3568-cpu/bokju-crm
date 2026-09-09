@@ -2470,10 +2470,16 @@ def hospital_stats_view():
     """모병원 전체의 상담의뢰·입원완료 성과를 상담의뢰 순으로 표시."""
     preset, date_from, date_to = _stats_period_from_request()
     q = (request.args.get("q") or "").strip()
+    sort = request.args.get("sort") or "referrals"
     data=models.hospital_referral_overview(date_from,date_to,q=q or None)
+    # 기관연계 순은 협력 성과, 상담·입원 순은 유입 규모를 본다.
+    keys={"referrals":lambda h:(-h["referrals"],-h["admissions"]),
+          "admissions":lambda h:(-h["admissions"],-h["referrals"]),
+          "linked":lambda h:(-h["linked_admissions"],-h["linked_referrals"],-h["admissions"])}
+    data["hospitals"]=sorted(data["hospitals"],key=lambda h:(*keys.get(sort,keys["referrals"])(h),h["name"]))
     return render_template(
         "stats_hospitals.html", preset=preset, date_from=date_from, date_to=date_to,
-        q=q, data=data,
+        q=q, sort=sort, data=data,
     )
 
 

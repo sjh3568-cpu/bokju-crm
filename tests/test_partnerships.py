@@ -363,6 +363,38 @@ class CooperationTests(unittest.TestCase):
         # 1월에 이미 온 병원이라 2월 신규 모병원으로 세면 안 된다 (표기만 달라진 경우 포함)
         self.assertEqual(models._new_hospitals_count(2026,2),0)
 
+    def test_linked_referrals_split_and_non_institution_excluded(self):
+        """기관연계와 직접 방문을 나눠 세고, '집' 같은 비기관 값은 집계에서 뺀다."""
+        db=models.get_db()
+        def consult(hospital,day,status,detail):
+            pid=db.execute("INSERT INTO patients(name) VALUES (?)",(f'{hospital}{day}',)).lastrowid
+            db.execute("""INSERT INTO consultations(patient_id,consult_date,admission_status,
+                        source_hospital,referral_source_detail) VALUES (?,?,?,?,?)""",
+                       (pid,day,status,hospital,detail))
+        consult('연계병원','2026-04-01','입원완료','["기관연계"]')
+        consult('연계병원','2026-04-02','상담중','["기관연계"]')
+        consult('연계병원','2026-04-03','입원완료','["검색(블로그)"]')
+        consult('집','2026-04-04','입원완료','["지인추천"]')
+        db.commit(); db.close()
+        data=models.hospital_referral_overview('2026-04-01','2026-04-30')
+        names=[h['name'] for h in data['hospitals']]
+        self.assertNotIn('집',names)          # 방문할 수 없는 값은 기관 집계에서 제외
+        h=next(x for x in data['hospitals'] if x['name']=='연계병원')
+        self.assertEqual((h['referrals'],h['admissions']),(3,2))
+        self.assertEqual((h['linked_referrals'],h['linked_admissions']),(2,1))
+        self.assertEqual((h['direct_referrals'],h['direct_admissions']),(1,1))
+        self.assertEqual(h['linked_conversion'],50.0)
+        self.assertEqual(data['linked_referrals'],2)
+        self.assertEqual(data['linked_admissions'],1)
+        # 통계 대시보드·월간보고서의 모병원 집계에서도 '집'이 빠진다
+        stats=models.aggregate_stats('2026-04-01','2026-04-30')
+        self.assertNotIn('집',[x['label'] for x in stats['by_source_hospital']])
+        self.assertNotIn('집',[x['label'] for x in stats['by_hospital_performance']])
+        page=self.client.get('/stats/hospitals?preset=custom&from=2026-04-01&to=2026-04-30&sort=linked').get_data(as_text=True)
+        self.assertIn('기관연계',page)
+        self.assertIn('직접 방문',page)
+        self.assertNotIn('>집<',page)
+
     def test_partner_candidates_and_recent_performance(self):
         """실적 있는 미등록 기관을 후보로 제시하고, 등록/보류가 목록에 반영된다."""
         recent=date.today()-timedelta(days=20)
