@@ -1183,3 +1183,5 @@ tr.follow-up-done a:hover { color: #1f2937; }
     display:inline-block; margin-left:3px; padding:1px 4px; border-radius:5px;
     background:#dc2626; color:#fff; font-size:.58em; vertical-align:top;
 }
+
+.header-tools .support-entry{display:inline-flex;align-items:center;gap:6px;width:auto;min-width:max-content;padding:8px 12px;background:#fff3c4;color:#654600;border:1px solid #f5d77f;font-size:.82rem;font-weight:800;text-decoration:none}.header-tools .support-entry:hover,.header-tools .support-entry.active{background:#ffe49a;color:#493000}

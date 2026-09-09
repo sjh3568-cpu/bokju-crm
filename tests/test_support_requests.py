@@ -57,3 +57,26 @@ class SupportTests(unittest.TestCase):
         self.assertEqual(self.client.post('/support/1',data={'csrf':'test-token','status':'완료','body':' '}).status_code,400)
         with self.client.session_transaction() as s:s.clear()
         self.assertEqual(self.client.get('/support/').status_code,302)
+
+    def test_combined_filters_pagination_and_counts(self):
+        with models.get_db() as db:
+            for i in range(23):
+                db.execute('INSERT INTO support_requests (user_id,category,title,body,version,status) VALUES (?,?,?,?,?,?)',
+                           (self.uid,'오류 신고',f'필터대상 {i}','검색본문','1.3.0','검토 중'))
+            db.execute('INSERT INTO support_requests (user_id,category,title,body,version,status) VALUES (?,?,?,?,?,?)',
+                       (self.uid,'기능 개선','제외대상','검색본문','1.3.0','완료'))
+        params={'status':'검토 중','category':'오류 신고','q':'검색본문'}
+        page=self.client.get('/support/',query_string=params)
+        html=page.get_data(as_text=True)
+        self.assertEqual(page.status_code,200)
+        self.assertIn('검색 결과 23건',html)
+        self.assertEqual(html.count('class="support-title"'),20)
+        self.assertNotIn('제외대상',html)
+        self.assertIn('category=',html);self.assertIn('q=',html)
+        html=self.client.get('/support/',query_string={**params,'page':2}).get_data(as_text=True)
+        self.assertEqual(html.count('class="support-title"'),3)
+        self.login(uid=self.uid+100)
+        html=self.client.get('/support/',query_string=params).get_data(as_text=True)
+        self.assertIn('검색 결과 0건',html)
+        self.assertNotIn('필터대상',html)
+        self.assertEqual(self.client.get('/support/?category=invalid').status_code,400)

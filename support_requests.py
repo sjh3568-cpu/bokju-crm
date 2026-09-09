@@ -88,7 +88,9 @@ def index():
             flash('요청을 접수했습니다. 이 화면에서 답변과 처리 상태를 확인할 수 있습니다.', 'success')
             return redirect(url_for('support.detail', ticket_id=ticket_id))
     status = request.args.get('status', '')
-    if status and status not in STATUSES:
+    category = request.args.get('category', '')
+    query = request.args.get('q', '').strip()[:120]
+    if (status and status not in STATUSES) or (category and category not in CATEGORIES):
         abort(400)
     page = max(1, request.args.get('page', 1, type=int))
     where, args = [], []
@@ -96,14 +98,24 @@ def index():
         where.append('s.user_id=?'); args.append(current_user()['id'])
     if status:
         where.append('s.status=?'); args.append(status)
+    if category:
+        where.append('s.category=?'); args.append(category)
+    if query:
+        where.append('(instr(s.title,?)>0 OR instr(s.body,?)>0)')
+        args.extend((query, query))
     clause = ' WHERE ' + ' AND '.join(where) if where else ''
     with closing(models.get_db()) as db:
+        total = db.execute('SELECT COUNT(*) FROM support_requests s' + clause, args).fetchone()[0]
+        pages = max(1, (total + 19)//20)
+        page = min(page, pages)
         rows = db.execute('''SELECT s.*, u.display_name AS author,
-            datetime(s.updated_at,'localtime') AS updated_local
+            datetime(s.updated_at,'localtime') AS updated_local,
+            (SELECT COUNT(*) FROM support_replies r WHERE r.request_id=s.id) AS reply_count
             FROM support_requests s JOIN users u ON u.id=s.user_id''' + clause +
-            ' ORDER BY s.updated_at DESC,s.id DESC LIMIT 21 OFFSET ?', (*args, (page-1)*20)).fetchall()
-    return render_template('support.html', tickets=rows[:20], has_next=len(rows)>20,
-        page=page, status=status, categories=CATEGORIES, statuses=STATUSES,
+            ' ORDER BY s.updated_at DESC,s.id DESC LIMIT 20 OFFSET ?', (*args, (page-1)*20)).fetchall()
+    return render_template('support.html', tickets=rows, has_next=page<pages,
+        page=page, pages=pages, total=total, status=status, category=category, query=query,
+        categories=CATEGORIES, statuses=STATUSES,
         manager=is_manager(), csrf=csrf_token(), values=values, error=error), (400 if error else 200)
 
 
