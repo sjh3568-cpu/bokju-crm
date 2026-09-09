@@ -4313,6 +4313,37 @@ def hospital_admission_analysis(date_from=None, date_to=None, hospital=None, q=N
             "candidates": [{"name": n, "count": counts.get(n,0)} for n in candidate_names]}
 
 
+def hospital_referral_overview(date_from=None, date_to=None, q=None):
+    """모병원별 상담의뢰 코호트와 그중 입원완료 수. 상담일 기준 기간 집계.
+
+    q를 주면 병원명 부분일치로 걸러 낸다. KPI는 걸러 낸 기관 기준이고,
+    막대 기준값(max_referrals)만 전체 1위를 유지해 검색해도 규모 감각이 남는다.
+    """
+    where=["c.source_hospital IS NOT NULL","TRIM(c.source_hospital)!=''"];vals=[]
+    if date_from: where.append("c.consult_date>=?");vals.append(date_from)
+    if date_to: where.append("c.consult_date<=?");vals.append(date_to)
+    conn=get_db()
+    rows=conn.execute(f"""SELECT TRIM(c.source_hospital) name,
+      COUNT(*) referrals,
+      SUM(CASE WHEN c.admission_status IN ('입원완료','퇴원완료') THEN 1 ELSE 0 END) admissions,
+      COUNT(DISTINCT c.patient_id) patients,
+      MAX(c.consult_date) latest_consult
+      FROM consultations c WHERE {' AND '.join(where)}
+      GROUP BY TRIM(c.source_hospital)
+      ORDER BY referrals DESC, admissions DESC, name ASC""",vals).fetchall()
+    conn.close();items=[]
+    for r in rows:
+        d=dict(r);d['conversion']=round(100*d['admissions']/d['referrals'],1) if d['referrals'] else 0
+        items.append(d)
+    total_count=len(items);max_referrals=items[0]['referrals'] if items else 0
+    key=(q or '').strip().lower()
+    if key: items=[d for d in items if key in (d['name'] or '').lower()]
+    return {'hospitals':items,'hospital_count':len(items),'total_count':total_count,
+            'max_referrals':max_referrals,'q':(q or '').strip(),
+            'referrals':sum(x['referrals'] for x in items),'admissions':sum(x['admissions'] for x in items),
+            'conversion':round(100*sum(x['admissions'] for x in items)/sum(x['referrals'] for x in items),1) if sum(x['referrals'] for x in items) else 0}
+
+
 # ─── 임원 월간 보고서 (Phase 3.5) ───
 
 def _month_range(year: int, month: int) -> tuple[str, str]:

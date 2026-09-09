@@ -16,7 +16,7 @@
                 <a href="/" class="logo">복주 상담실 CRM</a>
                 {% if current_user %}
                 <div class="command-status" aria-label="오늘의 운영 현황"><span>{{ today_header }}</span><a href="/?schedule_date={{ today_str }}#admission-schedule">입원 <b>{{ command_metrics.admit }}</b></a><a href="/ward">퇴원 <b>{{ command_metrics.discharge }}</b></a><a href="/inbox">미처리 <b>{{ command_metrics.pending }}</b></a></div>
-                <div class="global-search"><form id="global-search-form" action="/consultations"><span aria-hidden="true">⌕</span><input id="global-search-input" name="q" placeholder="환자·연락처·상담·협력기관 검색" autocomplete="off" aria-label="통합검색" aria-expanded="false"><kbd>/</kbd></form><div id="global-search-results" class="global-search-results" hidden></div></div>
+                <div class="global-search"><form id="global-search-form" action="/consultations"><span aria-hidden="true">⌕</span><input id="global-search-input" name="q" placeholder="메뉴·환자·연락처·상담·협력기관 검색" autocomplete="off" aria-label="통합검색" aria-expanded="false"><kbd>/</kbd></form><div id="global-search-results" class="global-search-results" hidden></div></div>
                 <nav class="main-nav" aria-label="주 메뉴">
                     {% if P.get('dashboard',0) >= 1 %}
                     <div class="nav-menu-group {% if request.path == '/' %}active{% endif %}">
@@ -76,7 +76,6 @@
                     {% endif %}
                 </nav>
                 {% set alert_total = (todo_badge or 0) + (inbound_badge or 0) + (password_reset_badge or 0) + (1 if has_unread_required_notice else 0) %}
-                {% if P.get('consult',0) >= 3 %}<a href="/consult/new" class="header-new-consult"><span>＋</span> 새 상담</a>{% endif %}
                 <div class="header-tools">
                     <button type="button" class="header-tool-btn alert-bell-btn" id="alert-center-btn" aria-label="통합 알림센터" aria-expanded="false" title="통합 알림센터" data-fixed-count="{{ alert_total - (inbound_badge or 0) }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><b id="alert-total-badge"{% if not alert_total %} hidden{% endif %}>{{ alert_total }}</b></button>
                     <a href="/help" class="header-tool-btn help-tool-btn {% if request.path.startswith('/help') %}active{% endif %}" aria-label="상담 매뉴얼" title="상담 매뉴얼">📖</a>

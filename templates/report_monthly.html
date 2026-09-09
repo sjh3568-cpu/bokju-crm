@@ -109,20 +109,18 @@
         {% if rows %}
         <table class="report-tbl compact bd-tbl">
             <thead><tr>
-                <th>{{ cat }}</th><th>이번달</th><th>전월</th><th>전년</th>
-                {% if cat == '병명그룹' %}<th>전환율</th>{% endif %}
-            </tr></thead>
+                <th rowspan="2">{{ cat }}</th><th rowspan="2">이번달</th><th colspan="2">전월</th><th colspan="2">전년</th>
+                {% if cat == '병명그룹' %}<th rowspan="2">전환율</th>{% endif %}
+            </tr><tr class="bd-subhead"><th>건수</th><th>증감</th><th>건수</th><th>증감</th></tr></thead>
             <tbody>
                 {% for r in rows[:4] %}
                 <tr>
                     <td>{{ r.label }}</td>
                     <td class="num"><strong>{{ r.cur }}</strong></td>
-                    <td class="num">{{ r.prev }}
-                        {% if r.delta_pct is not none %}<span class="mini-delta {{ 'up' if r.delta_pct > 0 else ('down' if r.delta_pct < 0 else '') }}">{{ '%+.0f'|format(r.delta_pct) }}%</span>{% endif %}
-                    </td>
-                    <td class="num">{{ r.yoy }}
-                        {% if r.yoy_delta_pct is not none %}<span class="mini-delta {{ 'up' if r.yoy_delta_pct > 0 else ('down' if r.yoy_delta_pct < 0 else '') }}">{{ '%+.0f'|format(r.yoy_delta_pct) }}%</span>{% endif %}
-                    </td>
+                    <td class="num">{{ r.prev }}</td>
+                    <td class="num delta-cell">{% if r.delta_pct is not none %}<span class="mini-delta {{ 'up' if r.delta_pct > 0 else ('down' if r.delta_pct < 0 else '') }}">{{ '%+.0f'|format(r.delta_pct) }}%</span>{% else %}—{% endif %}</td>
+                    <td class="num">{{ r.yoy }}</td>
+                    <td class="num delta-cell">{% if r.yoy_delta_pct is not none %}<span class="mini-delta {{ 'up' if r.yoy_delta_pct > 0 else ('down' if r.yoy_delta_pct < 0 else '') }}">{{ '%+.0f'|format(r.yoy_delta_pct) }}%</span>{% else %}—{% endif %}</td>
                     {% if cat == '병명그룹' %}<td class="num">{% if r.rate is not none %}{{ r.rate }}%{% else %}—{% endif %}</td>{% endif %}
                 </tr>
                 {% endfor %}
@@ -229,11 +227,13 @@
     .report-card h3 { font-size:0.92em; margin-bottom:6px; font-weight:600; }
     .report-tbl { width:100%; border-collapse:collapse; font-size:0.85em; }
     .report-tbl th, .report-tbl td { padding:4px 8px; border-bottom:1px solid var(--border); }
-    .report-tbl th { text-align:left; color:var(--text-light); font-weight:600; font-size:0.78em; text-transform:uppercase; background:#f8fafc; }
+    .report-tbl th { text-align:left; color:var(--text-light); font-weight:600; font-size:0.78em; text-transform:uppercase; background:#f8fafc; vertical-align:middle; }
+    .report-tbl th:not(:first-child) { text-align:right; }
     .report-tbl td.num { text-align:right; font-variant-numeric: tabular-nums; }
     .report-tbl.compact th, .report-tbl.compact td { padding:3px 6px; }
-    .bd-tbl { margin-bottom:6px; }
-    .mini-delta { font-size:0.82em; margin-left:3px; color:var(--text-light); }
+    .bd-tbl { margin-bottom:6px; table-layout:fixed; }
+    .bd-tbl th:first-child,.bd-tbl td:first-child{width:25%;text-align:left}.bd-tbl th:not(:first-child),.bd-tbl td:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}.bd-tbl thead tr:first-child th[colspan]{text-align:center;border-left:1px solid var(--border)}.bd-tbl .bd-subhead th{font-size:.68em;color:#94a3b8;border-left:1px solid #eef2f7}.bd-tbl .delta-cell{border-left:1px solid #f1f5f9}
+    .mini-delta { display:inline-block; min-width:38px; font-size:0.82em; color:var(--text-light); text-align:right; }
     .mini-delta.up { color:var(--success); }
     .mini-delta.down { color:var(--danger); }
     .rpt-drill tbody tr.rpt-row { cursor:pointer; transition:background 0.1s; }

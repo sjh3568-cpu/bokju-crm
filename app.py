@@ -452,6 +452,27 @@ def global_search():
     if len(q)<2:
         return jsonify(items=[])
     items=[]
+    menu_items=[
+        ('dashboard','대시보드','오늘 브리핑·통합 달력·입원 현황','/'),
+        ('dashboard','통합 상담 인박스','신규 문의·미배정·콜백·처리 현황','/inbox'),
+        ('consult','상담목록','환자 상담 검색·조회','/consultations'),
+        ('consult','새 상담 등록','신규 환자 상담 접수','/consult/new'),
+        ('ward','재원 관리','재원 현황·입원 대기·회복기 관리','/ward'),
+        ('ward','입원 대기','입원 예정·병상 대기 환자','/ward?tab=waiting'),
+        ('partners','기관협력','협력기관·방문·연락·업무협약','/partners'),
+        ('sms','문자','문자 발송·템플릿·발송 이력','/sms'),
+        ('stats','통계 대시보드','상담·입원 핵심 통계','/stats'),
+        ('stats','모병원 분석','모병원별 상담의뢰·입원완료 현황','/stats/hospitals'),
+        ('report','월간보고서','월별 운영 성과 보고','/report/monthly'),
+        ('dashboard','공지사항','공지·필수 확인','/notices'),
+        ('dashboard','내 할 일','개인 일정·공유 업무','/todos'),
+        ('dashboard','내 계정 설정','개인화·권한 요청·비밀번호','/account'),
+    ]
+    q_lower=q.lower()
+    for permission,title,meta,url in menu_items:
+        required=PERM_CREATE if url=='/consult/new' else PERM_VIEW
+        if menu_level(current_user(),permission)>=required and q_lower in f'{title} {meta}'.lower():
+            items.append({'kind':'메뉴','title':title,'meta':meta,'url':url})
     if menu_level(current_user(),'consult')>=PERM_VIEW:
         for row in models.list_consultations(q=q,limit=6):
             items.append({'kind':'환자·상담','title':row.get('patient_name') or '이름 없음',
@@ -466,7 +487,7 @@ def global_search():
                 WHERE COALESCE(p.official_name,h.name) LIKE ? ORDER BY p.important DESC,name LIMIT 5''',('%'+q+'%',)).fetchall()
         items.extend({'kind':'협력기관','title':r['name'],'meta':' · '.join(filter(None,[r['kind'],r['address']])),
                       'url':url_for('partners.detail',pid=r['id'])} for r in rows)
-    return jsonify(items=items[:10])
+    return jsonify(items=items[:12])
 
 
 @app.template_filter("krdate")
@@ -2441,16 +2462,13 @@ def api_stats():
 @app.route("/stats/hospitals")
 @login_required
 def hospital_stats_view():
-    """모병원별 입원 환자 집계와 환자 단위 상세 목록."""
+    """모병원 전체의 상담의뢰·입원완료 성과를 상담의뢰 순으로 표시."""
     preset, date_from, date_to = _stats_period_from_request()
-    hospital = (request.args.get("hospital") or "").strip()
     q = (request.args.get("q") or "").strip()
-    overall = models.hospital_admission_analysis(date_from, date_to)
-    filtered = models.hospital_admission_analysis(
-        date_from, date_to, hospital=hospital or None, q=q or None)
+    data=models.hospital_referral_overview(date_from,date_to,q=q or None)
     return render_template(
         "stats_hospitals.html", preset=preset, date_from=date_from, date_to=date_to,
-        hospital=hospital, q=q, hospitals=overall["hospitals"], hospital_candidates=overall["candidates"], data=filtered,
+        q=q, data=data,
     )
 
 
