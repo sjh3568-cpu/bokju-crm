@@ -65,6 +65,7 @@ header > .container { max-width:1480px; }
 .nav-caret { margin-left:1px; font-size:.72em; }
 .nav-dropdown { display:none; position:absolute; z-index:160; top:calc(100% + 8px); left:0; width:218px; padding:6px; border:1px solid #d6e1da; border-radius:12px; background:#fff; box-shadow:0 16px 38px rgba(15,23,42,.2); }
 .nav-menu-group.open .nav-dropdown { display:grid; gap:3px; }
+.nav-dropdown::before,.account-menu > div::before { content:""; position:absolute; left:0; right:0; top:-10px; height:10px; }
 .main-nav .nav-dropdown a { display:flex; gap:9px; width:100%; min-height:0; padding:9px 10px; border:0; border-radius:8px; color:#24352d; background:transparent; font-size:.81rem; font-weight:720; text-shadow:none; overflow:visible; }
 .main-nav .nav-dropdown a:hover,.main-nav .nav-dropdown a.active { color:var(--primary); background:#eff8f2; transform:none; box-shadow:none; }
 .main-nav .nav-dropdown a::after { display:none; }

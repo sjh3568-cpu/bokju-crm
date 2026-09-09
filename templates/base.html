@@ -476,14 +476,90 @@
     const contrast=document.getElementById('contrast-setting');if(contrast)contrast.addEventListener('change',()=>{pref.contrast=contrast.checked;localStorage.setItem(prefKey,JSON.stringify(pref));apply(pref);});
     const reset=document.getElementById('display-reset');if(reset)reset.addEventListener('click',()=>{pref={...defaults};localStorage.setItem(prefKey,JSON.stringify(pref));apply(pref);});
 
+    const accountMenu=document.querySelector('.account-menu');
+    function closeAccountMenu(){if(accountMenu)accountMenu.open=false;}
     const pairs=[['alert-center-btn','alert-center'],['display-settings-btn','display-settings']];
     function closeAll(except){pairs.forEach(([bid,pid])=>{if(pid===except)return;const panel=document.getElementById(pid),btn=document.getElementById(bid);if(panel)panel.hidden=true;if(btn)btn.setAttribute('aria-expanded','false');});}
-    pairs.forEach(([bid,pid])=>{const btn=document.getElementById(bid),panel=document.getElementById(pid);if(!btn||!panel)return;btn.addEventListener('click',e=>{e.stopPropagation();const opening=panel.hidden;closeAll(opening?pid:null);panel.hidden=!opening;btn.setAttribute('aria-expanded',String(opening));});panel.addEventListener('click',e=>e.stopPropagation());});
+    pairs.forEach(([bid,pid])=>{const btn=document.getElementById(bid),panel=document.getElementById(pid);if(!btn||!panel)return;btn.addEventListener('click',e=>{e.stopPropagation();const opening=panel.hidden;closeAccountMenu();closeNavMenus();closeAll(opening?pid:null);panel.hidden=!opening;btn.setAttribute('aria-expanded',String(opening));});panel.addEventListener('click',e=>e.stopPropagation());});
     const navGroups=document.querySelectorAll('.nav-menu-group');
-    function closeNavMenus(except){navGroups.forEach(group=>{if(group===except)return;group.classList.remove('open');const btn=group.querySelector('.nav-menu-toggle');if(btn)btn.setAttribute('aria-expanded','false');});}
-    navGroups.forEach(group=>{const btn=group.querySelector('.nav-menu-toggle');if(!btn)return;btn.addEventListener('click',e=>{e.stopPropagation();const opening=!group.classList.contains('open');closeNavMenus(opening?group:null);group.classList.toggle('open',opening);btn.setAttribute('aria-expanded',String(opening));});});
+    function setNavMenuOpen(group, opening){
+        group.classList.toggle('open',opening);
+        group.querySelectorAll(':scope > a, :scope > .nav-menu-toggle').forEach(trigger=>trigger.setAttribute('aria-expanded',String(opening)));
+    }
+    function closeNavMenus(except){navGroups.forEach(group=>{if(group!==except)setNavMenuOpen(group,false);});}
+    navGroups.forEach((group,index)=>{
+        const dropdown=group.querySelector('.nav-dropdown');
+        if(!dropdown)return;
+        dropdown.id='nav-dropdown-'+index;
+        group.addEventListener('pointerenter',e=>{
+            if(e.pointerType!=='mouse')return;
+            closeAll();
+            closeAccountMenu();
+            closeNavMenus(group);
+            setNavMenuOpen(group,true);
+        });
+        group.addEventListener('pointerleave',e=>{
+            if(e.pointerType==='mouse')setNavMenuOpen(group,false);
+        });
+        group.querySelectorAll(':scope > a, :scope > .nav-menu-toggle').forEach(trigger=>{
+            trigger.setAttribute('aria-controls',dropdown.id);
+            trigger.setAttribute('aria-expanded','false');
+            if(trigger.tagName==='A')trigger.setAttribute('role','button');
+            trigger.addEventListener('click',e=>{
+                if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;
+                e.preventDefault();
+                e.stopPropagation();
+                const opening=!group.classList.contains('open');
+                closeAll();
+                closeAccountMenu();
+                closeNavMenus(group);
+                setNavMenuOpen(group,opening);
+            });
+            trigger.addEventListener('keydown',e=>{
+                if(e.key===' '&&trigger.tagName==='A'){e.preventDefault();trigger.click();}
+                if(e.key==='ArrowDown'){
+                    e.preventDefault();
+                    closeAll();
+                    closeAccountMenu();
+                    closeNavMenus(group);
+                    setNavMenuOpen(group,true);
+                    dropdown.querySelector('a')?.focus();
+                }
+            });
+        });
+        group.addEventListener('keydown',e=>{
+            if(e.key==='Escape'&&group.classList.contains('open')){
+                group.querySelector(':scope > a, :scope > .nav-menu-toggle').focus();
+            }
+        });
+        group.addEventListener('focusout',e=>{if(!group.contains(e.relatedTarget))setNavMenuOpen(group,false);});
+    });
+    if(accountMenu){
+        const summary=accountMenu.querySelector('summary');
+        accountMenu.addEventListener('pointerenter',e=>{
+            if(e.pointerType!=='mouse')return;
+            closeAll();
+            closeNavMenus();
+            accountMenu.open=true;
+        });
+        accountMenu.addEventListener('pointerleave',e=>{if(e.pointerType==='mouse')closeAccountMenu();});
+        summary.addEventListener('click',e=>{
+            e.preventDefault();
+            e.stopPropagation();
+            closeAll();
+            closeNavMenus();
+            accountMenu.open=!accountMenu.open;
+        });
+        accountMenu.addEventListener('focusout',e=>{if(!accountMenu.contains(e.relatedTarget))closeAccountMenu();});
+        accountMenu.addEventListener('keydown',e=>{if(e.key==='Escape'&&accountMenu.open)summary.focus();});
+    }
     document.querySelectorAll('[data-popover-close]').forEach(btn=>btn.addEventListener('click',()=>closeAll()));
-    document.addEventListener('click',()=>{closeAll();closeNavMenus();});document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeAll();closeNavMenus();}});
+    document.addEventListener('click',e=>{
+        closeAll();
+        closeNavMenus();
+        if(!accountMenu?.contains(e.target)||e.target.closest('a'))closeAccountMenu();
+    });
+    document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeAll();closeNavMenus();closeAccountMenu();}});
 
     function cleanLabel(a){return (a.textContent||'').replace(/\s+/g,' ').trim().slice(0,40);}
     document.addEventListener('click',e=>{const a=e.target.closest('a[href^="/consult/"]');if(!a||/\/edit(?:\?|$)/.test(a.getAttribute('href')))return;const href=a.getAttribute('href');if(!/^\/consult\/\d+/.test(href))return;let items=read(recentKey,[]).filter(x=>x.href!==href);items.unshift({href,label:cleanLabel(a),at:Date.now()});localStorage.setItem(recentKey,JSON.stringify(items.slice(0,8)));});
