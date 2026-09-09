@@ -560,6 +560,22 @@ def add():
     return redirect(url_for('partners.detail',pid=pid,embedded='1' if request.values.get('embedded')=='1' else None))
 
 
+def _match_directory(db, name):
+    """수동 입력 병원명을 심평원 명부와 대조. 확실히 하나로 특정될 때만 명부 row 반환.
+    정확 일치 우선, 없으면 부분일치 후보가 '정확히 1건'일 때만. (동명 다수는 자동연결 안 함)
+    """
+    name=(name or '').strip()
+    if not name:
+        return None
+    row=db.execute("SELECT * FROM cooperation_facility_directory WHERE active=1 AND name=?",(name,)).fetchone()
+    if row:
+        return row
+    like=name.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
+    cands=db.execute("SELECT * FROM cooperation_facility_directory WHERE active=1 "
+                     "AND name LIKE ? ESCAPE '\\' ORDER BY name LIMIT 3",('%'+like+'%',)).fetchall()
+    return cands[0] if len(cands)==1 else None
+
+
 @bp.route('/partners/add-manual',methods=['POST'])
 @login_required
 def add_manual():
@@ -569,7 +585,7 @@ def add_manual():
         abort(400)
     try:
         name=_text('name',True,200)
-        kind=_text('kind',True,60)
+        kind=_text('kind',limit=60)      # 명부 매칭되면 자동 기입되므로 필수 아님
         region=_text('region',limit=100)
         address=_text('address',limit=300)
         phone=_text('phone',limit=100)
@@ -577,6 +593,16 @@ def add_manual():
         flash(str(e),'error')
         return redirect(url_for('partners.index')+'#manual-institution')
     with closing(models.get_db()) as db:
+        # 먼저 심평원 명부와 대조 — 매칭되면 종별·주소·전화를 명부 값으로 채운다.
+        directory=_match_directory(db, name)
+        if directory:
+            kind=kind or (directory['kind'] or '')
+            region=region or (directory['region'] or '')
+            address=address or (directory['address'] or '')
+            phone=phone or (directory['phone'] or '')
+        elif not kind:
+            flash('종별을 입력하거나, 심평원 명부에 있는 정식 병원명을 입력해주세요.','error')
+            return redirect(url_for('partners.index')+'#manual-institution')
         existing=db.execute('SELECT id FROM source_hospitals WHERE name=?',(name,)).fetchone()
         if existing:
             h_id=existing['id']
@@ -586,11 +612,24 @@ def add_manual():
         else:
             h_id=db.execute('''INSERT INTO source_hospitals(name,kind,region,address,phone,active)
                 VALUES (?,?,?,?,?,1)''',(name,kind,region,address,phone)).lastrowid
-        db.execute('INSERT OR IGNORE INTO cooperation_partners(hospital_id,official_name) VALUES (?,?)',(h_id,name))
+        # 명부 매칭되면 directory_id로 연결(정보 자동 기입), 아니면 입력값으로 저장
+        if directory:
+            db.execute('INSERT OR IGNORE INTO cooperation_partners(hospital_id,directory_id,official_name) VALUES (?,?,?)',
+                       (h_id,directory['id'],directory['name']))
+        else:
+            db.execute('INSERT OR IGNORE INTO cooperation_partners(hospital_id,official_name) VALUES (?,?)',(h_id,name))
         db.commit()
         pid=db.execute('SELECT id FROM cooperation_partners WHERE hospital_id=?',(h_id,)).fetchone()['id']
+        # 기존 협력기관(중복 등록)이 아직 명부에 연결 안 됐고 매칭되면 이참에 연결
+        if directory:
+            db.execute('UPDATE cooperation_partners SET directory_id=?,official_name=? WHERE id=? AND directory_id IS NULL',
+                       (directory['id'],directory['name'],pid))
+            db.commit()
     _audit('update_cooperation',pid)
-    flash('기관을 협력기관으로 등록했습니다.','success')
+    if directory:
+        flash(f'협력기관으로 등록했습니다. 심평원 명부(“{directory["name"]}”)와 연결되어 종별·병상·진료과 정보가 자동 기입됩니다.','success')
+    else:
+        flash('기관을 협력기관으로 등록했습니다. (명부에서 자동 매칭되는 기관이 없어 입력하신 정보로 저장됩니다.)','success')
     return redirect(url_for('partners.detail',pid=pid))
 
 
