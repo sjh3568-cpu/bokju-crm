@@ -65,6 +65,7 @@
                     {% endif %}
                     {% if P.get('partners',0) >= 1 %}<a href="/partners" {% if request.path.startswith('/partners') %}class="active"{% endif %}><span class="nav-icon">🤝</span>기관협력</a>{% endif %}
                     <a href="/notices" {% if request.path.startswith('/notices') %}class="active"{% endif %}><span class="nav-icon nav-icon-notice">📢</span>공지사항{% if has_unread_required_notice %}<span class="nav-notice-new">필수</span>{% endif %}</a>
+                    <a href="/support/" class="nav-support {% if request.path.startswith('/support') %}active{% endif %}" title="기능 개선·오류 신고·사용 문의"><span class="nav-icon" aria-hidden="true">💡</span>개선 요청</a>
                     {% if P.get('users',0) >= 2 %}
                     <div class="nav-menu-group nav-admin-group {% if request.path.startswith('/admin') %}active{% endif %}">
                         <button type="button" class="nav-admin-button nav-menu-toggle" aria-expanded="false"><span class="nav-icon nav-icon-admin">⚙️</span>관리{% if password_reset_badge %}<span class="nav-notice-new">{{ password_reset_badge }}</span>{% endif %}<span class="nav-caret">▾</span></button>
@@ -78,7 +79,6 @@
                 {% set alert_total = (todo_badge or 0) + (inbound_badge or 0) + (password_reset_badge or 0) + (1 if has_unread_required_notice else 0) %}
                 <div class="header-tools">
                     <button type="button" class="header-tool-btn alert-bell-btn" id="alert-center-btn" aria-label="통합 알림센터" aria-expanded="false" title="통합 알림센터" data-fixed-count="{{ alert_total - (inbound_badge or 0) }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><b id="alert-total-badge"{% if not alert_total %} hidden{% endif %}>{{ alert_total }}</b></button>
-                    <a href="/support/" class="header-tool-btn support-entry {% if request.path.startswith('/support') %}active{% endif %}" aria-label="개선 요청함" title="기능 개선·오류 신고·사용 문의"><span aria-hidden="true">✉</span><span>개선 요청함</span></a>
                     <a href="/help" class="header-tool-btn help-tool-btn {% if request.path.startswith('/help') %}active{% endif %}" aria-label="상담 매뉴얼" title="상담 매뉴얼">📖</a>
                     <button type="button" class="header-tool-btn" id="display-settings-btn" aria-label="화면 설정" aria-expanded="false">Aa</button>
                 </div>
