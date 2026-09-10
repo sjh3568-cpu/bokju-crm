@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {# 여러 명이 띄워놓고 보는 현황 화면 — 30초마다 자동 새로고침 #}
-{% block body_attrs %} data-autorefresh="30"{% endblock %}
+{% block body_attrs %}{% if subtab != 'away' %} data-autorefresh="30"{% endif %}{% endblock %}
 {% block title %}재원 관리 — 복주 상담실{% endblock %}
 {% block content %}
 {% macro bed(c) %}
@@ -95,8 +95,8 @@
 </div>
 
 <nav class="wd-tabs" aria-label="재원관리 세부 메뉴">
-    <a href="/ward?tab=away" class="{% if subtab == 'away' %}on{% endif %}">외진환자관리</a>
     <a href="/ward" class="{% if subtab == 'status' %}on{% endif %}">재원 현황</a>
+    <a href="/ward?tab=away" class="{% if subtab == 'away' %}on{% endif %}">외진환자관리</a>
     <a href="/ward?tab=waiting" class="{% if subtab == 'waiting' %}on{% endif %}">입원 대기 <b>{{ kpis.bed_waiting }}</b></a>
     <a href="/ward?tab=trend" class="{% if subtab == 'trend' %}on{% endif %}">회복기 비율 추이</a>
     <a href="/ward?tab=blacklist" class="{% if subtab == 'blacklist' %}on{% endif %}">블랙리스트 <b>{{ blacklisted|length }}</b></a>

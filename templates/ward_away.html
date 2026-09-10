@@ -2,7 +2,7 @@
 {% set f = report.filters %}
 <section class="card wd-sec">
     <div class="wd-sec-head"><h2>외진환자관리</h2><span class="muted-sm">전원·외래치료 기록과 복귀 현황</span></div>
-    <form method="get" class="away-filters">
+    <form method="get" class="away-filters" data-date-presets="off">
         <input type="hidden" name="tab" value="away">
         <label>전원·외진 시작일<input type="date" name="away_from" value="{{ f.away_from }}"></label>
         <label>종료일<input type="date" name="away_to" value="{{ f.away_to }}"></label>
@@ -12,7 +12,7 @@
         <button class="btn btn-primary btn-sm">조회</button><a class="btn btn-secondary btn-sm" href="/ward?tab=away">전체 기간</a>
     </form>
 </section>
-<div class="wd-kpi">
+<div class="wd-kpi away-kpi">
     <div class="wd-k"><span class="wd-k-n">{{ report.stats.patients }}<small>명</small></span><span class="wd-k-l">외진·전원 환자 · {{ report.stats.events }}건</span></div>
     <div class="wd-k"><span class="wd-k-n">{{ report.stats.returned_patients }}<small>명</small></span><span class="wd-k-l">1회 이상 복귀 · {{ report.stats.returned_events }}건</span></div>
     <div class="wd-k"><span class="wd-k-n">{{ report.stats.open_patients }}<small>명</small></span><span class="wd-k-l">미복귀 기록 보유 · {{ report.stats.open_events }}건</span></div>
@@ -30,7 +30,7 @@
 {% if P.get('ward', 0) >= 2 %}
 <details class="card wd-sec">
     <summary>＋ 외진·전원 기록 등록</summary>
-    <form id="away-register" class="away-filters">
+    <form id="away-register" class="away-filters" data-date-presets="off">
         <label>재원 환자<select name="consultation_id" required><option value="">환자 선택</option>{% for c in away_candidates if not c.away %}<option value="{{ c.id }}">{{ c.patient_name }} · {{ c.room_number or '호실 미지정' }} · {{ c.admitted_on }}</option>{% endfor %}</select></label>
         <label>유형<select name="event_type"><option>응급전원</option><option>모병원 외래치료</option></select></label>
         <label>전원·외진일<input type="date" name="event_date" value="{{ today_str }}" max="{{ today_str }}" required></label>
@@ -44,7 +44,7 @@
 <section class="card wd-sec">
     <div class="wd-sec-head"><h3>외진·전원 명부 <span class="wd-n">{{ report.rows|length }}건</span></h3></div>
     <p class="muted-sm">입원일·병명·퇴원 D-day는 연결된 상담 정보를 사용합니다. 외진 기간은 재원 기간에서 빼지 않습니다. 나이는 상담에 기록된 나이입니다.</p>
-    <div class="tbl-wrap"><table class="tbl wd-tbl">
+    <div class="tbl-wrap"><table class="tbl wd-tbl away-table">
         <thead><tr><th>환자</th><th>성별</th><th>나이</th><th>입원일</th><th>퇴원일(전원일)</th><th>유형</th><th>이송기관</th><th>사유</th><th>병명</th><th>퇴원 D-day</th><th>복귀일·상태</th></tr></thead>
         <tbody>{% for c in report.rows %}<tr>
             <td class="nowrap"><a href="/consult/{{ c.id }}">{{ c.patient_name }}</a></td>
@@ -65,7 +65,7 @@
         {% for month, stats in report.monthly %}<tr><td>{{ month }}</td><td>{{ stats.patients }}명</td><td>{{ stats.returned_patients }}명</td><td>{{ stats.patient_rate }}%</td><td>{{ stats.events }}</td><td>{{ stats.returned_events }}</td><td>{{ stats.open_events }}</td></tr>{% else %}<tr><td colspan="7" class="empty">집계할 기록이 없습니다.</td></tr>{% endfor %}
     </tbody></table></div>
 </section>
-<style>.away-filters{display:flex;flex-wrap:wrap;gap:12px;align-items:end;padding:12px 0}.away-filters label{display:flex;flex-direction:column;gap:5px}.away-filters input,.away-filters select{max-width:100%;padding:7px}</style>
+<style>.away-kpi{grid-template-columns:repeat(4,minmax(0,1fr))}.away-kpi .wd-k-l{white-space:normal}.away-table{min-width:1350px}.away-table .nowrap{white-space:nowrap!important}.away-filters input,.away-filters select,.away-filters button,.away-table input,.away-table button{font:inherit}@media(max-width:700px){.away-kpi{grid-template-columns:repeat(2,minmax(0,1fr))}}.away-filters{display:flex;flex-wrap:wrap;gap:12px;align-items:end;padding:12px 0}.away-filters label{display:flex;flex-direction:column;gap:5px}.away-filters input,.away-filters select{max-width:100%;padding:7px}</style>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('away-register');
