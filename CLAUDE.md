@@ -310,6 +310,8 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
 - 운영은 `main`이 아니라 **`./release.sh`가 찍은 태그만** 받는다. 절차·롤백은 `docs/DEPLOY-NAS.md`의 '운영 배포'.
 - 버전을 올릴 때는 `config.APP_VERSION`과 `release_notes.py` 안내를 **함께** 고친다. `release.sh`가 누락을 막는다.
 - 개발 DB(`bokju.db`)에는 실환자 데이터가 그대로 있다(사용자 결정). `.gitignore`가 `*.db`·`backups/`·`uploads/`·`.env`를 막고 있어 저장소에는 올라가지 않는다.
+- 개발 PC는 여럿이어도 된다(집 노트북·병원 PC). 준비 절차는 `docs/DEV-SETUP.md`. **금지는 NAS 안의 파일을 직접 고치는 것 하나뿐** — 다음 배포에 덮어써져 사라지고 되돌릴 기록도 없다.
+- PC가 여럿이면 작업 시작 전 `git pull`을 먼저 한다. 2026-09-10에 원격에 11개 커밋이 쌓인 채로 push해 거절됐고, 그때 `release.sh`가 태그를 먼저 찍는 바람에 로컬에 찌꺼기 태그가 남는 문제까지 드러났다(수정 완료).
 - 협력기관 기본 보기는 목록형. 공식 상세정보는 2026.3 시설·진료과목·특수진료 XLSX를 기관코드로 연결해 진료과목, 입원 병상 합계, 간호간병통합서비스(KH)를 표시한다. 수동 `specialties`/`strengths`와 공식정보를 덮어쓰지 않고 함께 표시한다.
 - `cooperation_agreements`: 기관별 업무협약서 메타데이터(문서명, 체결/만료, 상태, 상대 담당자, 문서 보관 위치, 비고). 파일 자체를 DB에 저장하지 않는다.
 - 상세자료 갱신: `.venv-linux/bin/python tools/import_cooperation_facility_details.py <2026.3 XLSX 폴더> --updated-at 2026-03`.
