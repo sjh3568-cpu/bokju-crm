@@ -960,11 +960,18 @@ def render_report(report, apply_mode=False):
 # 진입점
 # ─────────────────────────────────────────────────────────
 
+# --all 에서 제외할 시트 — 상담 내역이 아니라 별도 관리 목적의 표
+EXCLUDED_SHEETS = {"입원환자 대기 명단"}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("xlsx_path", help="엑셀 파일 경로")
     ap.add_argument("--sheet", help="대상 시트 이름 (단일)")
     ap.add_argument("--sheets", help="대상 시트 콤마 구분 (다중)")
+    ap.add_argument("--all", action="store_true",
+                    help="EXCLUDED_SHEETS 를 뺀 전체 시트. 시트가 수십 개라 "
+                         "콤마 나열이 비현실적일 때 쓴다")
     ap.add_argument("--apply", action="store_true", help="실제 DB에 적재")
     ap.add_argument("--schema", help="스키마 강제 지정 (A/B/C)")
     ap.add_argument("--report-file", help="리포트를 UTF-8 파일로 저장")
@@ -974,11 +981,16 @@ def main():
     if not xlsx.exists():
         raise SystemExit(f"파일 없음: {xlsx}")
 
-    if not args.sheet and not args.sheets:
-        raise SystemExit("--sheet 또는 --sheets 중 하나를 지정")
-    sheet_list = [args.sheet] if args.sheet else [s.strip() for s in args.sheets.split(",")]
+    if not args.sheet and not args.sheets and not args.all:
+        raise SystemExit("--sheet / --sheets / --all 중 하나를 지정")
 
     wb = openpyxl.load_workbook(xlsx, data_only=True)
+    if args.all:
+        sheet_list = [n for n in wb.sheetnames if n not in EXCLUDED_SHEETS]
+    elif args.sheet:
+        sheet_list = [args.sheet]
+    else:
+        sheet_list = [s.strip() for s in args.sheets.split(",")]
     if args.apply and len(sheet_list) > 1:
         backup_db()  # 다중 시트 적재 시 백업 한 번만
 
