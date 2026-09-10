@@ -10,10 +10,12 @@ version: "3.4"
 services:
   bokju-crm:
     build: .
-    container_name: bokju-crm
+    # 운영·개발 컨테이너가 같은 NAS에서 같이 뜬다. 이름과 포트는 각 디렉터리의
+    # .env에서 정하고(개발은 bokju-crm-dev / 8004), 기본값은 운영이다.
+    container_name: ${CONTAINER_NAME:-bokju-crm}
     restart: unless-stopped          # NAS 재부팅·오류 종료 시 자동 재시작
     ports:
-      - "8003:8003"                  # 사내망에서 http://<NAS주소>:8003
+      - "${HOST_PORT:-8003}:8003"     # 사내망에서 http://<NAS주소>:8003 (개발 8004)
     volumes:
       # DB — 반드시 NAS 로컬 볼륨. SMB 공유폴더를 마운트하면 WAL이 깨진다.
       - ./data:/data

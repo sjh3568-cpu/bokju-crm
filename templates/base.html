@@ -4,12 +4,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-store, must-revalidate">
-    <title>{% block title %}복주 상담실{% endblock %}</title>
+    <title>{% if is_dev %}[개발] {% endif %}{% block title %}복주 상담실{% endblock %}</title>
     <link rel="stylesheet" href="/static/css/style.css">
     {% block head_extra %}{% endblock %}
 </head>
 {%- set P = current_user.perms if current_user else {} -%}
 <body class="app-page {% if request.path == '/' %}page-dashboard{% elif request.path.startswith('/consult') %}page-consult{% elif request.path.startswith('/ward') or request.path.startswith('/patients') %}page-ward{% elif request.path.startswith('/stats') %}page-stats{% elif request.path.startswith('/report') %}page-report{% elif request.path.startswith('/notices') %}page-notices{% elif request.path.startswith('/admin') %}page-admin{% elif request.path.startswith('/help') %}page-help{% endif %} {% if current_user %}{% if P.get('consult',0) >= 2 %}cw-consult {% endif %}{% if P.get('consult',0) >= 3 %}cc-consult {% endif %}{% if P.get('ward',0) >= 2 %}cw-ward {% endif %}{% if P.get('sms',0) >= 3 %}cc-sms {% endif %}{% endif %}"{% block body_attrs %}{% endblock %}>
+    {%- if is_dev %}
+    {# 개발(테스트) 환경 표시. 운영은 APP_ENV 미설정이라 이 띠가 뜨지 않는다.
+       style.css가 캐시돼 있어도 반드시 보이도록 인라인 스타일로 둔다. #}
+    <div style="background:#c0392b;color:#fff;font-weight:700;text-align:center;
+                padding:6px 12px;font-size:14px;letter-spacing:.02em;position:relative;z-index:9999">
+        개발·테스트 환경입니다 — 여기 입력한 내용은 실제 업무에 반영되지 않습니다.
+        실제 상담 입력은 <a href="http://172.16.1.250:8003/" style="color:#fff;text-decoration:underline">운영 화면(8003)</a>에서 하세요.
+    </div>
+    {%- endif %}
     <header>
         <div class="container">
             <div class="header-inner">

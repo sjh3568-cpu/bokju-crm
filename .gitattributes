@@ -1,0 +1,7 @@
+# NAS(리눅스)에서 그대로 실행·빌드되는 파일은 줄바꿈을 LF로 고정한다.
+# Windows(Z:)에서 편집하다 CRLF가 섞이면 컨테이너에서 스크립트가 죽고,
+# 리눅스 git이 CRLF를 '변경'으로 보아 pull이 막힌다(실제로 겪은 문제).
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+*.yml       text eol=lf
+*.py        text eol=lf

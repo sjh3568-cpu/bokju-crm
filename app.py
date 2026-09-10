@@ -114,7 +114,19 @@ app.register_blueprint(partnerships.bp)
 app.register_blueprint(support_requests.bp)
 app.secret_key = os.getenv("SECRET_KEY") or secrets.token_hex(32)
 app.permanent_session_lifetime = timedelta(hours=int(os.getenv("SESSION_HOURS", "4")))
-_REMEMBER_COOKIE = "bokju_remember"
+
+# 운영(prod) / 개발(dev) 구분. 개발 컨테이너의 .env에만 APP_ENV=dev를 넣는다.
+# dev면 화면 상단에 빨간 띠가 뜨고(실제 상담을 잘못 입력하는 사고 방지),
+# 쿠키 이름이 갈라진다 — 쿠키는 포트를 구분하지 않으므로(172.16.1.250:8003과
+# :8004가 같은 쿠키 저장소를 쓴다) 이름을 나누지 않으면 개발 화면에 로그인하는
+# 순간 운영 화면 로그인이 풀린다.
+APP_ENV = os.getenv("APP_ENV", "prod").strip().lower()
+IS_DEV = APP_ENV == "dev"
+# 운영은 지금 쓰는 이름을 그대로 둔다 - 여기서 바꾸면 배포 순간 상담사 전원이
+# 한 번 로그아웃된다. 개발본만 접미사를 붙여 갈라놓는다.
+if IS_DEV:
+    app.config["SESSION_COOKIE_NAME"] = "bokju_session_dev"
+_REMEMBER_COOKIE = "bokju_remember_dev" if IS_DEV else "bokju_remember"
 _REMEMBER_DAYS = max(1, int(os.getenv("AUTO_LOGIN_DAYS", "30")))
 _remember_serializer = URLSafeTimedSerializer(app.secret_key, salt="bokju-auto-login-v1")
 
@@ -397,6 +409,7 @@ def _inject_globals():
         except Exception:
             pass
     return {
+        "is_dev": IS_DEV,
         "current_user": _u,
         "app_version": APP_VERSION,
         "app_developer": APP_DEVELOPER,
