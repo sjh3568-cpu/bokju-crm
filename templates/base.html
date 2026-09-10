@@ -44,6 +44,7 @@
                         <button type="button" class="nav-menu-toggle" aria-label="재원관리 하위 메뉴" aria-expanded="false">▾</button>
                         <div class="nav-dropdown">
                             <a href="/ward"><span>🏥</span><span><b>재원 현황</b><small>재원 환자·외진·퇴원 관리</small></span></a>
+                            <a href="/ward?tab=away"><span>🚑</span><span><b>외진환자관리</b><small>전원·복귀 이력과 통계</small></span></a>
                             <a href="/ward?tab=waiting"><span>🛏️</span><span><b>입원 대기</b><small>병상 대기·연락 관리</small></span></a>
                             <a href="/ward?tab=trend"><span>📈</span><span><b>회복기 비율 추이</b><small>일별·월별 변화 확인</small></span></a>
                             <a href="/ward?tab=blacklist"><span>⚠️</span><span><b>블랙리스트</b><small>지정 환자·사유 확인</small></span></a>
@@ -61,6 +62,7 @@
                         <div class="nav-dropdown">
                             <a href="/stats" {% if request.path == '/stats' %}class="active"{% endif %}><span>📊</span><span><b>통계 대시보드</b><small>상담·입원 핵심 지표</small></span></a>
                             <a href="/stats/hospitals" {% if request.path.startswith('/stats/hospitals') %}class="active"{% endif %}><span>🏥</span><span><b>모병원 분석</b><small>병원별 환자 유입·입원 성과</small></span></a>
+                            <a href="/stats/staff" {% if request.path.startswith('/stats/staff') %}class="active"{% endif %}><span>🤝</span><span><b>직원소개 분석</b><small>소개한 직원별 상담·입원 성과</small></span></a>
                             {% if P.get('report',0) >= 1 %}<a href="/report/monthly" {% if request.path.startswith('/report') %}class="active"{% endif %}><span class="nav-icon nav-icon-report">📈</span><span><b>월간보고서</b><small>월별 핵심 실적 보고</small></span></a>{% endif %}
                         </div>
                     </div>

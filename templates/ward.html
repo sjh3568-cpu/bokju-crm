@@ -95,6 +95,7 @@
 </div>
 
 <nav class="wd-tabs" aria-label="재원관리 세부 메뉴">
+    <a href="/ward?tab=away" class="{% if subtab == 'away' %}on{% endif %}">외진환자관리</a>
     <a href="/ward" class="{% if subtab == 'status' %}on{% endif %}">재원 현황</a>
     <a href="/ward?tab=waiting" class="{% if subtab == 'waiting' %}on{% endif %}">입원 대기 <b>{{ kpis.bed_waiting }}</b></a>
     <a href="/ward?tab=trend" class="{% if subtab == 'trend' %}on{% endif %}">회복기 비율 추이</a>
@@ -102,7 +103,9 @@
     {% if current_user.role == 'admin' %}<a href="/ward?tab=quality" class="{% if subtab == 'quality' %}on{% endif %}">데이터·백업 점검 {% if quality_report and quality_report.total %}<b>{{ quality_report.total }}</b>{% endif %}</a>{% endif %}
 </nav>
 
-{% if subtab == 'quality' %}
+{% if subtab == 'away' %}
+{% include 'ward_away.html' %}
+{% elif subtab == 'quality' %}
 <section class="card wd-sec wd-quality">
     <div class="wd-sec-head"><h3>데이터 품질 점검 <span class="wd-n">{{ quality_report.total }}</span></h3><span class="muted-sm">오류를 수정하면 다음 조회 때 자동으로 정상 처리됩니다.</span></div>
     <div class="wd-quality-grid">

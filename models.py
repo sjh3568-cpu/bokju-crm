@@ -4453,6 +4453,123 @@ def hospital_name_variants(name):
     return matched or [raw]
 
 
+# ─── 직원소개 분석 ───
+
+REFERRAL_DETAIL_STAFF = "직원소개"
+
+# 소개자 이름 뒤에 붙는 관계어·존칭. '박세연 지인 소개'·'박세연지인'·'박세연 지인의 소개'가
+# 모두 같은 사람이고, '권춘열이사님'과 '권춘열이사'도 같은 사람이다. 뒤에서부터 반복해 떼어
+# 낸다(겹쳐 붙은 '지인소개' 같은 형태 때문). 직함(부장·팀장 등)은 떼지 않는다 —
+# 동명이인을 구분하는 유일한 단서이고, 떼면 다른 사람이 합쳐질 수 있다.
+_REFERRER_TAIL = ("의소개", "지인의소개", "지인소개", "지인", "소개", "추천",
+                  "을통해", "를통해", "통해", "님")
+
+
+def staff_referrer_key(value):
+    """소개자 자유 입력 → 통합 키. 공백·관계어·존칭을 걷어낸 이름."""
+    text = re.sub(r"\s+", "", value or "")
+    trimmed = True
+    while trimmed:
+        trimmed = False
+        for tail in sorted(_REFERRER_TAIL, key=len, reverse=True):
+            if text.endswith(tail) and len(text) > len(tail):
+                text = text[: -len(tail)]
+                trimmed = True
+                break
+    return text
+
+
+def staff_referrer_display_map():
+    """DB 전체의 소개자 표기 → 대표 표기. 대표는 가장 많이 쓰인 원문."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT TRIM(referrer_person) name, COUNT(*) n FROM consultations "
+        "WHERE referrer_person IS NOT NULL AND TRIM(referrer_person)!='' "
+        "GROUP BY TRIM(referrer_person)").fetchall()
+    conn.close()
+    groups = {}
+    for r in rows:
+        key = staff_referrer_key(r["name"])
+        if key:
+            groups.setdefault(key, []).append((r["n"], r["name"]))
+    mapping = {}
+    for key, members in groups.items():
+        # 대표는 관계어를 걷어낸 이름 자체를 쓴다 — '박세연 지인'이 아니라 '박세연'.
+        for _, name in members:
+            mapping[name] = key
+    return mapping
+
+
+def staff_referral_overview(date_from=None, date_to=None, q=None):
+    """직원소개 상담을 소개자별로 집계. 표기 흔들림은 한 사람으로 합친다.
+
+    직원소개는 전환율이 높아(도입 시점 45.5%, 전체 평균 26%) 실제로 효과가 큰
+    유입 경로인데, 소개자가 자유 입력이라 같은 사람이 표기별로 쪼개져 있었다.
+    """
+    where = ["referral_source_detail LIKE ?"]
+    vals = [f"%{REFERRAL_DETAIL_STAFF}%"]
+    if date_from:
+        where.append("consult_date>=?"); vals.append(date_from)
+    if date_to:
+        where.append("consult_date<=?"); vals.append(date_to)
+    conn = get_db()
+    raw = conn.execute(
+        f"""SELECT TRIM(COALESCE(referrer_person,'')) person, patient_id, admission_status,
+            consult_date, referral_source_detail FROM consultations
+            WHERE {' AND '.join(where)}""", vals).fetchall()
+    conn.close()
+
+    groups, unnamed = {}, {"referrals": 0, "admissions": 0}
+    for r in raw:
+        # LIKE는 '직원소개'가 다른 값의 일부로 들어간 경우도 걸리므로 정확히 확인한다.
+        try:
+            details = [str(x).strip() for x in json.loads(r["referral_source_detail"] or "[]")]
+        except (json.JSONDecodeError, TypeError):
+            details = []
+        if REFERRAL_DETAIL_STAFF not in details:
+            continue
+        admitted = r["admission_status"] in ("입원완료", "퇴원완료")
+        key = staff_referrer_key(r["person"])
+        if not key:
+            unnamed["referrals"] += 1
+            unnamed["admissions"] += 1 if admitted else 0
+            continue
+        g = groups.setdefault(key, {"referrals": 0, "admissions": 0, "patient_ids": set(),
+                                    "latest_consult": None, "spellings": {}})
+        g["referrals"] += 1
+        if admitted:
+            g["admissions"] += 1
+        if r["patient_id"] is not None:
+            g["patient_ids"].add(r["patient_id"])
+        if (r["consult_date"] or "") > (g["latest_consult"] or ""):
+            g["latest_consult"] = r["consult_date"]
+        g["spellings"][r["person"]] = g["spellings"].get(r["person"], 0) + 1
+
+    items = []
+    for name, g in groups.items():
+        variants = sorted(g["spellings"].items(), key=lambda kv: (-kv[1], kv[0]))
+        item = {"name": name, "referrals": g["referrals"], "admissions": g["admissions"],
+                "patients": len(g["patient_ids"]), "latest_consult": g["latest_consult"],
+                "variants": [{"name": n, "referrals": c} for n, c in variants],
+                "variant_count": len(variants)}
+        item["conversion"] = round(100 * item["admissions"] / item["referrals"], 1) if item["referrals"] else 0
+        items.append(item)
+    items.sort(key=lambda d: (-d["admissions"], -d["referrals"], d["name"]))
+
+    total_count = len(items)
+    max_referrals = max((x["referrals"] for x in items), default=0)
+    key = re.sub(r"\s+", "", q or "")
+    if key:
+        items = [d for d in items
+                 if key in d["name"] or any(key in re.sub(r"\s+", "", v["name"]) for v in d["variants"])]
+    referrals = sum(x["referrals"] for x in items) + (unnamed["referrals"] if not key else 0)
+    admissions = sum(x["admissions"] for x in items) + (unnamed["admissions"] if not key else 0)
+    return {"referrers": items, "referrer_count": len(items), "total_count": total_count,
+            "max_referrals": max_referrals, "q": (q or "").strip(),
+            "unnamed": unnamed, "referrals": referrals, "admissions": admissions,
+            "conversion": round(100 * admissions / referrals, 1) if referrals else 0}
+
+
 def hospital_display_map():
     """DB 전체의 모병원 표기 → 대표 표기 매핑.
 
@@ -5271,6 +5388,48 @@ def delete_communication(comm_id):
 # ─── 입원 중 이벤트 (응급전원·모병원 외래치료 등) ───
 
 AWAY_EVENT_TYPES = ("응급전원", "모병원 외래치료")
+
+
+def list_away_records(*, date_from=None, date_to=None, event_type=None):
+    """퇴원 여부와 무관한 외진 전체 이력. 기간은 나간 날 기준이다."""
+    clauses = ["ae.event_type IN (?, ?)"]
+    values = list(AWAY_EVENT_TYPES)
+    for clause, value in (("ae.event_date >= ?", date_from),
+                          ("ae.event_date <= ?", date_to),
+                          ("ae.event_type = ?", event_type)):
+        if value:
+            clauses.append(clause)
+            values.append(value)
+    conn = get_db()
+    try:
+        rows = conn.execute(f"""
+            SELECT c.*, p.name AS patient_name, p.gender,
+                   ae.id AS away_id, ae.event_type, ae.event_date,
+                   ae.event_time, ae.hospital, ae.memo, ae.returned_at
+            FROM admission_events ae
+            JOIN consultations c ON c.id = ae.consultation_id
+            JOIN patients p ON p.id = c.patient_id
+            WHERE {' AND '.join(clauses)}
+            ORDER BY ae.event_date DESC, ae.id DESC
+        """, values).fetchall()
+        return [_deserialize_consultation(dict(row)) for row in rows]
+    finally:
+        conn.close()
+
+
+def away_record_stats(rows):
+    """실인원과 건수를 분리. 복귀 인원은 기간 내 기록 중 1회 이상 복귀."""
+    patients = {r['patient_id'] for r in rows}
+    returned = [r for r in rows if r.get('returned_at')]
+    returned_patients = {r['patient_id'] for r in returned}
+    return {
+        'patients': len(patients), 'returned_patients': len(returned_patients),
+        'open_patients': len({r['patient_id'] for r in rows if not r.get('returned_at')}),
+        'events': len(rows), 'returned_events': len(returned),
+        'open_events': len(rows) - len(returned),
+        'patient_rate': round(100 * len(returned_patients) / len(patients), 1) if patients else 0,
+        'event_rate': round(100 * len(returned) / len(rows), 1) if rows else 0,
+    }
 
 
 def create_admission_event(*, consultation_id, event_type=None, event_date=None,

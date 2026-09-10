@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}직원소개 분석 · 복주 상담CRM{% endblock %}
+{% block content %}
+<div class="page-header staff-page-head"><div><a href="/stats" class="btn-back">← 통계 대시보드</a><h1>직원소개 분석</h1><p>직원이 소개한 상담을 소개자별로 집계합니다. 표기가 달라도 같은 사람으로 합칩니다.</p></div></div>
+<form class="card staff-filter" method="get"><input type="hidden" name="preset" value="custom"><label>상담 시작일<input type="date" name="from" value="{{ date_from or '' }}"></label><label>상담 종료일<input type="date" name="to" value="{{ date_to or '' }}"></label><label class="staff-q">소개자 검색<input type="search" name="q" value="{{ q }}" placeholder="이름 일부만 입력해도 됩니다 (예: 김미화)" autocomplete="off"></label><button class="btn btn-primary">조회</button><a class="btn btn-secondary" href="/stats/staff">초기화</a></form>
+{% if q %}<div class="staff-searched">‘<b>{{ q }}</b>’ 검색 — 전체 {{ data.total_count }}명 중 <b>{{ data.referrer_count }}명</b><a href="/stats/staff?preset=custom&amp;from={{ date_from }}&amp;to={{ date_to }}">전체 보기 ✕</a></div>{% endif %}
+<div class="staff-kpis">
+  <div><small>직원소개 상담</small><strong>{{ data.referrals }}</strong><span>건</span></div>
+  <div><small>입원완료</small><strong>{{ data.admissions }}</strong><span>건</span></div>
+  <div class="rate"><small>입원 전환율</small><strong>{{ data.conversion }}</strong><span>%</span></div>
+  <div><small>소개한 직원</small><strong>{{ data.total_count }}</strong><span>명</span></div>
+</div>
+{% if data.unnamed.referrals and not q %}<p class="staff-note">소개자 이름이 적히지 않은 상담이 <b>{{ data.unnamed.referrals }}건</b>(입원 {{ data.unnamed.admissions }}건) 있어 아래 표에서 빠졌습니다. 상담일지의 ‘소개자’ 칸에 이름을 적어주시면 함께 집계됩니다.</p>{% endif %}
+<section class="card staff-overview">
+  <div class="panel-title">
+    <div><h2>소개자별 성과</h2><p>{{ date_from }} ~ {{ date_to }} 상담일 기준 · {{ {'admissions':'입원','referrals':'소개 건수','conversion':'전환율'}.get(sort,'입원') }} 내림차순</p></div>
+    <div class="staff-sort"><span>정렬</span><a class="{{ 'on' if sort=='admissions' }}" href="{{ url_with(sort='admissions') }}">입원순</a><a class="{{ 'on' if sort=='referrals' }}" href="{{ url_with(sort='referrals') }}">소개순</a><a class="{{ 'on' if sort=='conversion' }}" href="{{ url_with(sort='conversion') }}">전환율순</a></div>
+    <b>{{ data.referrer_count }}명</b>
+  </div>
+  <div class="table-wrap">
+    <table class="tbl staff-table">
+      <thead><tr><th>순위</th><th>소개자</th><th>소개</th><th>입원</th><th>전환율</th><th>환자 수</th><th>최근 소개일</th><th></th></tr></thead>
+      <tbody>
+        {% set max_ref = data.max_referrals or 1 %}
+        {% for r in data.referrers %}
+        <tr>
+          <td class="rank">{{ loop.index }}</td>
+          <td><b>{{ r.name }}</b>{% if r.variant_count > 1 %}<small class="variant-note" title="{{ r.variants|map(attribute='name')|join(' · ') }}">표기 {{ r.variant_count }}종 통합</small>{% endif %}</td>
+          <td><div class="staff-count"><i><span style="width:{{ r.referrals*100/max_ref }}%"></span></i><strong>{{ r.referrals }}건</strong></div></td>
+          <td class="admit-count">{{ r.admissions }}건</td>
+          <td><span class="conversion {% if r.conversion>=50 %}good{% endif %}">{{ r.conversion }}%</span></td>
+          <td class="num">{{ r.patients }}명</td>
+          <td>{{ r.latest_consult|krdate }}</td>
+          <td><a class="btn btn-secondary btn-sm" href="/consultations?q={{ r.name|urlencode }}&from={{ date_from }}&to={{ date_to }}">상담 보기</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="empty-state">{% if q %}‘{{ q }}’와 이름이 맞는 소개자가 조회 기간에 없습니다.{% else %}조회 기간에 직원소개로 기록된 상담이 없습니다.{% endif %}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+<style>
+.staff-page-head p{margin-top:3px;color:#64748b}
+.staff-filter{display:flex;align-items:end;gap:10px;margin-bottom:14px}
+.staff-filter label{display:grid;gap:4px;color:#64748b;font-size:.76rem;font-weight:750}
+.staff-filter input{height:37px;padding:6px 9px;border:1px solid var(--border);border-radius:8px}
+.staff-filter .staff-q{flex:1;min-width:230px}.staff-filter .staff-q input{width:100%}
+.staff-searched{display:flex;align-items:center;gap:8px;margin:-6px 0 14px;padding:9px 13px;border:1px solid #bbe6cb;border-radius:10px;background:#f2fbf5;color:#17633a;font-size:.82rem}
+.staff-searched a{margin-left:auto;color:#3f6b53;font-size:.76rem;text-decoration:none}
+.staff-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.staff-kpis>div{padding:17px;border:1px solid #dbe5df;border-radius:12px;background:#fff;box-shadow:var(--shadow-sm)}
+.staff-kpis>div.rate{border-color:#bbe6cb;background:#f6fbf8}
+.staff-kpis small{display:block;color:#64748b;font-weight:750}
+.staff-kpis strong{font-size:1.85rem;color:#17633a}.staff-kpis span{margin-left:3px;color:#64748b}
+.staff-note{margin:-6px 0 14px;padding:9px 13px;border-left:3px solid #fcd34d;background:#fffbeb;color:#8a6410;font-size:.78rem}
+.staff-overview{padding:0;overflow:hidden}
+.panel-title{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border)}
+.panel-title h2{font-size:1.08rem}.panel-title p{color:#64748b;font-size:.74rem}.panel-title>b{color:#17633a}
+.staff-sort{display:flex;align-items:center;gap:4px;margin-left:auto}
+.staff-sort>span{color:#94a3b8;font-size:.72rem;font-weight:750}
+.staff-sort a{padding:3px 9px;border:1px solid var(--border);border-radius:8px;color:#4b6357;text-decoration:none;font-size:.74rem;font-weight:750}
+.staff-sort a.on{border-color:#15803d;background:#eafaf0;color:#15633a}
+.table-wrap{overflow:auto}.staff-table{min-width:780px}.staff-table th{white-space:nowrap}
+.rank{color:#64748b;text-align:center}.num{text-align:right}
+.variant-note{margin-left:6px;padding:1px 6px;border-radius:9px;background:#eef4f0;color:#5d7a69;font-size:.68rem;font-weight:750;white-space:nowrap;cursor:help}
+.staff-count{display:grid;grid-template-columns:minmax(80px,1fr) 45px;align-items:center;gap:9px;min-width:150px}
+.staff-count i{height:9px;border-radius:8px;background:#e7eee9;overflow:hidden}
+.staff-count i span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#15803d,#4ade80)}
+.staff-count strong,.admit-count{color:#166534}.admit-count{text-align:right}
+.conversion{display:inline-block;min-width:54px;padding:3px 7px;border-radius:12px;background:#f1f5f9;text-align:center;font-weight:750}
+.conversion.good{background:#dcfce7;color:#166534}
+.empty-state{padding:40px!important;text-align:center;color:#64748b}
+@media(max-width:800px){.staff-filter{align-items:stretch;flex-wrap:wrap}.staff-filter .staff-q{flex-basis:100%}.staff-kpis{grid-template-columns:1fr 1fr}.panel-title{flex-wrap:wrap}.staff-sort{margin-left:0}}
+</style>
+{% endblock %}

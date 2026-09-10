@@ -481,6 +481,7 @@ def global_search():
         ('sms','문자','문자 발송·템플릿·발송 이력','/sms'),
         ('stats','통계 대시보드','상담·입원 핵심 통계','/stats'),
         ('stats','모병원 분석','모병원별 상담의뢰·입원완료 현황','/stats/hospitals'),
+        ('stats','직원소개 분석','소개한 직원별 상담·입원 성과','/stats/staff'),
         ('report','월간보고서','월별 운영 성과 보고','/report/monthly'),
         ('dashboard','공지사항','공지·필수 확인','/notices'),
         ('dashboard','내 할 일','개인 일정·공유 업무','/todos'),
@@ -1454,7 +1455,7 @@ def account_settings():
                 else: prefs.pop('calendar_mine',None)
                 if partner_view in ('list','feed'): prefs['partner_view']=partner_view
                 else: prefs.pop('partner_view',None)
-                if ward_tab in ('status','waiting','trend','blacklist','quality'): prefs['ward_tab']=ward_tab
+                if ward_tab in ('status','away','waiting','trend','blacklist','quality'): prefs['ward_tab']=ward_tab
                 else: prefs.pop('ward_tab',None)
             models.set_user_preferences(g.user['id'],prefs);flash('개인 알림과 기본 보기를 저장했습니다.','success')
             return redirect(url_for('account_settings'))
@@ -2496,6 +2497,25 @@ def hospital_stats_view():
     data["hospitals"]=sorted(data["hospitals"],key=lambda h:(*keys.get(sort,keys["referrals"])(h),h["name"]))
     return render_template(
         "stats_hospitals.html", preset=preset, date_from=date_from, date_to=date_to,
+        q=q, sort=sort, data=data,
+    )
+
+
+@app.route("/stats/staff")
+@login_required
+def staff_referral_view():
+    """직원소개를 소개자별로 집계. 전환율이 가장 높은 유입 경로라 따로 관리한다."""
+    preset, date_from, date_to = _stats_period_from_request()
+    q = (request.args.get("q") or "").strip()
+    sort = request.args.get("sort") or "admissions"
+    data = models.staff_referral_overview(date_from, date_to, q=q or None)
+    keys = {"admissions": lambda r: (-r["admissions"], -r["referrals"]),
+            "referrals": lambda r: (-r["referrals"], -r["admissions"]),
+            "conversion": lambda r: (-r["conversion"], -r["admissions"])}
+    data["referrers"] = sorted(data["referrers"],
+                               key=lambda r: (*keys.get(sort, keys["admissions"])(r), r["name"]))
+    return render_template(
+        "stats_staff.html", preset=preset, date_from=date_from, date_to=date_to,
         q=q, sort=sort, data=data,
     )
 
@@ -3926,6 +3946,48 @@ def lifecycle_board():
     )
 
 
+def _ward_away_report():
+    filters = {key: (request.args.get(key) or "").strip()
+               for key in ("away_from", "away_to", "away_type", "away_status", "away_q")}
+    for key in ("away_from", "away_to"):
+        if filters[key]:
+            try:
+                filters[key] = date.fromisoformat(filters[key]).isoformat()
+            except ValueError:
+                abort(400, description="조회 기간은 YYYY-MM-DD 형식으로 입력하세요.")
+    if filters["away_from"] and filters["away_to"] and filters["away_from"] > filters["away_to"]:
+        abort(400, description="조회 시작일이 종료일보다 늦습니다.")
+    if filters["away_type"] not in ("", *models.AWAY_EVENT_TYPES):
+        abort(400)
+    if filters["away_status"] not in ("", "open", "returned"):
+        abort(400)
+    rows = models.list_away_records(date_from=filters["away_from"], date_to=filters["away_to"],
+                                   event_type=filters["away_type"])
+    # 검색/복귀 상태로 분모가 달라지지 않도록 기간·유형 기준 통계를 먼저 계산한다.
+    stats = models.away_record_stats(rows)
+    transfers = models.away_record_stats([r for r in rows if r["event_type"] == "응급전원"])
+    monthly = {}
+    for row in rows:
+        month = (row.get("event_date") or "")[:7] or "일자 미기재"
+        monthly.setdefault(month, []).append(row)
+    monthly = [(month, models.away_record_stats(items))
+               for month, items in sorted(monthly.items(), reverse=True)]
+    selected = []
+    for row in rows:
+        if filters["away_status"] == "open" and row.get("returned_at"):
+            continue
+        if filters["away_status"] == "returned" and not row.get("returned_at"):
+            continue
+        row.update(_split_diagnosis(row))
+        search = " ".join(str(row.get(k) or "") for k in
+                          ("patient_name", "hospital", "memo", "primary_diagnosis", "secondary_diagnosis", "diseases"))
+        if filters["away_q"].casefold() not in search.casefold():
+            continue
+        row["discharge_watch"] = _discharge_watch(row)
+        selected.append(row)
+    return dict(rows=selected, stats=stats, transfers=transfers, monthly=monthly, filters=filters)
+
+
 @app.route("/ward")
 @login_required
 def ward_view():
@@ -3970,7 +4032,7 @@ def ward_view():
         stay_period = ""
     ward_prefs=models.get_user_by_id(g.user['id']).get('preferences_data',{})
     subtab = (request.args.get("tab") or ward_prefs.get('ward_tab') or "status").strip()
-    if subtab not in ("status", "waiting", "trend", "blacklist", "quality"):
+    if subtab not in ("status", "away", "waiting", "trend", "blacklist", "quality"):
         subtab = "status"
     if subtab == "quality" and g.user.get("role") != "admin":
         abort(403)
@@ -4240,6 +4302,7 @@ def ward_view():
     quality_report = models.data_quality_report() if subtab == "quality" else None
     backup_status = backup.latest_status() if subtab == "quality" else None
     blacklisted = models.list_blacklisted_patients()
+    away_report = _ward_away_report() if subtab == "away" else None
     return render_template(
         "ward.html", away=away, admitted=admitted_list,
         room_view=room_view, unassigned=unassigned,
@@ -4254,7 +4317,7 @@ def ward_view():
         recovery_due_list=recovery_due_list, discharge_due_list=discharge_due_list,
         daily_ratio_trend=daily_ratio_trend, monthly_ratio_trend=monthly_ratio_trend,
         discharged=discharged,
-        subtab=subtab,
+        subtab=subtab, away_report=away_report, away_candidates=admitted,
         blacklisted=blacklisted,
         bed_waiting=bed_waiting,
         room_f=room_f, gender_f=gender_f, dx_f=dx_f,
@@ -4896,6 +4959,14 @@ def api_admission_event_create(cid):
         return jsonify({"error": "이송 시각 형식 오류"}), 400
     con = models.get_consultation(cid)
     pid = con["patient_id"] if con else None
+    if event_type in models.AWAY_EVENT_TYPES:
+        if models.open_away_event(cid):
+            return jsonify({"error": "미복귀 기록이 있습니다. 먼저 복귀 처리하세요."}), 400
+        if event_date and event_date > date.today().isoformat():
+            return jsonify({"error": "전원·외진일은 미래일 수 없습니다."}), 400
+        admitted_on = (con.get("actual_admission_date") or con.get("admission_date") or "")[:10]
+        if event_date and admitted_on and event_date < admitted_on:
+            return jsonify({"error": "전원·외진일이 입원일보다 빠릅니다."}), 400
     cur_stage = None
     if pid:
         p = models.get_patient(pid)
@@ -4947,6 +5018,8 @@ def api_admission_event_return(event_id):
     ev = models.get_admission_event(event_id)
     if not ev:
         return jsonify({"error": "not found"}), 404
+    if ev.get("event_type") not in models.AWAY_EVENT_TYPES:
+        return jsonify({"error": "외진·전원 기록만 복귀 처리할 수 있습니다."}), 400
     if ev.get("returned_at"):
         return jsonify({"error": "이미 복귀 처리된 외진입니다."}), 400
     payload = request.get_json(silent=True) or {}

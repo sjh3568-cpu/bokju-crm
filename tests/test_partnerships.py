@@ -398,6 +398,46 @@ class CooperationTests(unittest.TestCase):
         self.assertIn('직접 방문',page)
         self.assertNotIn('>집<',page)
 
+    def test_staff_referral_merges_name_variants(self):
+        """직원소개 소개자는 관계어·존칭 표기가 달라도 한 사람으로 합친다."""
+        db=models.get_db()
+        def consult(person,day,status,detail='["직원소개"]'):
+            pid=db.execute("INSERT INTO patients(name) VALUES (?)",(f'{person}{day}',)).lastrowid
+            db.execute("""INSERT INTO consultations(patient_id,consult_date,admission_status,
+                        referrer_person,referral_source_detail) VALUES (?,?,?,?,?)""",
+                       (pid,day,status,person,detail))
+        for person,day,status in [
+            ('김미화팀장 소개','2026-05-02','입원완료'),
+            ('김미화팀장 지인','2026-05-03','입원완료'),
+            ('김미화팀장님','2026-05-04','상담중'),
+            ('이준화부장','2026-05-05','입원완료'),
+            ('','2026-05-06','상담중'),                 # 소개자 미기재
+        ]:
+            consult(person,day,status)
+        consult('김미화팀장','2026-05-07','입원완료','["지인추천"]')  # 직원소개가 아니면 제외
+        db.commit(); db.close()
+
+        data=models.staff_referral_overview('2026-05-01','2026-05-31')
+        by={r['name']:r for r in data['referrers']}
+        self.assertEqual(sorted(by),['김미화팀장','이준화부장'])
+        merged=by['김미화팀장']
+        self.assertEqual((merged['referrals'],merged['admissions']),(3,2))   # 지인추천 건은 빠진다
+        self.assertEqual(merged['variant_count'],3)
+        self.assertEqual(merged['conversion'],66.7)
+        self.assertEqual(data['unnamed']['referrals'],1)                     # 이름 미기재도 총계에는 포함
+        self.assertEqual(data['referrals'],5)
+        self.assertEqual(models.staff_referrer_key('박세연 지인의 소개'),'박세연')
+        self.assertEqual(models.staff_referrer_key('권춘열이사님지인'),'권춘열이사')
+        # 검색은 원래 표기로도 찾힌다
+        found=models.staff_referral_overview('2026-05-01','2026-05-31',q='김미화')
+        self.assertEqual([r['name'] for r in found['referrers']],['김미화팀장'])
+        page=self.client.get('/stats/staff?preset=custom&from=2026-05-01&to=2026-05-31').get_data(as_text=True)
+        self.assertIn('직원소개 분석',page)
+        self.assertIn('김미화팀장',page)
+        self.assertIn('표기 3종 통합',page)
+        menu=self.client.get('/api/global-search?q=직원소개').get_json()
+        self.assertTrue(any(i['url']=='/stats/staff' for i in menu['items']))
+
     def test_partner_candidates_and_recent_performance(self):
         """실적 있는 미등록 기관을 후보로 제시하고, 등록/보류가 목록에 반영된다."""
         recent=date.today()-timedelta(days=20)
