@@ -613,10 +613,18 @@
                     } } },
                     datalabels: {
                         ...lineDatalabels,
-                        display: ctx => points.length <= 18 && points[ctx.dataIndex].count > 0,
+                        // 값은 항상 띄운다. 기간이 짧으면 입원·전환율까지 3줄로, 길면 상담 건수만.
+                        // 'auto'는 자리가 없어 겹치는 라벨만 골라 숨기므로 촘촘한 구간에서도
+                        // 읽을 수 있는 만큼은 남는다.
+                        display: ctx => {
+                            if (!(points[ctx.dataIndex].count > 0)) return false;
+                            return points.length <= 18 ? true : 'auto';
+                        },
+                        font: { weight: '600', size: points.length <= 18 ? 9 : 8 },
                         textAlign: 'center',
                         formatter: (v, ctx) => {
                             const p = points[ctx.dataIndex];
+                            if (points.length > 18) return `${p.count}`;
                             return `입원 ${p.admissions || 0}건 · ${p.rate || 0}%\n상담 ${p.count}건`;
                         },
                     },
@@ -717,7 +725,7 @@
                     },
                 },
                 scales: {
-                    x: { stacked: false, ticks: { autoSkip: false, minRotation: showAdmissionLine ? 35 : 0, maxRotation: showAdmissionLine ? 50 : 0, font: { size: 12 } }, grid: { display: false } },
+                    x: { stacked: false, ticks: { autoSkip: false, minRotation: 35, maxRotation: 50, font: { size: 12 } }, grid: { display: false } },
                     y: { beginAtZero: true, ticks: { precision: 0, font: { size: 12 } } },
                     admissions: { display: showAdmissionLine, position: 'right', beginAtZero: true,
                         suggestedMax: Math.max(5, ...items.map(x => x.admissions || 0)) * 1.2,
