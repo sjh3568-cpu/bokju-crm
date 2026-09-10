@@ -221,6 +221,7 @@ LOCATION_TYPE_MAP = {
     "급성기병운": "입원중", "금성기병원": "입원중",
     "급상기병원": "입원중", "급성기": "입원중",
     "요양원": "입소중", "요양원(시설)": "입소중", "시설": "입소중",
+    "요양시설": "입소중",
 }
 
 
@@ -276,6 +277,16 @@ ADMISSION_PURPOSE_MAP = {
     "비회복기 재활": "비회복기재활",
     "다재내성균": "다제내성균", "다제내셩균": "다제내성균",
     "요양병원": "요양",
+    # ── A(구식) 시트 어휘 ──
+    # 통계 카테고리는 admission_purpose 접두사로 판정되므로(app._purpose_to_category)
+    # 4종(회복기/비회복기/일반재활/요양)에 걸리도록 표준 어휘로 옮긴다.
+    "단순 요양": "요양", "단순요양": "요양", "다단순요양": "요양",
+    "수술 후 요양": "요양", "요양원 상담": "요양",
+    "단순 재활": "비회복기재활", "단순재활": "비회복기재활",
+    "단순재활(자보)": "비회복기재활", "일반재활(자보)": "일반재활",
+    "회복기병원": "회복기재활",
+    "다재내성균 요양": "다제내성균", "중증환자": "중증 환자",
+    # 인지증·중증 환자·욕창 치료는 원문 유지(사용자 결정) — 4종에 넣지 않는다.
 }
 
 
@@ -291,13 +302,32 @@ def normalize_admission_purpose(v):
 REFERRAL_TYPE_VALUE_MAP = {
     # 온라인 (대분류 자체, 또는 세부값)
     "온라인검색": "온라인", "온리인검색": "온라인", "온라인": "온라인",
-    "카페": "온라인", "검색": "온라인", "검색(블로그)": "온라인",
+    "카페": "온라인", "카폐": "온라인", "검색": "온라인", "검색(블로그)": "온라인",
+    "블로그": "온라인",
     "유튜브": "온라인", "SNS": "온라인", "홈페이지": "온라인",
     # 소개
     "소개": "소개", "직원추천": "소개", "지인소개": "소개",
     "기관소개": "소개", "가족회의": "소개",
     # 기타
     "기타": "기타", "지역민": "기타",
+    # A 시트 '상담 경로' 어휘
+    "직원소개": "소개", "입원환자소개": "소개", "소개환자": "소개",
+    "기관연계": "소개", "주민추천": "소개", "추천": "소개",
+}
+
+# A 시트 '병원 정보 확인'(유입 매체) → REFERRAL_SOURCE_GROUPS 세부값
+A_REFERRAL_DETAIL_MAP = {
+    "블로그": "검색(블로그)", "검색": "검색(블로그)", "검색(블로그)": "검색(블로그)",
+    "카페": "카페", "유튜브": "유튜브", "SNS": "SNS",
+    "지역민": "지역민", "현수막": "현수막",
+    # 오타
+    "유듀브": "유튜브", "뇌카페": "카페",
+}
+
+# 매체가 안 잡힐 때 '상담 경로'에서 세부값을 유도하는 폴백
+A_ROUTE_DETAIL_MAP = {
+    "지인소개": "지인추천", "직원소개": "직원소개", "기관소개": "기관연계",
+    "입원환자소개": "지인추천", "지역민": "지역민",
 }
 
 
@@ -500,6 +530,117 @@ def parse_schema_c_row(headers_idx, row):
     return d, issues
 
 
+# ─────────────────────────────────────────────────────────
+# Schema A 파서 (23년8월 ~ 25.4월)
+# ─────────────────────────────────────────────────────────
+
+def parse_schema_a_row(headers_idx, row):
+    """구식 시트 행 → 정규화 dict.
+
+    B/C와 컬럼 구성이 다르다:
+      - '연고지' 칸이 없다. 환자는 대개 급성기병원에 입원한 상태라
+        '현 거처1(지역)'은 병원 소재지지 연고지가 아니다. 그래서 보호자 정보의
+        '현 거처(지역)'+'지역 자세히'를 환자 거주지로 쓴다(사용자 결정).
+      - 유입경로가 둘로 나뉜다: '상담 경로'가 유형(온라인검색/지인소개/...),
+        '병원 정보 확인'이 매체(블로그/유튜브/카페/...).
+      - '기타' 칸이 상담방법(전화/방문상담)이다.
+      - 병원명은 '비고' 칸에 들어간다.
+    """
+    def cell(name):
+        i = headers_idx.get(name)
+        if i is None or i >= len(row):
+            return None
+        return row[i]
+
+    d = {}
+    issues = []
+
+    # ── 환자 ──
+    name = norm_str(cell("환자이름"))
+    if not name:
+        return None, ["환자이름 누락"]
+    if name.upper() in ("M", "F"):
+        return None, [f"환자이름 오류: {name}"]
+    d["patient_name"] = name
+    d["gender"] = normalize_gender(cell("성별"))
+    d["patient_age"] = parse_int(cell("나이"))
+
+    # 보호자
+    d["guardian_name"] = norm_str(cell("이름"))
+    d["guardian_relation"] = norm_str(cell("관계"))
+    d["guardian_phone"] = normalize_phone(cell("연락처"))
+
+    # 거주지 — 보호자 거처를 연고지로 사용
+    sigungu = normalize_sigungu(cell("지역 자세히"))
+    sido_raw = cell("현 거처(지역)")
+    sido = normalize_sido(sido_raw, sigungu_hint=sigungu)
+    d["residence_sido"] = sido
+    d["residence_sigungu"] = sigungu
+
+    # ── 상담 ──
+    d["consult_date"] = parse_date(cell("상담일자"))
+    if not d["consult_date"]:
+        issues.append(f"상담일자 파싱 실패: {cell('상담일자')!r}")
+
+    d["counselor"] = norm_str(cell("상담자"))
+    if d["counselor"] and d["counselor"] not in COUNSELORS:
+        issues.append(f"미등록 상담자: {d['counselor']}")
+
+    # 상담방법은 '기타' 칸
+    d["consult_channel"] = normalize_consult_channel(cell("기타"))
+
+    # 거처/모병원 — 유형은 '현 거처2(시설)', 병원명은 '비고'
+    loc_raw = norm_str(cell("현 거처2(시설)"))
+    d["current_location_type"] = normalize_location_type(loc_raw)
+    hosp = norm_str(cell("비고"))
+    if d["current_location_type"] in ("입원중", "입소중") and hosp:
+        d["current_location_name"] = hosp
+        d["source_hospital"] = hosp
+    if loc_raw and d["current_location_type"] not in CURRENT_LOCATION_TYPES:
+        issues.append(f"미매핑 거처: {loc_raw}")
+
+    # 유입경로 — 유형은 '상담 경로', 세부는 '병원 정보 확인'(매체) 우선
+    route_raw = norm_str(cell("상담 경로"))
+    rtype = normalize_referral_type(route_raw)
+    if rtype in REFERRAL_TYPES:
+        d["referral_source_type"] = [rtype]
+    elif route_raw:
+        issues.append(f"미매핑 유입경로: {route_raw}")
+
+    media_raw = norm_str(cell("병원 정보 확인"))
+    detail = A_REFERRAL_DETAIL_MAP.get(media_raw) or A_ROUTE_DETAIL_MAP.get(route_raw)
+    if detail:
+        d["referral_source_detail"] = [detail]
+    elif media_raw and media_raw != "기타":
+        # 세부값 목록에 없는 매체(홈페이지 등)는 원문을 메모로 보존한다.
+        # 유형(온라인/소개/기타)은 이미 잡혔으므로 통계는 정상이고, 어느 매체였는지만
+        # 남겨두면 나중에 세부값을 늘릴 때 되살릴 수 있다.
+        d["referral_online_note"] = media_raw
+        issues.append(f"세부값 없는 매체(메모 보존): {media_raw}")
+
+    # 입원목적/병명
+    d["admission_purpose"] = normalize_admission_purpose(cell("입원 목적"))
+    disease_name = norm_str(cell("병명"))
+    diseases_list = derive_diseases_field(None, disease_name)
+    if diseases_list:
+        d["diseases"] = diseases_list
+    if disease_name:
+        d["disease_detail"] = disease_name
+        if not diseases_list:
+            issues.append(f"병명 그룹 미매칭: {disease_name}")
+
+    # 진행 상태 / 입원일 — '예정일'은 입원완료면 실제일, 아니면 예정일로 본다
+    d["admission_status"] = normalize_admission_status(cell("입원여부"))
+    dt = parse_date(cell("예정일"))
+    if dt:
+        if d["admission_status"] == "입원완료":
+            d["actual_admission_date"] = dt
+        else:
+            d["planned_admission_date"] = dt
+
+    return d, issues
+
+
 def normalize_date_for_month_sheet(sheet_name, parsed):
     """26.7월 같은 월별 시트에서 명백한 연도 오타를 시트 연도로 보정."""
     m = re.match(r"^(\d{2})\.(\d{1,2})월$", sheet_name)
@@ -556,9 +697,9 @@ def import_sheet(wb, sheet_name, *, apply_changes=False, schema_hint=None, skip_
         "duplicate_candidates": [],
     }
 
-    if schema == "A":
-        raise SystemExit(f"Schema A(구식)는 별도 도구 필요. 이 시트: {sheet_name}")
-    # Schema B/C는 동일 파서로 처리 (parse_schema_c_row가 header 이름 기반이라 호환)
+    # Schema B/C는 동일 파서로 처리 (parse_schema_c_row가 header 이름 기반이라 호환).
+    # A는 컬럼 구성이 달라 전용 파서를 쓴다.
+    row_parser = parse_schema_a_row if schema == "A" else parse_schema_c_row
 
     rows_to_apply = []
 
@@ -573,7 +714,7 @@ def import_sheet(wb, sheet_name, *, apply_changes=False, schema_hint=None, skip_
             continue
         report["rows_total"] += 1
         try:
-            parsed, issues = parse_schema_c_row(headers_idx, row)
+            parsed, issues = row_parser(headers_idx, row)
         except Exception as e:
             report["rows_skipped"] += 1
             report["issues"][f"parse-error: {type(e).__name__}"] += 1
