@@ -56,9 +56,15 @@ if [ "$CHECK_ONLY" = "--check" ]; then
     exit 0
 fi
 
-git tag -a "$TAG" -m "복주 CRM ${VERSION}"
+# 순서가 중요하다 — main을 먼저 올린다.
+# 태그를 먼저 찍으면, push가 거절될 때(원격에 다른 작업이 올라와 있는 경우)
+# 태그만 로컬에 남아 다음 실행이 "이미 있는 버전"으로 막힌다.
+echo "▶ main 올리는 중"
 git push origin main --quiet
-git push origin "$TAG" --quiet
+
+git tag -a "$TAG" -m "복주 CRM ${VERSION}"
+# 태그 push가 실패하면 로컬 태그를 지워 다음 실행이 막히지 않게 한다.
+git push origin "$TAG" --quiet || { git tag -d "$TAG"; fail "태그를 올리지 못했습니다."; }
 
 echo ""
 echo "✅ ${TAG} 를 내보냈습니다."
