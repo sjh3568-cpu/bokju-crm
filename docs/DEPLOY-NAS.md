@@ -75,7 +75,7 @@ python -c "import secrets; print(secrets.token_hex(32))"
 
 구형 Docker 패키지(20.10.3)의 프로젝트 기능도 docker-compose를 지원한다. 단
 `docker-compose.yml`에 `version` 키가 반드시 있어야 한다 — 없으면 구형(v1) 포맷으로
-해석해 실패하므로 `version: "3.8"`을 명시해 두었다.
+해석해 실패하므로 `version: "3.4"`를 명시해 두었다(start_period를 쓰려면 3.4가 하한선).
 
 | 항목 | 값 |
 |---|---|
