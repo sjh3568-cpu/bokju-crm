@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
-import shutil
 import sys
 import sqlite3
 from collections import Counter, defaultdict
@@ -908,10 +908,21 @@ def _consultation_exists(conn, pid, parsed):
 
 
 def backup_db():
-    src = ROOT / "bokju.db"
-    dst = ROOT / "backups" / f"pre_excel_import_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
-    dst.parent.mkdir(exist_ok=True)
-    shutil.copy2(src, dst)
+    """적재 직전 스냅샷.
+
+    경로를 코드 폴더 기준으로 잡으면 컨테이너에서 깨진다 — 거기선 DB가
+    마운트 볼륨(BOKJU_DB_PATH=/data/bokju.db)에 있고 코드 폴더(/app)에는
+    없다. models.DB_PATH·BACKUP_DIR 을 그대로 따라간다.
+    """
+    src = Path(models.DB_PATH)
+    if not src.exists():
+        raise SystemExit(f"DB 없음: {src} — 앱을 한 번 기동해 DB를 만든 뒤 실행할 것")
+    dst_dir = Path(os.getenv("BACKUP_DIR") or (ROOT / "backups"))
+    dst = dst_dir / f"pre_excel_import_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    # WAL 모드라 파일 복사만으로는 최신 커밋이 빠질 수 있다. sqlite 백업 API로 뜬다.
+    with sqlite3.connect(src) as srcconn, sqlite3.connect(dst) as dstconn:
+        srcconn.backup(dstconn)
     print(f"[backup] {dst}")
 
 
