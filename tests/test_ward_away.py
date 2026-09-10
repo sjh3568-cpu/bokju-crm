@@ -102,6 +102,41 @@ class AwayManagementTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/consult/1/admission-event', json={
             'event_type': '응급전원', 'event_date': '2026-03-11'}).status_code, 400)
 
+    def test_lifetime_numbering_survives_filters_and_readmission(self):
+        with models.get_db() as conn:
+            conn.execute("INSERT INTO consultations (id, patient_id, consult_date) VALUES (3, 1, '2026-04-01')")
+            conn.execute("INSERT INTO admission_events (consultation_id,event_type,event_date) VALUES (3,'모병원 외래치료','2026-04-03')")
+            conn.execute("INSERT INTO admission_events (consultation_id,event_type) VALUES (3,'응급전원')")
+        rows = models.list_away_records(date_from='2026-03-01', event_type='응급전원')
+        self.assertEqual([(r['away_id'], r['away_number']) for r in rows], [(2, 2)])
+        rows = models.list_away_records(date_from='2026-04-01')
+        self.assertEqual(rows[0]['away_number'], 3)
+        missing = [r for r in models.list_away_records() if not r['event_date']]
+        self.assertIsNone(missing[0]['away_number'])
+
+    def test_inclusive_days_and_roster_filters(self):
+        with main.app.test_request_context('/ward?tab=away&away_number=2&away_age_min=70&away_age_max=70&away_gender=F&away_hospital=기관&away_dx=병명&away_days_min=2'):
+            report = main._ward_away_report()
+        self.assertEqual({r['away_id'] for r in report['rows']}, {2, 3})
+        self.assertEqual(report['stats']['events'], 4)
+        row = next(r for r in report['rows'] if r['away_id'] == 2)
+        self.assertEqual(row['stay_days_inclusive'], (date.today() - date(2026, 1, 1)).days + 1)
+        self.assertEqual(row['away_days_inclusive'], (date.today() - date(2026, 3, 1)).days + 1)
+        with models.get_db() as conn:
+            conn.execute("UPDATE consultations SET discharge_date='2026-03-10' WHERE id=2")
+        with main.app.test_request_context('/ward?tab=away'):
+            rows = main._ward_away_report()['rows']
+        returned = next(r for r in rows if r['away_id'] == 4)
+        self.assertEqual(returned['away_days_inclusive'], 1)
+        self.assertEqual(returned['stay_days_inclusive'], 69)
+        for query in ('away_gender=M', 'away_age_min=71', 'away_age_max=69', 'away_hospital=없는기관',
+                      'away_dx=없는병명', 'away_number=9', 'away_days_min=99999', 'away_dday_max=-99999'):
+            with main.app.test_request_context('/ward?tab=away&' + query):
+                self.assertEqual(main._ward_away_report()['rows'], [], query)
+        for query in ('away_number=0', 'away_age_min=-1', 'away_age_min=80&away_age_max=70',
+                      'away_days_min=oops', 'away_gender=bad', 'away_dday_max=1.5'):
+            self.assertEqual(self.client.get('/ward?tab=away&' + query).status_code, 400, query)
+
 
 if __name__ == '__main__':
     unittest.main()

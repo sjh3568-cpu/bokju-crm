@@ -3948,7 +3948,9 @@ def lifecycle_board():
 
 def _ward_away_report():
     filters = {key: (request.args.get(key) or "").strip()
-               for key in ("away_from", "away_to", "away_type", "away_status", "away_q")}
+               for key in ("away_from", "away_to", "away_type", "away_status", "away_q",
+                           "away_gender", "away_age_min", "away_age_max", "away_hospital",
+                           "away_dx", "away_number", "away_days_min", "away_dday_max")}
     for key in ("away_from", "away_to"):
         if filters[key]:
             try:
@@ -3961,6 +3963,26 @@ def _ward_away_report():
         abort(400)
     if filters["away_status"] not in ("", "open", "returned"):
         abort(400)
+    if filters["away_gender"] not in ("", "M", "F", "U"):
+        abort(400)
+    numbers = {}
+    for key in ("away_age_min", "away_age_max", "away_number", "away_days_min", "away_dday_max"):
+        try:
+            numbers[key] = int(filters[key]) if filters[key] else None
+        except ValueError:
+            abort(400, description="나이·차수·기간은 정수로 입력하세요.")
+        if key != "away_dday_max" and numbers[key] is not None and numbers[key] < (1 if key == "away_number" else 0):
+            abort(400, description="나이·기간은 0 이상, 외진 차수는 1 이상으로 입력하세요.")
+    if numbers["away_age_min"] is not None and numbers["away_age_max"] is not None and numbers["away_age_min"] > numbers["away_age_max"]:
+        abort(400, description="최소 나이가 최대 나이보다 큽니다.")
+
+    def inclusive_days(start, end):
+        try:
+            days = (date.fromisoformat(str(end)[:10]) - date.fromisoformat(str(start)[:10])).days
+            return days + 1 if days >= 0 else None
+        except ValueError:
+            return None
+
     rows = models.list_away_records(date_from=filters["away_from"], date_to=filters["away_to"],
                                    event_type=filters["away_type"])
     # 검색/복귀 상태로 분모가 달라지지 않도록 기간·유형 기준 통계를 먼저 계산한다.
@@ -3984,6 +4006,30 @@ def _ward_away_report():
         if filters["away_q"].casefold() not in search.casefold():
             continue
         row["discharge_watch"] = _discharge_watch(row)
+        row["stay_days_inclusive"] = inclusive_days(
+            row.get("actual_admission_date") or row.get("admission_date"),
+            row.get("discharge_date") or date.today().isoformat())
+        row["away_days_inclusive"] = inclusive_days(
+            row.get("event_date"), row.get("returned_at") or date.today().isoformat())
+        if filters["away_gender"] and (row.get("gender") or "U") != filters["away_gender"]:
+            continue
+        if any(filters[key].casefold() not in str(value or "").casefold() for key, value in (
+            ("away_hospital", row.get("hospital")),
+            ("away_dx", " ".join(row["dx_primary"] + row["dx_secondary"])))):
+            continue
+        age = row.get("patient_age")
+        if numbers["away_age_min"] is not None and (age is None or age < numbers["away_age_min"]):
+            continue
+        if numbers["away_age_max"] is not None and (age is None or age > numbers["away_age_max"]):
+            continue
+        if numbers["away_number"] is not None and row.get("away_number") != numbers["away_number"]:
+            continue
+        if numbers["away_days_min"] is not None and (row["away_days_inclusive"] is None or row["away_days_inclusive"] < numbers["away_days_min"]):
+            continue
+        if numbers["away_dday_max"] is not None:
+            watch = row["discharge_watch"]
+            if row.get("discharge_date") or not watch or watch["days_left"] > numbers["away_dday_max"]:
+                continue
         selected.append(row)
     return dict(rows=selected, stats=stats, transfers=transfers, monthly=monthly, filters=filters)
 

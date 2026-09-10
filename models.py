@@ -5403,10 +5403,22 @@ def list_away_records(*, date_from=None, date_to=None, event_type=None):
     conn = get_db()
     try:
         rows = conn.execute(f"""
+            WITH numbered_away AS (
+                SELECT ae.*, ROW_NUMBER() OVER (
+                    PARTITION BY c.patient_id
+                    ORDER BY (ae.event_date IS NULL OR ae.event_date = ''),
+                             ae.event_date, COALESCE(ae.event_time, ''), ae.id
+                ) AS away_number
+                FROM admission_events ae
+                JOIN consultations c ON c.id = ae.consultation_id
+                WHERE ae.event_type IN ('응급전원', '모병원 외래치료')
+            )
             SELECT c.*, p.name AS patient_name, p.gender,
                    ae.id AS away_id, ae.event_type, ae.event_date,
-                   ae.event_time, ae.hospital, ae.memo, ae.returned_at
-            FROM admission_events ae
+                   ae.event_time, ae.hospital, ae.memo, ae.returned_at,
+                   CASE WHEN ae.event_date IS NOT NULL AND ae.event_date != ''
+                        THEN ae.away_number END AS away_number
+            FROM numbered_away ae
             JOIN consultations c ON c.id = ae.consultation_id
             JOIN patients p ON p.id = c.patient_id
             WHERE {' AND '.join(clauses)}
