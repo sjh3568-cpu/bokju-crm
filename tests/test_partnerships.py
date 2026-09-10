@@ -221,6 +221,9 @@ class CooperationTests(unittest.TestCase):
         self.assertIsNotNone(main.authenticate('testadmin','new-password'))
         self.assertEqual(self.scalar("SELECT COUNT(*) FROM audit_log WHERE action='change_own_password'"),1)
 
+    # 통합 인박스는 2026-09-10부터 INBOX_ENABLED=0으로 숨김. 라우트 자체는 남아 있어
+    # 되살릴 때를 대비해 플래그를 켠 상태로 회귀 검증을 유지한다.
+    @patch.object(main,'INBOX_ENABLED',True)
     def test_unified_inbox_create_filter_assign_and_complete(self):
         page=self.client.get('/inbox')
         self.assertEqual(page.status_code,200)

@@ -15,7 +15,7 @@
             <div class="header-inner">
                 <a href="/" class="logo">복주 상담실 CRM</a>
                 {% if current_user %}
-                <div class="command-status" aria-label="오늘의 운영 현황"><span>{{ today_header }}</span><a href="/?schedule_date={{ today_str }}#admission-schedule">입원 <b>{{ command_metrics.admit }}</b></a><a href="/ward">퇴원 <b>{{ command_metrics.discharge }}</b></a><a href="/inbox">미처리 <b>{{ command_metrics.pending }}</b></a></div>
+                <div class="command-status" aria-label="오늘의 운영 현황"><span>{{ today_header }}</span><a href="/?schedule_date={{ today_str }}#admission-schedule">입원 <b>{{ command_metrics.admit }}</b></a><a href="/ward">퇴원 <b>{{ command_metrics.discharge }}</b></a><a href="{{ inbox_url }}">미처리 <b>{{ command_metrics.pending }}</b></a></div>
                 <div class="global-search"><form id="global-search-form" action="/consultations"><span aria-hidden="true">⌕</span><input id="global-search-input" name="q" placeholder="메뉴·환자·연락처·상담·협력기관 검색" autocomplete="off" aria-label="통합검색" aria-expanded="false"><kbd>/</kbd></form><div id="global-search-results" class="global-search-results" hidden></div></div>
                 <nav class="main-nav" aria-label="주 메뉴">
                     {% if P.get('dashboard',0) >= 1 %}
@@ -29,7 +29,9 @@
                         </div>
                     </div>
                     {% endif %}
+                    {% if inbox_enabled %}
                     <a href="/inbox" class="nav-inbox {% if request.path.startswith('/inbox') %}active{% endif %}"><span class="nav-icon">📥</span>통합 인박스{% if inbound_badge %}<span class="nav-notice-new">{{ inbound_badge }}</span>{% endif %}</a>
+                    {% endif %}
                     {% if P.get('consult',0) >= 3 %}
                     <a href="/consult/new" {% if request.path == '/consult/new' %}class="active"{% endif %}><span class="nav-icon nav-icon-new">✍️</span>새 상담</a>
                     {% endif %}
@@ -93,7 +95,7 @@
         <div class="header-popover-head alert-center-head"><span class="alert-center-title"><i><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></i><span><strong>통합 알림센터</strong><small>확인이 필요한 업무를 한곳에서 봅니다</small></span></span><button type="button" data-popover-close aria-label="닫기">✕</button></div>
         <div class="alert-center-list">
             {% if account_preferences.get('notify_todo',true) %}<a href="/todos"><span><i class="alert-kind todo">✓</i><em>To-Do List·공유 일정<small>개인 일정과 공유받은 업무</small></em></span><b>{{ todo_badge or 0 }}</b></a>{% endif %}
-            {% if account_preferences.get('notify_inbound',true) %}<a href="/inbox"><span><i class="alert-kind inbound">↙</i><em>미처리 상담 문의<small>확인하지 않은 신규 문의</small></em></span><b id="alert-inbound-count">{{ inbound_badge or 0 }}</b></a>{% endif %}
+            {% if account_preferences.get('notify_inbound',true) %}<a href="{{ inbox_url }}"><span><i class="alert-kind inbound">↙</i><em>미처리 상담 문의<small>확인하지 않은 신규 문의</small></em></span><b id="alert-inbound-count">{{ inbound_badge or 0 }}</b></a>{% endif %}
             <a href="/notices"><span><i class="alert-kind notice">!</i><em>필수 공지사항<small>확인 서명이 필요한 공지</small></em></span><b>{{ 1 if has_unread_required_notice else 0 }}</b></a>
             {% if current_user.role == 'admin' %}<a href="/admin/password-reset"><span><i class="alert-kind account">●</i><em>비밀번호 초기화 요청<small>관리자 처리가 필요한 계정</small></em></span><b>{{ password_reset_badge or 0 }}</b></a>{% endif %}
         </div>
@@ -428,7 +430,7 @@
                     if (window.toast) toast(title + ' — ' + body, m.blacklist ? 'error' : 'info');
                     if (supportsNotification && Notification.permission === 'granted') {
                         var n = new Notification(title, { body: body, tag: 'bokju-inbound-' + m.id });
-                        n.onclick = function () { window.focus(); location.href = '/inbox'; };
+                        n.onclick = function () { window.focus(); location.href = '{{ inbox_url }}'; };
                     }
                 });
                 markSeen(done);

@@ -80,7 +80,7 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
 | `GET /ward` | **재원 관리** — 외진 중 · 재원 환자 · 입원일 미확정 3섹션 |
 | `POST /api/consult/<id>/admit` | 입원일 확정 (이 시점부터 재원 명부 + D-day 시작) |
 | `GET /lifecycle` | → `/ward` 리다이렉트 (구 생애주기 보드는 `/lifecycle/board`) |
-| `GET /inbox` | 통합 인박스 (재연락·인바운드·입원/퇴원 임박) |
+| `GET /inbox` | 통합 인박스 (재연락·인바운드·입원/퇴원 임박) — **2026-09-10 보류·숨김, `INBOX_ENABLED=0`이면 404** |
 | `GET /sms` `GET /sms/templates` | 문자 전송 / 템플릿 관리 |
 | `POST /api/communication` `POST /api/webhook/kakao` | 커뮤니케이션 기록 / 카카오 인바운드 |
 | `POST /api/patient/<id>/{stage,blacklist}` `POST /api/patient/<id>/lifecycle/event` | 생애주기·블랙리스트 |
@@ -229,6 +229,10 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
   4개 소스를 시간순 병합. 환자 상세 페이지에 표시.
 - **`/inbox` 통합 인박스** — 재연락 대기(상담요청)·미처리 인바운드·입원안내 예정(D-3)·퇴원 예정을
   채널 무관하게 한곳에. 상담사의 '오늘 할 일'.
+  **2026-09-10부터 기능 보류로 숨김** — `INBOX_ENABLED`(기본 0)이 0이면 좌측 메뉴·통합검색·
+  시작화면 선택지에서 빠지고 라우트는 404. 코드·데이터·회귀테스트는 그대로 두었으니
+  `.env`에 `INBOX_ENABLED=1`만 넣으면 되살아난다. 그동안 미처리 인바운드·재연락은
+  대시보드 `/#inbound` 카드에서 처리하고, 배지·알림 링크도 그쪽을 가리킨다.
 - **카카오톡 채널(오픈빌더 챗봇) → `/api/webhook/kakao/skill`** — 병원 채널의 오픈빌더
   상담신청 폼(성함·연락처·연락가능시간·거주지·환자나이·상담내용)에 스킬을 붙이면,
   제출 값이 이 엔드포인트로 와서 communications(카카오/in)로 등록되고 사용자에겐

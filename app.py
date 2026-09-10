@@ -118,6 +118,14 @@ _REMEMBER_COOKIE = "bokju_remember"
 _REMEMBER_DAYS = max(1, int(os.getenv("AUTO_LOGIN_DAYS", "30")))
 _remember_serializer = URLSafeTimedSerializer(app.secret_key, salt="bokju-auto-login-v1")
 
+# 통합 인박스(/inbox) — 2026-09-10 기능 보류로 기본 숨김.
+# 끄면 좌측 메뉴·통합검색·시작화면 선택지에서 사라지고 라우트는 404가 된다.
+# 데이터(옴니채널 커뮤니케이션)와 대시보드 '미처리 인바운드' 카드는 그대로 살아 있어
+# 미처리 문의는 대시보드(/#inbound)에서 계속 처리한다. 되살리려면 .env에 INBOX_ENABLED=1.
+INBOX_ENABLED = os.getenv("INBOX_ENABLED", "0") == "1"
+# 인박스를 숨긴 동안 미처리 배지·알림은 대시보드 인바운드 카드로 보낸다.
+INBOX_URL = "/inbox" if INBOX_ENABLED else "/#inbound"
+
 _db_initialized = False
 # 다중 스레드(waitress) 환경에서 첫 요청 여러 건이 동시에 들어오면 init_db()가
 # 겹쳐 돌아 ALTER TABLE·1회성 마이그레이션이 중복 실행된다. 락으로 한 번만 돌린다.
@@ -396,6 +404,8 @@ def _inject_globals():
         "has_unread_required_notice": bool(pending_notice),
         "password_reset_badge": password_reset_badge,
         "inbound_badge": inbound_badge,
+        "inbox_enabled": INBOX_ENABLED,
+        "inbox_url": INBOX_URL,
         "command_metrics": command_metrics,
         "account_preferences": account_preferences,
         "today_str": date.today().isoformat(),   # 날짜 입력 기본값(외진 기록 등)
@@ -462,7 +472,6 @@ def global_search():
     items=[]
     menu_items=[
         ('dashboard','대시보드','오늘 브리핑·통합 달력·입원 현황','/'),
-        ('dashboard','통합 상담 인박스','신규 문의·미배정·콜백·처리 현황','/inbox'),
         ('consult','상담목록','환자 상담 검색·조회','/consultations'),
         ('consult','새 상담 등록','신규 환자 상담 접수','/consult/new'),
         ('ward','재원 관리','재원 현황·입원 대기·회복기 관리','/ward'),
@@ -1334,6 +1343,8 @@ def login_view():
                        'partners_feed':'/partners?view=feed','stats_hospitals':'/stats/hospitals',
                        'todos':'/todos','sms':'/sms','stats':'/stats','report':'/report/monthly','notices':'/notices'}
         start_key = user.get('start_page') or 'dashboard'
+        if start_key == 'inbox' and not INBOX_ENABLED:
+            start_key = 'dashboard'
         allowed = {'default':'dashboard','dashboard':'dashboard','consultations':'consult','ward':'ward','partners':'partners',
                    'inbox':'dashboard','consult_new':'consult','ward_waiting':'ward','ward_trend':'ward','partners_feed':'partners',
                    'stats_hospitals':'stats','todos':'dashboard','sms':'sms','stats':'stats','report':'report','notices':'dashboard'}
@@ -1384,6 +1395,8 @@ def set_start_page():
              'stats_hospitals':('stats','/stats/hospitals'),'todos':('dashboard','/todos'),
              'sms':('sms','/sms'),'stats':('stats','/stats'),'report':('report','/report/monthly'),
              'notices':('dashboard','/notices')}
+    if not INBOX_ENABLED:
+        options.pop('inbox',None)
     required_level=PERM_CREATE if key=='consult_new' else PERM_VIEW
     if key not in options or menu_level(current_user(),options[key][0])<required_level:
         abort(400)
@@ -4772,6 +4785,7 @@ def api_blacklist_check():
 @app.route('/inbox',methods=['GET','POST'])
 @login_required
 def unified_inbox():
+    if not INBOX_ENABLED: abort(404)
     if menu_level(current_user(),'dashboard')<PERM_VIEW: abort(403)
     token=session.setdefault('inbox_csrf',secrets.token_hex(32))
     if request.method=='POST':
