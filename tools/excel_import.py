@@ -679,6 +679,12 @@ def import_sheet(wb, sheet_name, *, apply_changes=False, schema_hint=None, skip_
     # outlier: 25.3 / 25.6 처럼 row 2에 필드 헤더가 온 경우
     header_row = rows_top[header_idx - 1]
     headers_idx = header_index_map(header_row)
+    # 헤더가 2줄인 시트가 있다. 위 줄은 '환자 정보'·'보호자 정보' 같은 묶음 이름인데,
+    # '입원일 / 비고'처럼 아래 줄이 비어 있고 위 줄에만 이름이 있는 칸도 있다.
+    # 그 칸은 아래 줄만 보면 이름이 없어 통째로 무시됐다 — 입원일이 안 들어온 원인.
+    if header_idx >= 2:
+        for name, column in header_index_map(rows_top[header_idx - 2]).items():
+            headers_idx.setdefault(name, column)
     data_start_row = header_idx + 1  # 헤더 다음 행이 데이터 시작
 
     report = {
