@@ -6,10 +6,11 @@
 알리고 어댑터를 먼저 구현. 다른 발송사는 `_PROVIDERS`에 함수 하나만 추가한다.
 
 .env
-  SMS_PROVIDER   발송사 키 (`aligo`). 비우면 manual 모드.
-  SMS_API_KEY    발송사 API 키
-  SMS_API_USER   발송사 계정 ID (알리고 user_id 등, 발송사에 따라 불필요)
+  SMS_PROVIDER   발송사 키 (`ppurio` | `aligo`). 비우면 manual 모드.
+  SMS_API_KEY    발송사 API 키 (뿌리오: 연동관리의 '연동 개발 인증키')
+  SMS_API_USER   발송사 계정 ID (뿌리오 계정, 알리고 user_id)
   SMS_SENDER     사전 등록된 발신번호 (병원 대표번호 등)
+  SMS_API_BASE   발송사 API 호스트 재정의 (선택. 뿌리오 기본 https://message.ppurio.com)
   SMS_TEST_TO    테스트 전환 번호 — 채워져 있으면 **모든 문자가 이 번호로만** 간다.
                  실제 보호자에게 나가지 않으니 연동 검증 중에는 반드시 채울 것.
 
@@ -155,6 +156,53 @@ def _send_aligo(receiver: str, body: str, msg_type: str, title: str | None) -> d
     }
 
 
+def _send_ppurio(receiver: str, body: str, msg_type: str, title: str | None) -> dict:
+    """뿌리오(다우기술) 문자 API https://www.ppurio.com/send-api/guide
+    1) POST /v1/token — Authorization: Basic base64("계정:인증키") → {"token","type","expired"}
+    2) POST /v1/message — Bearer 토큰, JSON → {"code":1000,"description","messageKey"}
+    토큰은 24시간 유효하지만 발송 빈도가 낮아 매번 새로 받는다(캐시 없음).
+    사전 조건: 기업회원 전환, 발신번호 등록, **연동 IP 등록**(NAS 공인 IP), 초당 15회 제한.
+    """
+    import base64
+    base = (os.getenv("SMS_API_BASE") or "https://message.ppurio.com").rstrip("/")
+    account = os.getenv("SMS_API_USER") or ""
+    basic = base64.b64encode(f"{account}:{os.getenv('SMS_API_KEY')}".encode()).decode()
+    t = requests.post(f"{base}/v1/token", headers={"Authorization": f"Basic {basic}"},
+                      timeout=_TIMEOUT)
+    t.raise_for_status()
+    token = t.json().get("token")
+    if not token:
+        return {"ok": False, "error": f"뿌리오 토큰 발급 실패: {t.text[:200]}", "provider_msg_id": None}
+
+    payload = {
+        "account": account,
+        "messageType": msg_type,
+        "content": body,
+        "from": normalize_phone(os.getenv("SMS_SENDER")),
+        "duplicateFlag": "N",
+        "targetCount": 1,
+        "targets": [{"to": receiver}],
+        "refKey": f"bokju-{os.urandom(6).hex()}",
+    }
+    if msg_type == "LMS":
+        payload["subject"] = (title or "복주회복병원 안내")[:30]
+    r = requests.post(f"{base}/v1/message", json=payload,
+                      headers={"Authorization": f"Bearer {token}"}, timeout=_TIMEOUT)
+    # 4xx도 본문에 code/description이 실려 오므로 raise 대신 파싱한다.
+    try:
+        res = r.json()
+    except ValueError:
+        return {"ok": False, "error": f"뿌리오 HTTP {r.status_code}: {r.text[:200]}",
+                "provider_msg_id": None}
+    ok = str(res.get("code")) == "1000"
+    return {
+        "ok": ok,
+        "error": None if ok else f"뿌리오 {res.get('code')}: {res.get('description')}",
+        "provider_msg_id": res.get("messageKey"),
+    }
+
+
 _PROVIDERS = {
+    "ppurio": _send_ppurio,
     "aligo": _send_aligo,
 }

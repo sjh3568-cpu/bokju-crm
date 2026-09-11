@@ -96,6 +96,62 @@ class SendSmsTests(unittest.TestCase):
         self.assertIn("연결 실패", r["error"])
 
 
+class PpurioTests(unittest.TestCase):
+    ENV = {"SMS_PROVIDER": "ppurio", "SMS_API_KEY": "secret", "SMS_API_USER": "bokju",
+           "SMS_SENDER": "054-550-1700"}
+
+    class _Resp:
+        def __init__(self, payload, status=200, text=""):
+            self._p, self.status_code, self.text = payload, status, text or str(payload)
+        def raise_for_status(self): pass
+        def json(self):
+            if self._p is None: raise ValueError("no json")
+            return self._p
+
+    def test_token_then_message(self):
+        seq = [self._Resp({"token": "tok", "type": "Bearer", "expired": "20260912000000"}),
+               self._Resp({"code": 1000, "description": "성공", "messageKey": "K" * 33})]
+        with patch.dict(os.environ, self.ENV, clear=True), \
+             patch.object(sms.requests, "post", side_effect=seq) as post:
+            r = sms.send_sms("010-1111-2222", "가" * 60)
+        self.assertEqual(r["status"], "sent")
+        self.assertEqual(r["provider_msg_id"], "K" * 33)
+        tok_call, msg_call = post.call_args_list
+        self.assertEqual(tok_call.args[0], "https://message.ppurio.com/v1/token")
+        self.assertTrue(tok_call.kwargs["headers"]["Authorization"].startswith("Basic "))
+        self.assertEqual(msg_call.args[0], "https://message.ppurio.com/v1/message")
+        self.assertEqual(msg_call.kwargs["headers"]["Authorization"], "Bearer tok")
+        body = msg_call.kwargs["json"]
+        self.assertEqual(body["messageType"], "LMS")
+        self.assertEqual(body["from"], "0545501700")
+        self.assertEqual(body["targets"], [{"to": "01011112222"}])
+        self.assertEqual(body["targetCount"], 1)
+        self.assertIn("subject", body)
+
+    def test_api_base_override(self):
+        seq = [self._Resp({"token": "tok"}), self._Resp({"code": 1000, "messageKey": "k"})]
+        with patch.dict(os.environ, {**self.ENV, "SMS_API_BASE": "https://example.test/"}, clear=True), \
+             patch.object(sms.requests, "post", side_effect=seq) as post:
+            sms.send_sms("01011112222", "안녕")
+        self.assertEqual(post.call_args_list[0].args[0], "https://example.test/v1/token")
+
+    def test_token_failure(self):
+        with patch.dict(os.environ, self.ENV, clear=True), \
+             patch.object(sms.requests, "post", return_value=self._Resp({"code": 4000}, text="denied")):
+            r = sms.send_sms("01011112222", "안녕")
+        self.assertEqual(r["status"], "failed")
+        self.assertIn("토큰", r["error"])
+
+    def test_message_error_code(self):
+        seq = [self._Resp({"token": "tok"}),
+               self._Resp({"code": 4001, "description": "발신번호 미등록"}, status=400)]
+        with patch.dict(os.environ, self.ENV, clear=True), \
+             patch.object(sms.requests, "post", side_effect=seq):
+            r = sms.send_sms("01011112222", "안녕")
+        self.assertEqual(r["status"], "failed")
+        self.assertIn("발신번호 미등록", r["error"])
+
+
 class SendApiTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
