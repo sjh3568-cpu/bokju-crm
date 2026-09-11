@@ -5712,7 +5712,9 @@ def sms_compose():
         preselect=preselect, log=models.list_sms_log(200, date_from=date_from, date_to=date_to),
         date_from=date_from, date_to=date_to,
         placeholders=SMS_PLACEHOLDERS,
+        gateway=sms_gateway.gateway_info(),
         gateway_ready=sms_gateway.gateway_configured(),
+        sms_max_bytes=sms_gateway.SMS_MAX_BYTES, lms_max_bytes=sms_gateway.LMS_MAX_BYTES,
         back_url=back_url, back_label=back_label,
     )
 
@@ -5785,11 +5787,18 @@ def api_sms_send():
     if not to_phone or not body:
         return jsonify({"error": "수신 번호와 본문이 필요합니다."}), 400
 
-    status, error = "manual", None
+    msg_type, nbytes = sms_gateway.message_type(body)
+    if msg_type == "TOO_LONG":
+        return jsonify({"error": f"본문이 {nbytes}바이트 — 장문(LMS) 한도 "
+                                 f"{sms_gateway.LMS_MAX_BYTES}바이트를 넘습니다."}), 400
+
+    status, error, provider, provider_msg_id, sent_to = "manual", None, None, None, None
     if sms_gateway.gateway_configured():
         result = sms_gateway.send_sms(to_phone, body)
-        status = "sent" if result.get("ok") else "failed"
-        error = result.get("error")
+        status, error = result["status"], result.get("error")
+        msg_type = result.get("msg_type") or msg_type
+        provider, provider_msg_id = sms_gateway.provider_name(), result.get("provider_msg_id")
+        sent_to = result.get("sent_to")
 
     sid = models.log_sms(
         consultation_id=payload.get("consultation_id"),
@@ -5798,14 +5807,17 @@ def api_sms_send():
         to_name=(payload.get("to_name") or "").strip() or None,
         to_phone=to_phone, body=body, status=status,
         sent_by=g.user.get("display_name"),
+        msg_type=msg_type, provider=provider, provider_msg_id=provider_msg_id,
+        sent_to=sent_to, error=error,
     )
     models.log_audit(
         user_id=g.user["id"], username=g.user["username"],
         action="send_sms", target_type="consultation",
         target_id=payload.get("consultation_id"),
-        detail=f"{to_phone} [{status}]", ip=request.remote_addr,
+        detail=f"{to_phone} [{status}/{msg_type}]", ip=request.remote_addr,
     )
-    return jsonify({"ok": True, "id": sid, "status": status, "error": error})
+    return jsonify({"ok": True, "id": sid, "status": status, "error": error,
+                    "msg_type": msg_type, "bytes": nbytes, "sent_to": sent_to})
 
 
 # ───────────────────── API: 자동완성 ─────────────────────

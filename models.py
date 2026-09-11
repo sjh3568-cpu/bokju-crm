@@ -700,6 +700,14 @@ def init_db():
         "resolved_at": "DATETIME",
     })
     conn.execute("CREATE INDEX IF NOT EXISTS idx_comm_assignee ON communications(assigned_user_id, status)")
+    # 문자 게이트웨이 연동(2026-09-11) — 발송사 응답을 이력에 남긴다.
+    _ensure_columns(conn, "sms_log", {
+        "msg_type": "TEXT",          # SMS | LMS
+        "provider": "TEXT",          # aligo 등. manual이면 NULL
+        "provider_msg_id": "TEXT",   # 발송사 접수 ID — 전달 결과 조회용
+        "sent_to": "TEXT",           # 실제 나간 번호 (SMS_TEST_TO 전환 시 to_phone과 다름)
+        "error": "TEXT",
+    })
     # 요양원(노인의료복지시설) 별도 마스터 — 보건복지부·국민건강보험공단 데이터.
     # 자동완성·정식명 강제는 병원과 동일 룰을 공유하지만 마스터는 분리.
     conn.execute("""
@@ -5305,14 +5313,18 @@ def delete_sms_template(tid: int):
 
 def log_sms(*, consultation_id=None, patient_id=None, template_id=None,
             to_name=None, to_phone=None, body=None, status="manual",
-            sent_by=None) -> int:
-    """문자 발송 이력 1건 기록. status='manual'(휴대폰 문자앱)|'sent'(게이트웨이)|'failed'."""
+            sent_by=None, msg_type=None, provider=None, provider_msg_id=None,
+            sent_to=None, error=None) -> int:
+    """문자 발송 이력 1건 기록.
+    status='manual'(휴대폰 문자앱)|'sent'(게이트웨이)|'test'(SMS_TEST_TO로 전환 발송)|'failed'."""
     conn = get_db()
     cur = conn.execute(
         """INSERT INTO sms_log
-           (consultation_id, patient_id, template_id, to_name, to_phone, body, status, sent_by)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (consultation_id, patient_id, template_id, to_name, to_phone, body, status, sent_by),
+           (consultation_id, patient_id, template_id, to_name, to_phone, body, status, sent_by,
+            msg_type, provider, provider_msg_id, sent_to, error)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (consultation_id, patient_id, template_id, to_name, to_phone, body, status, sent_by,
+         msg_type, provider, provider_msg_id, sent_to, error),
     )
     sid = cur.lastrowid
     conn.commit()

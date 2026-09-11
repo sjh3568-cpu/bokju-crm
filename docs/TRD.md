@@ -167,7 +167,7 @@
 - 전송 데이터는 처리 목적에 필요한 최소한으로 제한
 
 ### 6.4 SMS
-`sms.py`에 게이트웨이 인터페이스만 있고 현재는 `manual` 모드(발송 이력 기록 + `sms:` 링크). 발송사 확정 시 `send_sms()` 구현만으로 자동 발송이 켜진다.
+`sms.py` — 발송사 무관 공통부(EUC-KR 바이트 기준 SMS 90/LMS 2000 자동 판별, 휴대폰 번호 정규화, `SMS_TEST_TO` 테스트 전환)와 발송사 어댑터(`_PROVIDERS`, 현재 `aligo`). `.env`에 `SMS_PROVIDER/SMS_API_KEY/SMS_SENDER`가 없으면 `manual` 모드(발송 이력 기록 + `sms:` 링크). 다른 발송사는 `(receiver, body, msg_type, title) → {ok, error, provider_msg_id}` 함수 하나를 `_PROVIDERS`에 등록하면 된다. `sms_log`에 `msg_type/provider/provider_msg_id/sent_to/error`를 남긴다(status: manual/sent/test/failed).
 
 ---
 
@@ -258,7 +258,8 @@ python tools/excel_import.py ... --all                                    # 전 
 | `KAKAO_WEBHOOK_TOKEN` / `HOMEPAGE_WEBHOOK_TOKEN` | 미설정 | 비면 해당 채널 503 |
 | `WEBHOOK_ALLOW_IPS` | 미설정 | 쉼표 구분 화이트리스트 |
 | `IMAP_HOST/PORT/USER/PASS/FOLDER/POLL_SECONDS/FROM_FILTER` | 미설정 | 셋 이상 설정돼야 브릿지 활성 |
-| `SMS_API_KEY` / `SMS_SENDER` | 미설정 | 비면 manual 모드 |
+| `SMS_PROVIDER` / `SMS_API_KEY` / `SMS_API_USER` / `SMS_SENDER` | 미설정 | 비면 manual 모드. 발송사 `aligo` 지원 |
+| `SMS_TEST_TO` | 미설정 | 채우면 모든 문자가 이 번호로만 발송(연동 검증용) |
 | `CLAUDE_MODEL_INSIGHT` | `claude-sonnet-5` | 구조화 출력 지원 모델이어야 함 |
 
 ---

@@ -13,7 +13,17 @@
 <div class="card sms-notice">
     ℹ <strong>문자 발송사 미설정</strong> — <strong>전송</strong>을 누르면 발송 이력이 기록되고
     직원 휴대폰 문자 앱이 내용이 채워진 채 열립니다(전송 버튼만 누르면 됨).
-    발송사 연동(.env <code>SMS_API_KEY</code>) 후에는 클릭 한 번으로 자동 전송됩니다.
+    발송사 연동(.env <code>SMS_PROVIDER</code>·<code>SMS_API_KEY</code>·<code>SMS_SENDER</code>) 후에는 클릭 한 번으로 자동 전송됩니다.
+</div>
+{% elif gateway.test_to %}
+<div class="card sms-notice sms-notice-test">
+    🧪 <strong>테스트 발송 모드</strong> — 발송사 <code>{{ gateway.provider }}</code> 연동됨. 수신 번호와 상관없이
+    <strong>모든 문자가 {{ gateway.test_to }}로만</strong> 갑니다(본문 머리에 원래 번호 표기). 보호자에게는 나가지 않습니다.
+    실제 발송으로 바꾸려면 .env의 <code>SMS_TEST_TO</code>를 비우세요.
+</div>
+{% else %}
+<div class="card sms-notice">
+    ✅ 발송사 <code>{{ gateway.provider }}</code> 연동 — 발신번호 <strong>{{ gateway.sender }}</strong>로 <strong>전송</strong> 즉시 자동 발송됩니다.
 </div>
 {% endif %}
 
@@ -52,7 +62,8 @@
             <h3>3. 문자 내용</h3>
             <textarea id="sms-body" rows="9" placeholder="템플릿을 선택하거나 직접 입력하세요."></textarea>
             <div class="sms-foot">
-                <span class="muted" id="sms-count">0자</span>
+                <span class="muted" id="sms-count" data-sms-max="{{ sms_max_bytes }}" data-lms-max="{{ lms_max_bytes }}"
+                      title="발송사 기준 바이트 — 한글 2, 영숫자 1. {{ sms_max_bytes }}바이트까지 단문(SMS), 그 이상은 장문(LMS)">0자</span>
                 <div style="display:flex; gap:8px">
                     <button type="button" class="btn btn-secondary btn-sm" id="sms-copy">복사</button>
                     <button type="button" class="btn btn-primary" id="sms-send">전송</button>
@@ -76,7 +87,7 @@
     {% if log %}
     <div class="tbl-wrap">
         <table class="tbl tbl-compact">
-            <thead><tr><th>일시</th><th>받는 분</th><th>번호</th><th>내용</th><th>상태</th><th>발송자</th></tr></thead>
+            <thead><tr><th>일시</th><th>받는 분</th><th>번호</th><th>내용</th><th>구분</th><th>상태</th><th>발송자</th></tr></thead>
             <tbody>
                 {% for s in log %}
                 <tr>
@@ -84,10 +95,13 @@
                     <td class="nowrap">{{ s.to_name or '' }}</td>
                     <td class="nowrap">{{ s.to_phone or '' }}</td>
                     <td class="sms-log-body" title="{{ s.body }}">{{ s.body }}</td>
+                    <td class="nowrap muted">{{ s.msg_type or '' }}</td>
                     <td class="nowrap">
                         {% if s.status == 'sent' %}<span class="badge" style="background:#dcfce7;color:#166534">발송</span>
-                        {% elif s.status == 'failed' %}<span class="badge" style="background:#fee2e2;color:#991b1b">실패</span>
+                        {% elif s.status == 'test' %}<span class="badge" style="background:#fef3c7;color:#92400e" title="실제 수신: {{ s.sent_to }}">테스트</span>
+                        {% elif s.status == 'failed' %}<span class="badge" style="background:#fee2e2;color:#991b1b" title="{{ s.error or '' }}">실패</span>
                         {% else %}<span class="badge" style="background:#f1f5f9;color:#475569">수동</span>{% endif %}
+                        {% if s.status == 'failed' and s.error %}<div class="sms-log-err">{{ s.error }}</div>{% endif %}
                     </td>
                     <td class="nowrap">{{ s.sent_by or '' }}</td>
                 </tr>
@@ -100,6 +114,10 @@
 
 <style>
 .sms-notice { background:#eff6ff; border-color:#bfdbfe; font-size:0.9em; }
+.sms-notice-test { background:#fffbeb; border-color:#fcd34d; }
+#sms-count.is-lms { color:#b45309; }
+#sms-count.is-over { color:var(--danger); font-weight:700; }
+.sms-log-err { font-size:0.74em; color:var(--danger); max-width:220px; white-space:normal; }
 .sms-layout { display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap; }
 .sms-side { flex:1 1 320px; display:flex; flex-direction:column; gap:12px; }
 .sms-main { flex:2 1 380px; }

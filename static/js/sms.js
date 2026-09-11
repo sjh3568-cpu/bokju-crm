@@ -29,9 +29,24 @@
         }
         return out;
     }
+    // 발송사 기준(EUC-KR) 바이트 근사 — 한글·기호 2, 영숫자 1. 정확한 판정은 서버가 한다.
+    const SMS_MAX = Number(countEl.dataset.smsMax) || 90;
+    const LMS_MAX = Number(countEl.dataset.lmsMax) || 2000;
+    function bodyBytes(text) {
+        let n = 0;
+        for (const ch of text) n += ch.charCodeAt(0) > 127 ? 2 : 1;
+        return n;
+    }
     function updateCount() {
-        const n = bodyEl.value.length;
-        countEl.textContent = n + '자 · ' + (n > 90 ? 'LMS' : 'SMS');
+        const text = bodyEl.value;
+        const b = bodyBytes(text);
+        let kind, cls = '';
+        if (b <= SMS_MAX) { kind = '단문(SMS)'; }
+        else if (b <= LMS_MAX) { kind = '장문(LMS)'; cls = 'is-lms'; }
+        else { kind = '한도 초과 — ' + LMS_MAX + '바이트까지'; cls = 'is-over'; }
+        countEl.textContent = text.length + '자 · ' + b + '/' + (b <= SMS_MAX ? SMS_MAX : LMS_MAX) + '바이트 · ' + kind;
+        countEl.className = 'muted ' + cls;
+        return b;
     }
     function applyConsult() {
         const c = currentConsult();
@@ -71,6 +86,7 @@
         const body = bodyEl.value.trim();
         if (!phone) { msgEl.className = 'sms-msg err'; msgEl.textContent = '수신 번호를 입력하세요.'; return; }
         if (!body) { msgEl.className = 'sms-msg err'; msgEl.textContent = '문자 내용을 입력하세요.'; return; }
+        if (bodyBytes(body) > LMS_MAX) { msgEl.className = 'sms-msg err'; msgEl.textContent = '본문이 장문(LMS) 한도를 넘습니다. 내용을 줄이세요.'; return; }
         const c = currentConsult();
         const payload = {
             to_phone: phone, body: body, to_name: nameEl.value.trim(),
@@ -81,8 +97,12 @@
         try {
             const res = await api.post('/api/sms/send', payload);
             if (res.status === 'sent') {
-                msgEl.className = 'sms-msg ok'; msgEl.textContent = '문자를 발송했습니다.';
+                msgEl.className = 'sms-msg ok'; msgEl.textContent = '문자를 발송했습니다. (' + (res.msg_type || '') + ')';
                 setTimeout(() => location.reload(), 900);
+            } else if (res.status === 'test') {
+                msgEl.className = 'sms-msg ok';
+                msgEl.textContent = '테스트 발송 — ' + (res.sent_to || '테스트 번호') + '로 보냈습니다. 보호자에게는 가지 않았습니다.';
+                setTimeout(() => location.reload(), 1500);
             } else if (res.status === 'failed') {
                 msgEl.className = 'sms-msg err';
                 msgEl.textContent = '발송 실패: ' + (res.error || '') + ' (이력은 기록됨)';
