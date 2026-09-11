@@ -5628,11 +5628,13 @@ def list_away_records(*, date_from=None, date_to=None, event_type=None):
                    ae.event_time, ae.hospital, ae.memo, ae.returned_at,
                    ae.return_room, ae.return_note, ae.readmission,
                    ae.return_outcome, ae.return_hospital,
+                   ep.admitted_at AS roster_admitted_at, ep.discharged_at AS roster_discharged_at,
                    CASE WHEN ae.event_date IS NOT NULL AND ae.event_date != ''
                         THEN ae.away_number END AS away_number
             FROM numbered_away ae
             JOIN consultations c ON c.id = ae.consultation_id
             JOIN patients p ON p.id = c.patient_id
+            LEFT JOIN admission_episodes ep ON ep.id = ae.episode_id
             WHERE {' AND '.join(clauses)}
             ORDER BY ae.event_date DESC, ae.id DESC
         """, values).fetchall()

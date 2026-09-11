@@ -4033,10 +4033,14 @@ def _ward_away_report():
                           ("patient_name", "hospital", "memo", "primary_diagnosis", "secondary_diagnosis", "diseases"))
         if filters["away_q"].casefold() not in search.casefold():
             continue
+        # 상담에 입원일이 없으면 원무 명부 회차의 입·퇴원일로 채운다 — 명부로만
+        # 적재된 환자는 상담 쪽 날짜가 비어 '재원일수 미확인'으로 나왔다.
+        row["admitted_on"] = (row.get("actual_admission_date") or row.get("roster_admitted_at")
+                              or row.get("admission_date") or None)
+        row["discharge_date"] = row.get("discharge_date") or row.get("roster_discharged_at") or None
         row["discharge_watch"] = _discharge_watch(row)
         row["stay_days_inclusive"] = inclusive_days(
-            row.get("actual_admission_date") or row.get("admission_date"),
-            row.get("discharge_date") or date.today().isoformat())
+            row["admitted_on"], row.get("discharge_date") or date.today().isoformat())
         row["away_days_inclusive"] = inclusive_days(
             row.get("event_date"), row.get("returned_at") or date.today().isoformat())
         if filters["away_gender"] and (row.get("gender") or "U") != filters["away_gender"]:
@@ -4649,7 +4653,7 @@ def ward_away_xlsx():
             c.get("event_type") or "", c.get("hospital") or "",
             ", ".join(c.get("dx_primary") or []), ", ".join(c.get("dx_secondary") or []),
             c.get("memo") or "",
-            c.get("actual_admission_date") or c.get("admission_date") or "",
+            c.get("admitted_on") or "",
             c.get("stay_days_inclusive") if c.get("stay_days_inclusive") is not None else "",
             dday, c.get("discharge_date") or watch.get("due_date") or "",
             "타 병원 전원" if c.get("transferred") else "복귀 완료" if c.get("returned_at") else "미복귀",

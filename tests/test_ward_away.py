@@ -140,6 +140,20 @@ class AwayManagementTests(unittest.TestCase):
         self.assertIn('안동병원', html)
         self.assertIn('타 병원 전원 1명 1건', html)
 
+    def test_admission_date_falls_back_to_roster_episode(self):
+        """상담에 입원일이 없어도 회차(원무 명부)의 입원일로 재원일수를 센다."""
+        with models.get_db() as conn:
+            conn.execute("UPDATE consultations SET actual_admission_date=NULL, admission_date=NULL WHERE id=1")
+            conn.execute("""INSERT INTO admission_episodes (patient_id, consultation_id, episode_no, status, admitted_at, roster_key)
+                            VALUES (1, 1, 1, 'admitted', '2026-01-10', 'r1')""")
+            eid = conn.execute("SELECT id FROM admission_episodes WHERE consultation_id=1").fetchone()[0]
+            conn.execute("UPDATE admission_events SET episode_id=? WHERE consultation_id=1", (eid,))
+        with main.app.test_request_context('/ward?tab=away&away_q=환자1'):
+            rows = main._ward_away_report()['rows']
+        self.assertTrue(rows)
+        self.assertTrue(all(r['admitted_on'] == '2026-01-10' for r in rows))
+        self.assertTrue(all(r['stay_days_inclusive'] is not None for r in rows))
+
     def test_return_persistence_validation_and_permissions(self):
         url = '/api/admission-event/2/return'
         self.login(1)
