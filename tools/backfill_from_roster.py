@@ -13,6 +13,11 @@
      actual_admission_date로. 상담일로부터 180일 넘게 뒤의 입원은 딴 회차로 보고 안 붙인다.
      상담에 딸린 회차(consultation_id 있는 것)의 admitted_at도 같이 맞춘다.
 
+  3) 미정 → 입원완료 승격 (--promote-undecided, 사용자 결정 2026-09-11) — 상담 상태가
+     비어 있는데(미정) 원무 명부에 **상담 후 30일 이내 입원**이 있으면 원무 기록을
+     믿고 admission_status='입원완료' + 입원일을 기록한다. 상담 시트에서 입원 여부를
+     안 고친 341건이 이 경우였다. 30일 넘는 건 다른 목적의 재입원일 수 있어 안 건드린다.
+
 UPDATE 전용 — 환자도 상담도 회차도 새로 만들지 않는다. 멱등이라 몇 번 돌려도 같다.
 import_admission_roster.py --apply 끝에 자동으로 한 번 돈다. 단독 실행:
 
@@ -36,6 +41,7 @@ from tools.import_admission_roster import to_date  # noqa: E402
 
 BEFORE_DAYS = 14    # 상담일보다 이만큼 앞선 입원까지는 같은 회차로 본다(입원 중 재상담)
 AFTER_DAYS = 180    # 상담일로부터 이보다 늦은 입원은 다른 회차
+PROMOTE_DAYS = 30   # 미정 상담을 입원완료로 승격할 때는 이 안에 입원한 것만
 
 
 def backfill_insurance(conn, *, overwrite=False, apply=False) -> dict:
@@ -118,13 +124,52 @@ def backfill_admission_dates(conn, *, apply=False) -> dict:
     return {"stats": stats, "samples": samples, "targets": len(targets)}
 
 
-def run(conn, *, apply=False, overwrite_insurance=False, quiet=False):
+def promote_undecided(conn, *, apply=False) -> dict:
+    """상태 미정 상담 + 상담 후 30일 내 명부 입원 → 입원완료로 승격."""
+    roster = defaultdict(set)
+    for pid, adm in conn.execute(
+            "SELECT patient_id, admitted_at FROM admission_episodes "
+            "WHERE roster_key IS NOT NULL AND admitted_at IS NOT NULL"):
+        d = to_date(adm)
+        if d:
+            roster[pid].add(d)
+    targets = conn.execute("""
+        SELECT id, patient_id, consult_date FROM consultations
+         WHERE (admission_status IS NULL OR admission_status = '')
+           AND consult_date IS NOT NULL
+         ORDER BY consult_date, id
+    """).fetchall()
+    stats = Counter()
+    for cid, pid, cd in targets:
+        consult_date = to_date(cd)
+        if consult_date is None or pid not in roster:
+            continue
+        after = sorted(d for d in roster[pid]
+                       if consult_date <= d <= consult_date + timedelta(days=PROMOTE_DAYS))
+        if not after:
+            if any(d > consult_date for d in roster[pid]):
+                stats["%d일 넘어 입원 — 보류" % PROMOTE_DAYS] += 1
+            continue
+        stats["입원완료로 승격"] += 1
+        if apply:
+            iso = after[0].isoformat()
+            conn.execute("UPDATE consultations SET admission_status = '입원완료', "
+                         "actual_admission_date = ? WHERE id = ?", (iso, cid))
+            conn.execute("""UPDATE admission_episodes
+                               SET admitted_at = ?, status = CASE WHEN discharged_at IS NULL THEN 'admitted' ELSE status END,
+                                   updated_at = CURRENT_TIMESTAMP
+                             WHERE consultation_id = ? AND admitted_at IS NULL""", (iso, cid))
+    return {"stats": stats, "targets": len(targets)}
+
+
+def run(conn, *, apply=False, overwrite_insurance=False, promote=False, quiet=False):
     ins = backfill_insurance(conn, overwrite=overwrite_insurance, apply=apply)
     adm = backfill_admission_dates(conn, apply=apply)
+    pro = promote_undecided(conn, apply=apply) if promote else None
     if apply:
         conn.commit()
     if quiet:
-        return ins, adm
+        return ins, adm, pro
     print("보험유형 — 명부에 보험이 있는 환자 %d명" % ins["patients"])
     for k, n in ins["stats"].most_common():
         print("  %-16s %5d명" % (k, n))
@@ -136,10 +181,15 @@ def run(conn, *, apply=False, overwrite_insurance=False, quiet=False):
         print("  %-28s %5d건" % (k, n))
     for cid, cd, dates in adm["samples"].get("기간 밖", []):
         print("    예) 상담 #%d %s — 명부 입원일 %s" % (cid, cd, ", ".join(d.isoformat() for d in dates)))
+    if pro is not None:
+        print()
+        print("미정 → 입원완료 승격 — 상태 없는 상담 %d건 중" % pro["targets"])
+        for k, n in pro["stats"].most_common():
+            print("  %-28s %5d건" % (k, n))
     if not apply:
         print()
         print("  ** dry-run이라 DB는 건드리지 않았다. 반영하려면 --apply **")
-    return ins, adm
+    return ins, adm, pro
 
 
 def main():
@@ -147,11 +197,14 @@ def main():
     ap.add_argument("--apply", action="store_true", help="실제로 DB에 쓴다 (없으면 dry-run)")
     ap.add_argument("--overwrite-insurance", action="store_true",
                     help="이미 값이 있는 보험유형도 최신 명부 값으로 덮는다")
+    ap.add_argument("--promote-undecided", action="store_true",
+                    help="상태 미정 상담에 30일 내 명부 입원이 있으면 입원완료로 바꾼다")
     args = ap.parse_args()
     if args.apply:
         backup_db("backfill_from_roster")
     conn = models.get_db()
-    run(conn, apply=args.apply, overwrite_insurance=args.overwrite_insurance)
+    run(conn, apply=args.apply, overwrite_insurance=args.overwrite_insurance,
+        promote=args.promote_undecided)
 
 
 if __name__ == "__main__":

@@ -433,7 +433,8 @@ def main():
         from tools.backfill_from_roster import run as backfill_run
         print()
         print("── 회차 → 환자·상담 백필 ──")
-        backfill_run(conn, apply=True)
+        # promote: 상담 상태가 미정인데 30일 내 명부 입원이 있으면 입원완료로 — 원무 기록이 기준(사용자 결정).
+        backfill_run(conn, apply=True, promote=True)
 
     patients_seen = len(resolved)
     matched = sum(1 for p in resolved.values() if p is not None)
