@@ -339,8 +339,7 @@
                             {% if dw and dw.state %}
                             <div class="discharge-watch">
                                 <span class="badge st-discharge-due{% if dw.days_left <= 7 %} dc-urgent{% endif %}" title="{{ dw.state }} — 유효 퇴원예정일 {{ dw.due_date }}{% if dw.days_left <= 7 %} · 임박 — 퇴원 계획 확인 필요{% endif %}">{% if dw.days_left < 0 %}{{ -dw.days_left }}일초과{% else %}D-{{ dw.days_left }}{% endif %}</span>
-                                <button type="button" class="dc-btn" data-act="complete" data-cid="{{ r.id }}" title="퇴원완료로 처리">퇴원</button>
-                                <button type="button" class="dc-btn" data-act="extend" data-cid="{{ r.id }}" data-due="{{ dw.due_date }}" title="입원연장 (퇴원예정일 변경)">연장</button>
+                                <span class="dc-actions"><button type="button" class="dc-btn" data-act="complete" data-cid="{{ r.id }}" title="퇴원완료로 처리">퇴원완료</button><button type="button" class="dc-btn" data-act="extend" data-cid="{{ r.id }}" data-due="{{ dw.due_date }}" title="입원연장 (퇴원예정일 변경)">입원연장</button></span>
                             </div>
                             {% endif %}
                         {% endif %}
@@ -354,11 +353,18 @@
                 <td class="nowrap admexp-cell">
                     {% set ax = r|admission_expiry %}
                     {% if ax %}
-                        {% if ax.billing_date %}
-                        <span class="admexp-row" title="회복기 수가(s005) 종료 · 입원 후 {{ ax.billing_days }}일"><span class="admexp-kind billing">회복기</span><span>{{ ax.billing_date|krdate_short }}</span>{% if ax.billing_left is not none and ax.billing_left >= 0 and ax.billing_left <= 30 %} <span class="admexp-dday urgent">D-{{ ax.billing_left }}</span>{% endif %}</span>
+                        {% set _full = [] %}
+                        {% if ax.billing_date %}{% if _full.append('회복기 수가(s005) 종료 ' ~ ax.billing_date ~ ' (입원 후 ' ~ ax.billing_days ~ '일)') %}{% endif %}{% endif %}
+                        {% if _full.append('전체 입원 만료 ' ~ ax.total_date ~ ' (입원 후 ' ~ ax.total_days ~ '일' ~ (' · 입원예정일 기준 추정' if ax.basis == 'planned' else '') ~ ')') %}{% endif %}
+                        {% if ax.is_extended_6m %}{% if _full.append('6개월 연장 종료 ' ~ ax.extension_date) %}{% endif %}{% endif %}
+                        {% set show_billing = ax.billing_date and ax.billing_left is not none and ax.billing_left >= 0 %}
+                        <span class="admexp-row" title="{{ _full|join(' / ') }}">
+                        {% if show_billing %}
+                            <span class="admexp-kind billing">회복기</span><span>{{ ax.billing_date|krdate_short }}</span>{% if ax.billing_left <= 30 %} <span class="admexp-dday urgent">D-{{ ax.billing_left }}</span>{% endif %}
+                        {% else %}
+                            <span class="admexp-kind total">{% if ax.total_days == 365 %}만기{% else %}만료{% endif %}</span><span>{{ ax.total_date|krdate_short }}</span>{% if ax.basis == 'planned' %} <span class="admexp-est">예정</span>{% endif %}{% if ax.total_left is not none %}{% if ax.total_left < 0 %} <span class="admexp-dday over">{{ -ax.total_left }}일초과</span>{% elif ax.total_left <= 30 %} <span class="admexp-dday urgent">D-{{ ax.total_left }}</span>{% endif %}{% endif %}
                         {% endif %}
-                        <span class="admexp-row" title="전체 입원 만료 · 입원 후 {{ ax.total_days }}일{% if ax.basis == 'planned' %} · 입원예정일 기준 추정{% endif %}"><span class="admexp-kind total">{% if ax.total_days == 365 %}만기{% else %}만료{% endif %}</span><span>{{ ax.total_date|krdate_short }}</span>{% if ax.basis == 'planned' %} <span class="admexp-est">예정</span>{% endif %}{% if ax.total_left is not none %}{% if ax.total_left < 0 %} <span class="admexp-dday over">{{ -ax.total_left }}일초과</span>{% elif ax.total_left <= 30 %} <span class="admexp-dday urgent">D-{{ ax.total_left }}</span>{% endif %}{% endif %}</span>
-                        {% if ax.is_extended_6m %}<span class="admexp-extension" title="6개월 연장 종료일 {{ ax.extension_date }}">연장 {{ ax.extension_date|krdate_short }}</span>{% endif %}
+                        </span>
                     {% endif %}
                 </td>
                 <td class="nowrap">{{ r.counselor or '' }}</td>
@@ -465,9 +471,9 @@ body .container { max-width: none; padding: 0 12px; }
 .tbl-compact th:nth-child(12), .tbl-compact td:nth-child(12) { width:48px; } /* 상담방법 */
 .tbl-compact th:nth-child(13), .tbl-compact td:nth-child(13) { width:90px; } /* 회복기대상 */
 .tbl-compact th:nth-child(14), .tbl-compact td:nth-child(14) { width:92px; } /* 상담결과 */
-.tbl-compact th:nth-child(15), .tbl-compact td:nth-child(15) { width:206px; }/* 입원진행 + 퇴원 임박 액션 */
-.tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:92px; } /* 입원완료일 */
-.tbl-compact th:nth-child(17), .tbl-compact td:nth-child(17) { width:236px; }/* 입원기간 만료일 */
+.tbl-compact th:nth-child(15), .tbl-compact td:nth-child(15) { width:118px; }/* 입원진행 (퇴원 임박 액션은 hover 시 오른쪽으로 펼침) */
+.tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:88px; } /* 입원완료일 */
+.tbl-compact th:nth-child(17), .tbl-compact td:nth-child(17) { width:150px; }/* 입원기간 만료일 — 가장 가까운 기한 1개 */
 .tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:58px; } /* 상담자 */
 .guardian-cell .phone { margin-left:3px; font-feature-settings:"tnum"; }
 /* 좁은 화면(노트북)에선 글자만 한 단계 줄이고 한 줄 규칙은 유지 */
@@ -484,11 +490,10 @@ body .container { max-width: none; padding: 0 12px; }
     .tbl-compact th:nth-child(12), .tbl-compact td:nth-child(12) { width:40px; }
     .tbl-compact th:nth-child(13), .tbl-compact td:nth-child(13) { width:74px; }
     .tbl-compact th:nth-child(14), .tbl-compact td:nth-child(14) { width:76px; }
-    .tbl-compact th:nth-child(15), .tbl-compact td:nth-child(15) { width:120px; }
     .tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:76px; }
-    .tbl-compact th:nth-child(17), .tbl-compact td:nth-child(17) { width:160px; }
     .tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:48px; }
-    .discharge-watch .dc-btn { display:none; }   /* 좁은 화면에선 D-day만, 처리는 상담 상세에서 */
+    .tbl-compact th:nth-child(15), .tbl-compact td:nth-child(15) { width:100px; }
+    .tbl-compact th:nth-child(17), .tbl-compact td:nth-child(17) { width:120px; }
 }
 
 .check-col { width: 26px; text-align: center; padding: 2px !important; }
@@ -667,8 +672,15 @@ body .container { max-width: none; padding: 0 12px; }
 /* 퇴원예정 D-7 임박 — 빨간 펄스 강조 */
 .badge.st-discharge-due.dc-urgent { background: #fee2e2; color: #b91c1c;
     animation: rh-pulse 1.6s ease-in-out infinite; }
+.tbl-compact td.status-cell { overflow: visible; position: relative; }
 .discharge-watch { display: inline-flex; flex-wrap: nowrap; gap: 2px; align-items: center; margin-left: 3px; vertical-align: middle; }
 .discharge-watch .badge { padding: 1px 6px; }
+/* 퇴원 임박 액션 버튼 — 기본은 D-day 배지만 보이고, 행에 마우스를 올리면 칸 아래로 작은 팝오버 */
+.dc-actions { display: none; position: absolute; top: calc(100% - 3px); left: 50%; transform: translateX(-50%);
+    gap: 4px; padding: 4px 6px; background: #fff; border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 4px 14px rgba(15,23,42,.14); white-space: nowrap; }
+.tbl-compact tr:hover td.status-cell { z-index: 6; }   /* 팝오버가 아래 행 위로 오게 */
+.tbl-compact tr:hover .dc-actions { display: inline-flex; }
 .dc-btn { padding: 1px 5px; font-size: 0.72em; border: 1px solid var(--border);
           border-radius: 6px; background: #fff; cursor: pointer; white-space: nowrap; }
 .dc-btn:hover { background: #eef2f7; border-color: #94a3b8; }
