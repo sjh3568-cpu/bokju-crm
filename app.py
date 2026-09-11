@@ -4614,6 +4614,70 @@ def _ward_admitted_roster(q, doctor):
     return admitted
 
 
+@app.route("/ward/away.xlsx")
+@login_required
+def ward_away_xlsx():
+    """외진·전원 명부를 현재 필터 그대로 엑셀로 — 화면의 열 순서와 같다."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+    report = _ward_away_report()
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "외진·전원 명부"
+    headers = ["연번", "차수", "환자", "성별", "나이", "병실", "퇴원일(전원일)", "시각", "외진 일수",
+               "구분", "전원기관", "주상병", "부상병", "사유", "본원 입원일", "재원일수",
+               "퇴원 D-day", "퇴원 예정일", "복귀 상태", "복귀일", "복귀 병실", "복귀 기타"]
+    ws.append(headers)
+    for c in report["rows"]:
+        watch = c.get("discharge_watch") or {}
+        days_left = watch.get("days_left")
+        dday = ("퇴원 완료" if c.get("discharge_date") else
+                "" if days_left is None else
+                f"D-{days_left}" if days_left > 0 else "D-day" if days_left == 0 else f"D+{-days_left}")
+        away_days = c.get("away_days_inclusive")
+        ws.append([
+            c.get("no"), c.get("away_number") or "", c.get("patient_name") or "",
+            {"M": "남", "F": "여"}.get(c.get("gender"), ""),
+            c.get("patient_age") if c.get("patient_age") is not None else "",
+            c.get("room_number") or "",
+            c.get("event_date") or "", (c.get("event_time") or "")[:5],
+            "" if away_days is None else (away_days if c.get("returned_at") else f"{away_days}일째"),
+            c.get("event_type") or "", c.get("hospital") or "",
+            ", ".join(c.get("dx_primary") or []), ", ".join(c.get("dx_secondary") or []),
+            c.get("memo") or "",
+            c.get("actual_admission_date") or c.get("admission_date") or "",
+            c.get("stay_days_inclusive") if c.get("stay_days_inclusive") is not None else "",
+            dday, c.get("discharge_date") or watch.get("due_date") or "",
+            "복귀 완료" if c.get("returned_at") else "미복귀",
+            (c.get("returned_at") or "")[:10], c.get("return_room") or "", c.get("return_note") or "",
+        ])
+    head_fill = PatternFill("solid", fgColor="E4F2EB")
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+        cell.fill = head_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+    widths = [5, 5, 10, 5, 5, 8, 12, 6, 9, 12, 16, 22, 18, 30, 12, 8, 9, 12, 9, 11, 10, 20]
+    for idx, width in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(idx)].width = width
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
+    f = report["filters"]
+    meta = [f"조회 기간 {f['away_from'] or '전체'} ~ {f['away_to'] or '전체'}",
+            f"유형 {f['away_type'] or '전체'}", f"복귀 {f['away_status'] or '전체'}",
+            f"내보낸 시각 {datetime.now().strftime('%Y-%m-%d %H:%M')}"]
+    ws.cell(row=ws.max_row + 2, column=1, value=" · ".join(meta))
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    models.log_audit(user_id=g.user["id"], username=g.user["username"],
+                     action="export_xlsx", target_type="ward_away",
+                     detail=f"외진 명부 {len(report['rows'])}건", ip=request.remote_addr)
+    return send_file(buf, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                     as_attachment=True,
+                     download_name=f"away_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx")
+
+
 @app.route("/ward.csv")
 @admin_required
 def ward_csv():

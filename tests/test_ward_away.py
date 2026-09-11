@@ -86,6 +86,8 @@ class AwayManagementTests(unittest.TestCase):
         self.assertIn('일째', html)          # 미복귀 기록의 '며칠째' 배지
         self.assertIn('번째 외진', html)     # 차수 표시
         self.assertIn('data-detail-active="false"', html)
+        self.assertIn('/ward/away.xlsx', html)
+        self.assertIn('미복귀 · 복귀 처리', html)
         feed = self.client.get('/ward?tab=away&away_view=feed').get_data(as_text=True)
         self.assertIn('class="on">▤ 피드형', feed)
         self.assertIn('away-feed-date', feed)
@@ -96,6 +98,21 @@ class AwayManagementTests(unittest.TestCase):
         self.assertIn('data-detail-active="true"', html)
         with main.app.test_request_context('/ward?tab=away&away_view=bogus'):
             self.assertEqual(main._ward_away_report()['view'], 'list')
+
+    def test_xlsx_export_follows_filters_and_permissions(self):
+        from openpyxl import load_workbook
+        import io
+        resp = self.client.get('/ward/away.xlsx?away_status=returned&away_q=환자1')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('spreadsheetml', resp.mimetype)
+        ws = load_workbook(io.BytesIO(resp.data)).active
+        rows = list(ws.iter_rows(values_only=True))
+        self.assertEqual(rows[0][:3], ('연번', '차수', '환자'))
+        self.assertEqual(rows[1][0], 1)
+        self.assertEqual(rows[1][18], '복귀 완료')
+        self.assertEqual(sum(1 for r in rows[1:] if r[0] is not None and isinstance(r[0], int)), 1)
+        self.login(0)
+        self.assertEqual(self.client.get('/ward/away.xlsx').status_code, 403)
 
     def test_return_persistence_validation_and_permissions(self):
         url = '/api/admission-event/2/return'
