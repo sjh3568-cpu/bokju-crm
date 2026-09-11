@@ -428,6 +428,12 @@ def main():
 
     if args.apply:
         conn.commit()
+        # 회차에만 들어간 보험유형·입원일을 환자·상담 행으로 옮겨 적는다 —
+        # 상담목록의 '보험'·'입원완료일' 칸은 그쪽을 읽는다. (멱등, UPDATE 전용)
+        from tools.backfill_from_roster import run as backfill_run
+        print()
+        print("── 회차 → 환자·상담 백필 ──")
+        backfill_run(conn, apply=True)
 
     patients_seen = len(resolved)
     matched = sum(1 for p in resolved.values() if p is not None)
