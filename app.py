@@ -4372,18 +4372,23 @@ def ward_view():
     trend_to = date.fromisoformat(_valid_date(request.args.get("to"), today_d.isoformat()))
     trend_to = min(trend_to, today_d)
     trend_from = _valid_date(request.args.get("from"))
+    raw_to = _valid_date(request.args.get("to"))
     if trend_preset not in _WARD_TREND_RANGES:
         # custom이거나 preset이 빠졌어도 날짜가 왔으면 그 날짜를 쓴다. 날짜만 바꾸고
         # 라디오가 안 바뀐 채 조회해도 입력한 기간이 무시되지 않게.
-        trend_preset = "custom" if trend_from else "30"
+        trend_preset = "custom" if (trend_from or raw_to) else "30"
     if trend_preset == "custom":
         trend_from = date.fromisoformat(trend_from) if trend_from else trend_to - timedelta(days=29)
     else:
-        # '최근 N일'은 오늘까지다 — 종료일이나 시작일이 그와 다르면 직접지정으로 본다.
+        # 프리셋 '최근 N일'은 오늘까지 N일. 프리셋 칩은 날짜칸을 비우고 넘어오므로
+        # 날짜가 함께 온 경우는 사용자가 날짜를 고친 것 — 그때만 직접지정으로 본다.
+        trend_to = today_d
         preset_from = trend_to - timedelta(days=int(trend_preset) - 1)
-        if trend_to != today_d or (trend_from and date.fromisoformat(trend_from) != preset_from):
-            trend_preset = "custom"
-            trend_from = date.fromisoformat(trend_from) if trend_from else preset_from
+        if raw_to and date.fromisoformat(raw_to) < today_d:
+            trend_preset, trend_to = "custom", date.fromisoformat(raw_to)
+            trend_from = date.fromisoformat(trend_from) if trend_from else trend_to - timedelta(days=29)
+        elif trend_from and date.fromisoformat(trend_from) != preset_from:
+            trend_preset, trend_from = "custom", date.fromisoformat(trend_from)
         else:
             trend_from = preset_from
     if trend_from > trend_to:

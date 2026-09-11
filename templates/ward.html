@@ -924,7 +924,10 @@
         el.addEventListener('change', () => {
             const isCustom = el.value === 'custom';
             document.querySelector('#period-form .custom-row').classList.toggle('hide', !isCustom);
-            if (!isCustom) document.getElementById('period-form').submit();
+            if (isCustom) return;
+            // 프리셋은 오늘까지 N일이다 — 남아 있던 날짜칸을 비워서 함께 넘어가지 않게 한다.
+            document.querySelectorAll('#period-form .custom-row input[type="date"]').forEach(d => d.value = '');
+            document.getElementById('period-form').submit();
         });
     });
     document.querySelectorAll('#period-form .custom-row input[type="date"]').forEach(el => {

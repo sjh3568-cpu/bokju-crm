@@ -163,6 +163,13 @@ class WardCensusTests(unittest.TestCase):
         daily = json.loads(re.findall(r"data-series='(\[.*?\])'", html)[0])
         self.assertEqual(len(daily), 10)
         self.assertIn('value="custom" checked', html)
+        # 종료일만 과거로 바꿔도 직접지정
+        html = self.client.get("/ward?tab=trend&preset=30&to=2025-01-14").get_data(as_text=True)
+        self.assertIn("2024-12-16 ~ 2025-01-14", html)
+        # 프리셋 칩은 날짜칸을 비우고 넘어온다 — 빈 날짜는 프리셋을 흔들지 않는다
+        html = self.client.get("/ward?tab=trend&preset=90&from=&to=").get_data(as_text=True)
+        self.assertEqual(len(json.loads(re.findall(r"data-series='(\[.*?\])'", html)[0])), 90)
+        self.assertIn('value="90" checked', html)
 
     def test_ratio_insight_margins(self):
         """40% 기준선까지의 여유·필요 인원 산식."""
