@@ -5536,6 +5536,30 @@ def current_admission_census():
 
 
 
+def admission_flow_counts(week_from, week_to, month_from, month_to):
+    """원무 명부 회차 기준 이번주·이번달 입원/퇴원 건수.
+
+    재원 판정과 같은 근거를 쓴다 — roster_key가 있는 회차(원무 명부에서 온 것)만
+    센다. 앱이 만든 회차(roster_key 없음)는 퇴원일이 안 채워져 흐름 집계를 부풀린다.
+    날짜는 DATE(ISO 문자열)라 문자열 BETWEEN이 곧 날짜 비교다.
+    """
+    conn = get_db()
+    try:
+        def _count(col, lo, hi):
+            return conn.execute(
+                f"SELECT COUNT(*) FROM admission_episodes "
+                f"WHERE roster_key IS NOT NULL AND {col} IS NOT NULL AND {col} != '' "
+                f"AND date({col}) BETWEEN ? AND ?", (lo, hi)).fetchone()[0]
+        return {
+            "week_in": _count("admitted_at", week_from, week_to),
+            "week_out": _count("discharged_at", week_from, week_to),
+            "month_in": _count("admitted_at", month_from, month_to),
+            "month_out": _count("discharged_at", month_from, month_to),
+        }
+    finally:
+        conn.close()
+
+
 def close_roster_episode(episode_id, *, discharged_at, destination=None, reason=None):
     """CRM에서 퇴원(또는 타 병원 전원) 처리한 환자의 원무 명부 회차를 닫는다.
 

@@ -374,6 +374,31 @@
     </div>
 </div>
 
+{# ── 현재 상태 스트립 — 병원 전체 현황 한 줄(재원·가동률·회복기·외진·입퇴원).
+   '오늘 처리 필요' KPI 카드와 성격을 나눠, 규제 핵심인 회복기 40%는 신호등으로. #}
+{% set ws = ward_strip %}
+<div class="dash-status-strip">
+    <span class="dss-label">현재 현황</span>
+    {% if ws.has_roster %}
+    <a class="dss-item" href="/ward" title="원무 입퇴원 명부 기준 재원 인원">
+        <b>{{ ws.admitted }}</b><span>재원</span></a>
+    <a class="dss-item" href="/ward" title="허가 {{ ws.bed_capacity }}병상 대비 재원">
+        <b>{{ ws.bed_occupancy }}<small>%</small></b><span>가동률</span></a>
+    <a class="dss-item dss-signal {% if ws.recovery_ratio_ok %}ok{% else %}danger{% endif %}"
+       href="/ward?tab=trend" title="회복기 {{ ws.recovery }}/{{ ws.admitted }}명 · 재활의료기관 유지 기준 40%">
+        <b>{{ ws.recovery_ratio }}<small>%</small></b><span>회복기 {% if ws.recovery_ratio_ok %}✓ 40%↑{% else %}⚠ 40%↓{% endif %}</span></a>
+    {% else %}
+    <a class="dss-item dss-muted" href="/ward" title="원무 입퇴원 명부를 올리면 재원·가동률·회복기 비율이 표시됩니다">
+        <b>–</b><span>재원·회복기 (명부 필요)</span></a>
+    {% endif %}
+    <a class="dss-item{% if ws.away %} warn{% endif %}" href="/ward?tab=away" title="현재 외진(전원·외래치료 등) 중">
+        <b>{{ ws.away }}</b><span>외진 중</span></a>
+    <a class="dss-item" href="/ward?tab=away" title="이번주(월~일) 입원 {{ ws.week_in }} · 퇴원 {{ ws.week_out }}">
+        <b>+{{ ws.week_in }}<small>/</small>−{{ ws.week_out }}</b><span>이번주 입·퇴원</span></a>
+    <a class="dss-item" href="/ward?tab=away" title="이번달(1일~오늘) 입원 {{ ws.month_in }} · 퇴원 {{ ws.month_out }}">
+        <b>+{{ ws.month_in }}<small>/</small>−{{ ws.month_out }}</b><span>이번달 입·퇴원</span></a>
+</div>
+
 {% set admission_lookup = admission_selected %}
 {% set admission_group_lookup = admission_selected_groups %}
 
@@ -768,6 +793,28 @@
 .dash-head { align-items:flex-start; }
 .dash-actions { display:flex; gap:6px; align-items:center; }
 .dash-new-consult{display:inline-flex;align-items:center;gap:7px;padding:10px 17px;border-radius:10px;font-size:.94rem;font-weight:800;box-shadow:0 5px 14px rgba(20,83,45,.22);transition:transform .15s,box-shadow .15s}.dash-new-consult span{font-size:1.25em;line-height:1}.dash-new-consult:hover{transform:translateY(-1px);box-shadow:0 7px 18px rgba(20,83,45,.28)}
+/* 현재 상태 스트립 — KPI 카드보다 가벼운 한 줄. 병원 전체 현황(상태)과
+   아래 카드(오늘 처리할 액션)를 시각적으로 구분한다. */
+.dash-status-strip{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;
+    margin:0 0 14px;padding:8px 12px;border:1px solid var(--border,#e5e7eb);
+    border-radius:11px;background:var(--surface-2,var(--card,#f8faf9));font-size:.86rem}
+.dash-status-strip .dss-label{font-weight:800;color:var(--muted,#6b7280);
+    font-size:.74rem;letter-spacing:.02em;margin-right:4px;white-space:nowrap}
+.dash-status-strip .dss-item{display:inline-flex;align-items:baseline;gap:5px;
+    text-decoration:none;color:inherit;padding:3px 9px;border-radius:8px;
+    transition:background .12s}
+.dash-status-strip .dss-item:hover{background:rgba(20,83,45,.08)}
+.dash-status-strip .dss-item b{font-size:1.08rem;font-weight:800;line-height:1;
+    letter-spacing:-.01em}
+.dash-status-strip .dss-item b small{font-size:.62em;font-weight:700;opacity:.8}
+.dash-status-strip .dss-item span{color:var(--muted,#6b7280);font-size:.8rem;
+    white-space:nowrap}
+.dash-status-strip .dss-signal.ok b{color:#166534}
+.dash-status-strip .dss-signal.danger b{color:#b45309}
+.dash-status-strip .dss-item.warn b{color:#b45309}
+.dash-status-strip .dss-muted b,.dash-status-strip .dss-muted span{color:var(--muted,#9ca3af)}
+@media(max-width:560px){.dash-status-strip{font-size:.8rem;gap:2px 3px}
+    .dash-status-strip .dss-item{padding:3px 7px}}
 /* KPI — 1행: 액션 히어로(전체 폭), 2행: 현황 6칸. 6열 그리드로 상하좌우 정렬을 맞춘다. */
 .dash-kpi { display:grid; grid-template-columns:repeat(6, 1fr); gap:12px;
     align-items:stretch; margin-bottom:16px; }

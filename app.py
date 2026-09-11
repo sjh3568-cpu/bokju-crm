@@ -2005,6 +2005,70 @@ def _dashboard_calendar_context(uid, year, month, counselor=None):
             "cal_next_year": next_m.year, "cal_next_month": next_m.month,
             "cal_mine": bool(counselor)}
 
+# 허가병상 — /ward의 병상 가동률과 같은 기준(현재 355병상).
+WARD_BED_CAPACITY = 355
+
+
+def _ward_status_strip():
+    """대시보드 최상단 '현재 상태' 스트립 지표.
+
+    재원·회복기 비율은 /ward와 같은 근거(원무 명부 census + _care_phase 판정)로
+    내 두 화면의 숫자가 어긋나지 않게 한다. /ward 라우트 로직은 건드리지 않고
+    검증된 헬퍼만 재사용한다. 명부가 없으면(has_roster=False) 명부 의존 지표는
+    None으로 두고 화면이 '명부 필요'로 대신 표시한다.
+    """
+    today = date.today()
+    week_from = (today - timedelta(days=today.weekday())).isoformat()   # 월요일
+    week_to = (today - timedelta(days=today.weekday()) + timedelta(days=6)).isoformat()
+    month_from = today.replace(day=1).isoformat()
+    month_to = today.isoformat()   # 이번 달은 오늘까지(미래 예정 입원은 제외)
+    flow = models.admission_flow_counts(week_from, week_to, month_from, month_to)
+    census = models.current_admission_census()
+    strip = {
+        "has_roster": bool(census.get("has_roster")),
+        "away": len(models.away_now()),        # 외진 중 — 명부와 무관
+        "bed_capacity": WARD_BED_CAPACITY,
+        "week_in": flow["week_in"], "week_out": flow["week_out"],
+        "month_in": flow["month_in"], "month_out": flow["month_out"],
+        "admitted": None, "bed_occupancy": None,
+        "recovery_ratio": None, "recovery_ratio_ok": None,
+        "recovery": None, "recovery_judged": None,
+    }
+    if not census.get("has_roster"):
+        return strip
+    # 재원자 각각을 /ward와 같은 방식으로 회복기 판정한다. 상담이 붙은 회차는 그
+    # 상담에 명부 값(수가구분·재활종료일)을 얹어서, 상담 없이 입원한 회차(orphans)는
+    # 명부 값만으로 행을 만들어서 — 둘 다 _care_phase를 거친다.
+    trend_rows = {c["id"]: c for c in models.list_consultations(limit=10000)}
+    recovery_n = total_n = 0
+    for cid, ep in census["by_consultation"].items():
+        base = trend_rows.get(cid)
+        if not base:
+            continue
+        c = dict(base)
+        c["roster_care_phase"] = _roster_care_phase(ep.get("care_type"))
+        c["rehab_end_date"] = ep.get("rehab_end_date")
+        c["rehab_end_imported"] = ep.get("rehab_end_imported")
+        total_n += 1
+        if _care_phase(c).get("care_phase") == "회복기":
+            recovery_n += 1
+    for ep in census["orphans"]:
+        total_n += 1
+        if _care_phase(_ward_row_from_episode(ep)).get("care_phase") == "회복기":
+            recovery_n += 1
+    # /ward KPI 카드와 같은 정의 — 전체 재원 대비 회복기 인원.
+    ratio = round(recovery_n / total_n * 100) if total_n else 0
+    strip.update(
+        admitted=total_n,
+        bed_occupancy=round(total_n / WARD_BED_CAPACITY * 100, 1) if WARD_BED_CAPACITY else None,
+        recovery=recovery_n,
+        recovery_judged=total_n,
+        recovery_ratio=ratio,
+        recovery_ratio_ok=(ratio >= 40),
+    )
+    return strip
+
+
 @app.route("/")
 @login_required
 def dashboard():
@@ -2160,6 +2224,7 @@ def dashboard():
     cal_mine = request.args.get("cal_mine", cal_default) != "0"
     cal_counselor = g.user.get("display_name") if cal_mine else None
     data.update(_dashboard_calendar_context(g.user["id"], cal_year, cal_month, cal_counselor))
+    data["ward_strip"] = _ward_status_strip()
     return render_template("dashboard.html", **data)
 
 
