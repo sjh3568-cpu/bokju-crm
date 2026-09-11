@@ -78,6 +78,25 @@ class AwayManagementTests(unittest.TestCase):
         for query in ('away_from=bad', 'away_from=2026-03-01&away_to=2026-02-01', 'away_type=invalid'):
             self.assertEqual(self.client.get('/ward?tab=away&' + query).status_code, 400)
 
+    def test_list_and_feed_views_number_rows(self):
+        """목록형이 기본이고, 피드형은 날짜별로 묶는다. 연번은 두 보기에서 같다."""
+        html = self.client.get('/ward?tab=away').get_data(as_text=True)
+        self.assertIn('class="on">☰ 목록형', html)
+        self.assertIn('<td class="away-col-no" data-label="#">1</td>', html)
+        self.assertIn('일째', html)          # 미복귀 기록의 '며칠째' 배지
+        self.assertIn('번째', html)          # 차수 배지
+        self.assertIn('data-detail-active="false"', html)
+        feed = self.client.get('/ward?tab=away&away_view=feed').get_data(as_text=True)
+        self.assertIn('class="on">▤ 피드형', feed)
+        self.assertIn('away-feed-date', feed)
+        self.assertIn('<div class="away-card-no">1</div>', feed)
+        self.assertNotIn('away-table', feed.split('<style>')[0])
+        # 상세필터에 값이 있으면 펼친 채로 연다
+        html = self.client.get('/ward?tab=away&away_gender=F').get_data(as_text=True)
+        self.assertIn('data-detail-active="true"', html)
+        with main.app.test_request_context('/ward?tab=away&away_view=bogus'):
+            self.assertEqual(main._ward_away_report()['view'], 'list')
+
     def test_return_persistence_validation_and_permissions(self):
         url = '/api/admission-event/2/return'
         self.login(1)

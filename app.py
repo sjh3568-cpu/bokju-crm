@@ -4056,7 +4056,16 @@ def _ward_away_report():
             if row.get("discharge_date") or not watch or watch["days_left"] > numbers["away_dday_max"]:
                 continue
         selected.append(row)
-    return dict(rows=selected, stats=stats, transfers=transfers, monthly=monthly, filters=filters)
+    for no, row in enumerate(selected, 1):
+        row["no"] = no
+    view = request.args.get("away_view") or "list"
+    if view not in ("list", "feed"):
+        view = "list"
+    # 상세필터 값이 하나라도 있으면 화면에서 펼친 채로 연다.
+    detail_active = any(filters[k] for k in ("away_gender", "away_age_min", "away_age_max", "away_hospital",
+                                             "away_dx", "away_number", "away_days_min", "away_dday_max"))
+    return dict(rows=selected, stats=stats, transfers=transfers, monthly=monthly, filters=filters,
+                view=view, detail_active=detail_active)
 
 
 @app.route("/ward")
