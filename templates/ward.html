@@ -152,6 +152,16 @@
         </div>
         <div class="period-meta"><span class="muted">대상 기간:</span> <strong id="period-label">{{ trend_from }} ~ {{ trend_to }}</strong> <span class="muted-sm">· {{ daily_ratio_trend|length }}일 · 최대 2년</span></div>
     </form>
+{% if trend_summary %}{% set ts = trend_summary %}
+    <div class="wd-kpi wd-trend-kpi">
+        <div class="wd-k {% if trend_insight and trend_insight.ok %}ok{% endif %}"><span class="wd-k-n">{{ trend_insight.ratio if trend_insight else ts.last.ratio }}<small>%</small></span><span class="wd-k-l">오늘 회복기 비율 <small>{{ trend_insight.recovery if trend_insight else ts.last.recovery }}/{{ trend_insight.known if trend_insight else ts.last.known }}명</small></span></div>
+        <div class="wd-k {% if ts.ok %}ok{% else %}warn{% endif %}"><span class="wd-k-n">{{ ts.avg }}<small>%</small></span><span class="wd-k-l">기간 평균 <small>연인원 기준 · 단순평균 {{ ts.avg_simple }}%</small></span></div>
+        <div class="wd-k"><span class="wd-k-n">{{ ts.low.ratio }}<small>%</small></span><span class="wd-k-l">기간 최저 <small>{{ ts.low.label }} · {{ ts.low.recovery }}/{{ ts.low.known }}명</small></span></div>
+        <div class="wd-k"><span class="wd-k-n">{{ ts.high.ratio }}<small>%</small></span><span class="wd-k-l">기간 최고 <small>{{ ts.high.label }} · {{ ts.high.recovery }}/{{ ts.high.known }}명</small></span></div>
+        <div class="wd-k {% if ts.below_days %}warn{% else %}ok{% endif %}"><span class="wd-k-n">{{ ts.below_days }}<small>일 / {{ ts.days }}일</small></span><span class="wd-k-l">40% 미만 일수 <small>{% if ts.below_first %}첫 날 {{ ts.below_first.label }}{% else %}없음{% endif %}</small></span></div>
+        <div class="wd-k"><span class="wd-k-n">{% if ts.month_avg is not none %}{{ ts.month_avg }}<small>%</small>{% else %}-{% endif %}</span><span class="wd-k-l">{{ ts.month_count }}개월 평균 <small>월말 기준 연인원</small></span></div>
+    </div>
+{% endif %}
 {% if trend_insight %}{% set ti = trend_insight %}
     <div class="wd-insight {% if ti.ok %}ok{% else %}warn{% endif %}">
         <div class="wd-insight-head">
@@ -742,6 +752,10 @@
 .wd-period-bar .custom-row input[type=date] { padding:2px 6px; border:1px solid var(--border); border-radius:4px; font-family:inherit; font-size:0.85em; }
 .wd-period-bar .custom-row.hide { display:none; }
 .wd-period-bar .period-meta { margin-left:auto; font-size:0.85em; }
+.wd-trend-kpi { margin:0 0 12px; }
+.wd-trend-kpi .wd-k:hover { border-color:var(--border); background:#fff; }
+.wd-trend-kpi .wd-k.ok .wd-k-n { color:#166534; }
+.wd-trend-kpi .wd-k.warn .wd-k-n { color:#b45309; }
 .wd-insight { border:1px solid #e2e8f0; border-left:4px solid #16a34a; border-radius:8px; background:#f0fdf4; padding:10px 14px; margin:0 0 12px; }
 .wd-insight.warn { border-left-color:#f59e0b; background:#fffbeb; }
 .wd-insight-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 12px; }
@@ -920,6 +934,13 @@
     openHashDetails(); window.addEventListener('hashchange', openHashDetails);
 
     // 추이 기간 프리셋 — 통계 페이지와 같이 고르면 바로 조회, 날짜를 만지면 직접지정으로
+    const periodForm = document.getElementById('period-form');
+    if (periodForm) periodForm.addEventListener('submit', () => {
+        // 1년치 일별은 몇 초 걸린다 — 눌렸다는 걸 바로 보여준다.
+        const label = document.getElementById('period-label');
+        if (label) label.textContent = '조회 중…';
+        periodForm.querySelectorAll('button').forEach(b => { b.disabled = true; b.textContent = '조회 중…'; });
+    });
     document.querySelectorAll('#period-form input[name="preset"]').forEach(el => {
         el.addEventListener('change', () => {
             const isCustom = el.value === 'custom';

@@ -189,6 +189,23 @@ class WardCensusTests(unittest.TestCase):
         self.assertEqual(len(ins["forecast"]), 61)
         self.assertIsNone(main._ratio_insight({"total": 0, "known": 0, "recovery": 0, "ratio": 0}, [], ratio_at, date(2026, 9, 11)))
 
+    def test_trend_summary_is_person_day_weighted(self):
+        """기간 평균은 연인원 가중이라 인원이 적은 날에 끌려가지 않는다."""
+        daily = [
+            {"date": "2026-09-01", "label": "09.01", "known": 100, "recovery": 45, "ratio": 45.0, "total": 100},
+            {"date": "2026-09-02", "label": "09.02", "known": 10, "recovery": 1, "ratio": 10.0, "total": 10},
+            {"date": "2026-09-03", "label": "09.03", "known": 0, "recovery": 0, "ratio": 0, "total": 0},
+        ]
+        monthly = [{"date": "2026-09-30", "label": "26.09", "known": 50, "recovery": 20, "ratio": 40.0, "total": 50}]
+        ts = main._trend_summary(daily, monthly)
+        self.assertEqual(ts["avg"], 41.8)            # 46/110
+        self.assertEqual(ts["avg_simple"], 27.5)     # (45+10)/2 — known 0인 날은 제외
+        self.assertEqual((ts["days"], ts["below_days"], ts["below_first"]["label"]), (2, 1, "09.02"))
+        self.assertEqual((ts["low"]["label"], ts["high"]["label"]), ("09.02", "09.01"))
+        self.assertEqual(ts["month_avg"], 40.0)
+        self.assertTrue(ts["ok"])
+        self.assertIsNone(main._trend_summary([daily[2]], []))
+
     def test_trend_page_renders_insight(self):
         html = self.client.get("/ward?tab=trend").get_data(as_text=True)
         self.assertIn("wd-insight", html)

@@ -4323,45 +4323,27 @@ def ward_view():
     # census가 날이 갈수록 불어나기만 한다. 회차는 어느 시점을 끊어도 실제와 맞는다.
     trend_rows = {c["id"]: c for c in models.list_consultations(limit=10000)}
     spans = models.admission_spans()
+    # 상담이 안 붙은 회차는 진단·발병일을 몰라 회복기 판정을 못 한다. 과거로
+    # 갈수록 연결률이 떨어져(전체 73%) 이들을 '비회복기'로 세면 비율이 실제보다
+    # 낮게 나온다 — 40% 기준선을 보는 지표라 그 왜곡이 위험하다. 그래서 비율은
+    # 판정 가능한 인원만으로 내고, 인원(total)은 실제 재원 수 그대로 보여준다.
+    #
+    # 회차마다 회복기 구간의 끝을 한 번만 계산해 둔다(rec_end: None=회복기 아님,
+    # date.max=끝없음). 날짜별 계산은 비교만 하므로 1년치 일별도 바로 나온다.
+    trend_spans = [_trend_span(span, trend_rows.get(span["consultation_id"])) for span in spans]
     def _ratio_at(snapshot):
-        census = []
         snapshot_iso = snapshot.isoformat()
-        for span in spans:
-            if span["admitted_at"] > snapshot_iso:
+        total = known = recovery_count = 0
+        for admitted_iso, discharged_iso, is_known, rec_end in trend_spans:
+            if admitted_iso > snapshot_iso or (discharged_iso and discharged_iso <= snapshot_iso):
                 continue
-            if span["discharged_at"] and span["discharged_at"] <= snapshot_iso:
-                continue
-            census.append((span, trend_rows.get(span["consultation_id"])))
-        # 상담이 안 붙은 회차는 진단·발병일을 몰라 회복기 판정을 못 한다. 과거로
-        # 갈수록 연결률이 떨어져(전체 73%) 이들을 '비회복기'로 세면 비율이 실제보다
-        # 낮게 나온다 — 40% 기준선을 보는 지표라 그 왜곡이 위험하다. 그래서 비율은
-        # 판정 가능한 인원만으로 내고, 인원(total)은 실제 재원 수 그대로 보여준다.
-        known = [con for span, con in census
-                 if con is not None or _roster_care_phase(span.get("care_type"))]
-        recovery_count = 0
-        for span, con in census:
-            roster_phase = _roster_care_phase(span.get("care_type"))
-            if roster_phase:
-                recovery_count += _effective_roster_care_phase(
-                    roster_phase, (con or {}).get("diseases"),
-                    span["admitted_at"], snapshot,
-                    span.get("rehab_end_date"), span.get("rehab_end_imported"),
-                ) == "회복기"
-                continue
-            if con is None or _recovery_status(con).get("label") != "회복기":
-                continue
-            period = compute_admission_period(con.get("diseases"), "회복기")
-            try:
-                admitted_on = date.fromisoformat(span["admitted_at"])
-            except (TypeError, ValueError):
-                continue
-            billing_end = (_day_of(admitted_on, period["billing"])
-                           if period and period.get("billing") else None)
-            if billing_end is None or snapshot <= billing_end:
-                recovery_count += 1
-        total = len(census)
-        return {"total": total, "known": len(known), "recovery": recovery_count,
-                "ratio": round(recovery_count * 100 / len(known), 1) if known else 0}
+            total += 1
+            if is_known:
+                known += 1
+                if rec_end is not None and snapshot <= rec_end:
+                    recovery_count += 1
+        return {"total": total, "known": known, "recovery": recovery_count,
+                "ratio": round(recovery_count * 100 / known, 1) if known else 0}
 
     # 추이 기간 — 통계 페이지와 같은 preset/from/to 방식. 프리셋(30/90/180/365일)
     # 또는 custom(직접지정). 일별은 선택 기간 그대로, 월별은 기간을 덮는 달을 최소
@@ -4395,7 +4377,7 @@ def ward_view():
         trend_from, trend_to = trend_to, trend_from
     if (trend_to - trend_from).days > 730:
         trend_from = trend_to - timedelta(days=730)
-    daily_ratio_trend, monthly_ratio_trend, trend_insight = [], [], None
+    daily_ratio_trend, monthly_ratio_trend, trend_insight, trend_summary = [], [], None, None
     if subtab == "trend":
         snapshot = trend_from
         while snapshot <= trend_to:
@@ -4412,6 +4394,7 @@ def ward_view():
             monthly_ratio_trend.append({"label": f"{str(year)[2:]}.{month:02d}",
                                         "date": snapshot.isoformat(), **_ratio_at(snapshot)})
         trend_insight = _ratio_insight(_ratio_at(today_d), admitted, _ratio_at, today_d)
+        trend_summary = _trend_summary(daily_ratio_trend, monthly_ratio_trend)
 
     # 최근 퇴원도 명부 기준이다 — 상담의 '퇴원완료' 상태로는 한 건도 안 잡힌다.
     # 상담이 붙은 회차는 그 상담의 퇴원 사유·담당자를 함께 싣는다.
@@ -4489,6 +4472,7 @@ def ward_view():
         trend_preset=trend_preset, trend_ranges=_WARD_TREND_RANGES,
         trend_from=trend_from.isoformat(), trend_to=trend_to.isoformat(),
         trend_month_count=len(monthly_ratio_trend), trend_insight=trend_insight,
+        trend_summary=trend_summary,
         discharged=discharged,
         subtab=subtab, away_report=away_report, away_candidates=admitted,
         blacklisted=blacklisted,
@@ -4833,6 +4817,75 @@ def _ward_matches_diagnosis(c, diagnosis):
     values = values + [c.get("lung_detail") or ""]
     return any(alias in "".join(str(value).split())
                for value in values for alias in aliases)
+
+
+def _trend_span(span, con):
+    """추이 계산용 회차 요약 → (입원일, 퇴원일, 판정 가능 여부, 회복기 종료일).
+
+    _effective_roster_care_phase / _recovery_status 와 같은 규칙이되, 날짜마다
+    다시 판정하지 않도록 '언제까지 회복기인가'만 뽑아 둔다.
+      rec_end None     = 어느 날짜에도 회복기가 아님
+      rec_end date.max = 재원 내내 회복기 (종료일을 계산할 수 없는 경우)
+    """
+    admitted_iso, discharged_iso = span["admitted_at"], span.get("discharged_at")
+    roster_phase = _roster_care_phase(span.get("care_type"))
+    if roster_phase:
+        if span.get("rehab_end_imported"):
+            end = span.get("rehab_end_date")
+            return admitted_iso, discharged_iso, True, (date.fromisoformat(end) if end else None)
+        if roster_phase != "회복기":
+            return admitted_iso, discharged_iso, True, None
+        period = compute_admission_period((con or {}).get("diseases"), "회복기")
+        if not period:
+            return admitted_iso, discharged_iso, True, date.max
+        try:
+            end = _day_of(date.fromisoformat(str(admitted_iso)[:10]),
+                          period.get("billing") or period.get("total"))
+        except (TypeError, ValueError):
+            return admitted_iso, discharged_iso, True, date.max
+        return admitted_iso, discharged_iso, True, end
+    if con is None:
+        return admitted_iso, discharged_iso, False, None
+    if _recovery_status(con).get("label") != "회복기":
+        return admitted_iso, discharged_iso, True, None
+    period = compute_admission_period(con.get("diseases"), "회복기")
+    try:
+        admitted_on = date.fromisoformat(admitted_iso)
+    except (TypeError, ValueError):
+        return admitted_iso, discharged_iso, True, None
+    if period and period.get("billing"):
+        return admitted_iso, discharged_iso, True, _day_of(admitted_on, period["billing"])
+    return admitted_iso, discharged_iso, True, date.max
+
+
+def _trend_summary(daily, monthly, threshold=40):
+    """선택 기간의 요약 — 상단 카드용.
+
+    기간 평균은 '회복기 연인원 ÷ 판정 가능 연인원'(재원일수 가중)으로 낸다. 일별
+    비율의 단순 평균은 인원이 적은 날이 과대 반영되는데, 지정 기준 평가도 연인원
+    기준이라 이쪽이 실제와 맞는다. 단순 평균은 참고로 함께 둔다.
+    """
+    days = [d for d in daily if d["known"]]
+    if not days:
+        return None
+    rec_sum = sum(d["recovery"] for d in days)
+    known_sum = sum(d["known"] for d in days)
+    below = [d for d in days if d["ratio"] < threshold]
+    low = min(days, key=lambda d: (d["ratio"], d["date"]))
+    high = max(days, key=lambda d: (d["ratio"], d["date"]))
+    months = [m for m in monthly if m["known"]]
+    month_avg = (round(sum(m["recovery"] for m in months) * 100 / sum(m["known"] for m in months), 1)
+                 if months else None)
+    return {
+        "avg": round(rec_sum * 100 / known_sum, 1),
+        "avg_simple": round(sum(d["ratio"] for d in days) / len(days), 1),
+        "days": len(days), "below_days": len(below),
+        "below_first": below[0] if below else None,
+        "low": low, "high": high,
+        "first": days[0], "last": days[-1],
+        "month_avg": month_avg, "month_count": len(months),
+        "ok": rec_sum * 100 >= threshold * known_sum,
+    }
 
 
 def _ratio_insight(now, admitted, ratio_at, today, threshold=40, horizon=60):
