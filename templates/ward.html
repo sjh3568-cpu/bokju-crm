@@ -137,9 +137,24 @@
 {% elif subtab == 'trend' %}
 <section class="card wd-overview wd-trend-page">
     <div class="wd-sec-head"><h3>📈 회복기 환자 비율 추이</h3><span class="muted-sm">재원 환자 기준 · 유지 기준선 40%</span></div>
+    <form id="period-form" class="period-bar card wd-period-bar" method="get" action="/ward">
+        <input type="hidden" name="tab" value="trend">
+        <div class="preset-row">
+            {% for k, label in trend_ranges.items() %}
+            <label class="preset-chip {% if trend_preset == k %}on{% endif %}"><input type="radio" name="preset" value="{{ k }}" {% if trend_preset == k %}checked{% endif %}><span>{{ label }}</span></label>
+            {% endfor %}
+            <label class="preset-chip {% if trend_preset == 'custom' %}on{% endif %}"><input type="radio" name="preset" value="custom" {% if trend_preset == 'custom' %}checked{% endif %}><span>직접지정</span></label>
+        </div>
+        <div class="custom-row">
+            <label>시작 <input type="date" name="from" value="{{ trend_from }}" max="{{ trend_to }}"></label>
+            <label>종료 <input type="date" name="to" value="{{ trend_to }}"></label>
+            <button type="submit" class="btn btn-secondary btn-sm">조회</button>
+        </div>
+        <div class="period-meta"><span class="muted">대상 기간:</span> <strong id="period-label">{{ trend_from }} ~ {{ trend_to }}</strong> <span class="muted-sm">· {{ daily_ratio_trend|length }}일 · 최대 2년</span></div>
+    </form>
     <div class="wd-trend-grid">
-        <div><strong>최근 30일 · 일별</strong><svg class="wd-ratio-chart" data-series='{{ daily_ratio_trend|tojson }}' viewBox="0 0 1000 260" role="img" aria-label="일별 회복기 환자 비율"></svg></div>
-        <div><strong>최근 12개월 · 월별</strong><svg class="wd-ratio-chart" data-series='{{ monthly_ratio_trend|tojson }}' viewBox="0 0 1000 260" role="img" aria-label="월별 회복기 환자 비율"></svg></div>
+        <div><strong>{% if trend_preset in trend_ranges %}{{ trend_ranges[trend_preset] }}{% else %}선택 기간{% endif %} · 일별</strong><svg class="wd-ratio-chart" data-series='{{ daily_ratio_trend|tojson }}' viewBox="0 0 1000 260" role="img" aria-label="일별 회복기 환자 비율"></svg></div>
+        <div><strong>최근 {{ trend_month_count }}개월 · 월별</strong><svg class="wd-ratio-chart" data-series='{{ monthly_ratio_trend|tojson }}' viewBox="0 0 1000 260" role="img" aria-label="월별 회복기 환자 비율"></svg></div>
     </div>
 </section>
 {% elif subtab == 'blacklist' %}
@@ -678,6 +693,17 @@
 .wd-trend-grid { display:grid; grid-template-columns:1fr; gap:16px; }
 .wd-trend-grid > div { min-width:0; padding:8px; border:1px solid #e2e8f0; border-radius:8px; background:#fbfdff; }
 .wd-trend-grid strong { display:block; font-size:.82em; color:#334155; margin:0 0 2px 5px; }
+/* 기간 선택 — 통계 페이지(period-bar)와 같은 모양·동작 */
+.wd-period-bar { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; padding:8px 12px; margin:6px 0 12px; }
+.wd-period-bar .preset-row { display:flex; gap:4px; flex-wrap:wrap; }
+.wd-period-bar .preset-chip { display:inline-flex; align-items:center; padding:3px 10px; border:1px solid var(--border); border-radius:999px; cursor:pointer; font-size:0.82em; background:#fff; line-height:1.4; }
+.wd-period-bar .preset-chip input { display:none; }
+.wd-period-bar .preset-chip.on { background:var(--primary); color:#fff; border-color:var(--primary); }
+.wd-period-bar .custom-row { display:flex; gap:8px; align-items:center; }
+.wd-period-bar .custom-row label { font-size:0.8em; color:var(--text-light); display:flex; gap:4px; align-items:center; }
+.wd-period-bar .custom-row input[type=date] { padding:2px 6px; border:1px solid var(--border); border-radius:4px; font-family:inherit; font-size:0.85em; }
+.wd-period-bar .custom-row.hide { display:none; }
+.wd-period-bar .period-meta { margin-left:auto; font-size:0.85em; }
 .wd-ratio-chart { display:block; width:100%; height:270px; min-height:240px; overflow:visible; }
 .wd-due-grid { display:grid; gap:10px; align-content:start; }
 .wd-due-card { padding:0; overflow:hidden; }
@@ -836,6 +862,24 @@
         if (target && target.tagName === 'DETAILS') target.open = true;
     };
     openHashDetails(); window.addEventListener('hashchange', openHashDetails);
+
+    // 추이 기간 프리셋 — 통계 페이지와 같이 고르면 바로 조회, 날짜를 만지면 직접지정으로
+    document.querySelectorAll('#period-form input[name="preset"]').forEach(el => {
+        el.addEventListener('change', () => {
+            const isCustom = el.value === 'custom';
+            document.querySelector('#period-form .custom-row').classList.toggle('hide', !isCustom);
+            if (!isCustom) document.getElementById('period-form').submit();
+        });
+    });
+    document.querySelectorAll('#period-form .custom-row input[type="date"]').forEach(el => {
+        el.addEventListener('change', () => {
+            const custom = document.querySelector('#period-form input[name="preset"][value="custom"]');
+            if (!custom) return;
+            custom.checked = true;
+            document.querySelectorAll('#period-form .preset-chip').forEach(chip => chip.classList.remove('on'));
+            custom.closest('.preset-chip').classList.add('on');
+        });
+    });
 
     // 회복기 비율 추이 — 40% 기준선과 실제 비율을 같은 축에서 표시
     document.querySelectorAll('.wd-ratio-chart').forEach(svg => {

@@ -132,6 +132,30 @@ class WardCensusTests(unittest.TestCase):
         # 상담이 안 붙은 회차는 비율 분모에서 빠진다 — 회복기 판정을 못 하기 때문
         self.assertEqual(today["known"], 1)
 
+    def test_ratio_trend_period_is_selectable(self):
+        """통계 페이지와 같은 preset/from/to로 고른 기간을 일별 그래프가 그린다."""
+        import json, re
+        def series_of(url):
+            html = self.client.get(url).get_data(as_text=True)
+            return [json.loads(m) for m in re.findall(r"data-series='(\[.*?\])'", html)], html
+        (daily, monthly), html = series_of("/ward?tab=trend")
+        self.assertEqual(len(daily), 30)          # 기본은 최근 30일
+        self.assertEqual(len(monthly), 12)
+        (daily, monthly), html = series_of("/ward?tab=trend&preset=90")
+        self.assertEqual(len(daily), 90)
+        self.assertIn('<label class="preset-chip on"><input type="radio" name="preset" value="90" checked>', html)
+        (daily, monthly), _ = series_of("/ward?tab=trend&preset=custom&from=2025-01-05&to=2025-01-14")
+        self.assertEqual([d["date"] for d in daily][::9], ["2025-01-05", "2025-01-14"])
+        self.assertEqual(len(daily), 10)
+        self.assertEqual(len(monthly), 12)        # 월별은 최소 12개월
+        self.assertEqual(monthly[-1]["label"], "25.01")
+        # 기간이 1년 넘게 걸치면 월별도 그만큼 늘어난다
+        (daily, monthly), _ = series_of("/ward?tab=trend&preset=custom&from=2024-01-01&to=2025-03-31")
+        self.assertEqual(len(monthly), 15)
+        # 종료일이 시작일보다 앞서면 서로 바꿔 쓴다
+        (daily, _), _ = series_of("/ward?tab=trend&preset=custom&from=2025-01-14&to=2025-01-05")
+        self.assertEqual(len(daily), 10)
+
     def test_falls_back_to_consultations_when_roster_is_empty(self):
         """명부를 아직 안 올린 설치에서는 옛 방식으로 돌아간다.
 

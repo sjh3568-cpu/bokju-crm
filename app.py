@@ -4363,20 +4363,41 @@ def ward_view():
         return {"total": total, "known": len(known), "recovery": recovery_count,
                 "ratio": round(recovery_count * 100 / len(known), 1) if known else 0}
 
-    daily_ratio_trend = []
-    for offset in range(29, -1, -1):
-        snapshot = date.today() - timedelta(days=offset)
-        daily_ratio_trend.append({"label": snapshot.strftime("%m.%d"),
-                                  "date": snapshot.isoformat(), **_ratio_at(snapshot)})
-    monthly_ratio_trend = []
-    current_month = date.today().replace(day=1)
-    for offset in range(11, -1, -1):
-        month_index = current_month.year * 12 + current_month.month - 1 - offset
-        year, month0 = divmod(month_index, 12)
-        month = month0 + 1
-        snapshot = min(date(year, month, calendar.monthrange(year, month)[1]), date.today())
-        monthly_ratio_trend.append({"label": f"{str(year)[2:]}.{month:02d}",
-                                    "date": snapshot.isoformat(), **_ratio_at(snapshot)})
+    # 추이 기간 — 통계 페이지와 같은 preset/from/to 방식. 프리셋(30/90/180/365일)
+    # 또는 custom(직접지정). 일별은 선택 기간 그대로, 월별은 기간을 덮는 달을 최소
+    # 12개월까지 넓혀 보여준다. 종료일은 오늘을 넘지 못하고, 일별 계산 비용 때문에
+    # 최대 2년으로 묶는다.
+    today_d = date.today()
+    trend_preset = (request.args.get("preset") or "").strip()
+    trend_to = date.fromisoformat(_valid_date(request.args.get("to"), today_d.isoformat()))
+    trend_to = min(trend_to, today_d)
+    trend_from = _valid_date(request.args.get("from"))
+    if trend_preset == "custom" and trend_from:
+        trend_from = date.fromisoformat(trend_from)
+    else:
+        if trend_preset not in _WARD_TREND_RANGES:
+            trend_preset = "30"
+        trend_from = trend_to - timedelta(days=int(trend_preset) - 1)
+    if trend_from > trend_to:
+        trend_from, trend_to = trend_to, trend_from
+    if (trend_to - trend_from).days > 730:
+        trend_from = trend_to - timedelta(days=730)
+    daily_ratio_trend, monthly_ratio_trend = [], []
+    if subtab == "trend":
+        snapshot = trend_from
+        while snapshot <= trend_to:
+            daily_ratio_trend.append({"label": snapshot.strftime("%m.%d"),
+                                      "date": snapshot.isoformat(), **_ratio_at(snapshot)})
+            snapshot += timedelta(days=1)
+        end_index = trend_to.year * 12 + trend_to.month - 1
+        start_index = trend_from.year * 12 + trend_from.month - 1
+        month_count = max(12, end_index - start_index + 1)
+        for offset in range(month_count - 1, -1, -1):
+            year, month0 = divmod(end_index - offset, 12)
+            month = month0 + 1
+            snapshot = min(date(year, month, calendar.monthrange(year, month)[1]), trend_to)
+            monthly_ratio_trend.append({"label": f"{str(year)[2:]}.{month:02d}",
+                                        "date": snapshot.isoformat(), **_ratio_at(snapshot)})
 
     # 최근 퇴원도 명부 기준이다 — 상담의 '퇴원완료' 상태로는 한 건도 안 잡힌다.
     # 상담이 붙은 회차는 그 상담의 퇴원 사유·담당자를 함께 싣는다.
@@ -4451,6 +4472,9 @@ def ward_view():
         doctor_options=doctor_options,
         recovery_due_list=recovery_due_list, discharge_due_list=discharge_due_list,
         daily_ratio_trend=daily_ratio_trend, monthly_ratio_trend=monthly_ratio_trend,
+        trend_preset=trend_preset, trend_ranges=_WARD_TREND_RANGES,
+        trend_from=trend_from.isoformat(), trend_to=trend_to.isoformat(),
+        trend_month_count=len(monthly_ratio_trend),
         discharged=discharged,
         subtab=subtab, away_report=away_report, away_candidates=admitted,
         blacklisted=blacklisted,
