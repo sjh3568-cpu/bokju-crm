@@ -5422,6 +5422,134 @@ def delete_communication(comm_id):
 
 # ─── 입원 중 이벤트 (응급전원·모병원 외래치료 등) ───
 
+def current_admission_census():
+    """지금 재원 중인 입원 회차 — 원무 명부가 기준이다.
+
+    consultations로는 재원을 셀 수 없었다. discharge_date가 8천여 건 중 한 건도
+    채워지지 않아 2024년에 입원한 환자가 아직 재원으로 잡혔고, 반대로 올해 입원한
+    환자는 한 명도 안 잡혔다(입원완료 상담의 마지막 입원일이 2025-06-18). 회차
+    테이블은 원무 시스템 명부를 그대로 받은 것이라 입·퇴원일이 사실과 같다.
+
+    회차마다 그 입원의 상담을 붙인다 — 입원일 이전 가장 가까운 상담, 없으면
+    입원 이후 첫 상담. 상담 없이 입원한 환자도 있어 그때는 붙지 않는다.
+    붙지 않은 회차는 orphans로 따로 넘긴다. 화면이 회차가 들고 있는
+    병동·병실·주상병만으로 그 행을 그린다.
+
+    Returns dict(
+      by_consultation = {상담id: 회차},   # 상담이 붙은 회차
+      orphans         = [회차, ...],      # 상담 없이 입원한 환자
+      patients        = {환자id, ...},    # 재원 환자 전체
+    )
+    """
+    conn = get_db()
+    try:
+        episodes = [dict(r) for r in conn.execute(
+            """SELECT e.*, p.name AS patient_name, p.gender, p.birth_year, p.chart_no
+               FROM admission_episodes e
+               JOIN patients p ON p.id = e.patient_id
+               WHERE e.discharged_at IS NULL
+                 AND e.admitted_at IS NOT NULL AND e.admitted_at != ''
+               ORDER BY e.admitted_at DESC, e.id DESC""")]
+        if not episodes:
+            return {"by_consultation": {}, "orphans": [], "patients": set()}
+
+        # 환자별 상담 목록을 한 번에 가져와 파이썬에서 고른다. 회차가 수백 건
+        # 규모라 상관 서브쿼리보다 이쪽이 읽기 쉽다.
+        by_patient = {}
+        placeholders = ",".join("?" * len(episodes))
+        for row in conn.execute(
+                "SELECT id, patient_id, consult_date FROM consultations "
+                f"WHERE patient_id IN ({placeholders}) "
+                "AND consult_date IS NOT NULL AND consult_date != ''",
+                [e["patient_id"] for e in episodes]):
+            by_patient.setdefault(row["patient_id"], []).append(
+                (row["consult_date"][:10], row["id"]))
+    finally:
+        conn.close()
+
+    by_consultation, orphans = _link_episodes(episodes, by_patient)
+    return {"by_consultation": by_consultation, "orphans": orphans,
+            "patients": {e["patient_id"] for e in episodes}}
+
+
+def _link_episodes(episodes, by_patient):
+    """회차마다 그 입원의 상담을 하나씩 물린다.
+
+    한 상담이 두 입원의 근거가 될 수는 없다(같은 환자가 재입원한 경우). 그래서
+    이미 가져간 상담은 후보에서 뺀다. 입원일이 이른 회차부터 집어야 옛 상담이
+    옛 입원에 붙는다.
+    """
+    by_consultation, orphans, taken = {}, [], set()
+    for ep in sorted(episodes, key=lambda e: e["admitted_at"][:10]):
+        admitted = ep["admitted_at"][:10]
+        cands = [(d, cid) for d, cid in by_patient.get(ep["patient_id"], ())
+                 if cid not in taken]
+        before = [x for x in cands if x[0] <= admitted]
+        pick = max(before) if before else (min(cands) if cands else None)
+        if pick is None:
+            orphans.append(ep)
+            continue
+        taken.add(pick[1])
+        by_consultation[pick[1]] = ep
+    return by_consultation, orphans
+
+
+def recent_discharges(limit=100):
+    """최근 퇴원 — 원무 명부 기준.
+
+    consultations의 '퇴원완료' 상태로는 한 건도 안 잡힌다(퇴원일이 전 건 비어
+    있어서다). 회차의 discharged_at이 원무 시스템이 찍은 실제 퇴원일이다.
+    상담이 붙은 회차는 퇴원 사유·담당자까지 함께 보여준다.
+    """
+    conn = get_db()
+    try:
+        rows = [dict(r) for r in conn.execute(
+            """SELECT e.id AS episode_id, e.patient_id, e.admitted_at, e.discharged_at,
+                      e.room_number, e.ward, e.diagnosis_name,
+                      p.name AS patient_name, p.gender
+               FROM admission_episodes e
+               JOIN patients p ON p.id = e.patient_id
+               WHERE e.discharged_at IS NOT NULL AND e.discharged_at != ''
+               ORDER BY e.discharged_at DESC, e.id DESC
+               LIMIT ?""", (limit,))]
+    finally:
+        conn.close()
+    return rows
+
+
+def admission_spans():
+    """모든 입원 회차의 (입원일, 퇴원일, 붙은 상담id) — 과거 어느 날의 재원 명부든
+    이걸로 복원한다.
+
+    상담의 입·퇴원일로 복원하면 퇴원일이 비어 있어 census가 계속 불어난다.
+    회차는 원무 명부 그대로라 어느 시점을 끊어도 실제 재원과 맞는다.
+    """
+    conn = get_db()
+    try:
+        episodes = [dict(r) for r in conn.execute(
+            "SELECT id, patient_id, admitted_at, discharged_at FROM admission_episodes "
+            "WHERE admitted_at IS NOT NULL AND admitted_at != ''")]
+        if not episodes:
+            return []
+        by_patient = {}
+        placeholders = ",".join("?" * len(episodes))
+        for row in conn.execute(
+                "SELECT id, patient_id, consult_date FROM consultations "
+                f"WHERE patient_id IN ({placeholders}) "
+                "AND consult_date IS NOT NULL AND consult_date != ''",
+                [e["patient_id"] for e in episodes]):
+            by_patient.setdefault(row["patient_id"], []).append(
+                (row["consult_date"][:10], row["id"]))
+    finally:
+        conn.close()
+    by_consultation, _ = _link_episodes(episodes, by_patient)
+    owner = {ep["id"]: cid for cid, ep in by_consultation.items()}
+    return [{"episode_id": ep["id"],
+             "admitted_at": ep["admitted_at"][:10],
+             "discharged_at": (ep["discharged_at"] or "")[:10] or None,
+             "consultation_id": owner.get(ep["id"])} for ep in episodes]
+
+
 AWAY_EVENT_TYPES = ("응급전원", "모병원 외래치료")
 
 

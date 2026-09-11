@@ -5,9 +5,10 @@
 {% block content %}
 {% macro bed(c) %}
 <div class="rm-bed {% if c.away %}rm-away{% endif %}"
-     data-cid="{{ c.id }}" data-name="{{ c.patient_name }}">
+     data-cid="{{ c.id or '' }}" data-name="{{ c.patient_name }}">
     <div class="rm-bed-top">
-        <a href="/consult/{{ c.id }}" class="rm-name">{{ c.patient_name }}</a>
+        {% if c.id %}<a href="/consult/{{ c.id }}" class="rm-name">{{ c.patient_name }}</a>
+        {% else %}<span class="rm-name">{{ c.patient_name }}</span>{% endif %}
         <span class="rm-age muted-sm">{% if c.patient_age is not none %}{{ c.patient_age }}{% endif %}{% if c.gender == 'M' %}·남{% elif c.gender == 'F' %}·여{% endif %}</span>
         {% for t in c.mgmt_tags %}<span class="wd-tag">{{ t }}</span>{% endfor %}
         {% if c.away %}
@@ -298,10 +299,10 @@
             {% for c in unassigned %}
             <div class="rm-room rm-room-solo">
                 {{ bed(c) }}
-                <div class="rm-assign" data-cid="{{ c.id }}">
+                {% if c.id %}<div class="rm-assign" data-cid="{{ c.id }}">
                     <input type="text" class="rm-room-in" placeholder="호실 (예: 502)" size="8">
                     <button type="button" class="btn btn-primary btn-xs rm-room-save">호실 지정</button>
-                </div>
+                </div>{% endif %}
             </div>
             {% endfor %}
         </div>
@@ -326,7 +327,8 @@
                     <td class="nowrap"><strong>{{ c.room_number or '—' }}</strong></td>
                     <td class="nowrap">
                         {% if c.away %}<span class="wd-mark">🚑</span>{% endif %}
-                        <a href="/consult/{{ c.id }}">{{ c.patient_name }}</a>
+                        {% if c.id %}<a href="/consult/{{ c.id }}">{{ c.patient_name }}</a>
+                        {% else %}<strong>{{ c.patient_name }}</strong> <span class="wd-roster-only" title="원무 명부에는 있으나 상담일지가 없는 환자입니다. 상담을 등록하면 외진·퇴원 관리를 할 수 있습니다.">상담기록 없음</span>{% endif %}
                         <span class="muted-sm">{% if c.patient_age is not none %}{{ c.patient_age }}{% endif %}{% if c.gender == 'M' %}·남{% elif c.gender == 'F' %}·여{% endif %}</span>
                         {% for t in c.mgmt_tags %}<span class="wd-tag">{{ t }}</span>{% endfor %}
                     </td>
@@ -385,9 +387,11 @@
                                    min="{{ c.away.event_date or '' }}" max="{{ today_str }}" title="복귀일">
                             <button type="button" class="btn btn-primary btn-xs wd-back" data-aevent="{{ c.away.id }}">↩ 복귀</button>
                         </span>
-                        {% else %}
+                        {% elif c.id %}
                         <button type="button" class="btn btn-secondary btn-xs wd-away-btn" data-cid="{{ c.id }}" data-name="{{ c.patient_name }}">🚑 외진</button>
                         <button type="button" class="btn btn-secondary btn-xs wd-dis" data-cid="{{ c.id }}" data-name="{{ c.patient_name }}">퇴원</button>
+                        {% else %}
+                        <a class="btn btn-secondary btn-xs" href="/consult/new?patient_id={{ c.patient_id }}">상담 등록</a>
                         {% endif %}
                     </td>
                 </tr>
@@ -649,6 +653,8 @@
 .wd-filter-extra { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .wd-tagsel { padding:5px 9px; border:1px solid var(--border); border-radius:7px; font-size:0.85em; }
 /* 관리 태그 배지 */
+.wd-roster-only { display:inline-block; background:#fef3c7; color:#92400e; border-radius:5px;
+    padding:1px 5px; font-size:0.72em; font-weight:700; vertical-align:middle; }
 .wd-tag { display:inline-block; font-size:0.7em; font-weight:800; color:#5b21b6;
     background:#ede9fe; border-radius:5px; padding:0 5px; margin-left:3px; vertical-align:middle; }
 

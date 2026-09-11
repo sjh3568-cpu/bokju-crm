@@ -4108,12 +4108,34 @@ def ward_view():
                     ward_f, db_q = ward_name, None
                     break
 
-    rows = models.list_consultations(admission_status="입원완료", q=db_q,
-                                     q_scope="ward", limit=10000)
+    # ── 재원 판정은 원무 명부(입원 회차)가 기준이다 ──
+    # 상담의 입원완료·퇴원일로 세면 맞지 않는다. 퇴원일이 한 건도 채워지지
+    # 않아 2024년 입원 환자가 아직 재원으로 잡히고, 올해 입원한 환자는 한 명도
+    # 안 잡혔다. 회차 테이블은 원무 명부를 그대로 받은 것이라 사실과 같다.
+    census = models.current_admission_census()
+    rows = models.list_consultations(q=db_q, q_scope="ward", limit=10000)
+    pending_pool = [c for c in rows
+                    if c.get("admission_status") == "입원완료"
+                    and not (c.get("discharge_date") or "").strip()
+                    and not (c.get("actual_admission_date") or c.get("admission_date") or "").strip()
+                    and c.get("patient_id") not in census["patients"]]
+    rows = [c for c in rows if c["id"] in census["by_consultation"]]
+    for c in rows:
+        # 입원 사실은 명부 값으로 덮는다 — 상담에 적힌 입원일·병실은 상담 시점의
+        # 예정값이라 실제와 어긋난다.
+        ep = census["by_consultation"][c["id"]]
+        c["episode_id"] = ep["id"]
+        c["actual_admission_date"] = ep["admitted_at"]
+        c["discharge_date"] = None
+        if ep.get("room_number"):
+            c["room_number"] = ep["room_number"]
+        c["roster_ward"] = ep.get("ward")
+    # 상담 없이 입원한 환자 — 명부에만 있다. 인원에서 빠지면 재원 수가 틀리므로
+    # 회차가 들고 있는 값만으로 행을 만든다. 상담 id가 없어 화면에서 상담 상세와
+    # 외진·퇴원 버튼은 뜨지 않는다(그 환자는 상담일지 자체가 없다).
+    rows += [_ward_row_from_episode(ep) for ep in census["orphans"]]
     if doctor:
         rows = [c for c in rows if (c.get("attending_doctor") or "") == doctor]
-    # 퇴원 기록이 있으면 명부에서 빠진다
-    rows = [c for c in rows if not (c.get("discharge_date") or "").strip()]
 
     bed_waiting = models.list_consultations(admission_status="입원대기", limit=10000)
     for c in bed_waiting:
@@ -4126,14 +4148,14 @@ def ward_view():
                                     -(c.get("wait_days") or 0), c.get("patient_name") or ""))
 
     away_by_cid = {a["consultation_id"]: a for a in models.away_now()}
-    admitted, pending = [], []
+    # 입원일 미확정(pending)은 상담 기준 그대로 둔다 — 데이터 점검 목록이다.
+    admitted, pending = [], list(pending_pool)
     for c in rows:
         adm = (c.get("actual_admission_date") or c.get("admission_date") or "").strip()
         c["admitted_on"] = adm or None
         if not adm:
-            pending.append(c)
             continue
-        c["away"] = away_by_cid.get(c["id"])
+        c["away"] = away_by_cid.get(c["id"]) if c["id"] else None
         c["stay_days"] = _days_since(adm)
         c.update(_care_phase(c))
         c["recovery_due"] = (c.get("care_phase") == "회복기"
@@ -4153,9 +4175,9 @@ def ward_view():
     for c in admitted:
         c["mgmt_tags"] = tag_map.get(c.get("patient_id"), [])
         c["ward_label"] = _dashboard_ward_label(c.get("room_number"))
-    hist = models.away_history([c["id"] for c in admitted])
+    hist = models.away_history([c["id"] for c in admitted if c["id"]])
     for c in admitted:
-        c["away_hist"] = hist.get(c["id"])
+        c["away_hist"] = hist.get(c["id"]) if c["id"] else None
 
     away = [c for c in admitted if c.get("away")]
     away.sort(key=lambda c: -((c["away"].get("days_out")) or 0))
@@ -4250,26 +4272,31 @@ def ward_view():
     )
 
     # 각 날짜의 재원 명부를 복원해 회복기 환자 비율을 계산한다.
-    trend_rows = models.list_consultations(limit=10000)
+    # 여기도 기준은 원무 명부다 — 상담의 입·퇴원일로 복원하면 퇴원일이 비어 있어
+    # census가 날이 갈수록 불어나기만 한다. 회차는 어느 시점을 끊어도 실제와 맞는다.
+    trend_rows = {c["id"]: c for c in models.list_consultations(limit=10000)}
+    spans = models.admission_spans()
     def _ratio_at(snapshot):
         census = []
         snapshot_iso = snapshot.isoformat()
-        for con in trend_rows:
-            admitted_on = (con.get("actual_admission_date") or con.get("admission_date") or "")[:10]
-            discharged_on = (con.get("discharge_date") or "")[:10]
-            if not admitted_on or admitted_on > snapshot_iso:
+        for span in spans:
+            if span["admitted_at"] > snapshot_iso:
                 continue
-            if discharged_on and discharged_on <= snapshot_iso:
+            if span["discharged_at"] and span["discharged_at"] <= snapshot_iso:
                 continue
-            census.append(con)
+            census.append((span, trend_rows.get(span["consultation_id"])))
+        # 상담이 안 붙은 회차는 진단·발병일을 몰라 회복기 판정을 못 한다. 과거로
+        # 갈수록 연결률이 떨어져(전체 73%) 이들을 '비회복기'로 세면 비율이 실제보다
+        # 낮게 나온다 — 40% 기준선을 보는 지표라 그 왜곡이 위험하다. 그래서 비율은
+        # 판정 가능한 인원만으로 내고, 인원(total)은 실제 재원 수 그대로 보여준다.
+        known = [con for _, con in census if con is not None]
         recovery_count = 0
-        for con in census:
-            if _recovery_status(con).get("label") != "회복기":
+        for span, con in census:
+            if con is None or _recovery_status(con).get("label") != "회복기":
                 continue
             period = compute_admission_period(con.get("diseases"), "회복기")
             try:
-                admitted_on = date.fromisoformat(
-                    (con.get("actual_admission_date") or con.get("admission_date"))[:10])
+                admitted_on = date.fromisoformat(span["admitted_at"])
             except (TypeError, ValueError):
                 continue
             billing_end = (_day_of(admitted_on, period["billing"])
@@ -4277,8 +4304,8 @@ def ward_view():
             if billing_end is None or snapshot <= billing_end:
                 recovery_count += 1
         total = len(census)
-        return {"total": total, "recovery": recovery_count,
-                "ratio": round(recovery_count * 100 / total, 1) if total else 0}
+        return {"total": total, "known": len(known), "recovery": recovery_count,
+                "ratio": round(recovery_count * 100 / len(known), 1) if known else 0}
 
     daily_ratio_trend = []
     for offset in range(29, -1, -1):
@@ -4295,12 +4322,18 @@ def ward_view():
         monthly_ratio_trend.append({"label": f"{str(year)[2:]}.{month:02d}",
                                     "date": snapshot.isoformat(), **_ratio_at(snapshot)})
 
-    discharged = models.list_consultations(admission_status="퇴원완료", limit=10000)
-    discharged = sorted(
-        [c for c in discharged if (c.get("discharge_date") or "").strip()],
-        key=lambda c: (c.get("discharge_date") or "", c.get("patient_name") or ""),
-        reverse=True,
-    )[:100]
+    # 최근 퇴원도 명부 기준이다 — 상담의 '퇴원완료' 상태로는 한 건도 안 잡힌다.
+    # 상담이 붙은 회차는 그 상담의 퇴원 사유·담당자를 함께 싣는다.
+    discharged = models.recent_discharges(limit=100)
+    con_by_episode = {sp["episode_id"]: trend_rows.get(sp["consultation_id"])
+                      for sp in spans if sp["consultation_id"]}
+    for d in discharged:
+        con = con_by_episode.get(d["episode_id"]) or {}
+        d["id"] = con.get("id")
+        d["discharge_date"] = d["discharged_at"][:10]
+        d["discharge_destination"] = con.get("discharge_destination")
+        d["discharge_reason"] = con.get("discharge_reason")
+        d["counselor"] = con.get("counselor")
     doctor_options = sorted({c.get("attending_doctor") for c in rows
                              if (c.get("attending_doctor") or "").strip()})
 
@@ -4526,6 +4559,31 @@ def _days_since(datestr):
 
 
 _ORGANISMS = ("CRE", "VRE", "CPE", "MRSA", "MRAB", "MRPA")
+
+
+def _ward_row_from_episode(ep):
+    """상담 없이 입원한 환자의 재원 행 — 원무 명부 값만으로 만든다.
+
+    상담일지가 없는 환자라 id가 None이다. 화면은 이 값으로 상담 상세 링크와
+    외진·퇴원 버튼을 감춘다. 인원에서 빼면 재원 수가 실제와 달라지므로
+    명단에는 반드시 올린다.
+    """
+    return {
+        "id": None, "patient_id": ep["patient_id"], "patient_name": ep.get("patient_name"),
+        "gender": ep.get("gender"), "consult_date": None, "counselor": None,
+        "admission_status": "입원완료",
+        "admission_date": ep.get("admitted_at"),
+        "actual_admission_date": ep.get("admitted_at"),
+        "discharge_date": None, "discharge_due_date": None,
+        "room_number": ep.get("room_number"), "roster_ward": ep.get("ward"),
+        "attending_doctor": ep.get("attending_doctor"),
+        "insurance_type": ep.get("insurance_type"),
+        "primary_diagnosis": ep.get("diagnosis_name"),
+        "diagnosis_code": ep.get("diagnosis_code"),
+        "disease_detail": None, "diseases": [], "secondary_diagnosis": None,
+        "patient_age": None, "episode_id": ep["id"],
+        "roster_only": True,
+    }
 
 
 def _split_diagnosis(c):
