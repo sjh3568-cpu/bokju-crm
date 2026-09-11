@@ -444,8 +444,7 @@
 <div class="card wd-sec" id="sec-away">
     <div class="wd-sec-head">
         <h3>🚑 외진 중 <span class="wd-n">{{ away|length }}</span></h3>
-        <span class="muted-sm">복귀 기록이 없는 환자 — 나간 날부터 경과일 표시 ·
-            <strong>외진 기간도 재원·수가 기간에 그대로 포함</strong>(차감 없음)</span>
+        <span class="muted-sm">복귀 기록이 없는 전체 환자 — 전원·퇴원으로 재원 명부에서 빠진 환자도 포함 · 재원 인원과 별도 집계</span>
     </div>
     {% if away %}
     <div class="tbl-wrap">
@@ -479,7 +478,7 @@
         </table>
     </div>
     {% else %}
-    <div class="empty">외진 나가 있는 환자가 없습니다. 전원 재원 중입니다 ✅</div>
+    <div class="empty">미복귀 외진 기록이 없습니다.</div>
     {% endif %}
 </div>
 

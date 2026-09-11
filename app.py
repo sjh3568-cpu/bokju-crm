@@ -4192,7 +4192,8 @@ def ward_view():
     bed_waiting.sort(key=lambda c: (priority_order.get(c.get("wait_priority") or "일반", 2),
                                     -(c.get("wait_days") or 0), c.get("patient_name") or ""))
 
-    away_by_cid = {a["consultation_id"]: a for a in models.away_now()}
+    away_records = models.away_now()
+    away_by_pid = {a["pid"]: a for a in away_records}
     # 입원일 미확정(pending)은 상담 기준 그대로 둔다 — 데이터 점검 목록이다.
     admitted, pending = [], list(pending_pool)
     for c in rows:
@@ -4200,7 +4201,7 @@ def ward_view():
         c["admitted_on"] = adm or None
         if not adm:
             continue
-        c["away"] = away_by_cid.get(c["id"]) if c["id"] else None
+        c["away"] = _ward_current_away(c, away_by_pid)
         c["stay_days"] = _days_since(adm)
         c.update(_care_phase(c))
         c["recovery_due"] = (c.get("care_phase") == "회복기"
@@ -4224,7 +4225,8 @@ def ward_view():
     for c in admitted:
         c["away_hist"] = hist.get(c["id"]) if c["id"] else None
 
-    away = [c for c in admitted if c.get("away")]
+    # 전원으로 재원 명부에서 빠져도 미복귀 외진은 별도로 계속 표시한다.
+    away = _ward_away_panel(away_records, doctor=doctor)
     away.sort(key=lambda c: -((c["away"].get("days_out")) or 0))
 
     # ── 병실 뷰 — 병동 → 호실 → 침상 ──
@@ -4509,6 +4511,29 @@ def api_backup_verify():
     return jsonify(result), (200 if result.get("ok") else 500)
 
 
+def _ward_current_away(record, by_patient):
+    event = by_patient.get(record.get("patient_id"))
+    if not event:
+        return None
+    admitted = record.get("admitted_on") or record.get("actual_admission_date") or record.get("admission_date")
+    if admitted and event.get("event_date") and event["event_date"][:10] < admitted[:10]:
+        return None
+    return event
+
+
+def _ward_away_panel(events, doctor=None):
+    """미복귀 환자 전체. 재원 여부와 별개이며 같은 환자는 최근 외진으로 한 번만 센다."""
+    latest = {}
+    for event in sorted(events, key=lambda e: (e.get("event_date") or "", e["id"])):
+        latest[event["pid"]] = event
+    return [{"id": e["consultation_id"], "patient_id": e["pid"],
+             "patient_name": e["pname"], "room_number": e.get("room_number"),
+             "guardian_name": e.get("guardian_name"),
+             "guardian_phone": e.get("guardian_phone"), "away": e}
+            for e in latest.values()
+            if not doctor or e.get("attending_doctor") == doctor]
+
+
 def _ward_admitted_roster(q, doctor):
     """재원(입원완료·미퇴원·입원일 있음) 환자 목록 — 파생 필드 모두 부착. ward_view/CSV 공유."""
     census = models.current_admission_census()
@@ -4531,14 +4556,15 @@ def _ward_admitted_roster(q, doctor):
                 and not (c.get("discharge_date") or "").strip()]
     if doctor:
         rows = [c for c in rows if (c.get("attending_doctor") or "") == doctor]
-    away_by_cid = {a["consultation_id"]: a for a in models.away_now()}
+    away_records = models.away_now()
+    away_by_pid = {a["pid"]: a for a in away_records}
     admitted = []
     for c in rows:
         adm = (c.get("actual_admission_date") or c.get("admission_date") or "").strip()
         if not adm:
             continue
         c["admitted_on"] = adm
-        c["away"] = away_by_cid.get(c["id"])
+        c["away"] = _ward_current_away(c, away_by_pid)
         c["stay_days"] = _days_since(adm)
         c.update(_care_phase(c))
         c["recovery_due"] = (c.get("care_phase") == "회복기"
@@ -4771,6 +4797,7 @@ def _ward_matches_diagnosis(c, diagnosis):
                for value in values for alias in aliases)
 
 
+_WARD_TREND_RANGES = {"30": "최근 30일", "90": "최근 90일", "180": "최근 6개월", "365": "최근 1년"}
 _WARD_STAY_PERIODS = {"6": "6개월", "12": "1년", "18": "1년 6개월", "24": "2년"}
 
 

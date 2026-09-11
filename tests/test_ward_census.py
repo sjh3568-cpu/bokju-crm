@@ -283,6 +283,37 @@ class WardCensusTests(unittest.TestCase):
             self.assertEqual(phase("회복기", ["비사용증후군"], "2023-01-01",
                                    snapshot, raw, True), expected)
 
+    def test_away_panel_includes_transferred_patient_outside_census(self):
+        with models.get_db() as conn:
+            conn.execute("INSERT INTO admission_events(consultation_id,event_type,event_date,hospital,event_time) "
+                         "VALUES(2,'응급전원','2024-05-01','확인병원','13:30')")
+            conn.execute("INSERT INTO admission_events(consultation_id,event_type,event_date,returned_at) "
+                         "VALUES(1,'응급전원','2026-08-03','2026-08-04')")
+        with patch.object(main, "render_template", return_value="") as render:
+            response = self.client.get("/ward?view=list")
+            self.assertEqual(response.status_code, 200)
+            ctx = render.call_args.kwargs
+            self.assertEqual({r['patient_id'] for r in ctx['admitted']}, {1, 3})
+            self.assertEqual([r['patient_id'] for r in ctx['away']], [2])
+            self.assertEqual(ctx['kpis']['away'], 1)
+            self.assertEqual(ctx['away'][0]['away']['event_time'], '13:30')
+        html = self.client.get("/ward?view=list").get_data(as_text=True)
+        panel = html.split('id="sec-away"')[1].split('id="sec-discharged"')[0]
+        self.assertIn('이미퇴원한사람', panel)
+        self.assertIn('확인병원', panel)
+        self.assertIn('13:30', panel)
+
+    def test_away_panel_deduplicates_patient_and_badge_ignores_previous_admission(self):
+        events = [dict(id=1,pid=5,consultation_id=20,pname='검증',event_date='2026-08-01'),
+                  dict(id=2,pid=5,consultation_id=21,pname='검증',event_date='2026-08-04')]
+        panel = main._ward_away_panel(events)
+        self.assertEqual(len(panel), 1)
+        self.assertEqual(panel[0]['away']['id'], 2)
+        self.assertEqual(main._ward_current_away(
+            dict(id=99,patient_id=5,admitted_on='2026-08-02'), {5: events[1]})['id'], 2)
+        self.assertIsNone(main._ward_current_away(
+            dict(patient_id=5,admitted_on='2026-08-05'), {5: events[1]}))
+
     def test_roster_care_type_values_are_read_by_prefix(self):
         for raw, expected in (("회복기", "회복기"), ("회복기재활", "회복기"),
                               ("회복기(S005)", "회복기"), ("비회복기재활", "비회복기"),

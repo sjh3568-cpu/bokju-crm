@@ -5815,14 +5815,16 @@ def away_now(patient_ids=None):
         where_pid = f"AND c.patient_id IN ({','.join('?' * len(patient_ids))})"
         vals += list(patient_ids)
     rows = conn.execute(f"""
-        SELECT ae.id, ae.event_type, ae.event_date, ae.hospital, ae.memo,
+        SELECT ae.id, ae.event_type, ae.event_date, ae.event_time, ae.hospital, ae.memo,
                ae.stage_before, ae.consultation_id,
-               c.patient_id AS pid, c.attending_doctor, c.room_number,
+               c.patient_id AS pid, COALESCE(NULLIF(ep.attending_doctor,''), c.attending_doctor) AS attending_doctor,
+               COALESCE(NULLIF(ep.room_number,''), c.room_number) AS room_number,
                p.name AS pname, p.guardian_name, p.guardian_phone,
                CAST(julianday(?) - julianday(ae.event_date) AS INTEGER) AS days_out
         FROM admission_events ae
         JOIN consultations c ON c.id = ae.consultation_id
         JOIN patients p ON p.id = c.patient_id
+        LEFT JOIN admission_episodes ep ON ep.id = ae.episode_id
         WHERE ae.event_type IN ({ph_type}) AND ae.returned_at IS NULL {where_pid}
         ORDER BY (ae.event_date IS NULL OR ae.event_date = '') ASC,
                  ae.event_date ASC, ae.id ASC
