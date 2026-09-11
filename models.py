@@ -5443,20 +5443,34 @@ def current_admission_census():
     """
     conn = get_db()
     try:
+        # roster_key가 있는 회차 = 원무 명부에서 온 것. 앱이 외진·입원 확정 때
+        # sync_admission_episode()로 만들어 둔 회차는 상담을 근거로 하는데, 그
+        # 상담에 퇴원일이 없어 퇴원한 환자도 영원히 열린 회차로 남는다. 섞어 세면
+        # 재원이 두 배가 된다(실제로 260명이 558명으로 나왔다). 명부가 사실이다.
         episodes = [dict(r) for r in conn.execute(
             """SELECT e.*, p.name AS patient_name, p.gender, p.birth_year, p.chart_no
                FROM admission_episodes e
                JOIN patients p ON p.id = e.patient_id
-               WHERE e.discharged_at IS NULL
+               WHERE e.roster_key IS NOT NULL
+                 AND e.discharged_at IS NULL
                  AND e.admitted_at IS NOT NULL AND e.admitted_at != ''
                ORDER BY e.admitted_at DESC, e.id DESC""")]
+        has_roster = bool(conn.execute(
+            "SELECT 1 FROM admission_episodes WHERE roster_key IS NOT NULL LIMIT 1").fetchone())
         if not episodes:
             # 명부가 아직 안 올라온 상태(신규 설치·적재 전)와 '지금 재원이 0명'은
-            # 다르다. 회차 테이블이 통째로 비어 있으면 화면이 옛 방식(상담 기준)으로
+            # 다르다. 명부에서 온 회차가 하나도 없으면 화면이 옛 방식(상담 기준)으로
             # 돌아가야 한다 — 안 그러면 적재 전까지 재원 명단이 빈 화면이 된다.
-            empty = conn.execute("SELECT 1 FROM admission_episodes LIMIT 1").fetchone()
             return {"by_consultation": {}, "orphans": [], "patients": set(),
-                    "has_roster": bool(empty)}
+                    "has_roster": has_roster}
+        # 한 사람이 동시에 두 번 입원할 수는 없다. 명부에 열린 회차가 둘이면
+        # 늦게 들어간 쪽이 현재 입원이다.
+        latest = {}
+        for ep in episodes:
+            prev = latest.get(ep["patient_id"])
+            if prev is None or ep["admitted_at"][:10] > prev["admitted_at"][:10]:
+                latest[ep["patient_id"]] = ep
+        episodes = list(latest.values())
 
         # 환자별 상담 목록을 한 번에 가져와 파이썬에서 고른다. 회차가 수백 건
         # 규모라 상관 서브쿼리보다 이쪽이 읽기 쉽다.
@@ -5475,6 +5489,7 @@ def current_admission_census():
     by_consultation, orphans = _link_episodes(episodes, by_patient)
     return {"by_consultation": by_consultation, "orphans": orphans,
             "patients": {e["patient_id"] for e in episodes}, "has_roster": True}
+
 
 
 def _link_episodes(episodes, by_patient):
@@ -5514,7 +5529,8 @@ def recent_discharges(limit=100):
                       p.name AS patient_name, p.gender
                FROM admission_episodes e
                JOIN patients p ON p.id = e.patient_id
-               WHERE e.discharged_at IS NOT NULL AND e.discharged_at != ''
+               WHERE e.roster_key IS NOT NULL
+                 AND e.discharged_at IS NOT NULL AND e.discharged_at != ''
                ORDER BY e.discharged_at DESC, e.id DESC
                LIMIT ?""", (limit,))]
     finally:
@@ -5533,7 +5549,8 @@ def admission_spans():
     try:
         episodes = [dict(r) for r in conn.execute(
             "SELECT id, patient_id, admitted_at, discharged_at FROM admission_episodes "
-            "WHERE admitted_at IS NOT NULL AND admitted_at != ''")]
+            "WHERE roster_key IS NOT NULL "
+            "AND admitted_at IS NOT NULL AND admitted_at != ''")]
         if not episodes:
             return []
         by_patient = {}

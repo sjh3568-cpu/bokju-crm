@@ -52,10 +52,10 @@ class WardCensusTests(unittest.TestCase):
                 conn.execute(
                     """INSERT INTO admission_episodes
                        (patient_id, episode_no, status, admitted_at, discharged_at,
-                        room_number, ward, diagnosis_name)
-                       VALUES (?, 1, ?, ?, ?, ?, '3병동', '상세불명의 뇌경색증')""",
+                        room_number, ward, diagnosis_name, roster_key)
+                       VALUES (?, 1, ?, ?, ?, ?, '3병동', '상세불명의 뇌경색증', ?)""",
                     (pid, "discharged" if discharged else "admitted",
-                     admitted, discharged, room))
+                     admitted, discharged, room, "chart%d|%s" % (pid, admitted)))
 
     def test_census_counts_episodes_not_consultations(self):
         census = models.current_admission_census()
@@ -68,11 +68,12 @@ class WardCensusTests(unittest.TestCase):
         with models.get_db() as conn:
             conn.execute(
                 """INSERT INTO admission_episodes
-                   (patient_id, episode_no, status, admitted_at, room_number)
-                   VALUES (1, 2, 'admitted', '2026-08-20', '302호')""")
+                   (patient_id, episode_no, status, admitted_at, room_number, roster_key)
+                   VALUES (1, 2, 'admitted', '2026-08-20', '302호', 'chart1|2026-08-20')""")
         census = models.current_admission_census()
-        self.assertEqual(len(census["by_consultation"]), 1)
-        self.assertEqual(len(census["orphans"]), 2)           # 남은 회차는 상담을 못 얻는다
+        # 같은 사람이 동시에 두 번 재원일 수는 없다 — 늦게 들어간 회차가 현재 입원
+        self.assertEqual(len(census["patients"]), 2)
+        self.assertEqual(len(census["by_consultation"]) + len(census["orphans"]), 2)
 
     def test_ward_screen_counts_and_labels(self):
         response = self.client.get("/ward?view=list")
@@ -105,8 +106,8 @@ class WardCensusTests(unittest.TestCase):
         with models.get_db() as conn:
             conn.execute(
                 """INSERT INTO admission_episodes
-                   (patient_id, episode_no, status, admitted_at, room_number)
-                   VALUES (4, 1, 'admitted', '2026-09-01', '501호')""")
+                   (patient_id, episode_no, status, admitted_at, room_number, roster_key)
+                   VALUES (4, 1, 'admitted', '2026-09-01', '501호', 'chart4|2026-09-01')""")
         html = self.client.get("/ward?view=list").get_data(as_text=True)
         self.assertIn('⚠ 입원일 미확정 <span class="wd-n">0</span>', html)
         self.assertIn('<span class="wd-k-n">3</span>', html)  # 재원 3명으로 늘어난다
@@ -146,6 +147,29 @@ class WardCensusTests(unittest.TestCase):
         self.assertIn('<span class="wd-k-n">2</span>', html)
         self.assertIn("재원환자", html)
         self.assertIn("이미퇴원한사람", html)
+
+    def test_app_created_episodes_are_not_counted(self):
+        """앱이 외진·입원확정 때 만든 회차(roster_key 없음)는 재원에 세지 않는다.
+
+        그 회차는 상담을 근거로 하는데 상담에 퇴원일이 없어 퇴원한 환자도 영원히
+        열린 채로 남는다. 섞어 세면 재원이 두 배가 된다(260명이 558명으로 나왔다).
+        """
+        with models.get_db() as conn:
+            conn.execute(
+                """INSERT INTO admission_episodes
+                   (patient_id, episode_no, status, admitted_at, consultation_id)
+                   VALUES (2, 9, 'admitted', '2024-02-01', 2)""")   # 이미 퇴원한 사람
+        census = models.current_admission_census()
+        self.assertEqual(len(census["patients"]), 2)
+        self.assertNotIn(2, census["patients"])
+        html = self.client.get("/ward?view=list").get_data(as_text=True)
+        self.assertIn('<span class="wd-k-n">2</span>', html)
+
+    def test_roster_only_flag_ignores_app_created_episodes(self):
+        """앱이 만든 회차만 있으면 명부는 아직 없는 것이다 — 옛 방식으로 돌아간다."""
+        with models.get_db() as conn:
+            conn.execute("UPDATE admission_episodes SET roster_key = NULL")
+        self.assertFalse(models.current_admission_census()["has_roster"])
 
 
 if __name__ == "__main__":
