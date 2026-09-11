@@ -1072,6 +1072,14 @@
             const note = cell ? cell.querySelector('.wd-back-note') : null;
             if (room && room.value.trim()) body.return_room = room.value.trim();
             if (note && note.value.trim()) body.return_note = note.value.trim();
+            // 외진 명부의 '복귀/타 병원 전원' 선택 — 전원이면 병원명이 필수
+            const outcome = cell ? cell.querySelector('.wd-back-outcome') : null;
+            const hospital = cell ? cell.querySelector('.wd-back-hospital') : null;
+            if (outcome && outcome.value === '전원') {
+                body.return_outcome = '전원';
+                if (!hospital || !hospital.value.trim()) { alert('전원 간 병원을 입력하세요.'); return; }
+                body.return_hospital = hospital.value.trim();
+            }
             btn.disabled = true;
             try {
                 const r = await api.post(`/api/admission-event/${btn.dataset.aevent}/return`, body);

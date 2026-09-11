@@ -8,7 +8,7 @@
 <div class="wd-kpi away-kpi">
     <div class="wd-k"><span class="wd-k-n">{{ report.stats.patients }}<small>명</small></span><span class="wd-k-l">외진·전원 환자 · {{ report.stats.events }}건</span></div>
     <div class="wd-k"><span class="wd-k-n">{{ report.stats.returned_patients }}<small>명</small></span><span class="wd-k-l">1회 이상 복귀 · {{ report.stats.returned_events }}건</span></div>
-    <div class="wd-k {% if report.stats.open_patients %}warn{% endif %}"><span class="wd-k-n">{{ report.stats.open_patients }}<small>명</small></span><span class="wd-k-l">미복귀 기록 보유 · {{ report.stats.open_events }}건</span></div>
+    <div class="wd-k {% if report.stats.open_patients %}warn{% endif %}"><span class="wd-k-n">{{ report.stats.open_patients }}<small>명</small></span><span class="wd-k-l">미복귀 기록 보유 · {{ report.stats.open_events }}건{% if report.stats.transferred_events %} · 타 병원 전원 {{ report.stats.transferred_patients }}명 {{ report.stats.transferred_events }}건{% endif %}</span></div>
     <div class="wd-k"><span class="wd-k-n">{{ report.stats.patient_rate }}<small>%</small></span><span class="wd-k-l">환자 기준 복귀율 · 건 기준 {{ report.stats.event_rate }}%</span></div>
 </div>
 <section class="card wd-sec away-transfer">
@@ -55,7 +55,7 @@
         <div class="away-filter-row">
             <span class="away-filter-range"><input type="date" name="away_from" value="{{ f.away_from }}" aria-label="전원·외진 시작일"><i>~</i><input type="date" name="away_to" value="{{ f.away_to }}" aria-label="전원·외진 종료일"></span>
             <select name="away_type" aria-label="유형"><option value="">유형 전체</option>{% for t in ['응급전원', '모병원 외래치료'] %}<option {% if f.away_type == t %}selected{% endif %}>{{ t }}</option>{% endfor %}</select>
-            <select name="away_status" aria-label="복귀 상태"><option value="">복귀 전체</option><option value="open" {% if f.away_status == 'open' %}selected{% endif %}>미복귀</option><option value="returned" {% if f.away_status == 'returned' %}selected{% endif %}>복귀 완료</option></select>
+            <select name="away_status" aria-label="복귀 상태"><option value="">복귀 전체</option><option value="open" {% if f.away_status == 'open' %}selected{% endif %}>미복귀</option><option value="returned" {% if f.away_status == 'returned' %}selected{% endif %}>복귀 완료</option><option value="transferred" {% if f.away_status == 'transferred' %}selected{% endif %}>타 병원 전원</option></select>
             <input name="away_q" value="{{ f.away_q }}" placeholder="환자·기관·사유·병명 검색" class="away-filter-q">
             <button class="btn btn-primary btn-sm">조회</button>
             <a class="btn btn-secondary btn-sm" href="/ward?tab=away{% if report.view != 'list' %}&away_view={{ report.view }}{% endif %}">초기화</a>
@@ -73,15 +73,18 @@
     </form>
 
     {% macro away_days(c) %}<span class="away-days {% if c.returned_at %}back{% elif c.away_days_inclusive is not none and c.away_days_inclusive >= 7 %}long{% else %}open{% endif %}">{% if c.away_days_inclusive is none %}기간 미확인{% elif c.returned_at %}{{ c.away_days_inclusive }}일 만에 복귀{% else %}<b>{{ c.away_days_inclusive }}</b>일째{% endif %}</span>{% endmacro %}
-    {% macro away_nth(c) %}<span class="away-nth">{% if c.away_number %}{{ c.away_number }}번째 외진{% else %}차수 미확정{% endif %}</span>{% endmacro %}
+    {% macro away_nth(c) %}<span class="away-nth {% if not c.away_number %}na{% endif %}" title="{% if c.away_number %}{{ c.away_number }}번째 외진{% else %}차수 미확정{% endif %}" aria-label="{% if c.away_number %}{{ c.away_number }}번째 외진{% else %}차수 미확정{% endif %}">{{ c.away_number or '?' }}</span>{% endmacro %}
     {% macro away_dday(c) %}{% if c.discharge_date %}<span class="away-dday muted-sm">퇴원 완료 {{ c.discharge_date }}</span>{% elif c.discharge_watch %}{% set days = c.discharge_watch.days_left %}<span class="away-dday {% if days <= 7 %}soon{% endif %}">퇴원 <b>{% if days > 0 %}D-{{ days }}{% elif days == 0 %}D-day{% else %}D+{{ -days }}{% endif %}</b> <small>{{ c.discharge_watch.due_date }}</small></span>{% endif %}{% endmacro %}
     {% macro away_return(c) %}
-        {% if c.returned_at %}<strong class="away-ok">복귀 완료</strong> <span class="muted-sm">{{ c.returned_at[:10] }}{% if c.return_room %} · {{ c.return_room }}{% endif %}</span>{% if c.return_note %}<span class="away-detail away-note muted-sm">{{ c.return_note }}</span>{% endif %}
-        {% elif can_edit %}<details class="away-return"><summary>미복귀 · 복귀 처리</summary><div class="wd-back-cell away-return-form">
-            <input type="date" class="wd-back-date" value="{{ today_str }}" min="{{ c.event_date or '' }}" max="{{ today_str }}" aria-label="{{ c.patient_name }} 복귀일">
-            <input class="wd-back-room" maxlength="50" value="{{ c.room_number or '' }}" placeholder="병실" aria-label="{{ c.patient_name }} 복귀 병실">
-            <input class="wd-back-note" maxlength="3000" placeholder="기타 사항" aria-label="{{ c.patient_name }} 복귀 기타 사항">
-            <button type="button" class="btn btn-primary btn-xs wd-back" data-aevent="{{ c.away_id }}">복귀 저장</button>
+        {% if c.transferred %}<strong class="away-moved">타 병원 전원</strong> <span class="muted-sm">{{ c.returned_at[:10] }}{% if c.return_hospital %} · {{ c.return_hospital }}{% endif %}</span>{% if c.return_note %}<span class="away-detail away-note muted-sm">{{ c.return_note }}</span>{% endif %}
+        {% elif c.returned_at %}<strong class="away-ok">복귀 완료</strong> <span class="muted-sm">{{ c.returned_at[:10] }}{% if c.return_room %} · {{ c.return_room }}{% endif %}</span>{% if c.return_note %}<span class="away-detail away-note muted-sm">{{ c.return_note }}</span>{% endif %}
+        {% elif can_edit %}<details class="away-return"><summary>미복귀 · 처리</summary><div class="wd-back-cell away-return-form">
+            <select class="wd-back-outcome" aria-label="{{ c.patient_name }} 처리 결과"><option value="복귀">복귀</option><option value="전원">타 병원 전원</option></select>
+            <input type="date" class="wd-back-date" value="{{ today_str }}" min="{{ c.event_date or '' }}" max="{{ today_str }}" aria-label="{{ c.patient_name }} 복귀·전원일">
+            <input class="wd-back-room" maxlength="50" value="{{ c.room_number or '' }}" placeholder="복귀 병실" aria-label="{{ c.patient_name }} 복귀 병실">
+            <input class="wd-back-hospital" maxlength="200" placeholder="전원 병원" aria-label="{{ c.patient_name }} 전원 병원" hidden>
+            <input class="wd-back-note" maxlength="3000" placeholder="기타 사항" aria-label="{{ c.patient_name }} 기타 사항">
+            <button type="button" class="btn btn-primary btn-xs wd-back" data-aevent="{{ c.away_id }}" data-label="복귀 저장">복귀 저장</button>
         </div></details>{% else %}<strong class="away-open">미복귀</strong>{% endif %}
     {% endmacro %}
 
@@ -121,7 +124,7 @@
         </tr>{% else %}<tr><td colspan="8" class="empty">조건에 맞는 외진·전원 기록이 없습니다.</td></tr>{% endfor %}</tbody>
     </table></div>
     {% endif %}
-    <p class="muted-sm away-foot">외진 일수는 나간 날을 1일째로 세며 재원일수에서 빼지 않습니다. 차수는 환자의 전체 외진·전원 기록 순서이고, 날짜가 없는 기록은 차수를 확정하지 않습니다. 입원일·병명·퇴원 D-day·나이는 연결된 상담 정보입니다.</p>
+    <p class="muted-sm away-foot">이름 앞 숫자는 그 환자의 외진 차수(몇 번째 외진)입니다. 외진 일수는 나간 날을 1일째로 세며 재원일수에서 빼지 않습니다. 차수는 환자의 전체 외진·전원 기록 순서이고, 날짜가 없는 기록은 차수를 확정하지 않습니다. 입원일·병명·퇴원 D-day·나이는 연결된 상담 정보입니다.</p>
 </section>
 
 <section class="card wd-sec">
@@ -168,7 +171,9 @@
 .away-days.open{background:#fef3c7;color:#92400e}
 .away-days.long{background:#fee2e2;color:#991b1b}
 .away-days.back{background:#e2e8f0;color:#334155;font-weight:600;font-size:.82em}
-.away-nth{display:block;font-size:.72em;font-weight:700;color:#14633f;line-height:1.2;margin-bottom:1px}
+.away-nth{display:inline-flex;align-items:center;justify-content:center;min-width:1.5em;height:1.5em;padding:0 .3em;margin-right:5px;border-radius:999px;background:#14633f;color:#fff;font-size:.72em;font-weight:800;line-height:1;vertical-align:middle;cursor:help}
+.away-nth.na{background:#cbd5e1;color:#475569}
+.away-moved{color:#6d28d9}
 .away-dday{font-size:.82em;color:#475569;white-space:nowrap}
 .away-dday b{color:#1e293b}
 .away-dday.soon b{color:#b91c1c}
@@ -212,7 +217,7 @@
 .away-card.is-back{border-left-color:#94a3b8}
 .away-card-no{font-weight:800;color:#64748b;font-size:1.1em;text-align:center;padding-top:2px}
 .away-card-head{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin-bottom:2px}
-.away-card-head .away-nth{display:inline;margin:0}
+.away-card-head .away-nth{margin-right:2px}
 .away-card-head a{color:#14633f;text-decoration:none;font-size:1.05em}
 .away-card-line{margin:2px 0;font-size:.9em;overflow-wrap:anywhere}
 .away-card-side{display:flex;flex-direction:column;gap:4px;align-items:flex-start;min-width:190px}
@@ -248,6 +253,16 @@ document.addEventListener('DOMContentLoaded', () => {
         toggle.addEventListener('click', () => setOpen(detail.hidden));
         filter.querySelectorAll('.away-filter-row select').forEach(el => el.addEventListener('change', () => filter.submit()));
     }
+
+    // 처리 결과가 '타 병원 전원'이면 병실 대신 병원명을 받는다
+    document.querySelectorAll('.wd-back-outcome').forEach(sel => sel.addEventListener('change', () => {
+        const cell = sel.closest('.wd-back-cell');
+        const moved = sel.value === '전원';
+        cell.querySelector('.wd-back-room').hidden = moved;
+        cell.querySelector('.wd-back-hospital').hidden = !moved;
+        const btn = cell.querySelector('.wd-back');
+        btn.textContent = moved ? '전원 저장' : btn.dataset.label;
+    }));
 
     const form = document.getElementById('away-register');
     const open = document.getElementById('away-register-open');

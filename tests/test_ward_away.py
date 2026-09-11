@@ -87,7 +87,8 @@ class AwayManagementTests(unittest.TestCase):
         self.assertIn('번째 외진', html)     # 차수 표시
         self.assertIn('data-detail-active="false"', html)
         self.assertIn('/ward/away.xlsx', html)
-        self.assertIn('미복귀 · 복귀 처리', html)
+        self.assertIn('미복귀 · 처리', html)
+        self.assertIn('title="1번째 외진"', html)
         feed = self.client.get('/ward?tab=away&away_view=feed').get_data(as_text=True)
         self.assertIn('class="on">▤ 피드형', feed)
         self.assertIn('away-feed-date', feed)
@@ -113,6 +114,31 @@ class AwayManagementTests(unittest.TestCase):
         self.assertEqual(sum(1 for r in rows[1:] if r[0] is not None and isinstance(r[0], int)), 1)
         self.login(0)
         self.assertEqual(self.client.get('/ward/away.xlsx').status_code, 403)
+
+    def test_transfer_outcome_is_not_a_return(self):
+        """외진이 타 병원 전원으로 끝나면 복귀 통계에서 빠지고 단계는 퇴원이 된다."""
+        self.login(2)
+        url = '/api/admission-event/2/return'
+        self.assertEqual(self.client.post(url, json={'return_outcome': '전원'}).status_code, 400)   # 병원 필수
+        self.assertEqual(self.client.post(url, json={'return_outcome': '기타'}).status_code, 400)
+        self.assertEqual(self.client.post(url, json={'return_outcome': '전원', 'return_hospital': '안동병원',
+                                                     'return_room': '999호', 'return_date': '2026-03-05'}).status_code, 200)
+        ev = models.get_admission_event(2)
+        self.assertEqual((ev['returned_at'], ev['return_outcome'], ev['return_hospital'], ev['return_room']),
+                         ('2026-03-05', '전원', '안동병원', None))
+        pid = models.get_consultation(ev['consultation_id'])['patient_id']
+        self.assertEqual(models.get_patient(pid)['lifecycle_stage'], '퇴원')
+        stats = models.away_record_stats(models.list_away_records(event_type='응급전원'))
+        self.assertEqual((stats['returned_events'], stats['transferred_events'], stats['open_events']), (1, 1, 1))
+        with main.app.test_request_context('/ward?tab=away&away_status=transferred'):
+            rows = main._ward_away_report()['rows']
+            self.assertEqual([r['away_id'] for r in rows], [2])
+        with main.app.test_request_context('/ward?tab=away&away_status=returned'):
+            self.assertNotIn(2, [r['away_id'] for r in main._ward_away_report()['rows']])
+        html = self.client.get('/ward?tab=away').get_data(as_text=True)
+        self.assertIn('타 병원 전원</strong>', html)
+        self.assertIn('안동병원', html)
+        self.assertIn('타 병원 전원 1명 1건', html)
 
     def test_return_persistence_validation_and_permissions(self):
         url = '/api/admission-event/2/return'

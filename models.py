@@ -669,6 +669,10 @@ def init_db():
         # 잦아 복귀 처리와 함께 현재 병실에도 반영한다.
         "return_room": "TEXT",      # 복귀 후 병실
         "return_note": "TEXT",      # 복귀 시 기타 인계 사항
+        # 외진이 복귀가 아니라 타 병원 전원으로 끝나는 경우. returned_at은 그
+        # 종결일이고 outcome='전원'이면 복귀 통계에서 뺀다. 병실은 옮기지 않는다.
+        "return_outcome": "TEXT",   # NULL/'복귀' | '전원'
+        "return_hospital": "TEXT",  # 전원 간 병원
         # 재입원 여부는 복귀와 별개다 — 퇴원 후 다시 들어온 건인지 원무 확인이
         # 필요해 '예/아니오/NULL(미확인)' 3상태로 둔다.
         "readmission": "TEXT",
@@ -5623,6 +5627,7 @@ def list_away_records(*, date_from=None, date_to=None, event_type=None):
                    ae.id AS away_id, ae.event_type, ae.event_date,
                    ae.event_time, ae.hospital, ae.memo, ae.returned_at,
                    ae.return_room, ae.return_note, ae.readmission,
+                   ae.return_outcome, ae.return_hospital,
                    CASE WHEN ae.event_date IS NOT NULL AND ae.event_date != ''
                         THEN ae.away_number END AS away_number
             FROM numbered_away ae
@@ -5636,16 +5641,25 @@ def list_away_records(*, date_from=None, date_to=None, event_type=None):
         conn.close()
 
 
+def is_away_transferred(row):
+    """외진이 타 병원 전원으로 끝난 기록인가 — 복귀가 아니므로 복귀 통계에서 뺀다."""
+    return bool(row.get('returned_at')) and (row.get('return_outcome') or '') == '전원'
+
+
 def away_record_stats(rows):
-    """실인원과 건수를 분리. 복귀 인원은 기간 내 기록 중 1회 이상 복귀."""
+    """실인원과 건수를 분리. 복귀 인원은 기간 내 기록 중 1회 이상 복귀.
+    타 병원 전원으로 종결된 기록은 복귀도 미복귀도 아닌 별도 항목이다."""
     patients = {r['patient_id'] for r in rows}
-    returned = [r for r in rows if r.get('returned_at')]
+    returned = [r for r in rows if r.get('returned_at') and not is_away_transferred(r)]
+    transferred = [r for r in rows if is_away_transferred(r)]
     returned_patients = {r['patient_id'] for r in returned}
     return {
         'patients': len(patients), 'returned_patients': len(returned_patients),
         'open_patients': len({r['patient_id'] for r in rows if not r.get('returned_at')}),
+        'transferred_patients': len({r['patient_id'] for r in transferred}),
+        'transferred_events': len(transferred),
         'events': len(rows), 'returned_events': len(returned),
-        'open_events': len(rows) - len(returned),
+        'open_events': len([r for r in rows if not r.get('returned_at')]),
         'patient_rate': round(100 * len(returned_patients) / len(patients), 1) if patients else 0,
         'event_rate': round(100 * len(returned) / len(rows), 1) if rows else 0,
     }
@@ -5715,7 +5729,8 @@ def open_away_event(consultation_id):
 
 
 def mark_admission_event_returned(event_id, *, return_date=None, returned_by=None,
-                                  return_room=None, return_note=None):
+                                  return_room=None, return_note=None,
+                                  outcome=None, return_hospital=None):
     """외진 이벤트에 복귀일을 찍는다. return_date 미지정이면 오늘.
 
     ※ 오늘은 파이썬(서버 로컬=KST)에서 만든다. SQLite date('now')는 UTC라
@@ -5727,15 +5742,19 @@ def mark_admission_event_returned(event_id, *, return_date=None, returned_by=Non
     (consultations·admission_episodes)까지 함께 옮긴다 — 외진 나간 사이
     자리가 바뀌는 일이 잦아, 두 곳을 따로 고치면 병상 화면이 어긋난다.
     """
-    room = (return_room or "").strip() or None
+    transferred = (outcome or "").strip() == "전원"
+    room = None if transferred else ((return_room or "").strip() or None)
     conn = get_db()
     try:
         with conn:
             conn.execute(
                 "UPDATE admission_events SET returned_at = ?, returned_by = ?, "
-                "return_room = ?, return_note = ? WHERE id = ?",
+                "return_room = ?, return_note = ?, return_outcome = ?, return_hospital = ? "
+                "WHERE id = ?",
                 (return_date or date.today().isoformat(), returned_by,
-                 room, (return_note or "").strip() or None, event_id),
+                 room, (return_note or "").strip() or None,
+                 "전원" if transferred else "복귀",
+                 (return_hospital or "").strip() or None if transferred else None, event_id),
             )
             if room:
                 cid = conn.execute(

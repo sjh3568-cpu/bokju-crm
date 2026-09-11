@@ -3986,7 +3986,7 @@ def _ward_away_report():
         abort(400, description="조회 시작일이 종료일보다 늦습니다.")
     if filters["away_type"] not in ("", *models.AWAY_EVENT_TYPES):
         abort(400)
-    if filters["away_status"] not in ("", "open", "returned"):
+    if filters["away_status"] not in ("", "open", "returned", "transferred"):
         abort(400)
     if filters["away_gender"] not in ("", "M", "F", "U"):
         abort(400)
@@ -4023,8 +4023,11 @@ def _ward_away_report():
     for row in rows:
         if filters["away_status"] == "open" and row.get("returned_at"):
             continue
-        if filters["away_status"] == "returned" and not row.get("returned_at"):
+        if filters["away_status"] == "returned" and (not row.get("returned_at") or models.is_away_transferred(row)):
             continue
+        if filters["away_status"] == "transferred" and not models.is_away_transferred(row):
+            continue
+        row["transferred"] = models.is_away_transferred(row)
         row.update(_split_diagnosis(row))
         search = " ".join(str(row.get(k) or "") for k in
                           ("patient_name", "hospital", "memo", "primary_diagnosis", "secondary_diagnosis", "diseases"))
@@ -4627,7 +4630,7 @@ def ward_away_xlsx():
     ws.title = "외진·전원 명부"
     headers = ["연번", "차수", "환자", "성별", "나이", "병실", "퇴원일(전원일)", "시각", "외진 일수",
                "구분", "전원기관", "주상병", "부상병", "사유", "본원 입원일", "재원일수",
-               "퇴원 D-day", "퇴원 예정일", "복귀 상태", "복귀일", "복귀 병실", "복귀 기타"]
+               "퇴원 D-day", "퇴원 예정일", "복귀 상태", "복귀일", "복귀 병실", "복귀 기타", "전원 병원"]
     ws.append(headers)
     for c in report["rows"]:
         watch = c.get("discharge_watch") or {}
@@ -4649,15 +4652,16 @@ def ward_away_xlsx():
             c.get("actual_admission_date") or c.get("admission_date") or "",
             c.get("stay_days_inclusive") if c.get("stay_days_inclusive") is not None else "",
             dday, c.get("discharge_date") or watch.get("due_date") or "",
-            "복귀 완료" if c.get("returned_at") else "미복귀",
+            "타 병원 전원" if c.get("transferred") else "복귀 완료" if c.get("returned_at") else "미복귀",
             (c.get("returned_at") or "")[:10], c.get("return_room") or "", c.get("return_note") or "",
+            c.get("return_hospital") or "",
         ])
     head_fill = PatternFill("solid", fgColor="E4F2EB")
     for cell in ws[1]:
         cell.font = Font(bold=True)
         cell.fill = head_fill
         cell.alignment = Alignment(horizontal="center", vertical="center")
-    widths = [5, 5, 10, 5, 5, 8, 12, 6, 9, 12, 16, 22, 18, 30, 12, 8, 9, 12, 9, 11, 10, 20]
+    widths = [5, 5, 10, 5, 5, 8, 12, 6, 9, 12, 16, 22, 18, 30, 12, 8, 9, 12, 11, 11, 10, 20, 16]
     for idx, width in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(idx)].width = width
     ws.freeze_panes = "A2"
@@ -5528,20 +5532,32 @@ def api_admission_event_return(event_id):
         return jsonify({"error": "복귀 병실은 50자 이내로 입력하세요."}), 400
     if len(return_note) > 3000:
         return jsonify({"error": "기타 사항은 3000자 이내로 입력하세요."}), 400
+    # 외진이 복귀가 아니라 타 병원 전원으로 끝나는 경우 — 종결일(returned_at)은
+    # 같은 칸에 찍되 outcome='전원'으로 구분한다. 병실은 옮기지 않고 단계는 퇴원.
+    outcome = (payload.get("return_outcome") or "복귀").strip()
+    if outcome not in ("복귀", "전원"):
+        return jsonify({"error": "처리 결과는 복귀 또는 전원입니다."}), 400
+    return_hospital = (payload.get("return_hospital") or "").strip()
+    if outcome == "전원" and not return_hospital:
+        return jsonify({"error": "전원 간 병원을 입력하세요."}), 400
+    if len(return_hospital) > 200:
+        return jsonify({"error": "전원 병원은 200자 이내로 입력하세요."}), 400
     models.mark_admission_event_returned(
         event_id, return_date=return_date,
         returned_by=g.user.get("display_name"),
         return_room=return_room or None, return_note=return_note or None,
+        outcome=outcome, return_hospital=return_hospital or None,
     )
     con = models.get_consultation(ev["consultation_id"])
-    back_to = (ev.get("stage_before") or "입원").strip()
+    back_to = "퇴원" if outcome == "전원" else (ev.get("stage_before") or "입원").strip()
     if con:
         _set_lifecycle_stage_clinical(con["patient_id"], back_to)
     models.log_audit(
         user_id=g.user["id"], username=g.user["username"],
         action="return_admission_event", target_type="consultation",
         target_id=ev["consultation_id"],
-        detail=f"{ev.get('event_type')} 복귀 → {back_to}", ip=request.remote_addr,
+        detail=(f"{ev.get('event_type')} → 타 병원 전원({return_hospital})" if outcome == "전원"
+                else f"{ev.get('event_type')} 복귀 → {back_to}"), ip=request.remote_addr,
     )
     return jsonify({"ok": True, "stage": back_to,
                     "return_date": return_date or date.today().isoformat()})
