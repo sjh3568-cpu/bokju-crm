@@ -354,8 +354,8 @@
                         <span class="wd-dd {% if c.phase_dday < 0 %}over{% elif c.phase_dday <= 30 %}warn{% endif %}">
                             {% if c.phase_dday < 0 %}{{ -c.phase_dday }}일 초과{% else %}D-{{ c.phase_dday }}{% endif %}</span>
                         {% endif %}
-                        {% if c.phase_end_date %}<div class="wd-dx-sub" title="{{ '회복기(S005) 종료일' if c.care_phase == '회복기' else '입원 만료일' }}">
-                            {% if c.care_phase == '회복기' %}회복기 종료 {% else %}만료 {% endif %}{{ c.phase_end_date|krdate }}</div>{% endif %}
+                        {% if c.phase_end_date %}<div class="wd-dx-sub" title="{{ '재활 종료일' if c.phase_end_kind == 'rehab' else ('회복기(S005) 종료일' if c.care_phase == '회복기' else '입원 만료일') }}">
+                            {% if c.phase_end_kind == 'rehab' %}재활 종료 {% elif c.care_phase == '회복기' %}회복기 종료 {% else %}만료 {% endif %}{{ c.phase_end_date|krdate }}</div>{% endif %}
                     </td>
                     <td class="nowrap">
                         {% if c.discharge_due %}{{ c.discharge_due|krdate }}

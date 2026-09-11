@@ -245,6 +245,44 @@ class WardCensusTests(unittest.TestCase):
         self.assertEqual(phase("회복기", ["비사용증후군"], str(start), start + timedelta(days=59)), "회복기")
         self.assertEqual(phase("회복기", ["비사용증후군"], str(start), start + timedelta(days=60)), "단일구간")
 
+    def test_q_end_date_drives_screen_trend_and_csv(self):
+        from datetime import date, timedelta
+        future = (date.today() + timedelta(days=10)).isoformat()
+        with models.get_db() as conn:
+            conn.execute("UPDATE admission_episodes SET care_type='회복기(S005)', "
+                         "rehab_end_imported=1, rehab_end_date=? WHERE patient_id=1", (future,))
+            conn.execute("UPDATE admission_episodes SET care_type='비회복기(S006)', "
+                         "rehab_end_imported=1, rehab_end_date=NULL WHERE patient_id=3")
+            conn.execute("UPDATE consultations SET diseases='[\"비사용증후군\"]' WHERE id=1")
+        with patch.object(main, "render_template", return_value="") as render:
+            self.client.get("/ward?view=list&filt=recovery")
+            rows = render.call_args.kwargs["admitted"]
+            self.assertEqual([c["patient_id"] for c in rows], [1])
+            self.assertEqual(rows[0]["phase_dday"], 10)
+            self.assertEqual(rows[0]["phase_end_date"], future)
+        with main.app.test_request_context("/ward.csv"):
+            rows = main._ward_admitted_roster(None, None)
+            self.assertEqual({r["patient_id"]: r["care_phase"] for r in rows},
+                             {1: "회복기", 3: "비회복기"})
+        import json, re
+        html = self.client.get("/ward?tab=trend").get_data(as_text=True)
+        series = json.loads(re.search(r"data-series='(\[.*?\])'", html).group(1))
+        self.assertEqual(series[-1]["total"], 2)
+        self.assertEqual(series[-1]["known"], 2)
+        self.assertEqual(series[-1]["recovery"], 1)
+        self.assertEqual(series[-1]["ratio"], 50.0)
+
+    def test_q_date_boundary_blank_and_far_future(self):
+        from datetime import date
+        phase = main._effective_roster_care_phase
+        for raw, snapshot, expected in (
+                ("2026-09-11", date(2026, 9, 11), "회복기"),
+                ("2026-09-11", date(2026, 9, 12), "비회복기"),
+                (None, date(2026, 9, 11), "비회복기"),
+                ("9999-12-31", date(2026, 9, 11), "회복기")):
+            self.assertEqual(phase("회복기", ["비사용증후군"], "2023-01-01",
+                                   snapshot, raw, True), expected)
+
     def test_roster_care_type_values_are_read_by_prefix(self):
         for raw, expected in (("회복기", "회복기"), ("회복기재활", "회복기"),
                               ("회복기(S005)", "회복기"), ("비회복기재활", "비회복기"),

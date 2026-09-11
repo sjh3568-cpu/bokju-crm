@@ -913,6 +913,15 @@ def _care_phase(consultation):
                    | '미판정'(발병일 없음 / 입원목적이 일반재활·요양·기타)
       phase_dday = 회복기는 S005 수가 만료까지, 그 외는 입원 만료까지 남은 일수
     """
+    if consultation.get("rehab_end_imported"):
+        end = consultation.get("rehab_end_date")
+        phase = _effective_roster_care_phase(
+            None, None, None, date.today(), end, True)
+        end_date = date.fromisoformat(end) if end else None
+        return {"care_phase": phase,
+                "phase_dday": (end_date - date.today()).days if end_date else None,
+                "phase_end_date": end, "phase_end_kind": "rehab",
+                "phase_mandatory": False}
     rec = _recovery_status(consultation) or {}
     label = (rec.get("label") or "").strip()
     ax = _admission_expiry(consultation) or {}
@@ -4164,6 +4173,8 @@ def ward_view():
         if (ep.get("attending_doctor") or "").strip():
             c["attending_doctor"] = ep["attending_doctor"].strip()
         c["roster_care_phase"] = _roster_care_phase(ep.get("care_type"))
+        c["rehab_end_date"] = ep.get("rehab_end_date")
+        c["rehab_end_imported"] = ep.get("rehab_end_imported")
     # 상담 없이 입원한 환자 — 명부에만 있다. 인원에서 빠지면 재원 수가 틀리므로
     # 회차가 들고 있는 값만으로 행을 만든다. 상담 id가 없어 화면에서 상담 상세와
     # 외진·퇴원 버튼은 뜨지 않는다(그 환자는 상담일지 자체가 없다).
@@ -4332,6 +4343,7 @@ def ward_view():
                 recovery_count += _effective_roster_care_phase(
                     roster_phase, (con or {}).get("diseases"),
                     span["admitted_at"], snapshot,
+                    span.get("rehab_end_date"), span.get("rehab_end_imported"),
                 ) == "회복기"
                 continue
             if con is None or _recovery_status(con).get("label") != "회복기":
@@ -4499,11 +4511,26 @@ def api_backup_verify():
 
 def _ward_admitted_roster(q, doctor):
     """재원(입원완료·미퇴원·입원일 있음) 환자 목록 — 파생 필드 모두 부착. ward_view/CSV 공유."""
-    rows = models.list_consultations(admission_status="입원완료", q=q,
-                                     q_scope="ward", limit=10000)
+    census = models.current_admission_census()
+    rows = models.list_consultations(q=q, q_scope="ward", limit=10000)
+    if census["has_roster"]:
+        rows = [c for c in rows if c["id"] in census["by_consultation"]]
+        for c in rows:
+            ep = census["by_consultation"][c["id"]]
+            c.update(actual_admission_date=ep["admitted_at"], discharge_date=None,
+                     admission_status="입원완료", episode_id=ep["id"],
+                     roster_care_phase=_roster_care_phase(ep.get("care_type")),
+                     rehab_end_date=ep.get("rehab_end_date"),
+                     rehab_end_imported=ep.get("rehab_end_imported"))
+            for field in ("room_number", "attending_doctor"):
+                if ep.get(field):
+                    c[field] = ep[field]
+        rows += [_ward_row_from_episode(ep) for ep in census["orphans"]]
+    else:
+        rows = [c for c in rows if c.get("admission_status") == "입원완료"
+                and not (c.get("discharge_date") or "").strip()]
     if doctor:
         rows = [c for c in rows if (c.get("attending_doctor") or "") == doctor]
-    rows = [c for c in rows if not (c.get("discharge_date") or "").strip()]
     away_by_cid = {a["consultation_id"]: a for a in models.away_now()}
     admitted = []
     for c in rows:
@@ -4625,8 +4652,13 @@ def _roster_care_phase(value):
 
 
 
-def _effective_roster_care_phase(phase, diseases, admitted_at, snapshot):
-    """명부의 대상 구분에 조회일의 수가 만료를 반영한다."""
+def _effective_roster_care_phase(phase, diseases, admitted_at, snapshot,
+                                 rehab_end_date=None, rehab_end_imported=False):
+    """Q열이 적재됐으면 실제 종료일이 진단군 추정보다 우선한다."""
+    if rehab_end_imported:
+        if not rehab_end_date:
+            return "비회복기"
+        return "회복기" if snapshot <= date.fromisoformat(rehab_end_date) else "비회복기"
     if phase != "회복기":
         return phase
     period = compute_admission_period(diseases, "회복기")
@@ -4665,6 +4697,8 @@ def _ward_row_from_episode(ep):
         "disease_detail": None, "diseases": [], "secondary_diagnosis": None,
         "patient_age": None, "episode_id": ep["id"],
         "roster_care_phase": _roster_care_phase(ep.get("care_type")),
+        "rehab_end_date": ep.get("rehab_end_date"),
+        "rehab_end_imported": ep.get("rehab_end_imported"),
         "roster_only": True,
     }
 
