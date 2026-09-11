@@ -131,6 +131,22 @@ class WardCensusTests(unittest.TestCase):
         # 상담이 안 붙은 회차는 비율 분모에서 빠진다 — 회복기 판정을 못 하기 때문
         self.assertEqual(today["known"], 1)
 
+    def test_falls_back_to_consultations_when_roster_is_empty(self):
+        """명부를 아직 안 올린 설치에서는 옛 방식으로 돌아간다.
+
+        회차가 통째로 비어 있는데 그대로 세면 재원 명단이 빈 화면이 된다.
+        '적재 전'과 '지금 재원 0명'은 다르다.
+        """
+        with models.get_db() as conn:
+            conn.execute("DELETE FROM admission_episodes")
+        census = models.current_admission_census()
+        self.assertFalse(census["has_roster"])
+        html = self.client.get("/ward?view=list").get_data(as_text=True)
+        # 상담 기준 = 입원일이 있는 입원완료 2건(재원환자·이미퇴원한사람)
+        self.assertIn('<span class="wd-k-n">2</span>', html)
+        self.assertIn("재원환자", html)
+        self.assertIn("이미퇴원한사람", html)
+
 
 if __name__ == "__main__":
     unittest.main()

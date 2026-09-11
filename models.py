@@ -5451,7 +5451,12 @@ def current_admission_census():
                  AND e.admitted_at IS NOT NULL AND e.admitted_at != ''
                ORDER BY e.admitted_at DESC, e.id DESC""")]
         if not episodes:
-            return {"by_consultation": {}, "orphans": [], "patients": set()}
+            # 명부가 아직 안 올라온 상태(신규 설치·적재 전)와 '지금 재원이 0명'은
+            # 다르다. 회차 테이블이 통째로 비어 있으면 화면이 옛 방식(상담 기준)으로
+            # 돌아가야 한다 — 안 그러면 적재 전까지 재원 명단이 빈 화면이 된다.
+            empty = conn.execute("SELECT 1 FROM admission_episodes LIMIT 1").fetchone()
+            return {"by_consultation": {}, "orphans": [], "patients": set(),
+                    "has_roster": bool(empty)}
 
         # 환자별 상담 목록을 한 번에 가져와 파이썬에서 고른다. 회차가 수백 건
         # 규모라 상관 서브쿼리보다 이쪽이 읽기 쉽다.
@@ -5469,7 +5474,7 @@ def current_admission_census():
 
     by_consultation, orphans = _link_episodes(episodes, by_patient)
     return {"by_consultation": by_consultation, "orphans": orphans,
-            "patients": {e["patient_id"] for e in episodes}}
+            "patients": {e["patient_id"] for e in episodes}, "has_roster": True}
 
 
 def _link_episodes(episodes, by_patient):

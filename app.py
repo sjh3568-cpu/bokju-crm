@@ -4119,11 +4119,24 @@ def ward_view():
                     and not (c.get("discharge_date") or "").strip()
                     and not (c.get("actual_admission_date") or c.get("admission_date") or "").strip()
                     and c.get("patient_id") not in census["patients"]]
-    rows = [c for c in rows if c["id"] in census["by_consultation"]]
+    if not census["has_roster"]:
+        # 명부를 아직 안 올린 설치. 회차가 통째로 비어 있으면 재원 명단도 비므로
+        # 옛 방식(상담의 입원완료·미퇴원)으로 돌아간다.
+        rows = [c for c in rows
+                if c.get("admission_status") == "입원완료"
+                and not (c.get("discharge_date") or "").strip()]
+        pending_pool = [c for c in rows
+                        if not (c.get("actual_admission_date") or c.get("admission_date") or "").strip()]
+        rows = [c for c in rows
+                if (c.get("actual_admission_date") or c.get("admission_date") or "").strip()]
+    else:
+        rows = [c for c in rows if c["id"] in census["by_consultation"]]
     for c in rows:
         # 입원 사실은 명부 값으로 덮는다 — 상담에 적힌 입원일·병실은 상담 시점의
         # 예정값이라 실제와 어긋난다.
-        ep = census["by_consultation"][c["id"]]
+        ep = census["by_consultation"].get(c["id"])
+        if not ep:
+            continue
         c["episode_id"] = ep["id"]
         c["actual_admission_date"] = ep["admitted_at"]
         c["discharge_date"] = None
