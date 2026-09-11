@@ -930,8 +930,8 @@ def _consultation_exists(conn, pid, parsed):
     ).fetchone() is not None
 
 
-def backup_db():
-    """적재 직전 스냅샷.
+def backup_db(label="excel_import"):
+    """적재 직전 스냅샷. label로 어느 도구가 뜬 백업인지 파일명에 남긴다.
 
     경로를 코드 폴더 기준으로 잡으면 컨테이너에서 깨진다 — 거기선 DB가
     마운트 볼륨(BOKJU_DB_PATH=/data/bokju.db)에 있고 코드 폴더(/app)에는
@@ -941,7 +941,7 @@ def backup_db():
     if not src.exists():
         raise SystemExit(f"DB 없음: {src} — 앱을 한 번 기동해 DB를 만든 뒤 실행할 것")
     dst_dir = Path(os.getenv("BACKUP_DIR") or (ROOT / "backups"))
-    dst = dst_dir / f"pre_excel_import_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+    dst = dst_dir / f"pre_{label}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
     dst_dir.mkdir(parents=True, exist_ok=True)
     # WAL 모드라 파일 복사만으로는 최신 커밋이 빠질 수 있다. sqlite 백업 API로 뜬다.
     with sqlite3.connect(src) as srcconn, sqlite3.connect(dst) as dstconn:

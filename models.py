@@ -798,6 +798,30 @@ def init_db():
         "UPDATE consultations SET admission_type = '일반' "
         "WHERE admission_type IS NULL OR admission_type = ''"
     )
+    # ─── 마이그레이션: 원무 입퇴원 명부 연계 ───
+    # 차트번호는 병원 원무 시스템의 환자 식별자다. 상담 CRM은 이름으로만
+    # 환자를 구분해 왔는데 동명이인이 많아(명부 1,264명 중 28쌍) 명부를 다시
+    # 받을 때마다 매칭을 새로 풀어야 했다. 한 번 확정한 차트번호를 남겨두면
+    # 다음 갱신부터는 대조 없이 붙는다.
+    _ensure_columns(conn, "patients", {
+        "chart_no": "TEXT",
+    })
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_patients_chart ON patients(chart_no)")
+    # 명부가 상담 기록보다 많이 아는 항목들. 상담 없이 입원한 환자도 있어
+    # consultation_id 없이 회차만 남을 수 있다(해당 컬럼은 NULL 허용).
+    _ensure_columns(conn, "admission_episodes", {
+        "ward": "TEXT",
+        "attending_doctor": "TEXT",
+        "insurance_type": "TEXT",
+        "diagnosis_code": "TEXT",
+        "diagnosis_name": "TEXT",
+        # 명부 1행 = 차트번호+입원일. 재적재해도 같은 회차를 덮어쓰도록 UNIQUE.
+        # excel_import가 멱등이 아니라 중복이 섞였던 전례가 있어 키를 박아둔다.
+        "roster_key": "TEXT",
+    })
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_episode_roster "
+                 "ON admission_episodes(roster_key) WHERE roster_key IS NOT NULL")
+
     _migrate_admission_episodes(conn)
 
     for name, icd10, category in DIAGNOSIS_SEED:
