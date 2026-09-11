@@ -4372,17 +4372,25 @@ def ward_view():
     trend_to = date.fromisoformat(_valid_date(request.args.get("to"), today_d.isoformat()))
     trend_to = min(trend_to, today_d)
     trend_from = _valid_date(request.args.get("from"))
-    if trend_preset == "custom" and trend_from:
-        trend_from = date.fromisoformat(trend_from)
+    if trend_preset not in _WARD_TREND_RANGES:
+        # custom이거나 preset이 빠졌어도 날짜가 왔으면 그 날짜를 쓴다. 날짜만 바꾸고
+        # 라디오가 안 바뀐 채 조회해도 입력한 기간이 무시되지 않게.
+        trend_preset = "custom" if trend_from else "30"
+    if trend_preset == "custom":
+        trend_from = date.fromisoformat(trend_from) if trend_from else trend_to - timedelta(days=29)
     else:
-        if trend_preset not in _WARD_TREND_RANGES:
-            trend_preset = "30"
-        trend_from = trend_to - timedelta(days=int(trend_preset) - 1)
+        # '최근 N일'은 오늘까지다 — 종료일이나 시작일이 그와 다르면 직접지정으로 본다.
+        preset_from = trend_to - timedelta(days=int(trend_preset) - 1)
+        if trend_to != today_d or (trend_from and date.fromisoformat(trend_from) != preset_from):
+            trend_preset = "custom"
+            trend_from = date.fromisoformat(trend_from) if trend_from else preset_from
+        else:
+            trend_from = preset_from
     if trend_from > trend_to:
         trend_from, trend_to = trend_to, trend_from
     if (trend_to - trend_from).days > 730:
         trend_from = trend_to - timedelta(days=730)
-    daily_ratio_trend, monthly_ratio_trend = [], []
+    daily_ratio_trend, monthly_ratio_trend, trend_insight = [], [], None
     if subtab == "trend":
         snapshot = trend_from
         while snapshot <= trend_to:
@@ -4398,6 +4406,7 @@ def ward_view():
             snapshot = min(date(year, month, calendar.monthrange(year, month)[1]), trend_to)
             monthly_ratio_trend.append({"label": f"{str(year)[2:]}.{month:02d}",
                                         "date": snapshot.isoformat(), **_ratio_at(snapshot)})
+        trend_insight = _ratio_insight(_ratio_at(today_d), admitted, _ratio_at, today_d)
 
     # 최근 퇴원도 명부 기준이다 — 상담의 '퇴원완료' 상태로는 한 건도 안 잡힌다.
     # 상담이 붙은 회차는 그 상담의 퇴원 사유·담당자를 함께 싣는다.
@@ -4474,7 +4483,7 @@ def ward_view():
         daily_ratio_trend=daily_ratio_trend, monthly_ratio_trend=monthly_ratio_trend,
         trend_preset=trend_preset, trend_ranges=_WARD_TREND_RANGES,
         trend_from=trend_from.isoformat(), trend_to=trend_to.isoformat(),
-        trend_month_count=len(monthly_ratio_trend),
+        trend_month_count=len(monthly_ratio_trend), trend_insight=trend_insight,
         discharged=discharged,
         subtab=subtab, away_report=away_report, away_candidates=admitted,
         blacklisted=blacklisted,
@@ -4819,6 +4828,61 @@ def _ward_matches_diagnosis(c, diagnosis):
     values = values + [c.get("lung_detail") or ""]
     return any(alias in "".join(str(value).split())
                for value in values for alias in aliases)
+
+
+def _ratio_insight(now, admitted, ratio_at, today, threshold=40, horizon=60):
+    """회복기 비율 40% 기준선에 대한 여유·필요 인원과 향후 예상 추이.
+
+    비율은 추이 그래프와 같은 분모(회복기 판정이 가능한 재원 인원 known)로 낸다.
+    정수 산식(비율 = R/K, 기준 t = threshold/100):
+      · 회복기 k명 퇴원해도 유지 → (R-k) ≥ t(K-k)  → k ≤ (R - tK)/(1-t)
+      · 비회복기 m명 입원해도 유지 → R ≥ t(K+m)      → m ≤ R/t - K
+      · 회복기 n명 입원하면 도달 → (R+n) ≥ t(K+n)   → n ≥ (tK - R)/(1-t)
+      · 비회복기 m명 퇴원하면 도달 → R ≥ t(K-m)     → m ≥ K - R/t
+    예상 추이는 '지금 재원이 그대로 있다'고 가정하고 회복기 종료일이 지나는 환자만
+    비회복기로 바꿔 계산한다 — ratio_at이 미래 날짜도 같은 규칙으로 판정하므로 그대로 쓴다.
+    """
+    R, K = now["recovery"], now["known"]
+    if not K:
+        return None
+    t_num, t_den = threshold, 100          # t = t_num/t_den
+    ok = R * t_den >= t_num * K
+    # 회복기/비회복기 각각 x명 늘거나 줄 때의 비율
+    def ratio_after(d_rec=0, d_non=0):
+        r, k = R + d_rec, K + d_rec + d_non
+        return round(r * 100 / k, 1) if k > 0 else 0
+    insight = {"ratio": now["ratio"], "recovery": R, "known": K, "total": now["total"],
+               "ok": ok, "threshold": threshold}
+    if ok:
+        # 회복기 퇴원 여유: k ≤ (100R - tK) / (100 - t)
+        rec_out = max(0, (t_den * R - t_num * K) // (t_den - t_num))
+        # 비회복기 입원 여유: m ≤ (100R - tK) / t
+        non_in = max(0, (t_den * R - t_num * K) // t_num)
+        insight.update(rec_out=rec_out, rec_out_ratio=ratio_after(d_rec=-(rec_out + 1)),
+                       non_in=non_in, non_in_ratio=ratio_after(d_non=non_in + 1))
+    else:
+        need = t_num * K - t_den * R
+        rec_in = -(-need // (t_den - t_num))     # ceil
+        non_out = -(-need // t_num)
+        insight.update(rec_in=rec_in, rec_in_ratio=ratio_after(d_rec=rec_in),
+                       non_out=non_out, non_out_ratio=ratio_after(d_non=-non_out))
+    # 향후 예상 — 회복기 종료로만 비율이 내려간다. 40% 아래로 처음 내려가는 날을 찾는다.
+    forecast, cross = [], None
+    for offset in range(0, horizon + 1):
+        snapshot = today + timedelta(days=offset)
+        point = {"label": snapshot.strftime("%m.%d"), "date": snapshot.isoformat(),
+                 **ratio_at(snapshot)}
+        forecast.append(point)
+        if cross is None and ok and point["known"] and point["recovery"] * t_den < t_num * point["known"]:
+            cross = point
+    ending = sorted(
+        [c for c in admitted if c.get("care_phase") == "회복기"
+         and c.get("phase_dday") is not None and 0 <= c["phase_dday"] <= horizon],
+        key=lambda c: (c["phase_dday"], c.get("patient_name") or ""))
+    insight.update(forecast=forecast, cross=cross, horizon=horizon,
+                   ending=ending, ending_30=sum(1 for c in ending if c["phase_dday"] <= 30),
+                   end_ratio=forecast[-1]["ratio"])
+    return insight
 
 
 _WARD_TREND_RANGES = {"30": "최근 30일", "90": "최근 90일", "180": "최근 6개월", "365": "최근 1년"}

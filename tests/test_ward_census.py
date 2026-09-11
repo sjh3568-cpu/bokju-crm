@@ -138,23 +138,55 @@ class WardCensusTests(unittest.TestCase):
         def series_of(url):
             html = self.client.get(url).get_data(as_text=True)
             return [json.loads(m) for m in re.findall(r"data-series='(\[.*?\])'", html)], html
-        (daily, monthly), html = series_of("/ward?tab=trend")
+        (daily, monthly, _f), html = series_of("/ward?tab=trend")
         self.assertEqual(len(daily), 30)          # 기본은 최근 30일
         self.assertEqual(len(monthly), 12)
-        (daily, monthly), html = series_of("/ward?tab=trend&preset=90")
+        (daily, monthly, _f), html = series_of("/ward?tab=trend&preset=90")
         self.assertEqual(len(daily), 90)
         self.assertIn('<label class="preset-chip on"><input type="radio" name="preset" value="90" checked>', html)
-        (daily, monthly), _ = series_of("/ward?tab=trend&preset=custom&from=2025-01-05&to=2025-01-14")
+        (daily, monthly, _f), _ = series_of("/ward?tab=trend&preset=custom&from=2025-01-05&to=2025-01-14")
         self.assertEqual([d["date"] for d in daily][::9], ["2025-01-05", "2025-01-14"])
         self.assertEqual(len(daily), 10)
         self.assertEqual(len(monthly), 12)        # 월별은 최소 12개월
         self.assertEqual(monthly[-1]["label"], "25.01")
         # 기간이 1년 넘게 걸치면 월별도 그만큼 늘어난다
-        (daily, monthly), _ = series_of("/ward?tab=trend&preset=custom&from=2024-01-01&to=2025-03-31")
+        (daily, monthly, _f), _ = series_of("/ward?tab=trend&preset=custom&from=2024-01-01&to=2025-03-31")
         self.assertEqual(len(monthly), 15)
         # 종료일이 시작일보다 앞서면 서로 바꿔 쓴다
-        (daily, _), _ = series_of("/ward?tab=trend&preset=custom&from=2025-01-14&to=2025-01-05")
+        (daily, _m, _f), _ = series_of("/ward?tab=trend&preset=custom&from=2025-01-14&to=2025-01-05")
         self.assertEqual(len(daily), 10)
+
+    def test_ratio_trend_dates_apply_without_custom_radio(self):
+        """날짜만 바꾸고 라디오가 프리셋에 남아 있어도 입력한 기간을 쓴다."""
+        import json, re
+        html = self.client.get("/ward?tab=trend&preset=30&from=2025-01-05&to=2025-01-14").get_data(as_text=True)
+        daily = json.loads(re.findall(r"data-series='(\[.*?\])'", html)[0])
+        self.assertEqual(len(daily), 10)
+        self.assertIn('value="custom" checked', html)
+
+    def test_ratio_insight_margins(self):
+        """40% 기준선까지의 여유·필요 인원 산식."""
+        from datetime import date
+        ratio_at = lambda d: {"total": 0, "known": 0, "recovery": 0, "ratio": 0}
+        # 회복기 5 / 판정 10 = 50% → 회복기 1명 나가면 4/9=44.4%, 2명이면 3/8=37.5%
+        ins = main._ratio_insight({"total": 12, "known": 10, "recovery": 5, "ratio": 50.0}, [], ratio_at, date(2026, 9, 11))
+        self.assertTrue(ins["ok"])
+        self.assertEqual((ins["rec_out"], ins["rec_out_ratio"]), (1, 37.5))
+        # 비회복기는 2명까지 (5/12=41.7%), 3명째 5/13=38.5%
+        self.assertEqual((ins["non_in"], ins["non_in_ratio"]), (2, 38.5))
+        # 회복기 3 / 판정 10 = 30% → 회복기 2명 들어오면 5/12=41.7%, 비회복기 3명 나가면 3/7=42.9%
+        ins = main._ratio_insight({"total": 10, "known": 10, "recovery": 3, "ratio": 30.0}, [], ratio_at, date(2026, 9, 11))
+        self.assertFalse(ins["ok"])
+        self.assertEqual((ins["rec_in"], ins["rec_in_ratio"]), (2, 41.7))
+        self.assertEqual((ins["non_out"], ins["non_out_ratio"]), (3, 42.9))
+        self.assertEqual(len(ins["forecast"]), 61)
+        self.assertIsNone(main._ratio_insight({"total": 0, "known": 0, "recovery": 0, "ratio": 0}, [], ratio_at, date(2026, 9, 11)))
+
+    def test_trend_page_renders_insight(self):
+        html = self.client.get("/ward?tab=trend").get_data(as_text=True)
+        self.assertIn("wd-insight", html)
+        self.assertIn("가정 계산기", html)
+        self.assertIn('data-forecast="1"', html)
 
     def test_falls_back_to_consultations_when_roster_is_empty(self):
         """명부를 아직 안 올린 설치에서는 옛 방식으로 돌아간다.
