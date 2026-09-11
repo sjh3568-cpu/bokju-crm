@@ -3971,6 +3971,109 @@ def lifecycle_board():
     )
 
 
+def _away_insights(rows, top=6):
+    """외진·전원 기록의 특성 — 무엇 때문에, 어디로, 얼마나 나갔다가 돌아오는가.
+
+    기준은 KPI와 같은 '기간·유형' 필터 결과(rows)다. 복귀 소요일은 나간 날을
+    1일째로 세고(외진 일수와 같은 셈법), 타 병원 전원으로 끝난 기록은 복귀가
+    아니므로 소요일 평균에서 뺀다. 사유는 자유 입력이라 '|' '/' '(' 앞 첫 구절만
+    떼어 묶는다 — '폐렴 | 명부: …' 식으로 뒤에 출처 메모가 붙는 경우가 많다.
+    """
+    if not rows:
+        return None
+
+    def days_out(r):
+        if not r.get("returned_at") or models.is_away_transferred(r):
+            return None
+        try:
+            d = (date.fromisoformat(str(r["returned_at"])[:10])
+                 - date.fromisoformat(str(r.get("event_date"))[:10])).days
+        except (TypeError, ValueError):
+            return None
+        return d + 1 if d >= 0 else None
+
+    def reason_of(r):
+        memo = (r.get("memo") or "").strip()
+        head = re.split(r"[|/(（\n]", memo, 1)[0].strip(" ·-–,.")
+        return head[:20] or "사유 미기재"
+
+    def group(rows, key):
+        buckets = {}
+        for r in rows:
+            k = key(r)
+            if not k:
+                continue
+            b = buckets.setdefault(k, {"label": k, "events": 0, "patients": set(),
+                                        "returned": 0, "transferred": 0, "days": []})
+            b["events"] += 1
+            b["patients"].add(r["patient_id"])
+            if models.is_away_transferred(r):
+                b["transferred"] += 1
+            elif r.get("returned_at"):
+                b["returned"] += 1
+            d = days_out(r)
+            if d is not None:
+                b["days"].append(d)
+        out = []
+        for b in buckets.values():
+            closed = b["returned"] + b["transferred"]
+            out.append({
+                "label": b["label"], "events": b["events"], "patients": len(b["patients"]),
+                "returned": b["returned"], "transferred": b["transferred"],
+                "open": b["events"] - closed,
+                "return_rate": round(b["returned"] * 100 / b["events"], 1) if b["events"] else 0,
+                "avg_days": round(sum(b["days"]) / len(b["days"]), 1) if b["days"] else None,
+            })
+        out.sort(key=lambda b: (-b["events"], b["label"]))
+        return out
+
+    for r in rows:
+        r.update(_split_diagnosis(r))
+    all_days = sorted(d for d in (days_out(r) for r in rows) if d is not None)
+    open_rows = [r for r in rows if not r.get("returned_at")]
+    open_days = []
+    for r in open_rows:
+        try:
+            open_days.append((date.today() - date.fromisoformat(str(r.get("event_date"))[:10])).days + 1)
+        except (TypeError, ValueError):
+            pass
+    dist_bins = (("1~3일", 1, 3), ("4~7일", 4, 7), ("8~14일", 8, 14), ("15일 이상", 15, 10 ** 6))
+    distribution = [{"label": lb, "count": sum(1 for d in all_days if lo <= d <= hi)}
+                    for lb, lo, hi in dist_bins]
+    per_patient = {}
+    for r in rows:
+        per_patient.setdefault(r["patient_id"], []).append(r)
+    repeaters = sorted(
+        [{"patient_id": pid, "name": items[0].get("patient_name"), "id": items[0].get("id"),
+          "events": len(items),
+          "hospitals": sorted({(i.get("hospital") or "").strip() for i in items if (i.get("hospital") or "").strip()})}
+         for pid, items in per_patient.items() if len(items) >= 2],
+        key=lambda x: (-x["events"], x["name"] or ""))
+
+    def age_band(r):
+        age = r.get("patient_age")
+        if age is None:
+            return None
+        return f"{min(int(age) // 10 * 10, 90)}대"
+
+    return {
+        "events": len(rows), "patients": len(per_patient),
+        "avg_days": round(sum(all_days) / len(all_days), 1) if all_days else None,
+        "median_days": all_days[len(all_days) // 2] if all_days else None,
+        "max_days": all_days[-1] if all_days else None,
+        "returned_n": len(all_days),
+        "distribution": distribution,
+        "open_n": len(open_rows), "open_long": sum(1 for d in open_days if d >= 7),
+        "open_avg_days": round(sum(open_days) / len(open_days), 1) if open_days else None,
+        "by_type": group(rows, lambda r: r.get("event_type")),
+        "by_reason": group(rows, reason_of)[:top],
+        "by_dx": group(rows, lambda r: (r.get("dx_primary") or [None])[0])[:top],
+        "by_hospital": group(rows, lambda r: (r.get("hospital") or "").strip() or None)[:top],
+        "by_age": sorted(group(rows, age_band), key=lambda b: b["label"]),
+        "repeaters": repeaters[:top], "repeater_n": len(repeaters),
+    }
+
+
 def _ward_away_report():
     filters = {key: (request.args.get(key) or "").strip()
                for key in ("away_from", "away_to", "away_type", "away_status", "away_q",
@@ -4072,7 +4175,7 @@ def _ward_away_report():
     detail_active = any(filters[k] for k in ("away_gender", "away_age_min", "away_age_max", "away_hospital",
                                              "away_dx", "away_number", "away_days_min", "away_dday_max"))
     return dict(rows=selected, stats=stats, transfers=transfers, monthly=monthly, filters=filters,
-                view=view, detail_active=detail_active)
+                view=view, detail_active=detail_active, insights=_away_insights(rows))
 
 
 @app.route("/ward")

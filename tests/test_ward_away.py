@@ -154,6 +154,24 @@ class AwayManagementTests(unittest.TestCase):
         self.assertTrue(all(r['admitted_on'] == '2026-01-10' for r in rows))
         self.assertTrue(all(r['stay_days_inclusive'] is not None for r in rows))
 
+    def test_insights_group_by_reason_dx_hospital_and_days(self):
+        with models.get_db() as conn:
+            conn.execute("UPDATE admission_events SET memo='폐렴 | 명부 메모' WHERE id=1")
+        rows = models.list_away_records()
+        ins = main._away_insights(rows)
+        self.assertEqual(ins['events'], len(rows))
+        reasons = {b['label']: b for b in ins['by_reason']}
+        self.assertIn('폐렴', reasons)                       # '|' 뒤 출처 메모는 떼고 묶는다
+        self.assertIn('테스트기관', {b['label'] for b in ins['by_hospital']})
+        self.assertTrue(all(b['events'] >= 1 for b in ins['by_type']))
+        self.assertEqual(sum(d['count'] for d in ins['distribution']), ins['returned_n'])
+        if ins['returned_n']:
+            self.assertIsNotNone(ins['avg_days'])
+        self.assertIsNone(main._away_insights([]))
+        html = self.client.get('/ward?tab=away').get_data(as_text=True)
+        self.assertIn('외진 환자 특성', html)
+        self.assertIn('평균 복귀 소요', html)
+
     def test_return_persistence_validation_and_permissions(self):
         url = '/api/admission-event/2/return'
         self.login(1)

@@ -22,6 +22,51 @@
     </details>
 </section>
 
+{% if report.insights %}{% set ai = report.insights %}
+<section class="card wd-sec away-insight">
+    <div class="wd-sec-head"><h3>외진 환자 특성</h3><span class="muted-sm">위 통계와 같은 기간·유형 기준 {{ ai.events }}건 · {{ ai.patients }}명 · 복귀 소요일은 나간 날을 1일째로</span></div>
+    <div class="away-ins-kpi">
+        <div><b>{% if ai.avg_days is not none %}{{ ai.avg_days }}일{% else %}-{% endif %}</b><span>평균 복귀 소요{% if ai.returned_n %} <small>· 복귀 {{ ai.returned_n }}건 기준</small>{% endif %}</span></div>
+        <div><b>{% if ai.median_days is not none %}{{ ai.median_days }}일{% else %}-{% endif %}</b><span>중앙값{% if ai.max_days is not none %} <small>· 최장 {{ ai.max_days }}일</small>{% endif %}</span></div>
+        <div class="{% if ai.open_long %}warn{% endif %}"><b>{{ ai.open_n }}명</b><span>현재 미복귀{% if ai.open_n %} <small>· 7일 이상 {{ ai.open_long }}명 · 평균 {{ ai.open_avg_days }}일째</small>{% endif %}</span></div>
+        <div><b>{{ ai.repeater_n }}명</b><span>2회 이상 외진 환자</span></div>
+    </div>
+    <div class="away-ins-grid">
+        <div class="away-ins-box">
+            <h4>복귀 소요일 분포</h4>
+            {% set dmax = ai.distribution|map(attribute='count')|max or 1 %}
+            <ul class="away-bars">{% for d in ai.distribution %}<li><span class="away-bar-l">{{ d.label }}</span><span class="away-bar"><i style="width:{{ (d.count * 100 / dmax)|round(0, 'ceil') }}%"></i></span><span class="away-bar-n">{{ d.count }}건</span></li>{% endfor %}</ul>
+            <h4>유형별</h4>
+            <table class="away-ins-tbl"><thead><tr><th>유형</th><th>건</th><th>명</th><th>복귀율</th><th>평균 복귀</th><th>미복귀</th></tr></thead><tbody>
+            {% for b in ai.by_type %}<tr><td>{{ b.label }}</td><td>{{ b.events }}</td><td>{{ b.patients }}</td><td>{{ b.return_rate }}%</td><td>{% if b.avg_days is not none %}{{ b.avg_days }}일{% else %}-{% endif %}</td><td>{{ b.open }}{% if b.transferred %} <small class="muted">전원 {{ b.transferred }}</small>{% endif %}</td></tr>{% endfor %}
+            </tbody></table>
+        </div>
+        <div class="away-ins-box">
+            <h4>사유별 <small class="muted">사유 첫 구절 기준 · 상위 {{ ai.by_reason|length }}</small></h4>
+            <table class="away-ins-tbl"><thead><tr><th>사유</th><th>건</th><th>복귀율</th><th>평균 복귀</th></tr></thead><tbody>
+            {% for b in ai.by_reason %}<tr><td>{{ b.label }}</td><td>{{ b.events }}</td><td>{{ b.return_rate }}%</td><td>{% if b.avg_days is not none %}{{ b.avg_days }}일{% else %}-{% endif %}</td></tr>{% endfor %}
+            </tbody></table>
+            <h4>주상병별 <small class="muted">상위 {{ ai.by_dx|length }}</small></h4>
+            <table class="away-ins-tbl"><thead><tr><th>주상병</th><th>건</th><th>명</th><th>복귀율</th><th>평균 복귀</th></tr></thead><tbody>
+            {% for b in ai.by_dx %}<tr><td>{{ b.label }}</td><td>{{ b.events }}</td><td>{{ b.patients }}</td><td>{{ b.return_rate }}%</td><td>{% if b.avg_days is not none %}{{ b.avg_days }}일{% else %}-{% endif %}</td></tr>{% else %}<tr><td colspan="5" class="empty">주상병 정보가 없습니다.</td></tr>{% endfor %}
+            </tbody></table>
+        </div>
+        <div class="away-ins-box">
+            <h4>전원기관별 <small class="muted">상위 {{ ai.by_hospital|length }}</small></h4>
+            <table class="away-ins-tbl"><thead><tr><th>기관</th><th>건</th><th>복귀율</th><th>평균 복귀</th><th>미복귀</th></tr></thead><tbody>
+            {% for b in ai.by_hospital %}<tr><td>{{ b.label }}</td><td>{{ b.events }}</td><td>{{ b.return_rate }}%</td><td>{% if b.avg_days is not none %}{{ b.avg_days }}일{% else %}-{% endif %}</td><td>{{ b.open }}</td></tr>{% endfor %}
+            </tbody></table>
+            <h4>연령대별</h4>
+            <table class="away-ins-tbl"><thead><tr><th>연령</th><th>건</th><th>명</th><th>복귀율</th><th>평균 복귀</th></tr></thead><tbody>
+            {% for b in ai.by_age %}<tr><td>{{ b.label }}</td><td>{{ b.events }}</td><td>{{ b.patients }}</td><td>{{ b.return_rate }}%</td><td>{% if b.avg_days is not none %}{{ b.avg_days }}일{% else %}-{% endif %}</td></tr>{% else %}<tr><td colspan="5" class="empty">나이 정보가 없습니다.</td></tr>{% endfor %}
+            </tbody></table>
+            {% if ai.repeaters %}<h4>반복 외진 <small class="muted">2회 이상 · 상위 {{ ai.repeaters|length }}</small></h4>
+            <ul class="away-repeaters">{% for r in ai.repeaters %}<li><a href="/consult/{{ r.id }}">{{ r.name }}</a> <b>{{ r.events }}회</b>{% if r.hospitals %} <small class="muted">{{ r.hospitals|join(', ') }}</small>{% endif %}</li>{% endfor %}</ul>{% endif %}
+        </div>
+    </div>
+</section>
+{% endif %}
+
 <section class="card wd-sec away-list-sec">
     <div class="away-toolbar">
         <h3>외진·전원 명부 <span class="wd-n">{{ report.rows|length }}건</span></h3>
@@ -110,7 +155,7 @@
     {% else %}
     <div class="tbl-wrap"><table class="away-table" aria-label="외진 환자 명단">
         <colgroup><col class="c-no"><col class="c-patient"><col class="c-date"><col class="c-type"><col class="c-dx"><col class="c-memo"><col class="c-adm"><col class="c-return"></colgroup>
-        <thead><tr><th>#</th><th>환자</th><th>퇴원일(전원일)<br><small>외진 일수</small></th><th>구분<br><small>전원기관</small></th><th>주상병<br><small>부상병</small></th><th>사유</th><th>본원 입원일<br><small>재원 · 퇴원 D-day</small></th><th>복귀</th></tr></thead>
+        <thead><tr><th>#</th><th>환자</th><th>퇴원일(전원일)<br><small>외진 일수</small></th><th>구분<br><small>전원기관</small></th><th>주상병<br><small>부상병</small></th><th>사유</th><th>본원 입원일<br><small>재원일수</small></th><th>복귀</th></tr></thead>
         <tbody>{% for c in report.rows %}<tr class="away-record {% if c.returned_at %}is-back{% elif c.away_days_inclusive is not none and c.away_days_inclusive >= 7 %}is-long{% endif %}">
             <td class="away-col-no" data-label="#">{{ c.no }}</td>
             <td data-label="환자"><div class="l1"><a href="/consult/{{ c.id }}">{{ c.patient_name }}</a>{{ away_nth(c) }}</div>
@@ -122,8 +167,8 @@
             <td data-label="주상병 · 부상병" class="away-col-dx"><div class="l1">{{ c.dx_primary|join(', ') or '-' }}</div>
                 <div class="l2">{{ c.dx_secondary|join(', ') if c.dx_secondary else '' }}</div></td>
             <td data-label="사유" class="away-col-memo"><div class="l1">{{ c.memo or '-' }}</div></td>
-            <td data-label="본원 입원일 · 재원 · 퇴원 D-day"><div class="l1">{{ c.admitted_on or '입원일 미확인' }}</div>
-                <div class="l2">{% if c.stay_days_inclusive is not none %}재원 {{ c.stay_days_inclusive }}일{% else %}재원일수 미확인{% endif %} · {{ away_dday(c) or '<span class="muted">퇴원 예정 미정</span>'|safe }}</div></td>
+            <td data-label="본원 입원일 · 재원일수"><div class="l1">{{ c.admitted_on or '입원일 미확인' }}</div>
+                <div class="l2">{% if c.stay_days_inclusive is not none %}재원 {{ c.stay_days_inclusive }}일{% else %}재원일수 미확인{% endif %}</div></td>
             <td data-label="복귀" class="away-col-return">{{ away_return(c) }}</td>
         </tr>{% else %}<tr><td colspan="8" class="empty">조건에 맞는 외진·전원 기록이 없습니다.</td></tr>{% endfor %}</tbody>
     </table></div>
@@ -144,6 +189,31 @@
 .away-transfer p{margin:6px 0}
 .away-help summary{cursor:pointer;font-size:.82em;color:#64748b}
 .away-help p{margin:6px 0 0}
+/* 외진 특성 인사이트 */
+.away-ins-kpi{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:6px 0 10px}
+.away-ins-kpi>div{display:flex;flex-direction:column;gap:2px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:#fff}
+.away-ins-kpi b{font-size:1.45em;font-weight:800;color:#14633f;line-height:1.1}
+.away-ins-kpi>div.warn b{color:#b45309}
+.away-ins-kpi span{font-size:.8em;color:#475569;font-weight:600}
+.away-ins-kpi small{font-weight:500;color:#94a3b8}
+.away-ins-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.away-ins-box{min-width:0;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;background:#fbfdff}
+.away-ins-box h4{margin:4px 0 6px;font-size:.85em;color:#334155}
+.away-ins-box h4+table,.away-ins-box h4+ul{margin-top:0}
+.away-ins-box h4:not(:first-child){margin-top:12px;padding-top:8px;border-top:1px dashed #e2e8f0}
+.away-ins-tbl{width:100%;border-collapse:collapse;font-size:12px}
+.away-ins-tbl th,.away-ins-tbl td{padding:3px 5px;text-align:right;border-bottom:1px solid #eef2f7;white-space:nowrap}
+.away-ins-tbl th:first-child,.away-ins-tbl td:first-child{text-align:left;white-space:normal;overflow-wrap:anywhere}
+.away-ins-tbl th{color:#64748b;font-weight:600;font-size:11px}
+.away-bars{list-style:none;margin:0 0 4px;padding:0;font-size:12px}
+.away-bars li{display:grid;grid-template-columns:5em 1fr 3.2em;align-items:center;gap:6px;margin:3px 0}
+.away-bar{height:10px;background:#eef2f7;border-radius:999px;overflow:hidden}
+.away-bar i{display:block;height:100%;background:#14633f;border-radius:999px}
+.away-bar-n{text-align:right;color:#475569}
+.away-repeaters{list-style:none;margin:0;padding:0;font-size:12px}
+.away-repeaters li{padding:2px 0;border-bottom:1px solid #eef2f7}
+.away-repeaters a{color:#14633f;text-decoration:none;font-weight:700}
+@media(max-width:1000px){.away-ins-grid{grid-template-columns:1fr}.away-ins-kpi{grid-template-columns:repeat(2,minmax(0,1fr))}}
 /* 툴바 — 제목·등록·보기 전환 한 줄 */
 .away-toolbar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
 .away-toolbar h3{margin:0}
