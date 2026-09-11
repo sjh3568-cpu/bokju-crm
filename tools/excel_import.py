@@ -65,9 +65,14 @@ def detect_schema(rows_1to5):
     return (None, None)
 
 
-def header_index_map(header_row):
+def header_index_map(header_row, label_rows=()):
     """헤더 행 → {정규화이름: 컬럼 인덱스(0-based)}.
-    중복 헤더는 처음 인덱스만 채택. 좌우 공백·줄바꿈 정리."""
+    중복 헤더는 처음 인덱스만 채택. 좌우 공백·줄바꿈 정리.
+
+    '입원일 / 비고'처럼 헤더 행 칸은 비어 있고 병합된 그룹 라벨 행에만 이름이
+    붙은 컬럼이 있다. 그 라벨 행 위치가 스키마마다 달라서(C는 헤더 위, B는 헤더
+    아래) label_rows로 둘 다 받아 빈 칸만 메운다. 헤더 행에 제 이름이 있는 칸은
+    덮지 않으므로 기존 매핑은 그대로다."""
     m = {}
     for i, v in enumerate(header_row):
         if v is None:
@@ -75,6 +80,18 @@ def header_index_map(header_row):
         key = str(v).strip().replace("\n", "")
         if key and key not in m:
             m[key] = i
+    for label_row in label_rows:
+        if not label_row:
+            continue
+        for i, v in enumerate(label_row):
+            if v is None:
+                continue
+            own = header_row[i] if i < len(header_row) else None
+            if own is not None and str(own).strip():
+                continue  # 헤더 행에 제 이름이 있는 칸은 덮지 않는다
+            key = str(v).strip().replace("\n", "")
+            if key and key not in m:
+                m[key] = i
     return m
 
 
@@ -678,13 +695,13 @@ def import_sheet(wb, sheet_name, *, apply_changes=False, schema_hint=None, skip_
 
     # outlier: 25.3 / 25.6 처럼 row 2에 필드 헤더가 온 경우
     header_row = rows_top[header_idx - 1]
-    headers_idx = header_index_map(header_row)
-    # 헤더가 2줄인 시트가 있다. 위 줄은 '환자 정보'·'보호자 정보' 같은 묶음 이름인데,
-    # '입원일 / 비고'처럼 아래 줄이 비어 있고 위 줄에만 이름이 있는 칸도 있다.
-    # 그 칸은 아래 줄만 보면 이름이 없어 통째로 무시됐다 — 입원일이 안 들어온 원인.
-    if header_idx >= 2:
-        for name, column in header_index_map(rows_top[header_idx - 2]).items():
-            headers_idx.setdefault(name, column)
+    # 헤더가 2줄인 시트가 있다. 한 줄은 '환자 정보'·'보호자 정보' 같은 묶음 이름인데,
+    # '입원일 / 비고'처럼 헤더 줄이 비어 있고 묶음 줄에만 이름이 있는 칸도 있다.
+    # 그 칸은 헤더 줄만 보면 이름이 없어 통째로 무시됐다 — 입원일이 안 들어온 원인.
+    # 묶음 줄은 헤더 위(스키마 C)에도 아래(스키마 B)에도 오므로 둘 다 넘긴다.
+    label_rows = [rows_top[i] for i in (header_idx - 2, header_idx)
+                  if 0 <= i < len(rows_top)]
+    headers_idx = header_index_map(header_row, label_rows)
     data_start_row = header_idx + 1  # 헤더 다음 행이 데이터 시작
 
     report = {
