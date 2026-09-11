@@ -5084,9 +5084,18 @@ def api_admission_event_return(event_id):
                     return jsonify({"error": f"복귀일이 외진 나간 날({out})보다 빠릅니다."}), 400
             except ValueError:
                 pass
+    # 병실·기타 사항은 선택 입력이다 — 재원 현황 카드의 [↩ 복귀] 1클릭은
+    # 날짜만 보낸다. 병실을 안 주면 현재 병실을 그대로 둔다.
+    return_room = (payload.get("return_room") or "").strip()
+    return_note = (payload.get("return_note") or "").strip()
+    if len(return_room) > 50:
+        return jsonify({"error": "복귀 병실은 50자 이내로 입력하세요."}), 400
+    if len(return_note) > 3000:
+        return jsonify({"error": "기타 사항은 3000자 이내로 입력하세요."}), 400
     models.mark_admission_event_returned(
         event_id, return_date=return_date,
         returned_by=g.user.get("display_name"),
+        return_room=return_room or None, return_note=return_note or None,
     )
     con = models.get_consultation(ev["consultation_id"])
     back_to = (ev.get("stage_before") or "입원").strip()
@@ -5100,6 +5109,41 @@ def api_admission_event_return(event_id):
     )
     return jsonify({"ok": True, "stage": back_to,
                     "return_date": return_date or date.today().isoformat()})
+
+
+@app.route("/api/admission-event/<int:event_id>/details", methods=["POST"])
+@login_required
+def api_admission_event_details(event_id):
+    """외진 명부에서 생년월일·재입원 여부를 고친다.
+
+    두 항목은 상담일지에 없던 값이라 외진 서류를 준비하며 그 자리에서
+    확인되는 일이 많다. 상담 상세까지 들어갔다 나오지 않게 명부에서 바로 받는다.
+    """
+    ev = models.get_admission_event(event_id)
+    if not ev or ev.get("event_type") not in models.AWAY_EVENT_TYPES:
+        return jsonify({"error": "외진·전원 기록이 아닙니다."}), 404
+    payload = request.get_json(silent=True) or {}
+    birth_date = (payload.get("birth_date") or "").strip()
+    readmission = (payload.get("readmission") or "").strip()
+    if readmission not in ("", "예", "아니오"):
+        return jsonify({"error": "재입원 여부는 예·아니오 중에서 고르세요."}), 400
+    if birth_date:
+        try:
+            if datetime.strptime(birth_date, "%Y-%m-%d").date() > date.today():
+                raise ValueError
+        except ValueError:
+            return jsonify({"error": "생년월일을 확인하세요 (YYYY-MM-DD, 미래 불가)."}), 400
+    try:
+        cid = models.set_away_record_details(
+            event_id, birth_date=birth_date or None, readmission=readmission or None)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="update_admission_event", target_type="consultation", target_id=cid,
+        detail="외진 명부 생년월일·재입원 여부 수정", ip=request.remote_addr,
+    )
+    return jsonify({"ok": True})
 
 
 @app.route("/api/admission-event/<int:event_id>", methods=["DELETE"])

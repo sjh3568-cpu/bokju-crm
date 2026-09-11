@@ -60,7 +60,9 @@
         <tbody>{% for c in report.rows %}<tr class="away-record">
             <td data-label="환자·외진 차수"><a href="/consult/{{ c.id }}"><strong>{{ c.patient_name }}</strong></a>
                 <span class="away-detail">{{ {'M':'남', 'F':'여'}.get(c.gender, '성별 미기재') }} · {{ (c.patient_age|string ~ '세') if c.patient_age is not none else '나이 미기재' }}</span>
+                <span class="away-detail">생년월일 {{ c.birth_date or '미입력' }} · 재입원 {{ c.readmission or '미확인' }}</span>
                 <span class="away-number">{% if c.away_number %}{{ c.away_number }}번째 외진{% else %}차수 미확정{% endif %}</span>
+                {% if P.get('ward', 0) >= 2 %}<button type="button" class="btn btn-secondary btn-xs away-edit" data-aevent="{{ c.away_id }}" data-name="{{ c.patient_name }}" data-birth="{{ c.birth_date or '' }}" data-readmission="{{ c.readmission or '' }}">정보 수정</button>{% endif %}
             </td>
             <td data-label="입원·재원 기간"><span class="away-detail">입원 {{ c.actual_admission_date or c.admission_date or '-' }}</span>
                 <strong>{% if c.stay_days_inclusive is not none %}재원 {{ c.stay_days_inclusive }}일{% else %}재원일수 미확인{% endif %}</strong>
@@ -73,7 +75,8 @@
             </td>
             <td data-label="사유·병명"><span class="away-detail"><b>사유</b> {{ c.memo or '-' }}</span><span class="away-detail"><b>병명</b> {{ (c.dx_primary + c.dx_secondary)|join(', ') or '-' }}</span></td>
             <td data-label="퇴원 D-day">{% if c.discharge_date %}퇴원 완료{% elif c.discharge_watch %}{% set days = c.discharge_watch.days_left %}<strong>{% if days > 0 %}D-{{ days }}{% elif days == 0 %}D-day{% else %}D+{{ -days }}{% endif %}</strong><small class="away-detail">{{ c.discharge_watch.due_date }}</small>{% else %}-{% endif %}</td>
-            <td data-label="복귀일·상태" class="wd-back-cell">{% if c.returned_at %}<strong>복귀 완료</strong><span class="away-detail">{{ c.returned_at[:10] }}</span>{% else %}<strong>미복귀</strong>{% if P.get('ward', 0) >= 2 %}<input type="date" class="wd-back-date" value="{{ today_str }}" min="{{ c.event_date or '' }}" max="{{ today_str }}" aria-label="{{ c.patient_name }} 복귀일"><button type="button" class="btn btn-primary btn-xs wd-back" data-aevent="{{ c.away_id }}">복귀 저장</button>{% endif %}{% endif %}</td>
+            <td data-label="복귀일·상태" class="wd-back-cell">{% if c.returned_at %}<strong>복귀 완료</strong><span class="away-detail">{{ c.returned_at[:10] }}</span>
+                <span class="away-detail"><b>복귀 병실</b> {{ c.return_room or '-' }}</span>{% if c.return_note %}<span class="away-detail away-note">{{ c.return_note }}</span>{% endif %}{% else %}<strong>미복귀</strong>{% if P.get('ward', 0) >= 2 %}<input type="date" class="wd-back-date" value="{{ today_str }}" min="{{ c.event_date or '' }}" max="{{ today_str }}" aria-label="{{ c.patient_name }} 복귀일"><input class="wd-back-room" maxlength="50" value="{{ c.room_number or '' }}" placeholder="복귀 병실" aria-label="{{ c.patient_name }} 복귀 병실"><textarea class="wd-back-note" rows="2" maxlength="3000" placeholder="기타 사항" aria-label="{{ c.patient_name }} 복귀 기타 사항"></textarea><button type="button" class="btn btn-primary btn-xs wd-back" data-aevent="{{ c.away_id }}">복귀 저장</button>{% endif %}{% endif %}</td>
         </tr>{% else %}<tr><td colspan="6" class="empty">조건에 맞는 외진·전원 기록이 없습니다.</td></tr>{% endfor %}</tbody>
     </table>
 </section>
@@ -84,8 +87,22 @@
         {% for month, stats in report.monthly %}<tr><td>{{ month }}</td><td>{{ stats.patients }}명</td><td>{{ stats.returned_patients }}명</td><td>{{ stats.patient_rate }}%</td><td>{{ stats.events }}</td><td>{{ stats.returned_events }}</td><td>{{ stats.open_events }}</td></tr>{% else %}<tr><td colspan="7" class="empty">집계할 기록이 없습니다.</td></tr>{% endfor %}
     </tbody></table></div>
 </section>
+<dialog id="away-edit-dialog" class="away-dialog" aria-labelledby="away-edit-title"><form id="away-edit-form">
+    <h3 id="away-edit-title">외진 환자 정보 수정</h3><p class="away-edit-patient"></p>
+    <label>생년월일 <input type="date" name="birth_date" max="{{ today_str }}"></label>
+    <label>재입원 여부 <select name="readmission"><option value="">미확인</option><option>예</option><option>아니오</option></select></label>
+    <p class="muted-sm">생년월일은 같은 환자의 모든 외진 기록에 함께 적용됩니다. 재입원 여부는 이 외진 기록에만 저장하며 복귀 처리와는 별개입니다.</p>
+    <button type="submit" class="btn btn-primary btn-sm">정보 저장</button><button type="button" class="btn btn-secondary btn-sm away-edit-close">취소</button>
+</form></dialog>
 <style>
 .wd-kpi.away-kpi{grid-template-columns:repeat(4,minmax(0,1fr))}
+.away-note{white-space:pre-wrap;overflow-wrap:anywhere}
+.away-edit{margin-top:6px}
+.away-table .wd-back-room,.away-table .wd-back-note{box-sizing:border-box;width:100%;max-width:100%;min-width:0;display:block;margin:6px 0;padding:4px;font:inherit;font-size:12px}
+.away-dialog{border:1px solid #e2e8f0;border-radius:14px;padding:24px;width:min(420px,92vw);max-height:85vh;overflow:auto}
+.away-dialog::backdrop{background:#0f172a77}
+.away-dialog label{display:block;margin:14px 0}
+.away-dialog input,.away-dialog select{box-sizing:border-box;display:block;width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:7px;font:inherit}
 .away-kpi .wd-k-l{white-space:normal}
 .away-table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:13px;line-height:1.6}
 .away-table th,.away-table td{padding:12px 8px;text-align:left;vertical-align:top;white-space:normal;overflow-wrap:anywhere;border-bottom:1px solid #e2e8f0}
@@ -126,6 +143,34 @@ document.addEventListener('DOMContentLoaded', () => {
             await api.post(`/api/consult/${cid}/admission-event`, data);
             location.reload();
         } catch (error) { alert('외진 기록 실패: ' + error.message); button.disabled = false; }
+    });
+});
+
+// 생년월일·재입원 여부 — 명부에서 바로 고친다 (상담 상세까지 안 들어가게)
+document.addEventListener('DOMContentLoaded', () => {
+    const dialog = document.getElementById('away-edit-dialog');
+    if (!dialog) return;
+    const form = dialog.querySelector('form');
+    document.querySelectorAll('.away-edit').forEach(btn => btn.addEventListener('click', () => {
+        form.reset();
+        form.dataset.aevent = btn.dataset.aevent;
+        dialog.querySelector('.away-edit-patient').textContent = btn.dataset.name;
+        form.elements.birth_date.value = btn.dataset.birth || '';
+        form.elements.readmission.value = btn.dataset.readmission || '';
+        dialog.showModal();
+    }));
+    dialog.querySelector('.away-edit-close').addEventListener('click', () => dialog.close());
+    form.addEventListener('submit', async event => {
+        event.preventDefault();
+        const save = form.querySelector('button[type=submit]');
+        save.disabled = true;
+        try {
+            await api.post(`/api/admission-event/${form.dataset.aevent}/details`,
+                           Object.fromEntries(new FormData(form)));
+            toast('✓ 환자 정보를 저장했습니다', 'success');
+            dialog.close();
+            setTimeout(() => location.reload(), 400);
+        } catch (error) { save.disabled = false; alert('저장 실패: ' + error.message); }
     });
 });
 </script>

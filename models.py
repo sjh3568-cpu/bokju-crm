@@ -505,6 +505,10 @@ def init_db():
         "blacklist_at": "DATETIME",
         # 관리 태그 (이사장 소개·VIP 등) — JSON 배열 텍스트
         "mgmt_tags": "TEXT",
+        # 생년월일. birth_year(연도)와 별개로 둔다 — 외진·전원 시 이송기관에
+        # 넘기는 서류가 연도가 아니라 생년월일을 요구한다. 연도만 아는 환자를
+        # 임의 날짜로 채우지 않으려고 따로 받는다.
+        "birth_date": "DATE",
     })
     _ensure_columns(conn, "consultations", {
         # 헤더
@@ -661,6 +665,13 @@ def init_db():
         "returned_at": "DATE",      # 복귀일 (NULL = 아직 병원 밖)
         "returned_by": "TEXT",      # 복귀 처리한 상담사
         "stage_before": "TEXT",     # 나가기 직전 생애주기 단계 → 복귀 시 원상복구
+        # 복귀 시 받아 적는 인계 정보. 병실은 외진 나간 사이 자리가 바뀌는 일이
+        # 잦아 복귀 처리와 함께 현재 병실에도 반영한다.
+        "return_room": "TEXT",      # 복귀 후 병실
+        "return_note": "TEXT",      # 복귀 시 기타 인계 사항
+        # 재입원 여부는 복귀와 별개다 — 퇴원 후 다시 들어온 건인지 원무 확인이
+        # 필요해 '예/아니오/NULL(미확인)' 3상태로 둔다.
+        "readmission": "TEXT",
     })
     conn.execute("CREATE INDEX IF NOT EXISTS idx_admevent_episode ON admission_events(episode_id)")
     _migrate_pair_legacy_returns(conn)
@@ -5437,9 +5448,10 @@ def list_away_records(*, date_from=None, date_to=None, event_type=None):
                 JOIN consultations c ON c.id = ae.consultation_id
                 WHERE ae.event_type IN ('응급전원', '모병원 외래치료')
             )
-            SELECT c.*, p.name AS patient_name, p.gender,
+            SELECT c.*, p.name AS patient_name, p.gender, p.birth_date,
                    ae.id AS away_id, ae.event_type, ae.event_date,
                    ae.event_time, ae.hospital, ae.memo, ae.returned_at,
+                   ae.return_room, ae.return_note, ae.readmission,
                    CASE WHEN ae.event_date IS NOT NULL AND ae.event_date != ''
                         THEN ae.away_number END AS away_number
             FROM numbered_away ae
@@ -5531,21 +5543,72 @@ def open_away_event(consultation_id):
     return dict(row) if row else None
 
 
-def mark_admission_event_returned(event_id, *, return_date=None, returned_by=None):
+def mark_admission_event_returned(event_id, *, return_date=None, returned_by=None,
+                                  return_room=None, return_note=None):
     """외진 이벤트에 복귀일을 찍는다. return_date 미지정이면 오늘.
 
     ※ 오늘은 파이썬(서버 로컬=KST)에서 만든다. SQLite date('now')는 UTC라
       KST 오전 9시 이전에는 하루 전 날짜가 찍혔다 — 외진 복귀를 실제로
       처리하는 시간대가 하필 그 아침이다. event_date도 화면에서 로컬
       날짜로 들어오므로 기준을 로컬로 통일한다.
+
+    return_room을 주면 복귀 기록에 남기는 데서 그치지 않고 현재 병실
+    (consultations·admission_episodes)까지 함께 옮긴다 — 외진 나간 사이
+    자리가 바뀌는 일이 잦아, 두 곳을 따로 고치면 병상 화면이 어긋난다.
+    """
+    room = (return_room or "").strip() or None
+    conn = get_db()
+    try:
+        with conn:
+            conn.execute(
+                "UPDATE admission_events SET returned_at = ?, returned_by = ?, "
+                "return_room = ?, return_note = ? WHERE id = ?",
+                (return_date or date.today().isoformat(), returned_by,
+                 room, (return_note or "").strip() or None, event_id),
+            )
+            if room:
+                cid = conn.execute(
+                    "SELECT consultation_id FROM admission_events WHERE id = ?",
+                    (event_id,)).fetchone()
+                if cid and cid["consultation_id"]:
+                    conn.execute(
+                        "UPDATE consultations SET room_number = ?, "
+                        "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (room, cid["consultation_id"]))
+                    conn.execute(
+                        "UPDATE admission_episodes SET room_number = ?, "
+                        "updated_at = CURRENT_TIMESTAMP WHERE consultation_id = ?",
+                        (room, cid["consultation_id"]))
+    finally:
+        conn.close()
+
+
+def set_away_record_details(event_id, *, birth_date=None, readmission=None):
+    """외진 명부에서 바로 고치는 두 항목 — 생년월일과 재입원 여부.
+
+    생년월일은 환자(patients)에, 재입원 여부는 그 외진 기록(admission_events)에
+    저장한다. 같은 환자의 다른 외진 기록도 생년월일은 함께 바뀌지만 재입원
+    여부는 건별로 다르기 때문이다. 빈 값은 '미확인'으로 되돌리는 뜻이라
+    NULL로 쓴다.
     """
     conn = get_db()
-    conn.execute(
-        "UPDATE admission_events SET returned_at = ?, returned_by = ? WHERE id = ?",
-        (return_date or date.today().isoformat(), returned_by, event_id),
-    )
-    conn.commit()
-    conn.close()
+    try:
+        with conn:
+            row = conn.execute(
+                "SELECT ae.consultation_id, c.patient_id FROM admission_events ae "
+                "LEFT JOIN consultations c ON c.id = ae.consultation_id WHERE ae.id = ?",
+                (event_id,)).fetchone()
+            if not row:
+                raise ValueError("외진 기록을 찾을 수 없습니다.")
+            conn.execute("UPDATE admission_events SET readmission = ? WHERE id = ?",
+                         (readmission or None, event_id))
+            if row["patient_id"]:
+                conn.execute(
+                    "UPDATE patients SET birth_date = ?, updated_at = CURRENT_TIMESTAMP "
+                    "WHERE id = ?", (birth_date or None, row["patient_id"]))
+            return row["consultation_id"]
+    finally:
+        conn.close()
 
 
 def away_history(consultation_ids):

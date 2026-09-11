@@ -910,6 +910,12 @@
             const cell = btn.closest('.wd-back-cell');
             const input = cell ? cell.querySelector('.wd-back-date') : null;
             const body = input && input.value ? { return_date: input.value } : {};
+            // 외진 명부(tab=away)에만 있는 병실·기타 사항 칸. 재원 현황의
+            // 1클릭 복귀에는 없으므로 있을 때만 실어 보낸다.
+            const room = cell ? cell.querySelector('.wd-back-room') : null;
+            const note = cell ? cell.querySelector('.wd-back-note') : null;
+            if (room && room.value.trim()) body.return_room = room.value.trim();
+            if (note && note.value.trim()) body.return_note = note.value.trim();
             btn.disabled = true;
             try {
                 const r = await api.post(`/api/admission-event/${btn.dataset.aevent}/return`, body);

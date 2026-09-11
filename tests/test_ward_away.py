@@ -102,6 +102,60 @@ class AwayManagementTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/consult/1/admission-event', json={
             'event_type': '응급전원', 'event_date': '2026-03-11'}).status_code, 400)
 
+    def test_return_saves_room_note_and_moves_current_room(self):
+        models.sync_admission_episode(1)
+        response = self.client.post('/api/admission-event/2/return', json={
+            'return_date': '2026-03-05', 'return_room': '301호', 'return_note': '산소 유지 필요'})
+        self.assertEqual(response.status_code, 200)
+        event = models.get_admission_event(2)
+        self.assertEqual((event['return_room'], event['return_note']), ('301호', '산소 유지 필요'))
+        # 기록만이 아니라 현재 병실도 따라가야 병상 화면이 어긋나지 않는다
+        self.assertEqual(models.get_consultation(1)['room_number'], '301호')
+        with models.get_db() as conn:
+            episode = conn.execute(
+                'SELECT room_number FROM admission_episodes WHERE consultation_id = 1').fetchone()
+        self.assertEqual(episode['room_number'], '301호')
+        row = [r for r in models.list_away_records() if r['away_id'] == 2][0]
+        self.assertEqual(row['return_room'], '301호')
+
+    def test_return_without_room_keeps_current_room(self):
+        with models.get_db() as conn:
+            conn.execute("UPDATE consultations SET room_number='205호' WHERE id=1")
+        self.assertEqual(self.client.post('/api/admission-event/2/return',
+                                          json={'return_date': '2026-03-05'}).status_code, 200)
+        self.assertEqual(models.get_consultation(1)['room_number'], '205호')
+
+    def test_return_rejects_overlong_room_and_note(self):
+        for payload in ({'return_room': '방' * 51}, {'return_note': '가' * 3001}):
+            self.assertEqual(self.client.post('/api/admission-event/2/return',
+                                              json=payload).status_code, 400)
+        self.assertIsNone(models.get_admission_event(2)['returned_at'])
+
+    def test_details_saves_birth_date_and_readmission(self):
+        self.login(1)
+        self.assertEqual(self.client.post('/api/admission-event/2/details',
+                                          json={'readmission': '예'}).status_code, 403)
+        self.login(2)
+        response = self.client.post('/api/admission-event/2/details',
+                                    json={'birth_date': '1955-04-02', 'readmission': '예'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(models.get_admission_event(2)['readmission'], '예')
+        # 생년월일은 환자에 저장되므로 같은 환자의 다른 외진 기록에도 보인다
+        rows = {r['away_id']: r for r in models.list_away_records()}
+        self.assertEqual(rows[2]['birth_date'], '1955-04-02')
+        self.assertEqual(rows[1]['birth_date'], '1955-04-02')
+        self.assertIsNone(rows[1]['readmission'])
+
+    def test_details_rejects_bad_values_and_non_away_event(self):
+        future = (date.today() + timedelta(days=1)).isoformat()
+        for payload in ({'birth_date': future}, {'birth_date': '55-4-2'}, {'readmission': '아마도'}):
+            self.assertEqual(self.client.post('/api/admission-event/2/details',
+                                              json=payload).status_code, 400)
+        # 5번은 '기타' 이벤트 — 외진 명부 항목이 아니다
+        self.assertEqual(self.client.post('/api/admission-event/5/details',
+                                          json={'readmission': '예'}).status_code, 404)
+        self.assertIsNone(models.get_patient(1)['birth_date'])
+
     def test_lifetime_numbering_survives_filters_and_readmission(self):
         with models.get_db() as conn:
             conn.execute("INSERT INTO consultations (id, patient_id, consult_date) VALUES (3, 1, '2026-04-01')")
