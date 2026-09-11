@@ -5536,6 +5536,28 @@ def current_admission_census():
 
 
 
+def close_roster_episode(episode_id, *, discharged_at, destination=None, reason=None):
+    """CRM에서 퇴원(또는 타 병원 전원) 처리한 환자의 원무 명부 회차를 닫는다.
+
+    재원 판정은 명부 회차(roster_key) 기준이라 상담에 퇴원일을 적어도 명단에서
+    빠지지 않았다. 다음 명부 적재 때 원무 값으로 다시 덮이므로(import는
+    roster_key로 UPDATE) 여기서 닫는 것은 명부가 갱신될 때까지의 임시 반영이다.
+    이미 닫힌 회차나 명부가 아닌 회차는 건드리지 않는다.
+    """
+    conn = get_db()
+    try:
+        with conn:
+            cur = conn.execute(
+                "UPDATE admission_episodes SET discharged_at = ?, status = 'discharged', "
+                "discharge_destination = COALESCE(?, discharge_destination), "
+                "discharge_reason = COALESCE(?, discharge_reason), updated_at = CURRENT_TIMESTAMP "
+                "WHERE id = ? AND roster_key IS NOT NULL AND discharged_at IS NULL",
+                (discharged_at, destination or None, reason or None, episode_id))
+            return cur.rowcount
+    finally:
+        conn.close()
+
+
 def _link_episodes(episodes, by_patient):
     """회차마다 그 입원의 상담을 하나씩 물린다.
 

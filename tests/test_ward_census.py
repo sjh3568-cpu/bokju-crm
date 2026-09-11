@@ -230,6 +230,23 @@ class WardCensusTests(unittest.TestCase):
         self.assertTrue(main._orphan_matches({"patient_name": "홍길동", "room_number": "301호"}, ""))
         self.assertFalse(main._orphan_matches({"patient_name": "홍길동"}, "김"))
 
+    def test_crm_discharge_closes_roster_episode(self):
+        """CRM에서 퇴원 처리하면 명부 회차도 닫혀 재원 명단에서 빠진다."""
+        self.assertIn("재원환자", self.client.get("/ward?view=list").get_data(as_text=True))
+        resp = self.client.post("/api/consult/1/discharge", json={
+            "action": "complete", "discharge_date": "2026-09-10",
+            "discharge_destination": "자택", "discharge_reason": "호전"})
+        self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
+        with models.get_db() as conn:
+            ep = conn.execute("SELECT discharged_at, status, discharge_destination FROM admission_episodes "
+                              "WHERE patient_id=1 AND roster_key IS NOT NULL").fetchone()
+        self.assertEqual(tuple(ep), ("2026-09-10", "discharged", "자택"))
+        self.assertNotIn(1, models.current_admission_census()["patients"])   # 재원에서 빠짐
+        html = self.client.get("/ward?view=list").get_data(as_text=True)
+        self.assertIn("1명 재원", html)                                          # 명부환자만 남는다
+        # 이미 닫힌 회차·명부 아닌 회차는 건드리지 않는다
+        self.assertEqual(models.close_roster_episode(ep and 999999, discharged_at="2026-09-10"), 0)
+
     def test_falls_back_to_consultations_when_roster_is_empty(self):
         """명부를 아직 안 올린 설치에서는 옛 방식으로 돌아간다.
 
