@@ -197,6 +197,27 @@ def _migrate_admission_episodes(conn):
     """)
 
 
+def _migrate_promote_undecided(conn):
+    """1회성: 미정 상담 중 원무 명부에 30일 내 입원이 있는 것을 입원완료로 승격.
+
+    운영 NAS에서 docker exec를 Claude가 못 돌려서(root 전용) 배포 재기동에 얹었다.
+    tools/backfill_from_roster.py 와 같은 로직 — 명부 회차가 없는 DB에서는 아무것도
+    하지 않고 표식만 남긴다. 적용 직전 backups/에 스냅샷을 뜬다.
+    """
+    key = "promote_undecided_2026-09-11"
+    if _migration_done(conn, key):
+        return
+    has_roster = conn.execute(
+        "SELECT 1 FROM admission_episodes WHERE roster_key IS NOT NULL LIMIT 1").fetchone()
+    if has_roster:
+        from tools.backfill_from_roster import run as backfill_run  # 순환 import 회피
+        from tools.excel_import import backup_db
+        backup_db("promote_undecided")
+        backfill_run(conn, apply=True, promote=True, quiet=True)
+    _mark_migration_done(conn, key)
+    conn.commit()
+
+
 def init_db():
     conn = get_db()
     conn.executescript("""
@@ -852,6 +873,7 @@ def init_db():
                  "ON admission_episodes(roster_key) WHERE roster_key IS NOT NULL")
 
     _migrate_admission_episodes(conn)
+    _migrate_promote_undecided(conn)
 
     for name, icd10, category in DIAGNOSIS_SEED:
         conn.execute(
