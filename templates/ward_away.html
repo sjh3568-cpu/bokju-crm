@@ -96,11 +96,11 @@
         <article class="away-card {% if c.returned_at %}is-back{% elif c.away_days_inclusive is not none and c.away_days_inclusive >= 7 %}is-long{% endif %}">
             <div class="away-card-no">{{ c.no }}</div>
             <div class="away-card-main">
-                <div class="away-card-head">{{ away_nth(c) }}<a href="/consult/{{ c.id }}"><strong>{{ c.patient_name }}</strong></a>
+                <div class="away-card-head"><a href="/consult/{{ c.id }}"><strong>{{ c.patient_name }}</strong></a>{{ away_nth(c) }}
                     <span class="away-detail-inline">{{ {'M':'남', 'F':'여'}.get(c.gender, '성별 미기재') }} · {{ (c.patient_age|string ~ '세') if c.patient_age is not none else '나이 미기재' }}{% if c.room_number %} · {{ c.room_number }}{% endif %}</span>
                     {{ away_days(c) }} {{ away_dday(c) }}</div>
-                <div class="away-card-line"><b>{{ c.event_type }}</b>{% if c.event_time %} {{ c.event_time[:5] }}{% endif %} → {{ c.hospital or '기관 미기재' }} · <span class="away-lbl">사유</span>{{ c.memo or '-' }}</div>
-                <div class="away-card-line muted-sm"><span class="away-lbl">주상병</span>{{ c.dx_primary|join(', ') or '-' }}{% if c.dx_secondary %} <small>({{ c.dx_secondary|join(', ') }})</small>{% endif %} · 본원 입원 {{ c.actual_admission_date or c.admission_date or '-' }}{% if c.stay_days_inclusive is not none %} (재원 {{ c.stay_days_inclusive }}일){% endif %}</div>
+                <div class="away-card-line"><b>{{ c.event_type }}</b>{% if c.event_time %} {{ c.event_time[:5] }}{% endif %} → {{ c.hospital or '기관 미기재' }} · <span class="away-lbl">사유</span><strong>{{ c.memo or '-' }}</strong></div>
+                <div class="away-card-line muted-sm"><span class="away-lbl">주상병</span><strong class="away-dx-strong">{{ c.dx_primary|join(', ') or '-' }}</strong>{% if c.dx_secondary %} <small>({{ c.dx_secondary|join(', ') }})</small>{% endif %} · 본원 입원 {{ c.actual_admission_date or c.admission_date or '-' }}{% if c.stay_days_inclusive is not none %} (재원 {{ c.stay_days_inclusive }}일){% endif %}</div>
             </div>
             <div class="away-card-side">{{ away_return(c) }}</div>
         </article>
@@ -112,19 +112,19 @@
         <thead><tr><th class="away-col-no">#</th><th>환자</th><th>퇴원일(전원일) · 외진 일수</th><th>구분 · 전원기관</th><th>주상병</th><th>사유</th><th>본원 입원 · 재원 · 퇴원 D-day</th><th>복귀</th></tr></thead>
         <tbody>{% for c in report.rows %}<tr class="away-record {% if c.returned_at %}is-back{% elif c.away_days_inclusive is not none and c.away_days_inclusive >= 7 %}is-long{% endif %}">
             <td class="away-col-no" data-label="#">{{ c.no }}</td>
-            <td data-label="환자" class="away-col-patient">{{ away_nth(c) }}<a href="/consult/{{ c.id }}"><strong>{{ c.patient_name }}</strong></a>
+            <td data-label="환자" class="away-col-patient"><a href="/consult/{{ c.id }}"><strong>{{ c.patient_name }}</strong></a>{{ away_nth(c) }}
                 <span class="away-detail muted-sm">{{ {'M':'남', 'F':'여'}.get(c.gender, '성별 미기재') }} · {{ (c.patient_age|string ~ '세') if c.patient_age is not none else '나이 미기재' }}{% if c.room_number %} · {{ c.room_number }}{% endif %}</span>
             </td>
             <td data-label="퇴원일(전원일) · 외진 일수" class="away-col-badge"><strong>{{ c.event_date or '일자 미기재' }}</strong>{% if c.event_time %} <small class="muted-sm">{{ c.event_time[:5] }}</small>{% endif %}<span class="away-detail">{{ away_days(c) }}</span></td>
             <td data-label="구분 · 전원기관"><span class="away-type {% if c.event_type == '응급전원' %}er{% endif %}">{{ c.event_type }}</span><span class="away-detail">{{ c.hospital or '기관 미기재' }}</span></td>
-            <td data-label="주상병">{{ c.dx_primary|join(', ') or '-' }}{% if c.dx_secondary %}<span class="away-detail muted-sm">{{ c.dx_secondary|join(', ') }}</span>{% endif %}</td>
-            <td data-label="사유" class="away-col-memo">{{ c.memo or '-' }}</td>
+            <td data-label="주상병" class="away-col-dx"><strong>{{ c.dx_primary|join(', ') or '-' }}</strong>{% if c.dx_secondary %}<span class="away-detail muted-sm">{{ c.dx_secondary|join(', ') }}</span>{% endif %}</td>
+            <td data-label="사유" class="away-col-memo"><strong>{{ c.memo or '-' }}</strong></td>
             <td data-label="본원 입원 · 재원 · 퇴원 D-day" class="nowrap">{{ c.actual_admission_date or c.admission_date or '-' }}<span class="away-detail muted-sm">{% if c.stay_days_inclusive is not none %}재원 {{ c.stay_days_inclusive }}일{% else %}재원일수 미확인{% endif %}</span><span class="away-detail">{{ away_dday(c) }}</span></td>
             <td data-label="복귀" class="away-col-return">{{ away_return(c) }}</td>
         </tr>{% else %}<tr><td colspan="8" class="empty">조건에 맞는 외진·전원 기록이 없습니다.</td></tr>{% endfor %}</tbody>
     </table></div>
     {% endif %}
-    <p class="muted-sm away-foot">이름 앞 숫자는 그 환자의 외진 차수(몇 번째 외진)입니다. 외진 일수는 나간 날을 1일째로 세며 재원일수에서 빼지 않습니다. 차수는 환자의 전체 외진·전원 기록 순서이고, 날짜가 없는 기록은 차수를 확정하지 않습니다. 입원일·병명·퇴원 D-day·나이는 연결된 상담 정보입니다.</p>
+    <p class="muted-sm away-foot">이름 뒤 숫자는 그 환자의 외진 차수(몇 번째 외진)입니다. 외진 일수는 나간 날을 1일째로 세며 재원일수에서 빼지 않습니다. 차수는 환자의 전체 외진·전원 기록 순서이고, 날짜가 없는 기록은 차수를 확정하지 않습니다. 입원일·병명·퇴원 D-day·나이는 연결된 상담 정보입니다.</p>
 </section>
 
 <section class="card wd-sec">
@@ -171,14 +171,14 @@
 .away-days.open{background:#fef3c7;color:#92400e}
 .away-days.long{background:#fee2e2;color:#991b1b}
 .away-days.back{background:#e2e8f0;color:#334155;font-weight:600;font-size:.82em}
-.away-nth{display:inline-flex;align-items:center;justify-content:center;min-width:1.5em;height:1.5em;padding:0 .3em;margin-right:5px;border-radius:999px;background:#14633f;color:#fff;font-size:.72em;font-weight:800;line-height:1;vertical-align:middle;cursor:help}
+.away-nth{display:inline-flex;align-items:center;justify-content:center;min-width:1.5em;height:1.5em;padding:0 .3em;margin-left:4px;border-radius:999px;background:#14633f;color:#fff;font-size:.72em;font-weight:800;line-height:1;vertical-align:middle;cursor:help}
 .away-nth.na{background:#cbd5e1;color:#475569}
 .away-moved{color:#6d28d9}
 .away-dday{font-size:.82em;color:#475569;white-space:nowrap}
 .away-dday b{color:#1e293b}
 .away-dday.soon b{color:#b91c1c}
-.away-type{display:inline-block;border-radius:4px;padding:1px 6px;font-size:.82em;font-weight:700;background:#e0f2fe;color:#075985}
-.away-type.er{background:#fee2e2;color:#991b1b}
+.away-type{display:inline-block;border-radius:5px;padding:2px 8px;font-size:.9em;font-weight:800;background:#dbeafe;color:#1e40af;border:1px solid #93c5fd}
+.away-type.er{background:#fee2e2;color:#991b1b;border-color:#fca5a5}
 .away-ok{color:#166534}.away-open{color:#b45309}
 .away-detail{display:block;margin:1px 0}
 .away-detail-inline{color:#64748b;font-size:.85em;margin:0 6px}
@@ -206,6 +206,9 @@
 .away-col-patient{min-width:110px}
 .away-col-badge{white-space:nowrap}
 .away-col-memo{min-width:140px;overflow-wrap:anywhere}
+.away-col-memo strong{color:#1e293b;font-size:1.04em}
+.away-col-dx strong,.away-dx-strong{color:#0f766e}
+.away-table tr.is-back .away-col-memo strong,.away-table tr.is-back .away-col-dx strong{color:inherit}
 .away-col-return{min-width:120px}
 /* 피드형 */
 .away-feed{display:flex;flex-direction:column;gap:8px}
@@ -217,7 +220,7 @@
 .away-card.is-back{border-left-color:#94a3b8}
 .away-card-no{font-weight:800;color:#64748b;font-size:1.1em;text-align:center;padding-top:2px}
 .away-card-head{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin-bottom:2px}
-.away-card-head .away-nth{margin-right:2px}
+.away-card-head .away-nth{margin-left:2px}
 .away-card-head a{color:#14633f;text-decoration:none;font-size:1.05em}
 .away-card-line{margin:2px 0;font-size:.9em;overflow-wrap:anywhere}
 .away-card-side{display:flex;flex-direction:column;gap:4px;align-items:flex-start;min-width:190px}
