@@ -218,6 +218,18 @@ class WardCensusTests(unittest.TestCase):
         self.assertIn("가정 계산기", html)
         self.assertIn('data-forecast="1"', html)
 
+    def test_search_filters_roster_only_patients_too(self):
+        """환자명 검색에 상담 없는 명부 환자가 전부 딸려 나오지 않는다."""
+        html = self.client.get("/ward?view=list&q=재원환자").get_data(as_text=True)
+        self.assertIn("재원환자", html)
+        self.assertNotIn("명부환자", html)
+        html = self.client.get("/ward?view=list&q=명부환자").get_data(as_text=True)
+        self.assertIn("명부환자", html)
+        # 명부 값(병실·진단)으로도 찾힌다
+        self.assertIn("명부환자", self.client.get("/ward?view=list&q=405").get_data(as_text=True))
+        self.assertTrue(main._orphan_matches({"patient_name": "홍길동", "room_number": "301호"}, ""))
+        self.assertFalse(main._orphan_matches({"patient_name": "홍길동"}, "김"))
+
     def test_falls_back_to_consultations_when_roster_is_empty(self):
         """명부를 아직 안 올린 설치에서는 옛 방식으로 돌아간다.
 

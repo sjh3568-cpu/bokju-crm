@@ -4297,7 +4297,8 @@ def ward_view():
     # 상담 없이 입원한 환자 — 명부에만 있다. 인원에서 빠지면 재원 수가 틀리므로
     # 회차가 들고 있는 값만으로 행을 만든다. 상담 id가 없어 화면에서 상담 상세와
     # 외진·퇴원 버튼은 뜨지 않는다(그 환자는 상담일지 자체가 없다).
-    rows += [_ward_row_from_episode(ep) for ep in census["orphans"]]
+    rows += [_ward_row_from_episode(ep) for ep in census["orphans"]
+             if _orphan_matches(ep, db_q)]
     if doctor:
         rows = [c for c in rows if (c.get("attending_doctor") or "") == doctor]
 
@@ -4691,7 +4692,8 @@ def _ward_admitted_roster(q, doctor):
             for field in ("room_number", "attending_doctor"):
                 if ep.get(field):
                     c[field] = ep[field]
-        rows += [_ward_row_from_episode(ep) for ep in census["orphans"]]
+        rows += [_ward_row_from_episode(ep) for ep in census["orphans"]
+                 if _orphan_matches(ep, q)]
     else:
         rows = [c for c in rows if c.get("admission_status") == "입원완료"
                 and not (c.get("discharge_date") or "").strip()]
@@ -4905,6 +4907,24 @@ def _effective_roster_care_phase(phase, diseases, admitted_at, snapshot,
         return phase
     # 단일 수가 질환은 S006 연장 대상이 아니므로 기존 단일구간을 유지한다.
     return "단일구간" if period.get("mandatory") else "비회복기"
+
+
+def _orphan_matches(ep, q):
+    """상담 없는 명부 환자에게도 재원 검색어를 적용한다.
+
+    상담 검색(list_consultations q_scope='ward')은 상담 테이블만 보므로 명부에만
+    있는 환자는 걸러지지 않은 채 늘 붙어 나왔다 — 환자명을 검색해도 '상담기록
+    없음' 환자 전부가 따라왔다. 명부가 들고 있는 값(이름·병실·병동·주치의·진단·
+    차트번호) 안에서 부분 일치로 거른다. 검색어가 없으면 전부 통과.
+    """
+    q = (q or "").strip()
+    if not q:
+        return True
+    needle = q.replace(" ", "").casefold()
+    hay = "".join(str(ep.get(k) or "") for k in
+                  ("patient_name", "room_number", "ward", "attending_doctor",
+                   "diagnosis_name", "diagnosis_code", "chart_no", "care_type")).replace(" ", "").casefold()
+    return needle in hay
 
 
 def _ward_row_from_episode(ep):
