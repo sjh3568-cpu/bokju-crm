@@ -924,7 +924,14 @@ def _care_phase(consultation):
     elif label == "비회복기":
         phase = "비회복기"
     elif label == "회복기":
-        phase = "회복기"
+        # S005 수가 기간이 끝났으면 더 이상 회복기 환자가 아니다. label은 발병일
+        # 기준으로 '회복기로 입원했는가'를 말할 뿐이라, 입원일부터 흘러간 수가
+        # 기간은 여기서 따로 봐야 한다. 이걸 안 보면 D+504인 환자까지 회복기로
+        # 세어 비율이 부푼다 — 재원 260명 기준 167명(64%)으로 나왔는데 만료분
+        # 85명을 빼면 82명(32%)이다. 월별 추이는 원래 만료를 반영하고 있어서
+        # 같은 화면 안에서 KPI와 추이가 서로 달랐다.
+        left = ax.get("billing_left")
+        phase = "비회복기" if left is not None and left < 0 else "회복기"
     else:
         # 일반재활·요양 — 중추신경계라도 회복기/비회복기 '구간' 밖이다.
         # 회복기로 뭉뚱그리면 재원 카드에 엉뚱한 구간이 찍히고, recovery_due
@@ -4143,6 +4150,10 @@ def ward_view():
         if ep.get("room_number"):
             c["room_number"] = ep["room_number"]
         c["roster_ward"] = ep.get("ward")
+        # 주치의는 상담 시점에 정해지지 않는 일이 많아 상담일지에는 대개 비어 있다.
+        # 명부는 입원 건마다 실제 담당 의사를 들고 있으므로 그쪽을 쓴다.
+        if (ep.get("attending_doctor") or "").strip():
+            c["attending_doctor"] = ep["attending_doctor"].strip()
     # 상담 없이 입원한 환자 — 명부에만 있다. 인원에서 빠지면 재원 수가 틀리므로
     # 회차가 들고 있는 값만으로 행을 만든다. 상담 id가 없어 화면에서 상담 상세와
     # 외진·퇴원 버튼은 뜨지 않는다(그 환자는 상담일지 자체가 없다).

@@ -52,8 +52,8 @@ class WardCensusTests(unittest.TestCase):
                 conn.execute(
                     """INSERT INTO admission_episodes
                        (patient_id, episode_no, status, admitted_at, discharged_at,
-                        room_number, ward, diagnosis_name, roster_key)
-                       VALUES (?, 1, ?, ?, ?, ?, '3병동', '상세불명의 뇌경색증', ?)""",
+                        room_number, ward, diagnosis_name, attending_doctor, roster_key)
+                       VALUES (?, 1, ?, ?, ?, ?, '3병동', '상세불명의 뇌경색증', '변현숙', ?)""",
                     (pid, "discharged" if discharged else "admitted",
                      admitted, discharged, room, "chart%d|%s" % (pid, admitted)))
 
@@ -170,6 +170,38 @@ class WardCensusTests(unittest.TestCase):
         with models.get_db() as conn:
             conn.execute("UPDATE admission_episodes SET roster_key = NULL")
         self.assertFalse(models.current_admission_census()["has_roster"])
+
+    def test_attending_doctor_comes_from_roster(self):
+        """주치의는 상담 시점에 안 정해져 상담일지에는 대개 비어 있다 — 명부 값을 쓴다."""
+        html = self.client.get("/ward?view=list").get_data(as_text=True)
+        roster = html.split('id="sec-discharged"')[0]
+        # 상담일지에는 주치의가 없는데도 재원 두 명 모두에 명부 값이 붙는다
+        self.assertGreaterEqual(roster.count("변현숙"), 2)
+        with models.get_db() as conn:
+            self.assertIsNone(conn.execute(
+                "SELECT attending_doctor FROM consultations WHERE id=1").fetchone()[0])
+
+    def test_expired_recovery_period_counts_as_nonrecovery(self):
+        """S005 수가 기간이 끝난 환자는 회복기 비율에 세지 않는다.
+
+        label은 '회복기로 입원했는가'(발병일 기준)를 말할 뿐이다. 입원일부터
+        흘러간 수가 기간을 따로 보지 않으면 D+504인 환자까지 회복기로 세어
+        비율이 부푼다. 월별 추이는 원래 만료를 반영하고 있어 KPI만 어긋났다.
+        """
+        long_ago = "2023-01-02"
+        with models.get_db() as conn:
+            conn.execute(
+                """UPDATE consultations SET diseases = '["뇌출혈"]',
+                       disease_onset = ?, admission_purpose = '회복기재활'
+                   WHERE id = 1""", (long_ago,))
+            conn.execute("UPDATE admission_episodes SET admitted_at = ? "
+                         "WHERE patient_id = 1", (long_ago,))
+        con = models.get_consultation(1)
+        con["actual_admission_date"] = long_ago
+        phase = main._care_phase(con)
+        self.assertIsNotNone(phase["phase_dday"])
+        self.assertLess(phase["phase_dday"], 0)        # 수가 기간이 지났다
+        self.assertEqual(phase["care_phase"], "비회복기")
 
 
 if __name__ == "__main__":
