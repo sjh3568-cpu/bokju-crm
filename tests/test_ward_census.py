@@ -203,6 +203,36 @@ class WardCensusTests(unittest.TestCase):
         self.assertLess(phase["phase_dday"], 0)        # 수가 기간이 지났다
         self.assertEqual(phase["care_phase"], "비회복기")
 
+    def test_roster_care_type_overrides_the_estimate(self):
+        """명부에 수가 구분이 실려 오면 추정하지 않고 그 값을 쓴다.
+
+        CRM은 발병일+진단군으로 회복기를 추정하는데 발병일이 빈 재원 환자가 많아
+        원무 집계와 어긋난다(우리 82명 vs 원무 115명). 명부가 말해주면 그게 사실이다.
+        """
+        with models.get_db() as conn:
+            # 수가 기간이 한참 지난 환자 — 추정이면 비회복기다
+            conn.execute("""UPDATE consultations SET diseases = '["뇌출혈"]',
+                                disease_onset = '2023-01-02', admission_purpose = '회복기재활'
+                            WHERE id = 1""")
+            conn.execute("UPDATE admission_episodes SET admitted_at = '2023-01-02' "
+                         "WHERE patient_id = 1")
+        con = models.get_consultation(1)
+        con["actual_admission_date"] = "2023-01-02"
+        self.assertEqual(main._care_phase(con)["care_phase"], "비회복기")
+
+        with models.get_db() as conn:
+            conn.execute("UPDATE admission_episodes SET care_type = '회복기재활' "
+                         "WHERE patient_id = 1")
+        html = self.client.get("/ward?view=list&filt=recovery").get_data(as_text=True)
+        self.assertIn("재원환자", html)     # 명부가 회복기라 하면 회복기로 잡힌다
+
+    def test_roster_care_type_values_are_read_by_prefix(self):
+        for raw, expected in (("회복기", "회복기"), ("회복기재활", "회복기"),
+                              ("회복기(S005)", "회복기"), ("비회복기재활", "비회복기"),
+                              ("일반재활", "미판정"), ("요양", "미판정"),
+                              ("", None), ("다제내성균", None)):
+            self.assertEqual(main._roster_care_phase(raw), expected, raw)
+
 
 if __name__ == "__main__":
     unittest.main()

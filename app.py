@@ -4154,6 +4154,7 @@ def ward_view():
         # 명부는 입원 건마다 실제 담당 의사를 들고 있으므로 그쪽을 쓴다.
         if (ep.get("attending_doctor") or "").strip():
             c["attending_doctor"] = ep["attending_doctor"].strip()
+        c["roster_care_phase"] = _roster_care_phase(ep.get("care_type"))
     # 상담 없이 입원한 환자 — 명부에만 있다. 인원에서 빠지면 재원 수가 틀리므로
     # 회차가 들고 있는 값만으로 행을 만든다. 상담 id가 없어 화면에서 상담 상세와
     # 외진·퇴원 버튼은 뜨지 않는다(그 환자는 상담일지 자체가 없다).
@@ -4182,6 +4183,9 @@ def ward_view():
         c["away"] = away_by_cid.get(c["id"]) if c["id"] else None
         c["stay_days"] = _days_since(adm)
         c.update(_care_phase(c))
+        # 명부가 수가 구분을 들고 오면 그게 사실이다 — 추정을 덮는다.
+        if c.get("roster_care_phase"):
+            c["care_phase"] = c["roster_care_phase"]
         c["recovery_due"] = (c.get("care_phase") == "회복기"
                              and c.get("phase_dday") is not None
                              and c["phase_dday"] <= 30)
@@ -4313,9 +4317,15 @@ def ward_view():
         # 갈수록 연결률이 떨어져(전체 73%) 이들을 '비회복기'로 세면 비율이 실제보다
         # 낮게 나온다 — 40% 기준선을 보는 지표라 그 왜곡이 위험하다. 그래서 비율은
         # 판정 가능한 인원만으로 내고, 인원(total)은 실제 재원 수 그대로 보여준다.
-        known = [con for _, con in census if con is not None]
+        known = [con for span, con in census
+                 if con is not None or _roster_care_phase(span.get("care_type"))]
         recovery_count = 0
         for span, con in census:
+            roster_phase = _roster_care_phase(span.get("care_type"))
+            if roster_phase:
+                # 명부가 말해주면 수가 기간을 되짚을 필요가 없다.
+                recovery_count += roster_phase == "회복기"
+                continue
             if con is None or _recovery_status(con).get("label") != "회복기":
                 continue
             period = compute_admission_period(con.get("diseases"), "회복기")
@@ -4585,6 +4595,27 @@ def _days_since(datestr):
 _ORGANISMS = ("CRE", "VRE", "CPE", "MRSA", "MRAB", "MRPA")
 
 
+def _roster_care_phase(value):
+    """명부의 수가 구분 값 → 화면의 수가 구간.
+
+    CRM은 발병일+진단군으로 회복기를 추정할 수밖에 없는데, 발병일이 비어 있는
+    재원 환자가 35명이라 추정이 실제와 어긋난다(우리 82명 vs 원무 115명).
+    명부에 구분이 실려 오면 추정하지 않고 그 값을 쓴다.
+
+    원무 쪽 표기가 '회복기재활', '회복기(S005)'처럼 길 수 있어 접두로 본다.
+    """
+    v = (value or "").strip()
+    if not v:
+        return None
+    if v.startswith("비회복"):
+        return "비회복기"
+    if v.startswith("회복"):
+        return "회복기"
+    if v.startswith("일반재활") or v.startswith("요양"):
+        return "미판정"
+    return None
+
+
 def _ward_row_from_episode(ep):
     """상담 없이 입원한 환자의 재원 행 — 원무 명부 값만으로 만든다.
 
@@ -4606,6 +4637,7 @@ def _ward_row_from_episode(ep):
         "diagnosis_code": ep.get("diagnosis_code"),
         "disease_detail": None, "diseases": [], "secondary_diagnosis": None,
         "patient_age": None, "episode_id": ep["id"],
+        "roster_care_phase": _roster_care_phase(ep.get("care_type")),
         "roster_only": True,
     }
 

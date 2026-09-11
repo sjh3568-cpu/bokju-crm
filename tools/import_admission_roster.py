@@ -80,6 +80,14 @@ COLUMNS = {
     "진료의사": "department",
     "병동": "ward",
     "병실": "room_number",
+    # 수가 구분 — 원무 쪽 시트마다 머리글이 달라 흔한 이름을 모두 받는다.
+    "수가구분": "care_type",
+    "수가 구분": "care_type",
+    "환자구분": "care_type",
+    "환자 구분": "care_type",
+    "재활구분": "care_type",
+    "회복기구분": "care_type",
+    "수가유형": "care_type",
     "주상병": "diagnosis_code",
     "주상병명칭": "diagnosis_name",
     "의사성명": "attending_doctor",
@@ -320,12 +328,14 @@ def upsert_episode(conn, pid, rec):
         rec["discharged_at"].isoformat() if rec["discharged_at"] else None,
         rec.get("room_number"), rec.get("ward"), rec.get("attending_doctor"),
         rec.get("insurance_type"), rec.get("diagnosis_code"), rec.get("diagnosis_name"),
+        (str(rec.get("care_type")).strip() if rec.get("care_type") else None),
     )
     if existing:
         conn.execute(
             "UPDATE admission_episodes SET status=?, admitted_at=?, discharged_at=?, "
             "  room_number=?, ward=?, attending_doctor=?, insurance_type=?, "
-            "  diagnosis_code=?, diagnosis_name=?, updated_at=CURRENT_TIMESTAMP "
+            "  diagnosis_code=?, diagnosis_name=?, care_type=?, "
+            "  updated_at=CURRENT_TIMESTAMP "
             "WHERE id=?", values + (existing[0],))
         return "갱신"
 
@@ -335,8 +345,9 @@ def upsert_episode(conn, pid, rec):
     conn.execute(
         "INSERT INTO admission_episodes "
         "  (patient_id, episode_no, status, admitted_at, discharged_at, room_number, "
-        "   ward, attending_doctor, insurance_type, diagnosis_code, diagnosis_name, roster_key) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "   ward, attending_doctor, insurance_type, diagnosis_code, diagnosis_name, "
+        "   care_type, roster_key) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (pid, episode_no) + values + (key,))
     return "신규"
 

@@ -826,6 +826,10 @@ def init_db():
         "insurance_type": "TEXT",
         "diagnosis_code": "TEXT",
         "diagnosis_name": "TEXT",
+        # 수가 구분(회복기/비회복기/일반재활/요양). 명부에 이 컬럼이 있으면
+        # 화면이 그 값을 그대로 쓴다 — CRM은 발병일+진단군으로 추정할 수밖에
+        # 없는데 발병일이 비어 있는 환자가 많아 추정이 실제와 어긋난다.
+        "care_type": "TEXT",
         # 명부 1행 = 차트번호+입원일. 재적재해도 같은 회차를 덮어쓰도록 UNIQUE.
         # excel_import가 멱등이 아니라 중복이 섞였던 전례가 있어 키를 박아둔다.
         "roster_key": "TEXT",
@@ -5548,8 +5552,8 @@ def admission_spans():
     conn = get_db()
     try:
         episodes = [dict(r) for r in conn.execute(
-            "SELECT id, patient_id, admitted_at, discharged_at FROM admission_episodes "
-            "WHERE roster_key IS NOT NULL "
+            "SELECT id, patient_id, admitted_at, discharged_at, care_type "
+            "FROM admission_episodes WHERE roster_key IS NOT NULL "
             "AND admitted_at IS NOT NULL AND admitted_at != ''")]
         if not episodes:
             return []
@@ -5566,7 +5570,7 @@ def admission_spans():
         conn.close()
     by_consultation, _ = _link_episodes(episodes, by_patient)
     owner = {ep["id"]: cid for cid, ep in by_consultation.items()}
-    return [{"episode_id": ep["id"],
+    return [{"episode_id": ep["id"], "care_type": ep.get("care_type"),
              "admitted_at": ep["admitted_at"][:10],
              "discharged_at": (ep["discharged_at"] or "")[:10] or None,
              "consultation_id": owner.get(ep["id"])} for ep in episodes]
