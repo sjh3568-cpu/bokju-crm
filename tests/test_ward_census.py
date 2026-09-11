@@ -203,6 +203,12 @@ class WardCensusTests(unittest.TestCase):
         self.assertEqual((ts["days"], ts["below_days"], ts["below_first"]["label"]), (2, 1, "09.02"))
         self.assertEqual((ts["low"]["label"], ts["high"]["label"]), ("09.02", "09.01"))
         self.assertEqual(ts["month_avg"], 40.0)
+        self.assertEqual([(r["start"]["label"], r["end"]["label"], r["days"]) for r in ts["below_runs"]], [("09.02", "09.02", 1)])
+        # 떨어진 날이 이어지면 한 구간, 사이에 40% 이상인 날이 끼면 두 구간
+        run_days = [dict(daily[1], date="2026-09-%02d" % d, label="09.%02d" % d, ratio=r, recovery=r) for d, r in ((5, 39.0), (6, 35.0), (7, 41.0), (8, 38.0))]
+        runs = main._trend_summary(run_days, [])["below_runs"]
+        self.assertEqual([(r["start"]["label"], r["end"]["label"], r["days"], r["low"]["label"]) for r in runs],
+                         [("09.05", "09.06", 2, "09.06"), ("09.08", "09.08", 1, "09.08")])
         self.assertTrue(ts["ok"])
         self.assertIsNone(main._trend_summary([daily[2]], []))
 

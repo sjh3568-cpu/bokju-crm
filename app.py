@@ -4873,6 +4873,20 @@ def _trend_summary(daily, monthly, threshold=40):
     below = [d for d in days if d["ratio"] < threshold]
     low = min(days, key=lambda d: (d["ratio"], d["date"]))
     high = max(days, key=lambda d: (d["ratio"], d["date"]))
+    # 40% 미만이 이어진 구간 — 연속된 날짜를 하나로 묶고 구간의 최저치를 함께 둔다.
+    runs, run = [], None
+    for d in days:
+        if d["ratio"] < threshold:
+            if run and (date.fromisoformat(d["date"]) - date.fromisoformat(run["end"]["date"])).days == 1:
+                run["end"] = d
+                run["days"] += 1
+                if d["ratio"] < run["low"]["ratio"]:
+                    run["low"] = d
+            else:
+                run = {"start": d, "end": d, "days": 1, "low": d}
+                runs.append(run)
+        else:
+            run = None
     months = [m for m in monthly if m["known"]]
     month_avg = (round(sum(m["recovery"] for m in months) * 100 / sum(m["known"] for m in months), 1)
                  if months else None)
@@ -4881,6 +4895,7 @@ def _trend_summary(daily, monthly, threshold=40):
         "avg_simple": round(sum(d["ratio"] for d in days) / len(days), 1),
         "days": len(days), "below_days": len(below),
         "below_first": below[0] if below else None,
+        "below_runs": runs,
         "low": low, "high": high,
         "first": days[0], "last": days[-1],
         "month_avg": month_avg, "month_count": len(months),
