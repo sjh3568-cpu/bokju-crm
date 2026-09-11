@@ -18,12 +18,21 @@ birth_year는 전 건 비어 있어(상담 임포터가 나이만 넣었다) 주
   1. chart_no  — 이전 실행에서 확정해 저장해 둔 번호. 2회차부터는 여기서 끝난다.
   2. 이름이 DB에 유일
   3. 이름 + 성별(주민번호 뒷자리 첫 숫자)
-  4. 이름 + 성별 + 나이 — 상담일과 patient_age로 생년을 역산해 ±1년 비교
-  5. 이름 + 성별 + 상담일 근접성 — 입원 직전 상담이 그 입원의 상담일 가능성이
+  4. 이름 + 상담에 적힌 입원일이 명부 입원일과 일치 — 나이 오기에 면역이라
+     생년 역산보다 먼저 본다(상담 나이가 678로 적혀 생년이 1347년으로
+     역산된 환자가 실제로 있었다).
+  5. 이름 + 성별 + 나이 — 상담일과 patient_age로 생년을 역산해 ±1년 비교
+  6. 이름 + 성별 + 상담일 근접성 — 입원 직전 상담이 그 입원의 상담일 가능성이
      높다. 입원일 이전 PROXIMITY_DAYS 이내에 상담한 후보가 하나뿐이면 확정.
+     둘 이상 남으면 PROXIMITY_TIGHT 이내로 한 번 더 좁힌다.
 
 어느 단계에서도 하나로 좁혀지지 않으면 건드리지 않고 리포트에만 남긴다.
 확정된 건은 chart_no·birth_year·gender를 환자 레코드에 채워 다음 실행을 돕는다.
+
+단, **생년이 어느 후보와도 안 맞고 입원 전 상담도 없으면** 이름만 같은 남남이다.
+이때는 '확정 불가'가 아니라 '동명이인뿐 — CRM에 기록 없음'으로 판정해
+--create-missing 대상으로 넘긴다. 예전에는 이런 건이 보류로 묶여 그 환자의
+입원 이력이 통째로 누락됐다.
 
 ## 명부에만 있는 환자
 
@@ -80,6 +89,21 @@ REQUIRED = ("chart_no", "name", "admitted_at")
 # 입원 전 며칠까지의 상담을 '그 입원의 상담'으로 볼지. 상담 후 대기 기간이
 # 길어야 몇 달이라 180일로 둔다. 넓히면 오매칭이 늘어난다.
 PROXIMITY_DAYS = 180
+# 180일 안에 후보가 둘 이상 남을 때만 쓰는 좁은 창. 더 가까운 상담이 그
+# 입원의 상담일 가능성이 높다는 것 외에 새로 가정하는 것이 없다.
+PROXIMITY_TIGHT = 90
+# 날짜 증거(입원일 일치·상담일 근접)로 확정할 때, 생년이 이만큼 넘게 어긋나는
+# 후보는 동명이인으로 보고 뺀다. ±1로 좁히지 않는 이유는 상담의 나이가 만나이와
+# 세는나이를 오가서 1~2년은 흔히 어긋나기 때문 — 여기서 거르려는 건 '명백한
+# 남남'(실제로 9년 차이 나는 동명이인이 입원일까지 겹친 사례가 있었다)뿐이다.
+BIRTH_CONTRADICTION = 3
+# 상담 나이 오기로 나온 말도 안 되는 역산 생년은 버린다. 나이가 678로 적힌
+# 환자가 있어 1347년이 나왔고, 그 값이 매칭을 통째로 어긋나게 했다.
+BIRTH_YEAR_RANGE = (1900, date.today().year)
+
+# match()가 '이 사람은 CRM에 없다'로 판정하는 사유들. 호출부가 이 사유를 보고
+# --create-missing 대상으로 넘긴다.
+ABSENT_REASONS = ("DB에 없음", "동명이인뿐 — CRM에 기록 없음")
 
 
 def parse_rrn(rrn):
@@ -146,6 +170,7 @@ class Matcher:
         self.gender = {}
         self.birth_years = defaultdict(set)
         self.consult_dates = defaultdict(list)
+        self.admission_dates = defaultdict(set)
 
         for pid, name, gender, chart in conn.execute(
                 "SELECT id, name, gender, chart_no FROM patients"):
@@ -156,18 +181,40 @@ class Matcher:
                 self.by_chart[str(chart).strip()] = pid
 
         # 상담 기록에서 생년을 역산한다 — patients.birth_year 가 비어 있어서다.
-        for pid, cd, age in conn.execute(
-                "SELECT patient_id, consult_date, patient_age FROM consultations "
+        # 상담에 적힌 입원일도 같이 걷는다. 나이 오기에 흔들리는 생년 역산과
+        # 달리 날짜는 원무 명부와 같은 사실을 가리키므로 더 단단한 단서다.
+        for pid, cd, age, adm, actual in conn.execute(
+                "SELECT patient_id, consult_date, patient_age, admission_date, "
+                "       actual_admission_date FROM consultations "
                 "WHERE consult_date IS NOT NULL"):
+            for value in (actual, adm):
+                a = to_date(value)
+                if a:
+                    self.admission_dates[pid].add(a)
             d = to_date(cd)
             if d is None:
                 continue
             self.consult_dates[pid].append(d)
             if age not in (None, ""):
                 try:
-                    self.birth_years[pid].add(d.year - int(age))
+                    year = d.year - int(age)
                 except (TypeError, ValueError):
-                    pass
+                    continue
+                if BIRTH_YEAR_RANGE[0] <= year <= BIRTH_YEAR_RANGE[1]:
+                    self.birth_years[pid].add(year)
+
+    def date_evidence(self, rec, pid):
+        """이 입원이 그 환자 것이라는 날짜 증거의 세기. 0이면 근거 없음.
+
+        차트번호 충돌(두 차트가 한 환자를 가리킴)을 가를 때 쓴다.
+        """
+        admitted = rec["admitted_at"]
+        if admitted in self.admission_dates.get(pid, ()):
+            return 2
+        window = admitted - timedelta(days=PROXIMITY_TIGHT)
+        if any(window <= d <= admitted for d in self.consult_dates.get(pid, ())):
+            return 1
+        return 0
 
     def match(self, rec):
         """(환자id 또는 None, 판정 사유). 하나로 안 좁혀지면 (None, 사유)."""
@@ -188,22 +235,52 @@ class Matcher:
             if narrowed:
                 cands = narrowed
 
-        if rec["birth_year"]:
-            narrowed = [p for p in cands
-                        if any(abs(y - rec["birth_year"]) <= 1
-                               for y in self.birth_years.get(p, ()))]
-            if len(narrowed) == 1:
-                return narrowed[0], "이름+성별+나이"
-            if narrowed:
-                cands = narrowed
-
-        # 입원 직전 상담이 있는 후보가 하나뿐이면 그 사람으로 본다.
+        # ── 날짜 증거를 생년 역산보다 먼저 본다 ──
+        # 상담 나이는 만나이·세는나이가 섞이고 오기도 있어 역산 생년이 1~2년씩
+        # 흔들린다. 반면 상담에 적힌 입원일과 상담일은 원무 명부와 같은 사실을
+        # 가리킨다. 다만 날짜만 믿으면 생년이 9년 차이 나는 동명이인을 입원일이
+        # 겹쳤다는 이유로 채택하는 사고가 나므로, 명백히 어긋나는 후보는 뺀다.
         admitted = rec["admitted_at"]
-        window = admitted - timedelta(days=PROXIMITY_DAYS)
-        narrowed = [p for p in cands
+
+        def compatible(p):
+            known = self.birth_years.get(p, ())
+            if not rec["birth_year"] or not known:
+                return True
+            return any(abs(y - rec["birth_year"]) <= BIRTH_CONTRADICTION for y in known)
+
+        dated = [p for p in cands if compatible(p)] or cands
+
+        narrowed = [p for p in dated if admitted in self.admission_dates.get(p, ())]
+        if len(narrowed) == 1:
+            return narrowed[0], "이름+입원일 일치"
+
+        window = admitted - timedelta(days=PROXIMITY_TIGHT)
+        narrowed = [p for p in dated
                     if any(window <= d <= admitted for d in self.consult_dates.get(p, ()))]
         if len(narrowed) == 1:
-            return narrowed[0], "이름+상담일 근접"
+            return narrowed[0], "이름+상담일 근접(%d일)" % PROXIMITY_TIGHT
+
+        birth_fit = []
+        if rec["birth_year"]:
+            birth_fit = [p for p in cands
+                         if any(abs(y - rec["birth_year"]) <= 1
+                                for y in self.birth_years.get(p, ()))]
+            if len(birth_fit) == 1:
+                return birth_fit[0], "이름+성별+나이"
+            if birth_fit:
+                cands = birth_fit
+
+        window = admitted - timedelta(days=PROXIMITY_DAYS)
+        near = [p for p in cands
+                if any(window <= d <= admitted for d in self.consult_dates.get(p, ()))]
+        if len(near) == 1:
+            return near[0], "이름+상담일 근접(%d일)" % PROXIMITY_DAYS
+
+        # 생년이 어느 후보와도 안 맞고 입원 전 상담도 없다 = 이름만 같은
+        # 남남이다. '확정 불가'로 묶어두면 이 사람의 입원 이력이 통째로
+        # 누락된다 — 신규 생성 대상으로 넘긴다.
+        if rec["birth_year"] and not birth_fit and not near:
+            return None, "동명이인뿐 — CRM에 기록 없음"
 
         return None, "동명이인 %d명 중 확정 불가" % len(cands)
 
@@ -302,14 +379,25 @@ def main():
         if pid is not None:
             claimed[pid].append(chart)
     for pid, charts in claimed.items():
-        if len(charts) > 1:
-            for chart in charts:
-                resolved[chart] = None
-                reasons[chart] = "차트번호 %d개가 같은 환자를 가리킴 — 확정 불가" % len(charts)
+        if len(charts) <= 1:
+            continue
+        # 한쪽만 날짜 증거(그 입원일이 상담에 적혀 있거나 직전에 상담했다)를
+        # 가지면 그 차트가 이 환자다. 나머지는 동명이인이지만 어느 환자인지
+        # 도구가 알 수 없으니 보류로 남긴다 — 함부로 새 환자를 만들면 중복이
+        # 된다(성별이 잘못 적혀 후보에서 빠진 실제 짝이 있었다).
+        scored = {c: matcher.date_evidence(first_rec[c], pid) for c in charts}
+        best = max(scored.values())
+        winners = [c for c in charts if scored[c] == best]
+        keep = winners[0] if best > 0 and len(winners) == 1 else None
+        for chart in charts:
+            if chart == keep:
+                continue
+            resolved[chart] = None
+            reasons[chart] = "차트번호 %d개가 같은 환자를 가리킴 — 확정 불가" % len(charts)
 
     # ── 2차: 확정되지 않은 신규 환자를 만들고, 회차를 적재한다.
     for chart, pid in resolved.items():
-        if pid is None and reasons[chart] == "DB에 없음" and args.create_missing:
+        if pid is None and reasons[chart] in ABSENT_REASONS and args.create_missing:
             resolved[chart] = create_patient(conn, first_rec[chart]) if args.apply else -1
             reasons[chart] = "신규 생성"
         elif pid is not None and args.apply:
