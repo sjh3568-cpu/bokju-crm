@@ -549,6 +549,19 @@ def _krdate_wd_full(value):
     return f"{value.strftime('%Y-%m-%d')}({wd})"
 
 
+@app.template_filter("krdate_short")
+def _krdate_short(value):
+    """'2026-09-03' → '26.09.03' (요일 없는 목록용 축약 날짜)."""
+    if not value:
+        return ""
+    if isinstance(value, str):
+        try:
+            value = datetime.strptime(value[:10], "%Y-%m-%d")
+        except ValueError:
+            return value
+    return value.strftime('%y.%m.%d')
+
+
 @app.template_filter("krdate_short_wd")
 def _krdate_short_wd(value):
     """'2026-09-03' → '26.09.03(목)' (목록용 한 줄 축약 날짜)."""
@@ -3722,6 +3735,13 @@ def api_consult_discharge(cid):
     models.update_consultation_meta(cid, **fields)
     if action == "complete":
         _sync_lifecycle_stage(existing["patient_id"], "퇴원완료")
+        # 재원 명단은 원무 명부 회차로 세므로, 이 상담에 붙은 명부 회차도 닫아야
+        # 화면에서 빠진다. 상담에만 퇴원일을 적으면 '반영이 안 되는' 것처럼 보였다.
+        ep = models.current_admission_census()["by_consultation"].get(cid)
+        if ep:
+            models.close_roster_episode(ep["id"], discharged_at=fields["discharge_date"],
+                                        destination=fields["discharge_destination"] or None,
+                                        reason=fields["discharge_reason"] or None)
     models.log_audit(
         user_id=g.user["id"], username=g.user["username"],
         action="update_discharge", target_type="consultation", target_id=cid,
@@ -5679,6 +5699,12 @@ def api_admission_event_return(event_id):
     back_to = "퇴원" if outcome == "전원" else (ev.get("stage_before") or "입원").strip()
     if con:
         _set_lifecycle_stage_clinical(con["patient_id"], back_to)
+    if outcome == "전원":
+        # 타 병원으로 갔으면 재원이 아니다 — 명부 회차도 닫는다(퇴원 처리와 같은 이유).
+        ep = models.current_admission_census()["by_consultation"].get(ev["consultation_id"])
+        if ep:
+            models.close_roster_episode(ep["id"], discharged_at=return_date or date.today().isoformat(),
+                                        destination=return_hospital, reason="타 병원 전원")
     models.log_audit(
         user_id=g.user["id"], username=g.user["username"],
         action="return_admission_event", target_type="consultation",
