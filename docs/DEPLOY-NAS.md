@@ -145,6 +145,63 @@ GitHub        태그 v1.4.0
 NAS(운영)     그 태그의 파일로 교체 → 빌드 → 재시작
 ```
 
+배포 방법은 두 가지다. **한 줄 배포(권장)** — NAS에서 `deploy.sh` 한 번. 아래
+'수동 배포'는 스크립트를 못 쓸 때의 대안이자, 스크립트가 자동으로 하는 일의 원문이다.
+
+## 한 줄 배포 (권장)
+
+최초 1회 준비만 끝나면, 배포·롤백이 NAS에서 **명령 한 줄**이다.
+
+```bash
+sudo /volume1/docker/deploy.sh v1.8.4      # 지정 태그로 배포
+sudo /volume1/docker/deploy.sh             # 최신 태그로 배포
+sudo /volume1/docker/deploy.sh --rollback  # 직전 태그로 되돌리기
+sudo /volume1/docker/deploy.sh --check     # 점검만 (아무것도 바꾸지 않음)
+```
+
+스크립트가 **[사전 점검 → DB 백업 → 태그 파일로 교체 → 재빌드·재시작 → /healthz
+기동 확인 → 버전 출력]** 을 순서대로 한다. git·docker·저장소 상태가 준비되지 않았으면
+**아무것도 건드리기 전에 멈추고** 무엇이 없는지 알려준다(반쯤 배포되는 사고가 없다).
+`.env`·`data/`·`backups/`는 git이 추적하지 않아 교체 시 건드리지 않는다. 업무시간
+(09~18시)에 실행하면 한 번 더 확인을 묻는다.
+
+### 최초 1회 준비 (NAS에서, 한 번만)
+
+지금까지 `/volume1/docker/bokju-crm`은 파일을 '복사'해 둔 폴더다. 한 줄 배포는 이
+폴더가 git 저장소여야 하므로, `.env`·`data`·`backups`를 지킨 채 git 저장소로 바꾼다.
+
+1. **SSH 켜기** — DSM → 제어판 → 터미널 및 SNMP → 'SSH 서비스 활성화'. 관리자
+   계정으로 접속한다(`ssh 관리자ID@<NAS주소>`). docker 명령은 `sudo`가 필요하다.
+2. **Git 설치** — 패키지센터에서 **Git Server**를 설치하면 `git` 명령이 생긴다.
+   `git --version`으로 확인.
+3. **폴더를 git 저장소로 전환** — 실환자 DB·설정을 지키며 코드만 git으로 받는다.
+
+   ```bash
+   cd /volume1/docker/bokju-crm
+   git init
+   git remote add origin https://github.com/sjh3568-cpu/bokju-crm.git
+   git fetch origin --tags
+   # 코드 파일만 원격 최신으로 맞춘다. .env·data·backups는 .gitignore라 그대로 남는다.
+   git checkout -f main
+   git config user.email deploy@bokju.local && git config user.name "NAS deploy"
+   # git이 root 소유 저장소를 거부하면(dubious ownership) 한 줄 허용:
+   git config --global --add safe.directory /volume1/docker/bokju-crm
+   ```
+   `git status`에 `.env`·`data/`·`backups/`가 안 보이면(=무시되면) 정상이다.
+4. **deploy.sh를 프로젝트 상위로 복사** — 프로젝트 폴더 밖에 두어야, 배포가
+   `git checkout`으로 코드를 바꿀 때 실행 중인 스크립트가 사라지지 않는다.
+
+   ```bash
+   cp /volume1/docker/bokju-crm/deploy.sh /volume1/docker/deploy.sh
+   chmod +x /volume1/docker/deploy.sh
+   ```
+5. **점검** — `sudo /volume1/docker/deploy.sh --check` 가 "점검 통과"를 내면 준비 끝.
+
+준비가 끝나면 이후 배포는 위 '한 줄 배포'의 한 줄이면 된다. (사내망 안에서만 도는
+방식이라 외부 클라우드·레지스트리가 필요 없다.)
+
+## 수동 배포 (스크립트를 못 쓸 때 / 원문)
+
 ### 1. 노트북에서 버전 확정
 
 ```bash
