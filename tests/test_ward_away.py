@@ -84,7 +84,7 @@ class AwayManagementTests(unittest.TestCase):
         self.assertIn('class="on">☰ 목록형', html)
         self.assertIn('<td class="away-col-no" data-label="#">1</td>', html)
         self.assertIn('일째', html)          # 미복귀 기록의 '며칠째' 배지
-        self.assertIn('번째', html)          # 차수 배지
+        self.assertIn('번째 외진', html)     # 차수 표시
         self.assertIn('data-detail-active="false"', html)
         feed = self.client.get('/ward?tab=away&away_view=feed').get_data(as_text=True)
         self.assertIn('class="on">▤ 피드형', feed)

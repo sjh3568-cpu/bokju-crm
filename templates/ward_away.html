@@ -71,22 +71,18 @@
         </div>
     </form>
 
-    {% macro away_badges(c) %}
-        <span class="away-days {% if c.returned_at %}back{% elif c.away_days_inclusive is not none and c.away_days_inclusive >= 7 %}long{% else %}open{% endif %}">{% if c.away_days_inclusive is none %}기간 미확인{% elif c.returned_at %}{{ c.away_days_inclusive }}일 만에 복귀{% else %}<b>{{ c.away_days_inclusive }}</b>일째{% endif %}</span>
-        <span class="away-nth">{% if c.away_number %}<b>{{ c.away_number }}</b>번째{% else %}차수 미확정{% endif %}</span>
-    {% endmacro %}
+    {% macro away_days(c) %}<span class="away-days {% if c.returned_at %}back{% elif c.away_days_inclusive is not none and c.away_days_inclusive >= 7 %}long{% else %}open{% endif %}">{% if c.away_days_inclusive is none %}기간 미확인{% elif c.returned_at %}{{ c.away_days_inclusive }}일 만에 복귀{% else %}<b>{{ c.away_days_inclusive }}</b>일째{% endif %}</span>{% endmacro %}
+    {% macro away_nth(c) %}<span class="away-nth">{% if c.away_number %}{{ c.away_number }}번째 외진{% else %}차수 미확정{% endif %}</span>{% endmacro %}
+    {% macro away_dday(c) %}{% if c.discharge_date %}<span class="away-dday muted-sm">퇴원 완료 {{ c.discharge_date }}</span>{% elif c.discharge_watch %}{% set days = c.discharge_watch.days_left %}<span class="away-dday {% if days <= 7 %}soon{% endif %}">퇴원 <b>{% if days > 0 %}D-{{ days }}{% elif days == 0 %}D-day{% else %}D+{{ -days }}{% endif %}</b> <small>{{ c.discharge_watch.due_date }}</small></span>{% endif %}{% endmacro %}
     {% macro away_return(c) %}
-        {% if c.returned_at %}<strong class="away-ok">복귀 완료</strong><span class="away-detail">{{ c.returned_at[:10] }}{% if c.return_room %} · {{ c.return_room }}{% endif %}</span>{% if c.return_note %}<span class="away-detail away-note">{{ c.return_note }}</span>{% endif %}
-        {% else %}<strong class="away-open">미복귀</strong>
-            {% if can_edit %}<details class="away-return"><summary>복귀 처리</summary><div class="wd-back-cell away-return-form">
-                <input type="date" class="wd-back-date" value="{{ today_str }}" min="{{ c.event_date or '' }}" max="{{ today_str }}" aria-label="{{ c.patient_name }} 복귀일">
-                <input class="wd-back-room" maxlength="50" value="{{ c.room_number or '' }}" placeholder="복귀 병실" aria-label="{{ c.patient_name }} 복귀 병실">
-                <textarea class="wd-back-note" rows="2" maxlength="3000" placeholder="기타 사항" aria-label="{{ c.patient_name }} 복귀 기타 사항"></textarea>
-                <button type="button" class="btn btn-primary btn-xs wd-back" data-aevent="{{ c.away_id }}">복귀 저장</button>
-            </div></details>{% endif %}
-        {% endif %}
+        {% if c.returned_at %}<strong class="away-ok">복귀 완료</strong> <span class="muted-sm">{{ c.returned_at[:10] }}{% if c.return_room %} · {{ c.return_room }}{% endif %}</span>{% if c.return_note %}<span class="away-detail away-note muted-sm">{{ c.return_note }}</span>{% endif %}
+        {% elif can_edit %}<div class="wd-back-cell away-return-form">
+            <input type="date" class="wd-back-date" value="{{ today_str }}" min="{{ c.event_date or '' }}" max="{{ today_str }}" aria-label="{{ c.patient_name }} 복귀일">
+            <input class="wd-back-room" maxlength="50" value="{{ c.room_number or '' }}" placeholder="병실" aria-label="{{ c.patient_name }} 복귀 병실">
+            <input class="wd-back-note" maxlength="3000" placeholder="기타 사항" aria-label="{{ c.patient_name }} 복귀 기타 사항">
+            <button type="button" class="btn btn-primary btn-xs wd-back" data-aevent="{{ c.away_id }}">복귀 저장</button>
+        </div>{% else %}<strong class="away-open">미복귀</strong>{% endif %}
     {% endmacro %}
-    {% macro away_edit_btn(c) %}{% if can_edit %}<button type="button" class="btn btn-secondary btn-xs away-edit" data-aevent="{{ c.away_id }}" data-name="{{ c.patient_name }}" data-birth="{{ c.birth_date or '' }}" data-readmission="{{ c.readmission or '' }}">정보 수정</button>{% endif %}{% endmacro %}
 
     {% if report.view == 'feed' %}
     <div class="away-feed" aria-label="외진 환자 피드">
@@ -96,42 +92,34 @@
         <article class="away-card {% if c.returned_at %}is-back{% elif c.away_days_inclusive is not none and c.away_days_inclusive >= 7 %}is-long{% endif %}">
             <div class="away-card-no">{{ c.no }}</div>
             <div class="away-card-main">
-                <div class="away-card-head"><a href="/consult/{{ c.id }}"><strong>{{ c.patient_name }}</strong></a>
+                <div class="away-card-head">{{ away_nth(c) }}<a href="/consult/{{ c.id }}"><strong>{{ c.patient_name }}</strong></a>
                     <span class="away-detail-inline">{{ {'M':'남', 'F':'여'}.get(c.gender, '성별 미기재') }} · {{ (c.patient_age|string ~ '세') if c.patient_age is not none else '나이 미기재' }}{% if c.room_number %} · {{ c.room_number }}{% endif %}</span>
-                    {{ away_badges(c) }}</div>
-                <div class="away-card-line"><b>{{ c.event_type }}</b>{% if c.event_time %} {{ c.event_time[:5] }}{% endif %} → {{ c.hospital or '기관 미기재' }}</div>
-                <div class="away-card-line"><span class="away-lbl">사유</span>{{ c.memo or '-' }}</div>
-                <div class="away-card-line muted-sm"><span class="away-lbl">병명</span>{{ (c.dx_primary + c.dx_secondary)|join(', ') or '-' }} · 입원 {{ c.actual_admission_date or c.admission_date or '-' }}{% if c.stay_days_inclusive is not none %} · 재원 {{ c.stay_days_inclusive }}일{% endif %}
-                    {% if c.discharge_date %} · 실제 퇴원 {{ c.discharge_date }}{% elif c.discharge_watch %}{% set days = c.discharge_watch.days_left %} · 퇴원 {% if days > 0 %}D-{{ days }}{% elif days == 0 %}D-day{% else %}D+{{ -days }}{% endif %}{% endif %}
-                    · 생년월일 {{ c.birth_date or '미입력' }} · 재입원 {{ c.readmission or '미확인' }}</div>
+                    {{ away_days(c) }} {{ away_dday(c) }}</div>
+                <div class="away-card-line"><b>{{ c.event_type }}</b>{% if c.event_time %} {{ c.event_time[:5] }}{% endif %} → {{ c.hospital or '기관 미기재' }} · <span class="away-lbl">사유</span>{{ c.memo or '-' }}</div>
+                <div class="away-card-line muted-sm"><span class="away-lbl">주상병</span>{{ c.dx_primary|join(', ') or '-' }}{% if c.dx_secondary %} <small>({{ c.dx_secondary|join(', ') }})</small>{% endif %} · 본원 입원 {{ c.actual_admission_date or c.admission_date or '-' }}{% if c.stay_days_inclusive is not none %} (재원 {{ c.stay_days_inclusive }}일){% endif %}</div>
             </div>
-            <div class="away-card-side">{{ away_return(c) }}{{ away_edit_btn(c) }}</div>
+            <div class="away-card-side">{{ away_return(c) }}</div>
         </article>
         {% endfor %}{% endfor %}
         {% if not report.rows %}<p class="empty">조건에 맞는 외진·전원 기록이 없습니다.</p>{% endif %}
     </div>
     {% else %}
     <div class="tbl-wrap"><table class="away-table" aria-label="외진 환자 명단">
-        <thead><tr><th class="away-col-no">#</th><th>환자</th><th>외진 일수·차수</th><th>퇴원일(전원일)·기관</th><th>사유·병명</th><th>입원·재원</th><th>퇴원 D-day</th><th>복귀</th></tr></thead>
+        <thead><tr><th class="away-col-no">#</th><th>환자</th><th>외진 일수 · 퇴원 D-day</th><th>퇴원일(전원일)</th><th>전원기관</th><th>주상병</th><th>구분</th><th>사유</th><th>본원 입원일 (재원)</th><th>복귀</th></tr></thead>
         <tbody>{% for c in report.rows %}<tr class="away-record {% if c.returned_at %}is-back{% elif c.away_days_inclusive is not none and c.away_days_inclusive >= 7 %}is-long{% endif %}">
             <td class="away-col-no" data-label="#">{{ c.no }}</td>
-            <td data-label="환자"><a href="/consult/{{ c.id }}"><strong>{{ c.patient_name }}</strong></a>
-                <span class="away-detail">{{ {'M':'남', 'F':'여'}.get(c.gender, '성별 미기재') }} · {{ (c.patient_age|string ~ '세') if c.patient_age is not none else '나이 미기재' }}{% if c.room_number %} · {{ c.room_number }}{% endif %}</span>
-                <span class="away-detail muted-sm">생년월일 {{ c.birth_date or '미입력' }} · 재입원 {{ c.readmission or '미확인' }}</span>
-                {{ away_edit_btn(c) }}
+            <td data-label="환자" class="away-col-patient">{{ away_nth(c) }}<a href="/consult/{{ c.id }}"><strong>{{ c.patient_name }}</strong></a>
+                <span class="away-detail muted-sm">{{ {'M':'남', 'F':'여'}.get(c.gender, '성별 미기재') }} · {{ (c.patient_age|string ~ '세') if c.patient_age is not none else '나이 미기재' }}{% if c.room_number %} · {{ c.room_number }}{% endif %}</span>
             </td>
-            <td data-label="외진 일수·차수" class="away-col-badge">{{ away_badges(c) }}</td>
-            <td data-label="퇴원일(전원일)·기관"><strong>{{ c.event_date or '일자 미기재' }}</strong>{% if c.event_time %} {{ c.event_time[:5] }}{% endif %}
-                <span class="away-detail">{{ c.event_type }} · {{ c.hospital or '기관 미기재' }}</span>
-            </td>
-            <td data-label="사유·병명"><span class="away-detail">{{ c.memo or '-' }}</span><span class="away-detail muted-sm">{{ (c.dx_primary + c.dx_secondary)|join(', ') or '-' }}</span></td>
-            <td data-label="입원·재원"><span class="away-detail">{{ c.actual_admission_date or c.admission_date or '-' }}</span>
-                <span class="away-detail">{% if c.stay_days_inclusive is not none %}재원 {{ c.stay_days_inclusive }}일{% else %}재원일수 미확인{% endif %}</span>
-                {% if c.discharge_date %}<span class="away-detail muted-sm">실제 퇴원 {{ c.discharge_date }}</span>{% endif %}
-            </td>
-            <td data-label="퇴원 D-day">{% if c.discharge_date %}퇴원 완료{% elif c.discharge_watch %}{% set days = c.discharge_watch.days_left %}<strong>{% if days > 0 %}D-{{ days }}{% elif days == 0 %}D-day{% else %}D+{{ -days }}{% endif %}</strong><span class="away-detail muted-sm">{{ c.discharge_watch.due_date }}</span>{% else %}-{% endif %}</td>
+            <td data-label="외진 일수 · 퇴원 D-day" class="away-col-badge">{{ away_days(c) }}<span class="away-detail">{{ away_dday(c) }}</span></td>
+            <td data-label="퇴원일(전원일)" class="nowrap"><strong>{{ c.event_date or '일자 미기재' }}</strong>{% if c.event_time %}<span class="away-detail muted-sm">{{ c.event_time[:5] }}</span>{% endif %}</td>
+            <td data-label="전원기관">{{ c.hospital or '기관 미기재' }}</td>
+            <td data-label="주상병">{{ c.dx_primary|join(', ') or '-' }}{% if c.dx_secondary %}<span class="away-detail muted-sm">{{ c.dx_secondary|join(', ') }}</span>{% endif %}</td>
+            <td data-label="구분" class="nowrap"><span class="away-type {% if c.event_type == '응급전원' %}er{% endif %}">{{ c.event_type }}</span></td>
+            <td data-label="사유" class="away-col-memo">{{ c.memo or '-' }}</td>
+            <td data-label="본원 입원일 (재원)" class="nowrap">{{ c.actual_admission_date or c.admission_date or '-' }}<span class="away-detail muted-sm">{% if c.stay_days_inclusive is not none %}재원 {{ c.stay_days_inclusive }}일{% else %}재원일수 미확인{% endif %}</span></td>
             <td data-label="복귀" class="away-col-return">{{ away_return(c) }}</td>
-        </tr>{% else %}<tr><td colspan="8" class="empty">조건에 맞는 외진·전원 기록이 없습니다.</td></tr>{% endfor %}</tbody>
+        </tr>{% else %}<tr><td colspan="10" class="empty">조건에 맞는 외진·전원 기록이 없습니다.</td></tr>{% endfor %}</tbody>
     </table></div>
     {% endif %}
     <p class="muted-sm away-foot">외진 일수는 나간 날을 1일째로 세며 재원일수에서 빼지 않습니다. 차수는 환자의 전체 외진·전원 기록 순서이고, 날짜가 없는 기록은 차수를 확정하지 않습니다. 입원일·병명·퇴원 D-day·나이는 연결된 상담 정보입니다.</p>
@@ -143,13 +131,6 @@
         {% for month, stats in report.monthly %}<tr><td>{{ month }}</td><td>{{ stats.patients }}명</td><td>{{ stats.returned_patients }}명</td><td>{{ stats.patient_rate }}%</td><td>{{ stats.events }}</td><td>{{ stats.returned_events }}</td><td>{{ stats.open_events }}</td></tr>{% else %}<tr><td colspan="7" class="empty">집계할 기록이 없습니다.</td></tr>{% endfor %}
     </tbody></table></div>
 </section>
-<dialog id="away-edit-dialog" class="away-dialog" aria-labelledby="away-edit-title"><form id="away-edit-form">
-    <h3 id="away-edit-title">외진 환자 정보 수정</h3><p class="away-edit-patient"></p>
-    <label>생년월일 <input type="date" name="birth_date" max="{{ today_str }}"></label>
-    <label>재입원 여부 <select name="readmission"><option value="">미확인</option><option>예</option><option>아니오</option></select></label>
-    <p class="muted-sm">생년월일은 같은 환자의 모든 외진 기록에 함께 적용됩니다. 재입원 여부는 이 외진 기록에만 저장하며 복귀 처리와는 별개입니다.</p>
-    <button type="submit" class="btn btn-primary btn-sm">정보 저장</button><button type="button" class="btn btn-secondary btn-sm away-edit-close">취소</button>
-</form></dialog>
 <style>
 .wd-kpi.away-kpi{grid-template-columns:repeat(4,minmax(0,1fr))}
 .away-kpi .wd-k-l{white-space:normal}
@@ -182,60 +163,64 @@
 .away-filter-detail input,.away-filter-detail select{width:100%;box-sizing:border-box;padding:5px 6px;border:1px solid var(--border);border-radius:6px;font:inherit;font-size:.95em}
 .away-filter-pair{display:flex;align-items:center;gap:3px}
 .away-filter-pair i{font-style:normal;color:#94a3b8}
-/* 배지 — 며칠째·몇 번째 */
-.away-days{display:inline-block;border-radius:6px;padding:3px 9px;font-weight:800;font-size:.95em;line-height:1.3}
+/* 배지 — 며칠째·몇 번째·D-day */
+.away-days{display:inline-block;border-radius:5px;padding:2px 8px;font-weight:800;font-size:.95em;line-height:1.25;white-space:nowrap}
 .away-days b{font-size:1.35em}
 .away-days.open{background:#fef3c7;color:#92400e}
 .away-days.long{background:#fee2e2;color:#991b1b}
-.away-days.back{background:#e2e8f0;color:#334155;font-weight:600;font-size:.85em}
-.away-nth{display:inline-block;margin-left:4px;border-radius:6px;padding:3px 8px;background:#e4f2eb;color:#14633f;font-weight:700;font-size:.85em}
-.away-nth b{font-size:1.2em}
+.away-days.back{background:#e2e8f0;color:#334155;font-weight:600;font-size:.82em}
+.away-nth{display:block;font-size:.72em;font-weight:700;color:#14633f;line-height:1.2;margin-bottom:1px}
+.away-dday{font-size:.82em;color:#475569;white-space:nowrap}
+.away-dday b{color:#1e293b}
+.away-dday.soon b{color:#b91c1c}
+.away-type{display:inline-block;border-radius:4px;padding:1px 6px;font-size:.82em;font-weight:700;background:#e0f2fe;color:#075985}
+.away-type.er{background:#fee2e2;color:#991b1b}
 .away-ok{color:#166534}.away-open{color:#b45309}
-.away-detail{display:block;margin:2px 0}
+.away-detail{display:block;margin:1px 0}
 .away-detail-inline{color:#64748b;font-size:.85em;margin:0 6px}
 .away-note{white-space:pre-wrap;overflow-wrap:anywhere}
-.away-edit{margin-top:4px}
 .away-lbl{display:inline-block;min-width:2.4em;color:#64748b;font-size:.85em}
 .away-foot{margin:8px 0 0}
-/* 복귀 처리 — 접이식 */
-.away-return summary{cursor:pointer;font-size:.82em;color:var(--primary);font-weight:700;margin-top:2px}
-.away-return-form{display:flex;flex-direction:column;gap:4px;margin-top:4px;min-width:150px}
-.away-return-form input,.away-return-form textarea{box-sizing:border-box;width:100%;padding:4px;font:inherit;font-size:12px;border:1px solid var(--border);border-radius:5px}
-/* 목록형 */
-.away-table{width:100%;border-collapse:collapse;font-size:13px;line-height:1.5}
-.away-table th,.away-table td{padding:9px 8px;text-align:left;vertical-align:top;border-bottom:1px solid #e2e8f0}
-.away-table th{background:#f0f5f3;color:#405f50;font-size:12px;white-space:nowrap}
+/* 복귀 처리 — 행 안에서 바로 입력 */
+.away-return-form{display:grid;grid-template-columns:1fr 1fr;gap:3px;min-width:190px}
+.away-return-form .wd-back-note,.away-return-form .wd-back{grid-column:span 1}
+.away-return-form input{box-sizing:border-box;width:100%;min-width:0;margin:0;padding:3px 4px;font:inherit;font-size:11.5px;border:1px solid var(--border);border-radius:4px}
+.away-return-form .wd-back{padding:3px 6px;font-size:11.5px}
+/* 목록형 — 촘촘하게 */
+.away-table{width:100%;border-collapse:collapse;font-size:12.5px;line-height:1.35}
+.away-table th,.away-table td{padding:5px 6px;text-align:left;vertical-align:middle;border-bottom:1px solid #e2e8f0}
+.away-table th{background:#f0f5f3;color:#405f50;font-size:11.5px;white-space:nowrap}
 .away-table a{color:#14633f;text-decoration:none}
 .away-table tbody tr:hover{background:#f8fafc}
 .away-table tr.is-long{background:#fff7f7}
 .away-table tr.is-back{color:#475569}
-.away-col-no{width:2.6em;text-align:center!important;font-weight:800;color:#64748b;font-size:1.05em}
+.away-table td.nowrap{white-space:nowrap}
+.away-col-no{width:2.2em;text-align:center!important;font-weight:800;color:#64748b}
+.away-col-patient{min-width:110px}
 .away-col-badge{white-space:nowrap}
-.away-col-return{min-width:120px}
+.away-col-memo{min-width:140px;overflow-wrap:anywhere}
+.away-col-return{min-width:190px}
 /* 피드형 */
 .away-feed{display:flex;flex-direction:column;gap:8px}
 .away-feed-day{display:flex;align-items:baseline;gap:8px;margin-top:10px;padding-bottom:4px;border-bottom:2px solid #e2e8f0}
 .away-feed-day:first-child{margin-top:0}
 .away-feed-date{font-weight:800;color:#14633f}
-.away-card{display:grid;grid-template-columns:2.4em minmax(0,1fr) auto;gap:6px 10px;padding:10px 12px;border:1px solid #e2e8f0;border-left:4px solid #f59e0b;border-radius:8px;background:#fff}
+.away-card{display:grid;grid-template-columns:2.4em minmax(0,1fr) auto;gap:4px 10px;padding:7px 10px;border:1px solid #e2e8f0;border-left:4px solid #f59e0b;border-radius:8px;background:#fff}
 .away-card.is-long{border-left-color:#dc2626;background:#fffafa}
 .away-card.is-back{border-left-color:#94a3b8}
 .away-card-no{font-weight:800;color:#64748b;font-size:1.1em;text-align:center;padding-top:2px}
-.away-card-head{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-bottom:4px}
+.away-card-head{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin-bottom:2px}
+.away-card-head .away-nth{display:inline;margin:0}
 .away-card-head a{color:#14633f;text-decoration:none;font-size:1.05em}
 .away-card-line{margin:2px 0;font-size:.9em;overflow-wrap:anywhere}
-.away-card-side{display:flex;flex-direction:column;gap:4px;align-items:flex-start;min-width:130px}
-.away-dialog{border:1px solid #e2e8f0;border-radius:14px;padding:24px;width:min(420px,92vw);max-height:85vh;overflow:auto}
-.away-dialog::backdrop{background:#0f172a77}
-.away-dialog label{display:block;margin:14px 0}
-.away-dialog input,.away-dialog select{box-sizing:border-box;display:block;width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:7px;font:inherit}
+.away-card-side{display:flex;flex-direction:column;gap:4px;align-items:flex-start;min-width:190px}
 @media(max-width:1100px){.away-filter-detail{grid-template-columns:repeat(4,minmax(0,1fr))}.away-register-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:800px){
     .away-table,.away-table tbody{display:block}
     .away-table thead{display:none}
     .away-table tr.away-record{display:grid;grid-template-columns:2.4em repeat(2,minmax(0,1fr));border:1px solid #e2e8f0;border-radius:8px;margin:10px 0;padding:6px}
     .away-table td{display:block;min-width:0;border:0}
-    .away-table td.away-col-no{grid-row:span 4}
+    .away-table td.away-col-no{grid-row:span 5}
     .away-table td::before{content:attr(data-label);display:block;font-size:11px;color:#60756b;margin-bottom:3px}
     .away-table td.away-col-no::before{content:none}
     .away-card{grid-template-columns:2.4em minmax(0,1fr)}
@@ -281,31 +266,4 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// 생년월일·재입원 여부 — 명부에서 바로 고친다 (상담 상세까지 안 들어가게)
-document.addEventListener('DOMContentLoaded', () => {
-    const dialog = document.getElementById('away-edit-dialog');
-    if (!dialog) return;
-    const form = dialog.querySelector('form');
-    document.querySelectorAll('.away-edit').forEach(btn => btn.addEventListener('click', () => {
-        form.reset();
-        form.dataset.aevent = btn.dataset.aevent;
-        dialog.querySelector('.away-edit-patient').textContent = btn.dataset.name;
-        form.elements.birth_date.value = btn.dataset.birth || '';
-        form.elements.readmission.value = btn.dataset.readmission || '';
-        dialog.showModal();
-    }));
-    dialog.querySelector('.away-edit-close').addEventListener('click', () => dialog.close());
-    form.addEventListener('submit', async event => {
-        event.preventDefault();
-        const save = form.querySelector('button[type=submit]');
-        save.disabled = true;
-        try {
-            await api.post(`/api/admission-event/${form.dataset.aevent}/details`,
-                           Object.fromEntries(new FormData(form)));
-            toast('✓ 환자 정보를 저장했습니다', 'success');
-            dialog.close();
-            setTimeout(() => location.reload(), 400);
-        } catch (error) { save.disabled = false; alert('저장 실패: ' + error.message); }
-    });
-});
 </script>
