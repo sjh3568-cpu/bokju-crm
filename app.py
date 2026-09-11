@@ -826,7 +826,8 @@ def _admission_expiry(consultation):
         return None
     rec = _recovery_status(consultation)
     period = compute_admission_period(
-        consultation.get("diseases"), rec.get("label"),
+        consultation.get("diseases"),
+        consultation.get("roster_care_phase") or rec.get("label"),
     )
     if not period:
         return None
@@ -937,9 +938,17 @@ def _care_phase(consultation):
         # 회복기로 뭉뚱그리면 재원 카드에 엉뚱한 구간이 찍히고, recovery_due
         # ('회복기 전환 임박')가 대상 아닌 환자까지 잡아 알림이 부푼다.
         phase = "미판정"
-    # 외진 기간을 빼지 않은 값 그대로 쓴다 (_admission_expiry 주석 참고)
-    dday = ax.get("billing_left") if phase == "회복기" else ax.get("total_left")
-    end_date = ax.get("billing_date") if phase == "회복기" else ax.get("total_date")
+    roster_phase = consultation.get("roster_care_phase")
+    if roster_phase:
+        phase = _effective_roster_care_phase(
+            roster_phase, consultation.get("diseases"),
+            consultation.get("actual_admission_date") or consultation.get("admission_date"),
+            date.today(),
+        )
+    # 명부의 회복기 대상 표시는 종료된 수가 기간을 다시 열지 않는다.
+    billing_phase = phase == "회복기" and ax.get("billing_left") is not None
+    dday = ax.get("billing_left") if billing_phase else ax.get("total_left")
+    end_date = ax.get("billing_date") if billing_phase else ax.get("total_date")
     return {"care_phase": phase, "phase_dday": dday, "phase_end_date": end_date,
             "phase_mandatory": bool(ax.get("mandatory"))}
 
@@ -4183,9 +4192,6 @@ def ward_view():
         c["away"] = away_by_cid.get(c["id"]) if c["id"] else None
         c["stay_days"] = _days_since(adm)
         c.update(_care_phase(c))
-        # 명부가 수가 구분을 들고 오면 그게 사실이다 — 추정을 덮는다.
-        if c.get("roster_care_phase"):
-            c["care_phase"] = c["roster_care_phase"]
         c["recovery_due"] = (c.get("care_phase") == "회복기"
                              and c.get("phase_dday") is not None
                              and c["phase_dday"] <= 30)
@@ -4323,8 +4329,10 @@ def ward_view():
         for span, con in census:
             roster_phase = _roster_care_phase(span.get("care_type"))
             if roster_phase:
-                # 명부가 말해주면 수가 기간을 되짚을 필요가 없다.
-                recovery_count += roster_phase == "회복기"
+                recovery_count += _effective_roster_care_phase(
+                    roster_phase, (con or {}).get("diseases"),
+                    span["admitted_at"], snapshot,
+                ) == "회복기"
                 continue
             if con is None or _recovery_status(con).get("label") != "회복기":
                 continue
@@ -4614,6 +4622,25 @@ def _roster_care_phase(value):
     if v.startswith("일반재활") or v.startswith("요양"):
         return "미판정"
     return None
+
+
+
+def _effective_roster_care_phase(phase, diseases, admitted_at, snapshot):
+    """명부의 대상 구분에 조회일의 수가 만료를 반영한다."""
+    if phase != "회복기":
+        return phase
+    period = compute_admission_period(diseases, "회복기")
+    if not period:
+        return phase
+    days = period.get("billing") or period.get("total")
+    try:
+        end = _day_of(date.fromisoformat(str(admitted_at)[:10]), days)
+    except (TypeError, ValueError):
+        return phase
+    if snapshot <= end:
+        return phase
+    # 단일 수가 질환은 S006 연장 대상이 아니므로 기존 단일구간을 유지한다.
+    return "단일구간" if period.get("mandatory") else "비회복기"
 
 
 def _ward_row_from_episode(ep):

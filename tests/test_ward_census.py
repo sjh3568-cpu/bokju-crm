@@ -203,12 +203,8 @@ class WardCensusTests(unittest.TestCase):
         self.assertLess(phase["phase_dday"], 0)        # 수가 기간이 지났다
         self.assertEqual(phase["care_phase"], "비회복기")
 
-    def test_roster_care_type_overrides_the_estimate(self):
-        """명부에 수가 구분이 실려 오면 추정하지 않고 그 값을 쓴다.
-
-        CRM은 발병일+진단군으로 회복기를 추정하는데 발병일이 빈 재원 환자가 많아
-        원무 집계와 어긋난다(우리 82명 vs 원무 115명). 명부가 말해주면 그게 사실이다.
-        """
+    def test_roster_recovery_does_not_override_expired_period(self):
+        """명부가 회복기 대상이어도 만료된 환자는 목록·필터·추이에서 제외한다."""
         with models.get_db() as conn:
             # 수가 기간이 한참 지난 환자 — 추정이면 비회복기다
             conn.execute("""UPDATE consultations SET diseases = '["뇌출혈"]',
@@ -223,8 +219,31 @@ class WardCensusTests(unittest.TestCase):
         with models.get_db() as conn:
             conn.execute("UPDATE admission_episodes SET care_type = '회복기재활' "
                          "WHERE patient_id = 1")
-        html = self.client.get("/ward?view=list&filt=recovery").get_data(as_text=True)
-        self.assertIn("재원환자", html)     # 명부가 회복기라 하면 회복기로 잡힌다
+        with patch.object(main, "render_template", return_value="") as render:
+            self.assertEqual(self.client.get("/ward?view=list&filt=recovery").status_code, 200)
+            self.assertNotIn(1, [c["patient_id"] for c in render.call_args.kwargs["admitted"]])
+        with patch.object(main, "render_template", return_value="") as render:
+            self.client.get("/ward?view=list&filt=nonrecovery")
+            patient = next(c for c in render.call_args.kwargs["admitted"] if c["patient_id"] == 1)
+            self.assertEqual(patient["care_phase"], "비회복기")
+            self.assertEqual(patient["phase_end_date"], "2024-01-01")
+        import json, re
+        html = self.client.get("/ward?tab=trend").get_data(as_text=True)
+        series = json.loads(re.search(r"data-series='(\[.*?\])'", html).group(1))
+        self.assertEqual(series[-1]["recovery"], 0)
+
+    def test_roster_expiry_boundaries_and_unknown_period(self):
+        from datetime import date, timedelta
+        start = date(2026, 1, 1)
+        end = start + timedelta(days=179)
+        phase = main._effective_roster_care_phase
+        self.assertEqual(phase("회복기", ["뇌출혈"], str(start), end), "회복기")
+        self.assertEqual(phase("회복기", ["뇌출혈"], str(start), end + timedelta(days=1)), "비회복기")
+        self.assertEqual(phase("비회복기", ["뇌출혈"], str(start), start), "비회복기")
+        self.assertEqual(phase("회복기", [], str(start), end), "회복기")
+        self.assertEqual(phase("회복기", ["뇌출혈"], None, end), "회복기")
+        self.assertEqual(phase("회복기", ["비사용증후군"], str(start), start + timedelta(days=59)), "회복기")
+        self.assertEqual(phase("회복기", ["비사용증후군"], str(start), start + timedelta(days=60)), "단일구간")
 
     def test_roster_care_type_values_are_read_by_prefix(self):
         for raw, expected in (("회복기", "회복기"), ("회복기재활", "회복기"),
