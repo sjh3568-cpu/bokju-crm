@@ -448,7 +448,7 @@ tr.ae-open { background:#fff7ed; }
 <div class="card">
     <h3>환자 상태</h3>
     <dl class="kv">
-        <dt>현재</dt><dd>{{ c.current_location_type or '-' }}{% if c.current_location_name %} · 병원 {{ c.current_location_name }}{% endif %}{% if c.current_nursing_name %} · 요양원 {{ c.current_nursing_name }}{% endif %}</dd>
+        <dt>현재</dt><dd>{{ c.current_location_type or '-' }}{% if c.current_location_name %} · 병원 {{ c.current_location_name }}{% elif c.source_hospital and not c.current_nursing_name %} · 모병원 {{ c.source_hospital }}{% endif %}{% if c.current_nursing_name %} · 요양원 {{ c.current_nursing_name }}{% endif %}</dd>
         <dt>의식</dt><dd>
             {{ c.consciousness_main or '-' }}
             {% if c.conversation_level %} · 대화 {{ c.conversation_level }}{% endif %}

@@ -985,7 +985,7 @@
             <div class="field-radio">
                 {% for t in CURRENT_LOCATION_TYPES %}
                 <label><input type="radio" name="consultation.current_location_type" value="{{ t }}"
-                              {% if (is_edit and consultation.current_location_type == t) or (not is_edit and prefill and prefill.current_location_type == t) %}checked{% endif %}> {{ t }}</label>
+                              {% if (is_edit and (consultation.current_location_type == t or (not consultation.current_location_type and consultation.source_hospital and not consultation.current_nursing_name and t == '입원중'))) or (not is_edit and prefill and prefill.current_location_type == t) %}checked{% endif %}> {{ t }}</label>
                 {% endfor %}
             </div>
         </div>
@@ -993,7 +993,7 @@
             <label>병원 <span class="muted" style="font-size:0.78em">(입원중일 때 모병원 통계 반영)</span></label>
             <input type="text" class="boxed-input" name="consultation.current_location_name"
                    data-ac="hospital" autocomplete="off"
-                   value="{{ consultation.current_location_name if is_edit and consultation.current_location_name else ((prefill.current_location_name if prefill else '') or '') }}">
+                   value="{{ (consultation.current_location_name or (consultation.source_hospital if not consultation.current_nursing_name and consultation.current_location_type not in ['입소중', '자택'] else '') or '') if is_edit else ((prefill.current_location_name if prefill else '') or '') }}">
             <div class="ac-list" id="ac-hospital" hidden></div>
             {% if top_hospitals %}
             <div class="hosp-quick">
