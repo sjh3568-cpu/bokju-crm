@@ -2726,9 +2726,11 @@ def report_monthly():
     if not (1 <= month <= 12):
         year, month = now.year, now.month
     data = models.aggregate_monthly(year, month)
+    import hospital_analysis as ha
     return render_template(
         "report_monthly.html",
         data=data,
+        hospital_section=ha.monthly_section(year, month),
         insight_enabled=bool(os.getenv("ANTHROPIC_API_KEY")),
     )
 
@@ -2749,10 +2751,12 @@ def api_report_monthly_insight():
         return jsonify({"insight": {
             "headline": "", "overview": "이번 달 상담 기록이 없어 인사이트를 생성할 수 없습니다.",
             "trend_comment": "", "channel_comment": "", "portfolio_comment": "",
-            "pipeline_comment": "", "operation_comment": "", "alerts": [],
+            "pipeline_comment": "", "operation_comment": "", "hospital_comment": "", "alerts": [],
         }})
     try:
         from llm import summarize_monthly
+        import hospital_analysis as ha
+        data["hospital_section"] = ha.monthly_section(year, month)
         insight = summarize_monthly(data)
     except Exception as e:
         logger.warning(f"월간 인사이트 실패: {e}")

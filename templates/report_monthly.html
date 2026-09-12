@@ -204,28 +204,114 @@
     </div>
 
     <div class="report-card">
-        <h3><span class="kpi-tag">신규 모병원 {{ data.new_hospitals }}곳</span> 의뢰 Top</h3>
-        {% set hosp = data.performance['모병원'] %}
-        {% if hosp %}
-        <table class="report-tbl compact rpt-drill">
-            <thead><tr><th>모병원</th><th>상담</th><th>전월</th><th>전환율</th></tr></thead>
-            <tbody>
-                {% for r in hosp[:5] %}
-                <tr class="rpt-row" data-href="/consultations?q={{ r.label|urlencode }}&from={{ data['from'] }}&to={{ data['to'] }}">
-                    <td>{{ r.label }} <span class="rpt-arrow no-print">›</span></td>
-                    <td class="num">{{ r.cur }}</td>
-                    <td class="num">{{ r.prev }}</td>
-                    <td class="num"><strong>{{ r.cur_rate }}%</strong></td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        {% else %}
-        <div class="empty-mini">기록된 모병원 없음 — 상담 폼 '현재 병원/요양원' 입력 시 집계</div>
-        {% endif %}
+        {% set hs = hospital_section %}
+        <h3><span class="kpi-tag">모병원 {{ hs.hospital_count }}곳</span> 유입 구조
+            <span class="muted" style="font-size:0.78em">상담 건수 기준 · 전월 {{ hs.prev_hospital_count }}곳</span></h3>
+        <div class="struct-title">종별</div>
+        <div class="struct-bars">
+            {% for d in hs.kinds %}
+            <div class="sb-row" title="{{ d.label }} {{ d.count }}건 (전월 {{ d.prev_count }}건)">
+                <span class="sb-label">{{ d.short }}</span>
+                <i class="sb-bar kind-bar-{{ d.label }}"><b style="width:{{ d.pct }}%"></b></i>
+                <span class="sb-val">{{ d.pct }}%<small class="{{ 'up' if d.pct > d.prev_pct else ('down' if d.pct < d.prev_pct else '') }}">{{ '%+d'|format(d.pct - d.prev_pct) if d.pct != d.prev_pct else '' }}</small></span>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="struct-title">지역</div>
+        <div class="struct-chips">
+            {% for d in hs.regions %}<span class="chip" title="{{ d.count }}건">{{ d.label }} <b>{{ d.pct }}%</b></span>{% endfor %}
+        </div>
+        <div class="sec-note">신규 모병원 {{ data.new_hospitals }}곳 · '기타'는 명부에서 지역을 특정 못 한 곳</div>
     </div>
 </div>
 <div class="ai-note ai-note-solo" id="ai-pipeline" hidden></div>
+
+<!-- ══ 2페이지: 모병원·협력 분석 ══ -->
+<div class="page-break"></div>
+{% set hs = hospital_section %}
+<section class="hosp-section">
+<div class="hosp-head">
+    <h2>모병원·협력 분석</h2>
+    <p>① 환자가 어디서 오나 &nbsp;·&nbsp; ② 협력 활동이 효과가 있나 &nbsp;·&nbsp; ③ 무엇이 달라졌나 &nbsp;<span class="muted">({{ hs.month }} · 전월 {{ hs.prev_month }} 대비)</span></p>
+</div>
+
+<div class="report-grid grid-2 hosp-grid">
+    <div class="report-card">
+        <h3><span class="kpi-tag">① 상위 모병원</span> 상담 Top 10
+            <span class="muted" style="font-size:0.78em">★ = 협력기관</span></h3>
+        <table class="report-tbl compact hosp-top rpt-drill">
+            <thead><tr><th>모병원</th><th>상담</th><th>전월</th><th>±</th><th>입원</th><th>전환율</th><th>주요 질환</th></tr></thead>
+            <tbody>
+            {% for h in hs.top %}
+            <tr class="rpt-row" data-href="/stats/hospitals?preset=custom&from={{ data['from'] }}&to={{ data['to'] }}&q={{ (h.official_name or h.name)|urlencode }}">
+                <td class="hosp-name"><span class="kbadge kb-{{ h.kind }}{% if h.kind_basis != '확정' %} kb-guess{% endif %}" title="{{ h.kind }}{% if h.kind_basis != '확정' %} (추정){% endif %}">{{ h.kind_short }}</span>{{ h.official_name or h.name }}{% if h.partner_id %} <b class="star" title="협력기관">★</b>{% endif %}{% if h.is_new %} <i class="newtag">NEW</i>{% endif %}</td>
+                <td class="num"><strong>{{ h.referrals }}</strong></td>
+                <td class="num muted">{{ h.prev_referrals }}</td>
+                <td class="num"><span class="dl {{ 'up' if h.delta_referrals >= 2 else ('down' if h.delta_referrals <= -2 else '') }}">{{ '%+d'|format(h.delta_referrals) if h.delta_referrals else '0' }}</span></td>
+                <td class="num">{% if h.admissions %}<span class="adm">{{ h.admissions }}</span>{% else %}<span class="muted">0</span>{% endif %}</td>
+                <td class="num">{{ h.conversion }}%</td>
+                <td class="dz">{% for dz in h.diseases[:2] %}<span class="dzt dzt-{{ dz.short }}">{{ dz.short }} {{ dz.pct }}%</span>{% endfor %}</td>
+            </tr>
+            {% else %}<tr><td colspan="7" class="empty-mini">이번 달 모병원 기록 없음</td></tr>{% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="report-card">
+        <h3><span class="kpi-tag">② 협력 성과</span> 기관연계 vs 직접 문의</h3>
+        <div class="link-pair">
+            <div class="lp linked"><small>기관연계</small><div><span>상담 <b>{{ hs.linkage.linked.referrals }}</b>건 <i class="dl {{ 'up' if hs.linkage.linked.d_referrals>0 else ('down' if hs.linkage.linked.d_referrals<0 else '') }}">{{ '%+d'|format(hs.linkage.linked.d_referrals) }}</i></span><span>입원 <b class="adm">{{ hs.linkage.linked.admissions }}</b>명 <i class="dl {{ 'up' if hs.linkage.linked.d_admissions>0 else ('down' if hs.linkage.linked.d_admissions<0 else '') }}">{{ '%+d'|format(hs.linkage.linked.d_admissions) }}</i></span></div></div>
+            <div class="lp direct"><small>직접 문의</small><div><span>상담 <b>{{ hs.linkage.direct.referrals }}</b>건 <i class="dl {{ 'up' if hs.linkage.direct.d_referrals>0 else ('down' if hs.linkage.direct.d_referrals<0 else '') }}">{{ '%+d'|format(hs.linkage.direct.d_referrals) }}</i></span><span>입원 <b class="adm">{{ hs.linkage.direct.admissions }}</b>명 <i class="dl {{ 'up' if hs.linkage.direct.d_admissions>0 else ('down' if hs.linkage.direct.d_admissions<0 else '') }}">{{ '%+d'|format(hs.linkage.direct.d_admissions) }}</i></span></div></div>
+        </div>
+        <div class="struct-title">기관연계 최근 {{ hs.trend|length }}개월 <span class="muted">막대=상담 · 진한 부분=입원</span></div>
+        {% set tmax = hs.trend|map(attribute='linked_referrals')|max or 1 %}
+        <div class="trend-bars">
+            {% for t in hs.trend %}
+            <div class="tb" title="{{ t.month }} 연계 상담 {{ t.linked_referrals }} · 입원 {{ t.linked_admissions }}">
+                <div class="tb-bar"><i style="height:{{ (t.linked_referrals*100/tmax)|round }}%"></i><b style="height:{{ (t.linked_admissions*100/tmax)|round }}%"></b></div>
+                <span class="tb-n">{{ t.linked_referrals }}<em>/{{ t.linked_admissions }}</em></span><span class="tb-l">{{ t.label }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="struct-title">협력기관 {{ hs.partners|length }}곳 <span class="muted">이번 달 보내준 곳 {{ hs.partners_active|length }}</span></div>
+        {% if hs.partners %}
+        <table class="report-tbl compact partner-tbl">
+            <thead><tr><th>협력기관</th><th>상담</th><th>전월</th><th>연계</th><th>입원</th></tr></thead>
+            <tbody>
+            {% for r in hs.partners %}
+            <tr class="{{ 'silent' if not r.referrals }}">
+                <td><a href="/partners/{{ r.partner_id }}">{{ r.name }}</a>{% if not r.referrals %} <i class="silent-tag">이달 상담 없음</i>{% endif %}</td>
+                <td class="num"><strong>{{ r.referrals }}</strong></td>
+                <td class="num muted">{{ r.prev_referrals }}</td>
+                <td class="num">{{ r.linked_referrals }}</td>
+                <td class="num">{% if r.admissions %}<span class="adm">{{ r.admissions }}</span>{% else %}<span class="muted">0</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}<div class="empty-mini">등록된 협력기관 없음 — 기관협력 메뉴에서 등록</div>{% endif %}
+    </div>
+</div>
+
+<div class="report-grid grid-3 hosp-grid">
+    <div class="report-card change-card up">
+        <h3>③ 늘어난 곳 <span class="muted" style="font-size:0.78em">전월 대비 +2건 이상</span></h3>
+        {% for h in hs.ups %}<div class="ch-row"><span class="kbadge kb-{{ h.kind }}">{{ h.kind_short }}</span><span class="ch-name">{{ h.official_name or h.name }}{% if h.partner_id %} <b class="star">★</b>{% endif %}</span><span class="ch-n">{{ h.prev_referrals }} → <b>{{ h.referrals }}</b> <i class="dl up">+{{ h.delta_referrals }}</i></span></div>
+        {% else %}<div class="sec-note">전월 대비 2건 이상 늘어난 모병원 없음</div>{% endfor %}
+    </div>
+    <div class="report-card change-card down">
+        <h3>③ 줄어든 곳 <span class="muted" style="font-size:0.78em">전월 대비 −2건 이상</span></h3>
+        {% for h in hs.downs %}<div class="ch-row"><span class="kbadge kb-{{ h.kind }}">{{ h.kind_short }}</span><span class="ch-name">{{ h.official_name or h.name }}{% if h.partner_id %} <b class="star">★</b>{% endif %}</span><span class="ch-n">{{ h.prev_referrals }} → <b>{{ h.referrals }}</b> <i class="dl down">{{ h.delta_referrals }}</i></span></div>
+        {% else %}<div class="sec-note">전월 대비 2건 이상 줄어든 모병원 없음</div>{% endfor %}
+    </div>
+    <div class="report-card change-card new">
+        <h3>③ 새로 생긴 곳 <span class="muted" style="font-size:0.78em">전월 0 → 이번 달 2건 이상</span></h3>
+        {% for h in hs.news %}<div class="ch-row"><span class="kbadge kb-{{ h.kind }}">{{ h.kind_short }}</span><span class="ch-name">{{ h.official_name or h.name }}</span><span class="ch-n"><b>{{ h.referrals }}</b>건{% if h.admissions %} · 입원 <span class="adm">{{ h.admissions }}</span>{% endif %}</span></div>
+        {% else %}<div class="sec-note">새로 등장한 모병원 없음</div>{% endfor %}
+    </div>
+</div>
+<div class="ai-note ai-note-solo" id="ai-hospital" hidden></div>
+</section>
 
 <!-- 운영 해석 + 데이터 성숙도 -->
 <div class="ai-note ai-note-solo" id="ai-operation" hidden></div>
@@ -312,7 +398,39 @@
 }
 
 /* 인쇄 — A4 1장 */
+
+/* ── 모병원·협력 분석 (2페이지) ── */
+.page-break{height:0}
+.hosp-section{margin-top:18px}
+.hosp-head{display:flex;align-items:baseline;gap:14px;margin:0 0 10px;padding-bottom:8px;border-bottom:2px solid #163826}
+.hosp-head h2{font-size:1.15rem;font-weight:900;color:#0f2a1c}.hosp-head p{margin:0;font-size:.8rem;color:#475569}
+.hosp-grid{margin-bottom:10px}
+.struct-title{margin:8px 0 4px;font-size:.72rem;font-weight:800;color:#64748b}
+.struct-bars .sb-row{display:grid;grid-template-columns:52px 1fr 64px;align-items:center;gap:6px;margin:2px 0;font-size:.76rem}
+.sb-label{color:#334155;font-weight:700}.sb-bar{display:block;height:9px;border-radius:6px;background:#eef2f7;overflow:hidden}.sb-bar b{display:block;height:100%;background:#94a3b8;border-radius:inherit}
+.kind-bar-상급종합 b{background:#1e3a8a}.kind-bar-종합병원 b{background:#1d4ed8}.kind-bar-병원 b{background:#0e7490}.kind-bar-요양병원 b{background:#b45309}.kind-bar-한방병원 b{background:#6d28d9}.kind-bar-정신병원 b{background:#7c2d12}.kind-bar-의원 b{background:#0f766e}
+.sb-val{text-align:right;font-variant-numeric:tabular-nums;font-weight:800;color:#183826}.sb-val small{margin-left:3px;font-weight:700;color:#94a3b8}.sb-val small.up{color:#15803d}.sb-val small.down{color:#b91c1c}
+.struct-chips .chip{display:inline-block;margin:2px 3px 0 0;padding:2px 8px;border-radius:9px;background:#f1f5f9;font-size:.72rem;color:#334155}.struct-chips .chip b{color:#0f2a1c}
+.kbadge{display:inline-block;min-width:36px;margin-right:6px;padding:1px 5px;border-radius:5px;font-size:.64rem;font-weight:850;color:#fff;text-align:center;vertical-align:middle}
+.kb-상급종합{background:#1e3a8a}.kb-종합병원{background:#1d4ed8}.kb-병원{background:#0e7490}.kb-의원{background:#0f766e}.kb-요양병원{background:#b45309}.kb-요양원{background:#92400e}.kb-한방병원{background:#6d28d9}.kb-정신병원{background:#7c2d12}.kb-None{background:#cbd5e1}
+.kbadge.kb-guess{opacity:.7;outline:1px dashed rgba(255,255,255,.8);outline-offset:-2px}
+.hosp-top td.hosp-name{white-space:nowrap}.star{color:#ca8a04}.newtag{font-style:normal;font-size:.58rem;font-weight:900;color:#1d4ed8;margin-left:3px}
+.hosp-top .dz{white-space:nowrap}.dzt{display:inline-block;margin-right:3px;padding:1px 6px;border-radius:7px;font-size:.66rem;font-weight:700;background:#f1f5f9;color:#334155}
+.dzt-중추신경{background:#e0e7ff;color:#3730a3}.dzt-근골격{background:#fef3c7;color:#92400e}.dzt-비사용{background:#fce7f3;color:#9d174d}.dzt-기저{background:#e2e8f0;color:#334155}
+.adm{display:inline-block;min-width:22px;padding:1px 6px;border-radius:999px;background:#15803d;color:#fff;font-weight:900;font-size:.76rem;text-align:center}
+.dl{display:inline-block;min-width:26px;font-weight:800;font-size:.76rem;color:#94a3b8;font-style:normal}.dl.up{color:#15803d}.dl.down{color:#b91c1c}
+.link-pair{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:4px 0 6px}
+.lp{padding:8px 10px;border-radius:9px;border:1px solid #dbe5df}.lp.linked{background:#f6fbf8;border-color:#bbe6cb}.lp.direct{background:#fafcfb}
+.lp small{display:block;font-size:.7rem;font-weight:800;color:#64748b}.lp>div{display:flex;gap:12px;margin-top:3px;font-size:.8rem;color:#334155}.lp b{font-size:1.05rem;color:#0f2a1c}
+.trend-bars{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;align-items:end;height:74px;margin:2px 0 4px}
+.tb{display:grid;grid-template-rows:1fr auto auto;height:100%;text-align:center}.tb-bar{position:relative;display:flex;align-items:flex-end;justify-content:center;gap:2px;height:100%}
+.tb-bar i{width:14px;background:#bfe3cc;border-radius:3px 3px 0 0}.tb-bar b{width:14px;background:#15803d;border-radius:3px 3px 0 0}
+.tb-n{font-size:.66rem;font-weight:800;color:#183826}.tb-n em{font-style:normal;color:#15803d}.tb-l{font-size:.62rem;color:#64748b}
+.partner-tbl tr.silent td{color:#94a3b8}.silent-tag{font-style:normal;margin-left:5px;padding:1px 6px;border-radius:6px;background:#fee2e2;color:#b91c1c;font-size:.62rem;font-weight:800}
+.change-card{border-top:3px solid #cbd5e1}.change-card.up{border-top-color:#15803d}.change-card.down{border-top-color:#b91c1c}.change-card.new{border-top-color:#1d4ed8}
+.ch-row{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #f1f5f9;font-size:.8rem}.ch-name{color:#0f2a1c;font-weight:700}.ch-n{color:#475569;white-space:nowrap}.ch-n b{color:#0f2a1c}
 @media print {
+    .page-break { page-break-before: always; break-before: page; }
     .no-print, header, footer, .flash-list { display:none !important; }
     body, main { background:#fff !important; }
     .container { max-width:none; padding:0 6mm; }
@@ -471,7 +589,7 @@
         const overview = document.getElementById('ai-overview');
         const slots = { trend_comment:'ai-trend', channel_comment:'ai-channel',
                         portfolio_comment:'ai-portfolio', pipeline_comment:'ai-pipeline',
-                        operation_comment:'ai-operation' };
+                        operation_comment:'ai-operation', hospital_comment:'ai-hospital' };
         btnInsight.addEventListener('click', async () => {
             overview.classList.remove('empty');
             overview.classList.add('loading');

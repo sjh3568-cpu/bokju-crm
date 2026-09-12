@@ -88,6 +88,44 @@ class HospitalAnalysisTests(unittest.TestCase):
         self.assertIn('NEW', page)
         self.assertIn('강릉아산병원', filtered); self.assertNotIn('<b>안동병원</b>', filtered)
 
+    def test_monthly_section_covers_structure_linkage_and_changes(self):
+        hs = ha.monthly_section(2026, 6, trend_months=3)
+        self.assertEqual((hs['month'], hs['prev_month']), ('2026-06', '2026-05'))
+        self.assertEqual((hs['referrals'], hs['prev_referrals']), (7, 4))
+        self.assertEqual((hs['hospital_count'], hs['prev_hospital_count']), (3, 2))
+        kinds = {k['label']: k for k in hs['kinds']}
+        self.assertEqual(kinds['종합병원']['count'], 3); self.assertEqual(kinds['종합병원']['pct'], 43)
+        self.assertEqual(kinds['상급종합']['prev_pct'], 75)                 # 전월 4건 중 3건
+        self.assertEqual(hs['top'][0]['name'], '안동병원')
+        self.assertEqual(hs['top'][0]['delta_referrals'], 2)
+        self.assertEqual([t['month'] for t in hs['trend']], ['2026-04', '2026-05', '2026-06'])
+        # 협력기관 강릉아산: 이번 달 2건이라 '보내준 곳', 6월 늘어난 곳=안동병원, 줄어든 곳=강릉아산(3→2는 -1이라 제외), 새로 생긴 곳=새병원
+        self.assertEqual([p['name'] for p in hs['partners_active']], ['강릉아산병원']); self.assertEqual(hs['partners_silent'], [])
+        self.assertEqual([h['name'] for h in hs['ups']], ['안동병원'])
+        self.assertEqual(hs['downs'], [])
+        self.assertEqual([h['name'] for h in hs['news']], ['새병원'])
+
+    def test_monthly_report_renders_hospital_section(self):
+        models.ensure_admin_user('t', 'x', display_name='t'); u = models.get_user('t')
+        with patch.object(main, '_db_initialized', True), patch.object(models, 'first_unread_required_announcement', return_value=None):
+            main.app.config.update(TESTING=True); c = main.app.test_client()
+            with c.session_transaction() as s:
+                s.update(user_id=u['id'], username='t', role='admin', perms={k: 3 for k in main.MENU_KEYS})
+            page = c.get('/report/monthly?year=2026&month=6').get_data(as_text=True)
+        self.assertIn('모병원·협력 분석', page)
+        self.assertIn('상담 Top 10', page); self.assertIn('기관연계 vs 직접 문의', page)
+        self.assertIn('새로 생긴 곳', page); self.assertIn('새병원', page)
+        self.assertIn('id="ai-hospital"', page); self.assertIn("hospital_comment:'ai-hospital'", page)
+
+    def test_llm_payload_compacts_section(self):
+        import llm
+        p = llm._hospital_section_payload(ha.monthly_section(2026, 6, trend_months=2))
+        self.assertEqual(p['모병원_수'], {'이번달': 3, '전월': 2})
+        self.assertEqual(p['새로_생긴_곳'][0]['병원'], '새병원')
+        self.assertEqual(p['협력기관_보내준곳'][0]['기관'], '강릉아산병원')
+        self.assertIsNone(llm._hospital_section_payload(None))
+        self.assertIn('hospital_comment', llm.MONTHLY_SCHEMA['required'])
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -156,3 +156,138 @@ SORT_KEYS = {
     "up": lambda h: (-h["delta_referrals"], -h["referrals"]),
     "down": lambda h: (h["delta_referrals"], -h["prev_referrals"]),
 }
+
+
+# ─── 월간보고서 「모병원·협력 분석」 ───
+
+KIND_ORDER = ("상급종합", "종합병원", "병원", "요양병원", "한방병원", "정신병원", "의원", "요양원")
+_KIND_LABEL = {"상급종합": "상급종합", "종합병원": "종합병원", "병원": "병원", "요양병원": "요양병원",
+               "한방병원": "한방", "정신병원": "정신", "의원": "의원", "요양원": "요양원"}
+
+
+def _month_overview(year: int, month: int) -> dict:
+    """한 달치 overview + 그 달 기준 질환군·협력기관·지역. 전기 비교는 호출 쪽에서 붙인다."""
+    f, t = models._month_range(year, month)
+    cur = models.hospital_referral_overview(f, t)
+    groups = disease_groups_by_hospital(f, t)
+    partners = partner_index()
+    kind_idx = models._hospital_kind_index()
+    for h in cur["hospitals"]:
+        h["diseases"] = groups.get(h["name"], [])
+        code = models.hospital_official_code(h["name"], kind_idx)
+        h["partner_id"] = (partners.get("code:" + code) if code else None) \
+            or partners.get(models._hospital_substring_key(h["name"])) \
+            or (partners.get(models._hospital_substring_key(h["official_name"])) if h.get("official_name") else None)
+        hit = models._resolve_hospital(h["name"], kind_idx)
+        if hit is None and h.get("kind_basis") == "유사":
+            hit = models._fuzzy_hospital(h["name"], kind_idx)
+        h["region"] = hit[2] if hit else None
+    cur["from"], cur["to"] = f, t
+    return cur
+
+
+def _distribution(hospitals: list[dict], key: str, order=None) -> list[dict]:
+    """상담 건수 기준 구성비. 병원 수가 아니라 상담 건수로 센다 — 임원이 보는 건 물량이다."""
+    c: Counter = Counter()
+    for h in hospitals:
+        c[h.get(key) or "기타"] += h["referrals"]
+    total = sum(c.values()) or 1
+    keys = [k for k in (order or []) if c.get(k)] + sorted((k for k in c if k not in (order or [])), key=lambda k: -c[k])
+    return [{"label": k, "count": c[k], "pct": round(100 * c[k] / total)} for k in keys]
+
+
+def monthly_section(year: int, month: int, trend_months: int = 6) -> dict:
+    """월간보고서용 — ① 어디서 오나(종별·지역 구조, Top 10) ② 협력이 효과 있나
+    (기관연계 추이, 협력기관별 실적) ③ 뭐가 달라졌나(증가·감소·신규)."""
+    cur = _month_overview(year, month)
+    py, pm = models._prev_month(year, month)
+    prev = _month_overview(py, pm)
+    prev_by = {h["name"]: h for h in prev["hospitals"]}
+
+    for h in cur["hospitals"]:
+        p = prev_by.get(h["name"], {})
+        h["prev_referrals"] = p.get("referrals", 0)
+        h["prev_admissions"] = p.get("admissions", 0)
+        h["delta_referrals"] = h["referrals"] - h["prev_referrals"]
+        h["delta_admissions"] = h["admissions"] - h["prev_admissions"]
+        h["is_new"] = h["prev_referrals"] == 0 and h["referrals"] >= 2
+
+    # ① 구조 — 종별·지역 구성비 (이번 달 / 전월)
+    kinds_cur = _distribution(cur["hospitals"], "kind", KIND_ORDER)
+    kinds_prev = {d["label"]: d for d in _distribution(prev["hospitals"], "kind", KIND_ORDER)}
+    for d in kinds_cur:
+        d["short"] = _KIND_LABEL.get(d["label"], d["label"])
+        d["prev_pct"] = kinds_prev.get(d["label"], {}).get("pct", 0)
+        d["prev_count"] = kinds_prev.get(d["label"], {}).get("count", 0)
+    regions_cur = _distribution(cur["hospitals"], "region")
+    regions_prev = {d["label"]: d for d in _distribution(prev["hospitals"], "region")}
+    for d in regions_cur:
+        d["prev_pct"] = regions_prev.get(d["label"], {}).get("pct", 0)
+    top = sorted(cur["hospitals"], key=lambda h: (-h["referrals"], -h["admissions"], h["name"]))[:10]
+
+    # ② 협력 — 기관연계 vs 직접 (전월 대비) + 최근 N개월 추이 + 협력기관별 실적
+    linkage = {
+        "linked": {"referrals": cur["linked_referrals"], "admissions": cur["linked_admissions"],
+                   "d_referrals": cur["linked_referrals"] - prev["linked_referrals"],
+                   "d_admissions": cur["linked_admissions"] - prev["linked_admissions"]},
+        "direct": {"referrals": cur["direct_referrals"], "admissions": cur["direct_admissions"],
+                   "d_referrals": cur["direct_referrals"] - prev["direct_referrals"],
+                   "d_admissions": cur["direct_admissions"] - prev["direct_admissions"]},
+    }
+    trend, y, m = [], year, month
+    for _ in range(trend_months):
+        f, t = models._month_range(y, m)
+        o = models.hospital_referral_overview(f, t)
+        trend.append({"month": f"{y}-{m:02d}", "label": f"{m}월",
+                      "linked_referrals": o["linked_referrals"], "linked_admissions": o["linked_admissions"],
+                      "referrals": o["referrals"], "admissions": o["admissions"]})
+        y, m = models._prev_month(y, m)
+    trend.reverse()
+
+    partners = partner_index()
+    ids = sorted({v for v in partners.values()})
+    conn = models.get_db()
+    prow = {r["id"]: r["name"] for r in conn.execute(
+        """SELECT p.id, COALESCE(p.official_name, h.name) name
+           FROM cooperation_partners p JOIN source_hospitals h ON h.id = p.hospital_id""")}
+    conn.close()
+    by_partner = {}
+    for h in cur["hospitals"] + [h for h in prev["hospitals"] if h["name"] not in {x["name"] for x in cur["hospitals"]}]:
+        if h.get("partner_id"):
+            slot = by_partner.setdefault(h["partner_id"], {"partner_id": h["partner_id"], "name": prow.get(h["partner_id"], h["name"]),
+                                                            "referrals": 0, "admissions": 0, "prev_referrals": 0, "prev_admissions": 0,
+                                                            "linked_referrals": 0, "diseases": h.get("diseases", [])})
+            if h in cur["hospitals"]:
+                slot["referrals"] += h["referrals"]; slot["admissions"] += h["admissions"]
+                slot["linked_referrals"] += h["linked_referrals"]
+                slot["prev_referrals"] += h.get("prev_referrals", 0); slot["prev_admissions"] += h.get("prev_admissions", 0)
+            else:
+                slot["prev_referrals"] += h["referrals"]; slot["prev_admissions"] += h["admissions"]
+    for pid in ids:
+        by_partner.setdefault(pid, {"partner_id": pid, "name": prow.get(pid, "?"), "referrals": 0, "admissions": 0,
+                                    "prev_referrals": 0, "prev_admissions": 0, "linked_referrals": 0, "diseases": []})
+    partner_rows = sorted(by_partner.values(), key=lambda r: (-r["referrals"], -r["admissions"], r["name"]))
+    active = [r for r in partner_rows if r["referrals"]]
+    silent = [r for r in partner_rows if not r["referrals"]]
+
+    # ③ 변화 — 늘어난 곳·줄어든 곳·새로 생긴 곳 (1건 흔들림은 잡음이라 ±2 이상만)
+    # 새로 생긴 곳(전월 0)은 '늘어난 곳'에 중복 표시하지 않는다
+    ups = sorted([h for h in cur["hospitals"] if h["delta_referrals"] >= 2 and not h["is_new"]], key=lambda h: (-h["delta_referrals"], -h["referrals"]))[:5]
+    downs = sorted([h for h in cur["hospitals"] if h["delta_referrals"] <= -2], key=lambda h: (h["delta_referrals"], -h["prev_referrals"]))
+    # 전월엔 있었는데 이번 달 0인 곳도 '줄어든 곳'이다
+    gone = [dict(h, referrals=0, admissions=0, prev_referrals=h["referrals"], prev_admissions=h["admissions"],
+                 delta_referrals=-h["referrals"], delta_admissions=-h["admissions"])
+            for h in prev["hospitals"] if h["referrals"] >= 3 and h["name"] not in {x["name"] for x in cur["hospitals"]}]
+    downs = sorted(downs + gone, key=lambda h: (h["delta_referrals"], -h["prev_referrals"]))[:5]
+    news = sorted([h for h in cur["hospitals"] if h["is_new"]], key=lambda h: (-h["referrals"], h["name"]))[:5]
+
+    return {
+        "month": f"{year}-{month:02d}", "prev_month": f"{py}-{pm:02d}",
+        "referrals": cur["referrals"], "admissions": cur["admissions"],
+        "prev_referrals": prev["referrals"], "prev_admissions": prev["admissions"],
+        "hospital_count": cur["total_count"], "prev_hospital_count": prev["total_count"],
+        "kinds": kinds_cur, "regions": regions_cur[:6], "top": top,
+        "linkage": linkage, "trend": trend,
+        "partners": partner_rows, "partners_active": active, "partners_silent": silent,
+        "ups": ups, "downs": downs, "news": news,
+    }

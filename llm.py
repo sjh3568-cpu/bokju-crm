@@ -21,7 +21,7 @@ MAX_RETRIES = 2
 RETRY_DELAY = 4
 
 MONTHLY_SYSTEM_PROMPT = """당신은 복주회복병원(인덕의료재단·입원전용 재활병원) 상담실 데이터를 임원에게 보고하는 분석가입니다.
-A4 1장짜리 월간 보고서에 들어갈 해석 문구를 작성합니다. 표와 그래프는 이미 화면에 그려져 있으니,
+A4 2장짜리 월간 보고서(1장 실적, 2장 모병원·협력 분석)에 들어갈 해석 문구를 작성합니다. 표와 그래프는 이미 화면에 그려져 있으니,
 당신은 **그 숫자가 무엇을 뜻하는지**만 씁니다.
 
 절대 규칙:
@@ -42,7 +42,10 @@ A4 1장짜리 월간 보고서에 들어갈 해석 문구를 작성합니다. �
    이 경우 전환율 하락을 단정하지 말고 미확정 물량을 함께 짚어라.
 7. 의료법 준수 — "효과 보장", "완치", "최고" 같은 광고성 표현 금지.
    환자 개인 식별 시도 금지. 데이터에 없는 사실을 만들지 마라.
-8. 가용 데이터 한계(가동률·재원일·매출 부재)는 임원이 이미 안다. 언급하지 마라."""
+8. 가용 데이터 한계(가동률·재원일·매출 부재)는 임원이 이미 안다. 언급하지 마라.
+9. 모병원·협력 분석(2페이지)은 "협력기관 방문·연락을 어디에 해야 하나"에 답하는 섹션이다.
+   기관연계(모병원 진료협력팀이 보내준 것)와 직접 문의(환자·보호자가 직접 찾아온 것)를 구분하고,
+   협력기관인데 이번 달 상담이 없는 곳, 협력기관이 아닌데 상담·입원이 많은 곳을 우선 짚어라."""
 
 
 MONTHLY_SCHEMA = {
@@ -76,6 +79,10 @@ MONTHLY_SCHEMA = {
             "type": "string",
             "description": "운영·데이터 품질 해석 2~3문장. 지역·모병원·상담자 성과의 전환율 변화, 요일 편중, 입력 누락 중 실제 조치가 가능한 것만.",
         },
+        "hospital_comment": {
+            "type": "string",
+            "description": "모병원·협력 분석 해석 3~4문장. ① 환자가 어디서 오나(종별·지역 구성, 상위 병원 집중도) ② 협력 활동이 효과가 있나(기관연계 상담·입원의 전월 대비·6개월 추이, 협력기관 중 실제로 보내준 곳과 조용한 곳) ③ 무엇이 달라졌나(늘어난·줄어든·새로 생긴 병원) 순서로. 병원명은 데이터에 있는 이름 그대로 쓰고, 방문·연락이 필요한 곳을 한 곳 이상 짚을 것.",
+        },
         "alerts": {
             "type": "array",
             "items": {"type": "string"},
@@ -83,9 +90,37 @@ MONTHLY_SCHEMA = {
         },
     },
     "required": ["headline", "overview", "trend_comment", "channel_comment",
-                 "portfolio_comment", "pipeline_comment", "operation_comment", "alerts"],
+                 "portfolio_comment", "pipeline_comment", "operation_comment", "hospital_comment", "alerts"],
     "additionalProperties": False,
 }
+
+
+def _hospital_section_payload(hs):
+    """hospital_analysis.monthly_section() 결과를 LLM용으로 압축."""
+    if not hs:
+        return None
+    def hosp(h):
+        return {"병원": h.get("official_name") or h.get("name"), "종별": h.get("kind"),
+                "상담": h.get("referrals"), "전월": h.get("prev_referrals"), "입원": h.get("admissions"),
+                "협력기관": bool(h.get("partner_id")),
+                "주요질환": [f"{d['short']} {d['pct']}%" for d in (h.get("diseases") or [])[:2]]}
+    lk = hs.get("linkage") or {}
+    return {
+        "모병원_수": {"이번달": hs.get("hospital_count"), "전월": hs.get("prev_hospital_count")},
+        "종별_구성%": [{"종별": k["label"], "이번달": k["pct"], "전월": k["prev_pct"], "상담": k["count"]} for k in hs.get("kinds") or []],
+        "지역_구성%": [{"지역": r["label"], "이번달": r["pct"], "전월": r["prev_pct"]} for r in (hs.get("regions") or [])[:5]],
+        "상위_모병원": [hosp(h) for h in (hs.get("top") or [])[:8]],
+        "기관연계": {"상담": lk.get("linked", {}).get("referrals"), "상담_전월대비": lk.get("linked", {}).get("d_referrals"),
+                  "입원": lk.get("linked", {}).get("admissions"), "입원_전월대비": lk.get("linked", {}).get("d_admissions")},
+        "직접문의": {"상담": lk.get("direct", {}).get("referrals"), "상담_전월대비": lk.get("direct", {}).get("d_referrals"),
+                  "입원": lk.get("direct", {}).get("admissions"), "입원_전월대비": lk.get("direct", {}).get("d_admissions")},
+        "기관연계_추이": [{"월": t["month"], "상담": t["linked_referrals"], "입원": t["linked_admissions"]} for t in hs.get("trend") or []],
+        "협력기관_보내준곳": [{"기관": p["name"], "상담": p["referrals"], "전월": p["prev_referrals"], "입원": p["admissions"]} for p in hs.get("partners_active") or []],
+        "협력기관_이달_상담없음": [p["name"] for p in hs.get("partners_silent") or []],
+        "늘어난_곳": [hosp(h) for h in hs.get("ups") or []],
+        "줄어든_곳": [hosp(h) for h in hs.get("downs") or []],
+        "새로_생긴_곳": [hosp(h) for h in hs.get("news") or []],
+    }
 
 
 def summarize_monthly(data: dict) -> dict:
@@ -142,6 +177,7 @@ def summarize_monthly(data: dict) -> dict:
         "모병원_의뢰_Top": [{"모병원": x["label"], "의뢰": x["count"]}
                       for x in (data.get("by_source_hospital") or [])[:6]],
         "재단시설_연계": data.get("referral_capture"),
+        "모병원_협력_분석": _hospital_section_payload(data.get("hospital_section")),
         "입력_누락률": [{"항목": x["label"], "누락%": x["rate"]}
                    for x in (q.get("missing_fields") or [])],
         "데이터성숙도": {
