@@ -117,3 +117,76 @@ class DashboardStripTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DashboardDueQueueTests(DashboardStripTests):
+    """회복기 만료·퇴원 예정 큐는 명부 재원만, 만료 ±30일 창만 담는다.
+
+    상담의 '입원완료'는 퇴원해도 안 바뀌어서 그대로 돌리면 예전에 퇴원한 환자까지
+    큐를 채운다(재원 264명에 퇴원 예정 652건). 명부 census로 재원만 남기고, 창을
+    벗어난 옛 만료는 뺀다.
+    """
+    def _add_admitted_consult(self, cid, pid, admitted_iso, extension_iso=None):
+        with models.get_db() as conn:
+            conn.execute(
+                """INSERT INTO consultations
+                   (id, patient_id, consult_date, admission_status, actual_admission_date,
+                    patient_age, primary_diagnosis, discharge_due_date)
+                   VALUES (?, ?, ?, '입원완료', ?, 70, '상세불명의 뇌경색증', ?)""",
+                (cid, pid, admitted_iso, admitted_iso, extension_iso))
+
+    def _dashboard_counts(self):
+        html = self.client.get("/").get_data(as_text=True)
+        import re
+        out = {}
+        for lab in ("회복기 만료 D-30", "퇴원 예정 D-30"):
+            m = re.search(re.escape(lab) + r'</div>\s*<div class="value">(\d+)</div>', html)
+            out[lab] = int(m.group(1))
+        return out
+
+    def test_discharged_patient_is_not_in_due_queue(self):
+        # 환자4 — 2년 전 입원완료 상담. 명부에는 퇴원으로 남아 있다(재원 아님).
+        two_years = (self.today - timedelta(days=730)).isoformat()
+        with models.get_db() as conn:
+            conn.execute("INSERT INTO patients (id,name,gender) VALUES (4,'옛퇴원','M')")
+            conn.execute(
+                """INSERT INTO admission_episodes
+                   (patient_id, episode_no, status, admitted_at, discharged_at, roster_key)
+                   VALUES (4, 1, 'discharged', ?, ?, 'chart4|old')""",
+                (two_years, (self.today - timedelta(days=500)).isoformat()))
+        self._add_admitted_consult(4, 4, two_years)
+        # 환자5 — 재원 중이고 퇴원예정일이 10일 뒤 → 큐에 들어와야 한다.
+        with models.get_db() as conn:
+            conn.execute("INSERT INTO patients (id,name,gender) VALUES (5,'임박재원','M')")
+            conn.execute(
+                """INSERT INTO admission_episodes
+                   (patient_id, episode_no, status, admitted_at, roster_key)
+                   VALUES (5, 1, 'admitted', ?, 'chart5|now')""",
+                ((self.today - timedelta(days=100)).isoformat(),))
+        self._add_admitted_consult(5, 5, (self.today - timedelta(days=100)).isoformat(),
+                                   (self.today + timedelta(days=10)).isoformat())
+        counts = self._dashboard_counts()
+        self.assertEqual(counts["퇴원 예정 D-30"], 1)
+
+    def test_window_drops_long_expired_and_keeps_recent_overrun(self):
+        base = (self.today - timedelta(days=100)).isoformat()
+        with models.get_db() as conn:
+            for pid, name in ((6, "오래초과"), (7, "최근초과")):
+                conn.execute("INSERT INTO patients (id,name,gender) VALUES (?,?,'F')", (pid, name))
+                conn.execute(
+                    """INSERT INTO admission_episodes
+                       (patient_id, episode_no, status, admitted_at, roster_key)
+                       VALUES (?, 1, 'admitted', ?, ?)""", (pid, base, "chart%d|x" % pid))
+        # 둘 다 재원. 만료일이 31일 전이면 빠지고, 30일 전이면 남는다.
+        self._add_admitted_consult(6, 6, base, (self.today - timedelta(days=31)).isoformat())
+        self._add_admitted_consult(7, 7, base, (self.today - timedelta(days=30)).isoformat())
+        counts = self._dashboard_counts()
+        self.assertEqual(counts["퇴원 예정 D-30"], 1)
+
+    def test_no_roster_falls_back_to_consultation_status(self):
+        with models.get_db() as conn:
+            conn.execute("DELETE FROM admission_episodes")
+        self._add_admitted_consult(8, 1, (self.today - timedelta(days=100)).isoformat(),
+                                   (self.today + timedelta(days=5)).isoformat())
+        counts = self._dashboard_counts()
+        self.assertEqual(counts["퇴원 예정 D-30"], 1)

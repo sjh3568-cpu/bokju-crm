@@ -2007,9 +2007,13 @@ def _dashboard_calendar_context(uid, year, month, counselor=None):
 
 # 허가병상 — /ward의 병상 가동률과 같은 기준(현재 355병상).
 WARD_BED_CAPACITY = 355
+# 대시보드 회복기 만료·퇴원 예정 큐의 창(일). 만료일 기준 ±이 범위 안만 담는다 —
+# 30일 전 D-30부터 30일 초과까지. 그보다 오래 지난 건은 입원연장을 안 적은 옛 상담이라
+# 큐를 채우기만 하고 오늘 할 일이 아니다.
+DASHBOARD_DUE_WINDOW_DAYS = 30
 
 
-def _ward_status_strip():
+def _ward_status_strip(census=None):
     """대시보드 최상단 '현재 상태' 스트립 지표.
 
     재원·회복기 비율은 /ward와 같은 근거(원무 명부 census + _care_phase 판정)로
@@ -2023,7 +2027,8 @@ def _ward_status_strip():
     month_from = today.replace(day=1).isoformat()
     month_to = today.isoformat()   # 이번 달은 오늘까지(미래 예정 입원은 제외)
     flow = models.admission_flow_counts(week_from, week_to, month_from, month_to)
-    census = models.current_admission_census()
+    if census is None:
+        census = models.current_admission_census()
     strip = {
         "has_roster": bool(census.get("has_roster")),
         "away": len(models.away_now()),        # 외진 중 — 명부와 무관
@@ -2116,7 +2121,16 @@ def dashboard():
     ]
 
     # 입원완료 환자 중 회복기→비회복기 전환 D-30, 퇴원예정 D-30.
+    # 상담의 '입원완료'는 퇴원해도 안 바뀐다(discharge_date가 한 건도 없다). 그대로
+    # 돌리면 2023년에 퇴원한 환자까지 '퇴원 예정'으로 잡혀 재원 264명에 큐가 652건이
+    # 됐다. 현황 스트립·/ward와 같은 원무 명부 census로 지금 재원인 상담만 남기고,
+    # 만료일이 창(±DASHBOARD_DUE_WINDOW_DAYS) 안인 것만 담는다. 명부가 없는 환경은
+    # 상담 상태로 대체한다.
+    census = models.current_admission_census()
     admitted = models.list_consultations(admission_status="입원완료", limit=10000)
+    if census["has_roster"]:
+        admitted = [c for c in admitted if c["id"] in census["by_consultation"]]
+    window = DASHBOARD_DUE_WINDOW_DAYS
     recovery_transition_due = []
     discharge_due = []
     for con in admitted:
@@ -2124,10 +2138,10 @@ def dashboard():
         con["disease_summary"] = "" if disease_labels == ["병명 미지정"] else ", ".join(disease_labels[:3])
         con["ward"] = _dashboard_ward_label(con.get("room_number"))
         ax = _admission_expiry(con)
-        if ax and ax.get("billing_left") is not None and ax["billing_left"] <= 30:
+        if ax and ax.get("billing_left") is not None and -window <= ax["billing_left"] <= window:
             recovery_transition_due.append({"con": con, "watch": ax})
         dw = _discharge_watch(con)
-        if dw and dw.get("days_left") is not None and dw["days_left"] <= 30:
+        if dw and dw.get("days_left") is not None and -window <= dw["days_left"] <= window:
             discharge_due.append({"con": con, "watch": dw})
     recovery_transition_due.sort(key=lambda x: x["watch"]["billing_left"])
     discharge_due.sort(key=lambda x: x["watch"]["days_left"])
@@ -2224,7 +2238,7 @@ def dashboard():
     cal_mine = request.args.get("cal_mine", cal_default) != "0"
     cal_counselor = g.user.get("display_name") if cal_mine else None
     data.update(_dashboard_calendar_context(g.user["id"], cal_year, cal_month, cal_counselor))
-    data["ward_strip"] = _ward_status_strip()
+    data["ward_strip"] = _ward_status_strip(census)
     return render_template("dashboard.html", **data)
 
 

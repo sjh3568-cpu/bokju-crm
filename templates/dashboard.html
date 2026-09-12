@@ -417,12 +417,12 @@
     <a class="stat-card g-due warn{% if not summary.recovery_transition_due %} is-zero{% endif %}" href="#recovery-transition">
         <div class="label">회복기 만료 D-30</div>
         <div class="value">{{ summary.recovery_transition_due or 0 }}</div>
-        <div class="sub">비회복기 전환 대상</div>
+        <div class="sub">재원 중 · 만료 ±30일</div>
     </a>
     <a class="stat-card g-due warn{% if not summary.discharge_pending %} is-zero{% endif %}" href="#discharge-due">
         <div class="label">퇴원 예정 D-30</div>
         <div class="value">{{ summary.discharge_pending or 0 }}</div>
-        <div class="sub">{% if summary.discharge_mandatory %}필수 퇴원 {{ summary.discharge_mandatory }}명 · {% endif %}기한 초과 포함</div>
+        <div class="sub">{% if summary.discharge_mandatory %}필수 퇴원 {{ summary.discharge_mandatory }}명 · {% endif %}재원 중 · 만료 ±30일</div>
     </a>
     <a class="stat-card g-wait{% if not summary.open_inbound %} is-zero{% endif %}" href="#inbound">
         <div class="label">미처리 문의</div>
