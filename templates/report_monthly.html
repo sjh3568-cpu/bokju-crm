@@ -132,6 +132,32 @@
     </div>
 </div>
 
+<!-- 직원소개 핵심 (상세는 직원소개 분석 화면) -->
+{% set sr = data.staff_referral %}
+{% if sr and sr.referrals %}
+<div class="report-card">
+    <h3><span class="kpi-tag">직원소개 {{ sr.referrals }}건 · 입원 {{ sr.admissions }}건 · 전환율 {{ sr.conversion }}%</span> 직원소개 성과
+        <span class="muted" style="font-size:0.78em">(전월 대비)</span></h3>
+    <div class="sr-stats" style="display:flex;gap:18px;flex-wrap:wrap;margin:2px 0 11px;font-size:.87rem">
+        <span>소개 <b>{{ sr.referrals }}</b>건 {% if sr.delta_referrals is none %}<span class="muted">—</span>{% elif sr.delta_referrals>0 %}<span class="up">▲{{ sr.delta_referrals }}%</span>{% elif sr.delta_referrals<0 %}<span class="down">▼{{ sr.delta_referrals|abs }}%</span>{% else %}<span class="muted">0%</span>{% endif %}</span>
+        <span>입원 <b>{{ sr.admissions }}</b>건 {% if sr.delta_admissions is none %}<span class="muted">—</span>{% elif sr.delta_admissions>0 %}<span class="up">▲{{ sr.delta_admissions }}%</span>{% elif sr.delta_admissions<0 %}<span class="down">▼{{ sr.delta_admissions|abs }}%</span>{% else %}<span class="muted">0%</span>{% endif %}</span>
+        <span>전환율 <b>{{ sr.conversion }}%</b></span>
+        {% if sr.quality_patients %}<span>소개환자 회복기 <b>{{ sr.recovery_ratio }}%</b></span>{% endif %}
+    </div>
+    {% if sr.top_referrers %}
+    <table class="report-tbl compact">
+        <thead><tr><th>소개자 Top</th><th>기관·부서</th><th>소개</th><th>입원</th><th>전환율</th></tr></thead>
+        <tbody>
+        {% for r in sr.top_referrers %}
+        <tr><td><b>{{ r.name }}</b></td><td class="muted">{{ r.org or '—' }}{% if r.dept %} · {{ r.dept }}{% endif %}</td><td>{{ r.referrals }}건</td><td>{{ r.admissions }}건</td><td>{{ r.conversion }}%</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+    <p class="muted" style="font-size:.75em;margin-top:7px">자세한 소개자·기관·환자 내역은 <a href="/stats/staff">직원소개 분석</a>에서 확인하세요.</p>
+</div>
+{% endif %}
+
 <!-- KPI 뒷받침: 입원완료·취소·진행중 / 일평균 / 신규 모병원 -->
 <div class="report-grid grid-3">
     <div class="report-card">

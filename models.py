@@ -5276,6 +5276,21 @@ def aggregate_monthly(year: int, month: int) -> dict:
 
     new_hospitals = _new_hospitals_count(year, month)
 
+    # 직원소개 핵심 — 보고서용 요약(이번 달 vs 전월). 상세는 직원소개 분석 화면에.
+    sr_this = staff_referral_overview(f, t)
+    sr_prev = staff_referral_overview(pf, pt)
+    staff_referral = {
+        "referrals": sr_this["referrals"], "admissions": sr_this["admissions"],
+        "conversion": sr_this["conversion"],
+        "prev_referrals": sr_prev["referrals"], "prev_admissions": sr_prev["admissions"],
+        "delta_referrals": _delta_pct(sr_this["referrals"], sr_prev["referrals"]),
+        "delta_admissions": _delta_pct(sr_this["admissions"], sr_prev["admissions"]),
+        "top_referrers": sr_this["referrers"][:3],   # 입원순 상위 3명
+        "orgs": sr_this["orgs"][:4],                 # 기관별
+        "recovery_ratio": sr_this["quality"]["recovery_ratio"],
+        "quality_patients": sr_this["quality"]["patients"],
+    }
+
     # 활성 채널 수 = 이번 달 referral_source_detail 고유값 개수
     active_channels = len(this_data["by_referral_detail"])
 
@@ -5420,6 +5435,7 @@ def aggregate_monthly(year: int, month: int) -> dict:
         "pipeline": pipeline,
         "new_hospitals": new_hospitals,
         "quality": quality,
+        "staff_referral": staff_referral,
         "this": this_data,
         "prev": prev_data,
         "yoy": yoy_data,
