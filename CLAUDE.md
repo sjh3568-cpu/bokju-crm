@@ -308,6 +308,10 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
 
 - **개발** = 노트북 WSL, `./dev.sh` (Flask `--reload`). **운영** = NAS 컨테이너, `serve.py`(waitress).
 - 운영은 `main`이 아니라 **`./release.sh`가 찍은 태그만** 받는다. 절차·롤백은 `docs/DEPLOY-NAS.md`의 '운영 배포'.
+- **"배포해줘"** — 사용자가 배포/deploy를 요청하면(병원 PC에서 한 마디로 배포하고 싶을 때)
+  `ssh bokju-nas "sudo -n /root/deploy.sh --yes"` 한 줄을 실행하고 결과를 정리해 보여준다.
+  이 한 줄이 NAS에서 [백업 → 최신 태그 교체 → 재빌드 → 재시작 → 확인]까지 한다. 되돌리기는
+  `--yes` 대신 `--rollback`. 자세한 지침은 `/배포` 슬래시 명령(`.claude/commands/배포.md`).
 - 버전을 올릴 때는 `config.APP_VERSION`과 `release_notes.py` 안내를 **함께** 고친다. `release.sh`가 누락을 막는다.
 - 개발 DB(`bokju.db`)에는 실환자 데이터가 그대로 있다(사용자 결정). `.gitignore`가 `*.db`·`backups/`·`uploads/`·`.env`를 막고 있어 저장소에는 올라가지 않는다.
 - 개발 PC는 여럿이어도 된다(집 노트북·병원 PC). 준비 절차는 `docs/DEV-SETUP.md`. **금지는 NAS 안의 파일을 직접 고치는 것 하나뿐** — 다음 배포에 덮어써져 사라지고 되돌릴 기록도 없다.
