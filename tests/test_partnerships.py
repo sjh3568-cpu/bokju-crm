@@ -398,12 +398,23 @@ class CooperationTests(unittest.TestCase):
         self.assertEqual(models.hospital_kind('꽃가람요양원'),'요양원')          # 심평원 밖이지만 이름이 말해줌
         self.assertEqual(models.hospital_kind('처음보는요양병원'),'요양병원')
         self.assertIsNone(models.hospital_kind('처음보는병원'))               # '병원'만으로는 종별을 단정하지 않는다
+        # 기관이 특정되면 명부 정식명(법인 표기 제거)을 붙인다. 못 정하면 None.
+        self.assertEqual(models.hospital_official_name('성소병원'),'안동성소병원')
+        self.assertEqual(models.hospital_official_name('안동병원'),'안동병원')          # '의료법인' 뗀 형태
+        self.assertEqual(models.hospital_official_name('포항 로뎀요양병원'),'로뎀요양병원')  # '(의)수의료재단 ' 뗀 형태
+        self.assertEqual(models.hospital_official_name('경북대병원'),'경북대학교병원')
+        self.assertIsNone(models.hospital_official_name('아산병원'))
+        found=models.hospital_referral_overview('2026-06-01','2026-06-30',q='안동성소')   # 정식명으로도 검색
+        self.assertTrue(all('성소' in (h['official_name'] or h['name']) for h in found['hospitals']))
         db=models.get_db()
         pid=db.execute("INSERT INTO patients(name) VALUES ('종별환자')").lastrowid
         db.execute("INSERT INTO consultations(patient_id,consult_date,admission_status,source_hospital) VALUES (?,'2026-06-01','입원완료','안동병원')",(pid,))
+        db.execute("INSERT INTO consultations(patient_id,consult_date,admission_status,source_hospital) VALUES (?,'2026-06-02','상담중','성소병원')",(pid,))
         db.commit(); db.close()
         page=self.client.get('/stats/hospitals?preset=custom&from=2026-06-01&to=2026-06-30').get_data(as_text=True)
         self.assertIn('class="kind-badge kind-종합병원"',page)
+        self.assertIn('<b>안동성소병원</b>',page)                       # 정식명이 이름 자리
+        self.assertIn('title="상담일지에 적힌 표기">성소병원',page)      # 상담 표기는 작게
         self.assertIn('직접 문의',page)
         self.assertNotIn('직접 방문',page)
 

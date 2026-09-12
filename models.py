@@ -4513,6 +4513,11 @@ def _group_hospital_consultations(rows, display_map=None):
             kind = next((k for k in (hospital_kind(v, kind_idx) for v, _ in variants) if k), None)
         item["kind"] = kind
         item["kind_short"] = HOSPITAL_KIND_SHORT.get(kind, kind) if kind else None
+        # 명부에서 기관이 특정되면 정식 명칭을 붙인다('성소병원'→'안동성소병원').
+        official = hospital_official_name(name, kind_idx)
+        if official is None:
+            official = next((o for o in (hospital_official_name(v, kind_idx) for v, _ in variants) if o), None)
+        item["official_name"] = official if official and _hospital_substring_key(official) != _hospital_substring_key(name) else None
         items.append(item)
     items.sort(key=lambda d: (-d["referrals"], -d["admissions"], d["name"]))
     return items
@@ -4824,7 +4829,7 @@ def _hospital_kind_index():
         if not key or (key, r["kind"]) in seen:
             continue
         seen.add((key, r["kind"]))
-        entry = (key, r["kind"], (r["region"] or "")[:2], (r["official_code"] or "").strip() or None)
+        entry = (key, r["kind"], (r["region"] or "")[:2], (r["official_code"] or "").strip() or None, r["name"].strip())
         exact.setdefault(key, []).append(entry)
         bare = _strip_corp_prefix(key)
         if bare != key:
@@ -4842,26 +4847,28 @@ def _pick_kind(cands):
     """
     if not cands:
         return None
-    kinds = {kind for _, kind, _, _ in cands}
+    kinds = {kind for _, kind, _, _, _ in cands}
     if len(kinds) == 1:
         return cands[0][1]
     # 인근 우선은 후보가 두어 개일 때만('성소병원' = 부산·안동). '아산병원'처럼 전국에
     # 열 곳이면 인근에 하나 있다는 것만으로 그곳이라 단정할 수 없다(서울아산일 수도).
     if len(cands) > _LOCAL_TIEBREAK_MAX:
         return None
-    local = {kind for _, kind, region, _ in cands if region in _HOME_REGIONS}
+    local = {kind for _, kind, region, _, _ in cands if region in _HOME_REGIONS}
     return local.pop() if len(local) == 1 else None
 
 
 def _hospital_candidates(name, idx=None):
-    """이름으로 명부 후보를 찾는다. 종별·요양기호 조회가 같은 규칙을 쓴다.
+    """이름으로 명부 후보를 찾는다. 종별·요양기호·정식명 조회가 같은 규칙을 쓴다.
 
     ① 정확 일치 → ② 법인명을 뗀 정식 명칭과 일치('의료법인안동병원'='안동병원')
     → ③ 정식 명칭이 이 이름으로 끝남('연세대학교의과대학강남세브란스병원')
-    → ④ 대학병원 줄임말('경북대병원'→'경북대학교병원'). ②를 ③보다 앞세워야
-    '용상안동병원'(정신병원)이 '안동병원'을 가로채지 않는다.
+    → ④ 대학병원 줄임말('경북대병원'→'경북대학교병원')
+    → ⑤ 앞에 붙인 지역명 떼기('포항 로뎀요양병원'→'로뎀요양병원').
+    ②를 ③보다 앞세워야 '용상안동병원'(정신병원)이 '안동병원'을 가로채지 않는다.
     한 화면에서 수백 번 부르므로 idx를 넘겨 색인을 재사용한다.
     """
+    global _REGION_STEMS
     key = _hospital_substring_key(name)
     if not key:
         return []
@@ -4886,6 +4893,12 @@ def _hospital_candidates(name, idx=None):
                 cands = _hospital_candidates(expanded, idx)
                 if cands:
                     break
+    if not cands and name and " " in name.strip():
+        if _REGION_STEMS is None:
+            _REGION_STEMS = _region_stems()
+        head, rest = name.strip().split(None, 1)
+        if head in _REGION_STEMS and len(rest) >= 3:
+            cands = _hospital_candidates(rest, idx)
     return cands or []
 
 
@@ -4913,14 +4926,7 @@ def hospital_kind(name, idx=None):
 
     명부에서 기관을 못 찾아도 이름 끝이 '요양병원'·'요양원'이면 종별은 이름이 말해준다.
     """
-    global _REGION_STEMS
     kind = _pick_kind(_hospital_candidates(name, idx))
-    if kind is None and name and " " in name.strip():
-        if _REGION_STEMS is None:
-            _REGION_STEMS = _region_stems()
-        head, rest = name.strip().split(None, 1)
-        if head in _REGION_STEMS and len(rest) >= 3:
-            kind = _pick_kind(_hospital_candidates(rest, idx))
     if kind is None:
         key = _hospital_substring_key(name)
         for suffix, k in _KIND_BY_SUFFIX:
@@ -4929,20 +4935,43 @@ def hospital_kind(name, idx=None):
     return kind
 
 
-def hospital_official_code(name, idx=None):
-    """모병원 이름 → 심평원 요양기호. 후보가 한 기관으로 좁혀질 때만 돌려준다.
+def _resolve_hospital(name, idx=None):
+    """후보가 한 기관으로 좁혀질 때 그 항목. 요양기호·정식명이 같은 판정을 쓴다.
 
-    종별은 후보가 여럿이어도 종별만 같으면 답할 수 있지만, 요양기호는 기관을
-    특정해야 하므로 더 엄격하다. 갈리면 본원 인근(경북·대구) 것 하나만 인정.
+    종별은 후보가 여럿이어도 종별만 같으면 답할 수 있지만, 기관을 특정하는 일은
+    더 엄격하다. 갈리면 본원 인근(경북·대구) 것 하나만 인정.
     """
     cands = [c for c in _hospital_candidates(name, idx) if c[3]]
     codes = {c[3] for c in cands}
     if len(codes) == 1:
-        return codes.pop()
+        return cands[0]
     if len(cands) > _LOCAL_TIEBREAK_MAX:
         return None
-    local = {c[3] for c in cands if c[2] in _HOME_REGIONS}
-    return local.pop() if len(local) == 1 else None
+    local = [c for c in cands if c[2] in _HOME_REGIONS]
+    return local[0] if len({c[3] for c in local}) == 1 else None
+
+
+def hospital_official_name(name, idx=None):
+    """모병원 이름 → 명부의 정식 명칭(법인 표기는 뗀 것). 기관을 특정 못 하면 None.
+
+    '성소병원'→'안동성소병원', '경북대병원'→'경북대학교병원', '포항 로뎀요양병원'→'로뎀요양병원'.
+    '의료법인안동병원'은 '안동병원'으로 — 법인명은 읽는 데 방해만 된다.
+    """
+    hit = _resolve_hospital(name, idx)
+    if hit is None:
+        return None
+    display, bare = hit[4], _strip_corp_prefix(hit[0])
+    # 원문(띄어쓰기 있는)에서 법인 표기만 잘라낸다 — 공백을 지운 뒤가 bare와 같아지는 지점부터.
+    for i in range(len(display)):
+        if re.sub(r"\s+", "", display[i:]) == bare:
+            return display[i:].strip(" -·")
+    return display
+
+
+def hospital_official_code(name, idx=None):
+    """모병원 이름 → 심평원 요양기호. 후보가 한 기관으로 좁혀질 때만 돌려준다."""
+    hit = _resolve_hospital(name, idx)
+    return hit[3] if hit else None
 
 
 def hospital_display_map():
@@ -4991,7 +5020,8 @@ def hospital_referral_overview(date_from=None, date_to=None, q=None):
     items=_group_hospital_consultations(rows,display_map=hospital_display_map())
     total_count=len(items);max_referrals=items[0]['referrals'] if items else 0
     key=_hospital_substring_key(q)
-    if key: items=[d for d in items if any(key in _hospital_substring_key(v['name']) for v in d['variants'])]
+    if key: items=[d for d in items if any(key in _hospital_substring_key(v['name']) for v in d['variants'])
+                   or (d.get('official_name') and key in _hospital_substring_key(d['official_name']))]
     return {'hospitals':items,'hospital_count':len(items),'total_count':total_count,
             'max_referrals':max_referrals,'q':(q or '').strip(),
             'linked_referrals':sum(x['linked_referrals'] for x in items),
