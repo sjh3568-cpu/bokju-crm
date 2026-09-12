@@ -404,6 +404,17 @@ class CooperationTests(unittest.TestCase):
         self.assertEqual(models.hospital_official_name('포항 로뎀요양병원'),'로뎀요양병원')  # '(의)수의료재단 ' 뗀 형태
         self.assertEqual(models.hospital_official_name('경북대병원'),'경북대학교병원')
         self.assertIsNone(models.hospital_official_name('아산병원'))
+        # 확정 못 해도 빈 칸은 없다 — 유사(수식어만 더 붙은 정식명) → 추정(다수결·이름 힌트)
+        self.assertEqual(models.hospital_kind_guess('경북대학병원')[:2],('상급종합','유사'))   # '교' 하나 끼어든 정식명
+        self.assertEqual(models.hospital_kind_guess('아산병원')[:2][1],'추정')                # 서울·보령 갈림 → 추정
+        self.assertEqual(models.hospital_kind_guess('신촌세브란스')[:2],('상급종합','추정'))
+        self.assertEqual(models.hospital_kind_guess('어디한방병원')[:2],('한방병원','확정'))    # 이름 끝 종별은 확정 취급
+        self.assertEqual(models.hospital_kind_guess('생소한이름')[:2],('병원','추정'))
+        # 글자를 빼거나 다른 뜻의 글자가 낀 건 유사로 붙이지 않는다
+        coop.import_facility_directory([{'official_code':'H1','name':'고려대련요양병원','kind':'요양병원','region':'경북','address':'x'},
+                                        {'official_code':'H2','name':'고려대학교병원','kind':'상급종합','region':'서울','address':'y'}],'test')
+        models._kind_index_cache['stamp']=None
+        self.assertEqual(models.hospital_kind_guess('고려대병원')[:2],('상급종합','확정'))     # 줄임말 규칙으로 고려대학교병원 — 요양병원 쪽으로 새지 않는다
         found=models.hospital_referral_overview('2026-06-01','2026-06-30',q='안동성소')   # 정식명으로도 검색
         self.assertTrue(all('성소' in (h['official_name'] or h['name']) for h in found['hospitals']))
         db=models.get_db()

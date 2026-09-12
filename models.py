@@ -4507,16 +4507,27 @@ def _group_hospital_consultations(rows, display_map=None):
         item["conversion"] = round(100 * item["admissions"] / item["referrals"], 1) if item["referrals"] else 0
         item["linked_conversion"] = (round(100 * item["linked_admissions"] / item["linked_referrals"], 1)
                                      if item["linked_referrals"] else 0)
-        # 종별 — 대표 표기로 못 찾으면 변형 표기로도 한 번 더 찾는다('계명대 동산병원' 등).
-        kind = hospital_kind(name, kind_idx)
-        if kind is None:
-            kind = next((k for k in (hospital_kind(v, kind_idx) for v, _ in variants) if k), None)
+        # 종별 — 확정(명부 규칙) → 유사(거의 같은 이름) → 추정(다수결·이름 힌트). 빈 칸은 없다.
+        # 대표 표기로 확정 못 하면 변형 표기('계명대 동산병원' 등)로도 확정을 먼저 노린다.
+        kind, basis, fuzzy_hit = hospital_kind_guess(name, kind_idx)
+        if basis != "확정":
+            for v, _ in variants:
+                k2, b2, f2 = hospital_kind_guess(v, kind_idx)
+                if b2 == "확정" or (b2 == "유사" and basis == "추정"):
+                    kind, basis, fuzzy_hit = k2, b2, f2
+                    if b2 == "확정":
+                        break
         item["kind"] = kind
-        item["kind_short"] = HOSPITAL_KIND_SHORT.get(kind, kind) if kind else None
-        # 명부에서 기관이 특정되면 정식 명칭을 붙인다('성소병원'→'안동성소병원').
-        official = hospital_official_name(name, kind_idx)
-        if official is None:
+        item["kind_short"] = HOSPITAL_KIND_SHORT.get(kind, kind)
+        item["kind_basis"] = basis
+        # 정식 명칭 — 확정이면 명부 규칙으로, 유사면 그 유사 항목의 이름으로
+        official = hospital_official_name(name, kind_idx) if basis == "확정" else None
+        if official is None and basis == "확정":
             official = next((o for o in (hospital_official_name(v, kind_idx) for v, _ in variants) if o), None)
+        if official is None and basis == "유사" and fuzzy_hit:
+            display, bare = fuzzy_hit[4], _strip_corp_prefix(fuzzy_hit[0])
+            official = next((display[i:].strip(" -·") for i in range(len(display))
+                             if re.sub(r"\s+", "", display[i:]) == bare), display)
         item["official_name"] = official if official and _hospital_substring_key(official) != _hospital_substring_key(name) else None
         items.append(item)
     items.sort(key=lambda d: (-d["referrals"], -d["admissions"], d["name"]))
@@ -4790,7 +4801,7 @@ HOSPITAL_KIND_SHORT = {
 _HOME_REGIONS = ("경북", "대구")
 _LOCAL_TIEBREAK_MAX = 3  # 이보다 후보가 많으면 흔한 이름이라 보고 추측하지 않는다
 
-_kind_index_cache = {"stamp": None, "exact": {}, "stripped": {}, "tail": {}}
+_kind_index_cache = {"stamp": None, "exact": {}, "stripped": {}, "tail": {}, "head": {}, "bare_head": {}}
 
 # 정식 명칭 앞의 법인 표기. '의료법인안동의료재단용상안동병원' → '용상안동병원'.
 _CORP_PREFIX = re.compile(
@@ -4816,7 +4827,7 @@ def _hospital_kind_index():
     if _kind_index_cache["stamp"] == stamp:
         conn.close()
         return _kind_index_cache
-    exact, stripped, tail = {}, {}, {}
+    exact, stripped, tail, head, bare_head = {}, {}, {}, {}, {}
     seen = set()
     rows = list(conn.execute(
         "SELECT name, kind, region, official_code FROM cooperation_facility_directory WHERE kind IS NOT NULL AND kind!=''"))
@@ -4836,7 +4847,10 @@ def _hospital_kind_index():
             stripped.setdefault(bare, []).append(entry)
         if len(key) >= 4:
             tail.setdefault(key[-4:], []).append(entry)
-    _kind_index_cache.update(stamp=stamp, exact=exact, stripped=stripped, tail=tail)
+        head.setdefault(key[:2], []).append(entry)
+        if bare != key:
+            bare_head.setdefault(bare[:2], []).append(entry)
+    _kind_index_cache.update(stamp=stamp, exact=exact, stripped=stripped, tail=tail, head=head, bare_head=bare_head)
     return _kind_index_cache
 
 
@@ -4972,6 +4986,102 @@ def hospital_official_code(name, idx=None):
     """모병원 이름 → 심평원 요양기호. 후보가 한 기관으로 좁혀질 때만 돌려준다."""
     hit = _resolve_hospital(name, idx)
     return hit[3] if hit else None
+
+
+# ─── 종별 추정 — 명부에서 확정 못 한 곳도 빈 칸으로 두지 않는다 ───
+
+# 후보 종별이 갈릴 때 고르는 순서. 재활병원에 환자를 보내는 곳은 큰 병원일 가능성이 높다.
+_KIND_TIER = ("상급종합", "종합병원", "병원", "요양병원", "한방병원", "정신병원", "의원", "치과병원", "치과의원")
+
+# 명부에 없어도 이름으로 대강 알 수 있는 것. 위에서부터 먼저 맞는 규칙을 쓴다.
+_KIND_BY_NAME_HINT = (
+    (r"(세브란스|아산병원|삼성서울|삼성병원|서울대학교병원|서울성모|고려대학교|가톨릭대학교)", "상급종합"),
+    (r"(대학교|대학병원|대병원|의료원|의대|이대|고대|연대|한대|경대|영대|계대|충대|전대|부대|성모병원|기독병원)", "종합병원"),
+    (r"(요양병원)", "요양병원"), (r"(요양원|요양센터|실버)", "요양원"),
+    (r"(한방|한의)", "한방병원"), (r"(정신|신경정신)", "정신병원"), (r"(치과)", "치과병원"),
+    (r"(보건소|보건지소|보건진료소)", "보건소"),
+    (r"(의원|클리닉|내과$|정형외과$|신경외과$|외과$|재활의학과$)", "의원"),
+    (r"(병원|메디컬|센터|재활)", "병원"),
+)
+
+
+# 정식명에 끼어들어도 같은 기관인 글자 — '학교'·'의과대학'·'부속'·'공단'·'시'·'국립'·'종합'.
+# 이 밖의 글자('요양'·'련'·'세명'·'동인천')가 끼면 다른 기관일 수 있어 유사로 보지 않는다.
+_FILLER_CHARS = set("교학부속의과대공단시국립종합")
+
+
+def _inserted_chars(short, long):
+    """short가 long 안에 순서대로 들어 있으면 long에서 그 외에 끼어든 글자들, 아니면 None."""
+    out, i = [], 0
+    for ch in long:
+        if i < len(short) and ch == short[i]:
+            i += 1
+        else:
+            out.append(ch)
+    return out if i == len(short) else None
+
+
+def _fuzzy_hospital(name, idx):
+    """명부에서 '거의 같은' 이름 — 상담 표기의 글자가 정식명에 순서대로 다 들어 있는 경우만.
+
+    '경북대학병원'→'경북대학교병원'(교 추가), '순천향대학교구미병원'→'…부속구미병원',
+    '성남의료원'→'성남시의료원'처럼 정식명에 기관 수식어만 더 붙은 쪽을 인정한다.
+    글자를 빼거나 바꾼 경우('대구W병원'↔'대구병원')와 다른 뜻의 글자가 낀 경우
+    ('고려대병원'↔'고려대련요양병원')는 다른 기관일 수 있어 붙이지 않는다 — 이름 힌트 추정으로 넘긴다.
+    비교 대상은 뒤 4글자·앞 2글자 버킷으로 좁힌다(전체 4만 곳과 비교하지 않는다).
+    """
+    key = _hospital_substring_key(name)
+    if " " in name.strip():                       # '청주 효성병원' → 지역 떼고
+        head, rest = name.strip().split(None, 1)
+        if head in (_REGION_STEMS or _region_stems()) and len(rest) >= 3:
+            key = _hospital_substring_key(rest)
+    if len(key) < 5:
+        return None
+    # 확정 규칙이 잡았다가 '애매'로 거른 후보는 유사로도 되살리지 않는다('아산병원'→충남 정신병원 방지)
+    rejected = {e[0] for e in _hospital_candidates(name, idx)} | {e[0] for e in idx["exact"].get(key, ())} \
+               | {e[0] for e in idx["stripped"].get(key, ())}
+    pool = list(idx["tail"].get(key[-4:], ())) + list(idx["head"].get(key[:2], ())) + list(idx["bare_head"].get(key[:2], ()))
+    hits, seen = [], set(rejected)
+    for e in pool:
+        if e[0] in seen:
+            continue
+        seen.add(e[0])
+        bare = _strip_corp_prefix(e[0])
+        if bare == key or bare[-2:] != key[-2:] or not (len(key) < len(bare) <= len(key) + 6):
+            continue
+        inserted = _inserted_chars(key, bare)
+        if inserted is not None and all(ch in _FILLER_CHARS for ch in inserted):
+            hits.append((len(inserted), e))
+    if not hits:
+        return None
+    hits.sort(key=lambda x: x[0])
+    if len(hits) > 1 and hits[0][0] == hits[1][0] and hits[0][1][1] != hits[1][1][1]:
+        return None                               # 똑같이 가까운 후보가 종별까지 다르면 포기
+    return hits[0][1]
+
+
+def hospital_kind_guess(name, idx=None):
+    """(종별, 근거) — 근거는 '확정'·'유사'·'추정'. 어떻게든 하나는 돌려준다(빈 칸 없음).
+
+    확정: 명부 규칙으로 특정.  유사: 명부의 거의 같은 이름.  추정: 후보 다수결/이름 힌트.
+    """
+    idx = idx or _hospital_kind_index()
+    kind = hospital_kind(name, idx)
+    if kind:
+        return kind, "확정", None
+    hit = _fuzzy_hospital(name, idx)
+    if hit:
+        return hit[1], "유사", hit
+    cands = _hospital_candidates(name, idx)
+    if cands:                                     # 후보는 있는데 종별이 갈리는 경우('아산병원')
+        kinds = [c[1] for c in cands]
+        best = max(set(kinds), key=lambda k: (kinds.count(k), -_KIND_TIER.index(k) if k in _KIND_TIER else -99))
+        return best, "추정", None
+    key = _hospital_substring_key(name)
+    for pattern, k in _KIND_BY_NAME_HINT:
+        if re.search(pattern, key):
+            return k, "추정", None
+    return "병원", "추정", None
 
 
 def hospital_display_map():
