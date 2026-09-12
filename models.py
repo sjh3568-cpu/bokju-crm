@@ -4777,7 +4777,7 @@ def staff_referral_overview(date_from=None, date_to=None, q=None, internal_only=
 # 화면에 붙이는 짧은 표기. 심평원 종별 그대로는 칸이 넓어진다.
 HOSPITAL_KIND_SHORT = {
     "상급종합": "상급", "종합병원": "종합", "병원": "병원", "의원": "의원",
-    "요양병원": "요양", "한방병원": "한방", "한의원": "한의", "정신병원": "정신",
+    "요양병원": "요양", "요양원": "요양원", "한방병원": "한방", "한의원": "한의", "정신병원": "정신",
     "치과병원": "치과", "치과의원": "치과", "보건소": "보건소", "보건지소": "보건소",
 }
 
@@ -4789,8 +4789,8 @@ _kind_index_cache = {"stamp": None, "exact": {}, "stripped": {}, "tail": {}}
 
 # 정식 명칭 앞의 법인 표기. '의료법인안동의료재단용상안동병원' → '용상안동병원'.
 _CORP_PREFIX = re.compile(
-    r"^(?:(?:의료|재단|사회복지|학교|사단|특수)법인)?"
-    r"(?:[가-힣A-Za-z]{1,10}?(?:의료재단|복지재단|학원|재단))?")
+    r"^(?:\((?:의|재|사|학|특)\)|(?:의료|재단|사회복지|학교|사단|특수)법인)?"
+    r"(?:[가-힣A-Za-z]{1,12}?(?:학원의료재단|의료재단|복지재단|학원|재단))?")
 
 
 def _strip_corp_prefix(key):
@@ -4889,9 +4889,44 @@ def _hospital_candidates(name, idx=None):
     return cands or []
 
 
+# 상담에는 '포항 로뎀요양병원'처럼 지역을 앞에 붙여 적는 경우가 많다. 명부의 정식 명칭에는
+# 그 지역명이 없으므로, 첫 단어가 시·군·구·도 이름이면 떼고 한 번 더 찾는다.
+def _region_stems():
+    from config import SIGUNGU_INDEX, SIDO_LIST
+    stems = {re.sub(r"(특별자치시|특별자치도|광역시|특별시|시|군|구|도)$", "", n) for n in list(SIGUNGU_INDEX) + SIDO_LIST}
+    stems |= {"경북", "경남", "전북", "전남", "충북", "충남", "대구", "부산", "서울", "경기",
+              "강원", "제주", "인천", "광주", "대전", "울산", "세종"}
+    return {x for x in stems if len(x) >= 2}
+
+
+_REGION_STEMS = None
+
+# 이름 끝이 종별을 그대로 말해주는 경우 — 명부에 없어도(요양원은 심평원 밖) 종별은 확실하다.
+# '병원'·'의원'은 종합병원·상급종합일 수 있어 넣지 않는다.
+_KIND_BY_SUFFIX = (("요양병원", "요양병원"), ("요양원", "요양원"), ("한방병원", "한방병원"),
+                   ("한의원", "한의원"), ("정신병원", "정신병원"), ("치과병원", "치과병원"),
+                   ("치과의원", "치과의원"), ("보건소", "보건소"), ("보건지소", "보건지소"))
+
+
 def hospital_kind(name, idx=None):
-    """모병원 이름 → 종별. 못 정하면 None (틀린 종별보다 빈 칸이 낫다)."""
-    return _pick_kind(_hospital_candidates(name, idx))
+    """모병원 이름 → 종별. 못 정하면 None (틀린 종별보다 빈 칸이 낫다).
+
+    명부에서 기관을 못 찾아도 이름 끝이 '요양병원'·'요양원'이면 종별은 이름이 말해준다.
+    """
+    global _REGION_STEMS
+    kind = _pick_kind(_hospital_candidates(name, idx))
+    if kind is None and name and " " in name.strip():
+        if _REGION_STEMS is None:
+            _REGION_STEMS = _region_stems()
+        head, rest = name.strip().split(None, 1)
+        if head in _REGION_STEMS and len(rest) >= 3:
+            kind = _pick_kind(_hospital_candidates(rest, idx))
+    if kind is None:
+        key = _hospital_substring_key(name)
+        for suffix, k in _KIND_BY_SUFFIX:
+            if key.endswith(suffix) and len(key) > len(suffix):
+                return k
+    return kind
 
 
 def hospital_official_code(name, idx=None):

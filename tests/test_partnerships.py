@@ -391,6 +391,13 @@ class CooperationTests(unittest.TestCase):
         self.assertEqual(models.hospital_kind('계명대 동산병원'),'상급종합')
         self.assertEqual(models.hospital_kind('길주요양병원'),'요양병원')    # 명부에 없는 요양병원은 마스터에서
         self.assertIsNone(models.hospital_kind('없는병원'))
+        # 지역 접두어를 떼고 찾는다 / 이름 끝이 종별을 말해주면 명부에 없어도 붙인다
+        coop.import_facility_directory([{'official_code':'G1','name':'(의)수의료재단 로뎀요양병원','kind':'요양병원','region':'경북','address':'포항'}],'test')
+        models._kind_index_cache['stamp']=None
+        self.assertEqual(models.hospital_kind('포항 로뎀요양병원'),'요양병원')   # '포항 ' 떼면 (의)·재단 뗀 정식명과 일치
+        self.assertEqual(models.hospital_kind('꽃가람요양원'),'요양원')          # 심평원 밖이지만 이름이 말해줌
+        self.assertEqual(models.hospital_kind('처음보는요양병원'),'요양병원')
+        self.assertIsNone(models.hospital_kind('처음보는병원'))               # '병원'만으로는 종별을 단정하지 않는다
         db=models.get_db()
         pid=db.execute("INSERT INTO patients(name) VALUES ('종별환자')").lastrowid
         db.execute("INSERT INTO consultations(patient_id,consult_date,admission_status,source_hospital) VALUES (?,'2026-06-01','입원완료','안동병원')",(pid,))
