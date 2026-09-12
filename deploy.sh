@@ -6,23 +6,35 @@
 #   sudo ./deploy.sh             원격의 최신 태그로 배포
 #   sudo ./deploy.sh --rollback  직전 태그로 되돌리기
 #   sudo ./deploy.sh --check     점검만 (아무것도 바꾸지 않음)
+#   sudo ./deploy.sh --yes       업무시간 확인 질문 생략 (무인 실행용, 태그와 같이 써도 됨)
 #
 # 안전장치:
 # - git·docker·curl이 없거나 저장소가 아니면 "아무것도 건드리기 전에" 멈춘다.
 # - .env·data(실환자 DB)·backups는 git이 추적하지 않으므로 checkout이 건드리지 않는다.
 # - 배포 전 DB를 backups/ 로 복사한다. 기동이 확인되지 않으면 롤백 방법을 안내한다.
-# 이 스크립트는 프로젝트 폴더 안에서도, 그 상위 폴더(옆)에서도 실행할 수 있다.
-# 상위에 두고 실행하면 checkout이 이 파일을 건드리지 않아 롤백까지 안전하다.
+# 이 스크립트는 프로젝트 폴더 안에서도, 그 상위 폴더(옆)에서도, /root 처럼 아예 다른
+# 곳에서도 실행할 수 있다(그때는 BOKJU_PROJ 또는 기본 /volume1/docker/bokju-crm).
+# 프로젝트 밖에 두고 실행하면 checkout이 이 파일을 건드리지 않아 롤백까지 안전하고,
+# root 전용 위치(/root, 700)에 두면 sudoers NOPASSWD 대상으로 삼아도 안전하다.
 set -euo pipefail
 
-# ── 프로젝트 폴더 찾기 (이 스크립트와 같은 폴더, 또는 그 안 bokju-crm/) ──
+# ── 프로젝트 폴더 찾기 (이 스크립트와 같은 폴더 → 그 안 bokju-crm/ → 환경변수/기본 경로) ──
 HERE="$(cd "$(dirname "$0")" && pwd)"
+DEFAULT_PROJ="${BOKJU_PROJ:-/volume1/docker/bokju-crm}"
 if [ -f "$HERE/docker-compose.yml" ]; then PROJ="$HERE"
 elif [ -f "$HERE/bokju-crm/docker-compose.yml" ]; then PROJ="$HERE/bokju-crm"
-else echo "✗ bokju-crm 프로젝트 폴더(docker-compose.yml)를 찾지 못했습니다."; exit 1; fi
+elif [ -f "$DEFAULT_PROJ/docker-compose.yml" ]; then PROJ="$DEFAULT_PROJ"
+else echo "✗ bokju-crm 프로젝트 폴더(docker-compose.yml)를 찾지 못했습니다. BOKJU_PROJ=<경로> 로 알려주세요."; exit 1; fi
 cd "$PROJ"
 
-MODE="${1:-}"
+# ── 인자: --yes 는 어디에 와도 되고, 나머지 하나가 모드/태그 ──
+MODE=""; YES=0
+for a in "$@"; do
+    case "$a" in
+        --yes|-y) YES=1 ;;
+        *) MODE="$a" ;;
+    esac
+done
 DB="data/bokju.db"
 BACKUP_DIR="backups"
 HEALTH="http://127.0.0.1:8003/healthz"
@@ -37,8 +49,9 @@ command -v curl >/dev/null 2>&1 || fail "curl이 없습니다."
 if docker compose version >/dev/null 2>&1; then DC="docker compose"
 elif command -v docker-compose >/dev/null 2>&1; then DC="docker-compose"
 else fail "docker compose 명령을 찾지 못했습니다. Container Manager가 설치돼 있는지, sudo로 실행했는지 확인하세요."; fi
-[ -z "$(git status --porcelain 2>/dev/null)" ] || fail "NAS 저장소에 손댄 흔적이 있습니다(운영 폴더는 직접 수정 금지). 원인 확인 후 다시 시도하세요.
-$(git status --short)"
+# 추적 파일만 본다 — data/ 아래 적재용 엑셀 같은 미추적 파일은 배포와 무관하다.
+[ -z "$(git status --porcelain --untracked-files=no 2>/dev/null)" ] || fail "NAS 저장소에 손댄 흔적이 있습니다(운영 폴더는 직접 수정 금지). 원인 확인 후 다시 시도하세요.
+$(git status --short --untracked-files=no)"
 
 git fetch --tags --quiet || fail "원격에서 태그를 받지 못했습니다(네트워크·인증 확인)."
 PREV_TAG=$(git tag --sort=-creatordate | sed -n 2p || true)
@@ -67,10 +80,16 @@ CUR=$(git describe --tags --exact-match 2>/dev/null || echo "(태그 아님)")
 echo "현재: $CUR   →   배포: $TAG"
 
 # ── 업무시간 경고 (재시작 순간 저장 유실 위험) ──
-H=$(date +%H)
-if [ "$H" -ge 9 ] && [ "$H" -lt 18 ]; then
-    read -r -p "⚠ 지금은 상담 업무시간(09~18시)입니다. 재시작 순간 입력이 유실될 수 있습니다. 계속할까요? (y/N) " ans
-    [ "$ans" = "y" ] || [ "$ans" = "Y" ] || { echo "취소했습니다."; exit 0; }
+# 평일 09~18시엔 한 번 묻는다. 터미널이 아니면(ssh 무인 실행) 물을 수 없으므로
+# --yes 가 없는 한 조용히 취소되지 않고 "왜 안 됐는지"를 남기며 멈춘다.
+H=$(date +%H); DOW=$(date +%u)
+if [ "$DOW" -le 5 ] && [ "$H" -ge 9 ] && [ "$H" -lt 18 ] && [ "$YES" != 1 ]; then
+    if [ -t 0 ]; then
+        read -r -p "⚠ 지금은 상담 업무시간(평일 09~18시)입니다. 재시작 순간 입력이 유실될 수 있습니다. 계속할까요? (y/N) " ans
+        [ "$ans" = "y" ] || [ "$ans" = "Y" ] || { echo "취소했습니다."; exit 0; }
+    else
+        fail "상담 업무시간(평일 09~18시)입니다. 그래도 배포하려면 --yes 를 붙이세요."
+    fi
 fi
 
 # ── 2. DB 백업 먼저 ──

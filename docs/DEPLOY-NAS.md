@@ -153,10 +153,18 @@ NAS(운영)     그 태그의 파일로 교체 → 빌드 → 재시작
 최초 1회 준비만 끝나면, 배포·롤백이 NAS에서 **명령 한 줄**이다.
 
 ```bash
-sudo /volume1/docker/deploy.sh v1.8.4      # 지정 태그로 배포
-sudo /volume1/docker/deploy.sh             # 최신 태그로 배포
-sudo /volume1/docker/deploy.sh --rollback  # 직전 태그로 되돌리기
-sudo /volume1/docker/deploy.sh --check     # 점검만 (아무것도 바꾸지 않음)
+sudo /root/deploy.sh v1.8.4      # 지정 태그로 배포
+sudo /root/deploy.sh             # 최신 태그로 배포
+sudo /root/deploy.sh --rollback  # 직전 태그로 되돌리기
+sudo /root/deploy.sh --check     # 점검만 (아무것도 바꾸지 않음)
+```
+
+개발 PC에서 NAS에 들어가지 않고 바로 실행하려면(아래 '최초 1회 준비' 6번까지 마친 뒤):
+
+```bash
+ssh bokju-nas 'sudo -n /root/deploy.sh --check'
+ssh bokju-nas 'sudo -n /root/deploy.sh'            # 평일 09~18시엔 --yes 를 붙여야 실행됨
+ssh bokju-nas 'sudo -n /root/deploy.sh --rollback'
 ```
 
 스크립트가 **[사전 점검 → DB 백업 → 태그 파일로 교체 → 재빌드·재시작 → /healthz
@@ -188,14 +196,27 @@ sudo /volume1/docker/deploy.sh --check     # 점검만 (아무것도 바꾸지 �
    git config --global --add safe.directory /volume1/docker/bokju-crm
    ```
    `git status`에 `.env`·`data/`·`backups/`가 안 보이면(=무시되면) 정상이다.
-4. **deploy.sh를 프로젝트 상위로 복사** — 프로젝트 폴더 밖에 두어야, 배포가
+4. **deploy.sh를 `/root/`로 복사** — 프로젝트 폴더 밖에 두어야, 배포가
    `git checkout`으로 코드를 바꿀 때 실행 중인 스크립트가 사라지지 않는다.
+   `/volume1/docker/`는 공유폴더라 누구나 고칠 수 있으므로 거기 두지 말 것 —
+   root로 실행되는 스크립트는 root만 고칠 수 있는 곳에 있어야 한다.
 
    ```bash
-   cp /volume1/docker/bokju-crm/deploy.sh /volume1/docker/deploy.sh
-   chmod +x /volume1/docker/deploy.sh
+   cp /volume1/docker/bokju-crm/deploy.sh /root/deploy.sh
+   chown root:root /root/deploy.sh && chmod 700 /root/deploy.sh
    ```
-5. **점검** — `sudo /volume1/docker/deploy.sh --check` 가 "점검 통과"를 내면 준비 끝.
+   저장소의 `deploy.sh`가 바뀐 릴리스를 받을 때만 이 `cp`를 다시 하면 된다.
+5. **점검** — `sudo /root/deploy.sh --check` 가 "점검 통과"를 내면 준비 끝.
+6. **(선택) 개발 PC에서 비밀번호 없이 실행** — PC의 SSH 공개키를 NAS `admin`의
+   `~/.ssh/authorized_keys`에 한 줄 추가하고, sudoers에 이 스크립트만 NOPASSWD로 연다.
+
+   ```bash
+   printf 'admin ALL=(root) NOPASSWD: /root/deploy.sh
+' > /etc/sudoers.d/bokju-deploy
+   chmod 440 /etc/sudoers.d/bokju-deploy
+   ```
+   `sshd_config`는 건드리지 않는다(기본값으로 공개키 인증이 이미 켜져 있다). 확인은
+   admin 계정으로 `sudo -n -l`.
 
 준비가 끝나면 이후 배포는 위 '한 줄 배포'의 한 줄이면 된다. (사내망 안에서만 도는
 방식이라 외부 클라우드·레지스트리가 필요 없다.)
