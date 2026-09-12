@@ -352,6 +352,22 @@ def api_ping():
     return jsonify(_call_sheet("ping", date=date.today().isoformat()))
 
 
+@bp.route("/transport/check")
+@login_required
+def check_page():
+    """브라우저 주소창에 /transport/check 만 쳐도 연동 상태를 볼 수 있게 — 비개발자용 점검."""
+    if not sheet_url():
+        return jsonify({"ok": False, "상태": "미설정", "안내": ".env 에 TRANSPORT_SHEET_URL / TRANSPORT_SHEET_TOKEN 을 넣고 서버를 재시작하세요"})
+    res = _call_sheet("ping", date=date.today().isoformat())
+    if res.get("ok"):
+        res["상태"] = "정상 — 시트 연결됨"
+        res["오늘_탭"] = res.get("tab_for_date") or "없음 (운행팀이 만들면 됨)"
+    else:
+        hints = {"BAD_TOKEN": "토큰이 스크립트와 .env 에서 서로 다릅니다", "NOT_CONFIGURED": ".env 설정 없음"}
+        res["상태"] = "실패"; res["안내"] = hints.get(res.get("error"), res.get("error"))
+    return jsonify(res)
+
+
 @bp.app_template_global("transport_info")
 def _tg_transport_info(cid):
     return info_for_template(cid)

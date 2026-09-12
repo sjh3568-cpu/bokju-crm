@@ -47,16 +47,13 @@ TRANSPORT_MOBILITY_OPTIONS=W/C,walk,Rec
 
 ## 4. 점검
 
-CRM에 로그인한 브라우저에서 개발자도구 콘솔(F12)에 아래를 넣어 실행:
+CRM에 로그인한 브라우저 주소창에 `/transport/check` 를 붙여 엽니다.
+(예: `http://192.168.0.10:8003/transport/check`)
 
-```js
-fetch('/api/transport/ping', {method:'POST'}).then(r=>r.json()).then(console.log)
-```
-
-- `{ok:true, sheet:"복주 운행 공유", tabs:N, tab_for_date:"2026.9.14"}` 이면 정상
-- `BAD_TOKEN` → 토큰이 양쪽에서 다름
-- `응답이 JSON이 아님` → 2-3의 "액세스: 모든 사용자"가 아님
-- `tab_for_date: null` → 오늘 탭이 아직 없음 (정상, 운행팀이 만들면 됨)
+- `"상태": "정상 — 시트 연결됨"` 이면 끝
+- `토큰이 스크립트와 .env 에서 서로 다릅니다` → 1-4의 TOKEN과 .env 값을 다시 맞춤
+- `응답이 JSON이 아님` → 2-3의 "액세스 권한: 모든 사용자"가 아님. 배포 관리에서 고치고 새 버전 배포
+- `"오늘_탭": "없음"` 은 정상 (운행팀이 그날 탭을 만들면 됨)
 
 ## 5. 상담사 사용법
 
