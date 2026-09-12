@@ -610,8 +610,10 @@ def init_db():
         "admission_status": "TEXT",       # 상담완료/입원예정/입원완료
         "referral_source_type": "TEXT",   # 온라인/오프라인 (다중 JSON)
         "referral_source_detail": "TEXT", # 카페/유튜브/지인추천 등 (다중 JSON)
-        "referrer_person": "TEXT",        # 소개 — 추천한 사람
+        "referrer_person": "TEXT",        # 소개 — 추천한 사람(직원소개는 이름)
         "referrer_institution": "TEXT",   # 소개 — 추천 기관
+        "referrer_org": "TEXT",           # 직원소개 — 소개자 소속 기관(재단 3개)
+        "referrer_dept": "TEXT",          # 직원소개 — 소개자 부서
         # 엑셀 마이그레이션 (Phase 2)
         "actual_admission_date": "TEXT",  # 실제 입원일 (엑셀 27번 입원일/비고)
         "recontact_memo": "TEXT",         # 재접촉 관리 자유 메모 (엑셀 28번)
@@ -2025,7 +2027,7 @@ CONSULT_FIELDS = (
     "consult_channel", "admission_route", "admission_type",
     # 상담유입경로 + 소개 추천인/기관 + 온라인·기타 박스 수기 입력
     "referral_source_type", "referral_source_detail",
-    "referrer_person", "referrer_institution",
+    "referrer_person", "referrer_institution", "referrer_org", "referrer_dept",
     "referral_online_note", "referral_etc_note",
     # 환자 현재 상태
     "patient_age",
@@ -4584,12 +4586,21 @@ def staff_referrer_display_map():
     return mapping
 
 
-def staff_referral_overview(date_from=None, date_to=None, q=None):
-    """직원소개 상담을 소개자별로 집계. 표기 흔들림은 한 사람으로 합친다.
+def _with_conversion(a):
+    a["conversion"] = round(100 * a["admissions"] / a["referrals"], 1) if a["referrals"] else 0
+    return a
 
-    직원소개는 전환율이 높아(도입 시점 45.5%, 전체 평균 26%) 실제로 효과가 큰
-    유입 경로인데, 소개자가 자유 입력이라 같은 사람이 표기별로 쪼개져 있었다.
+
+def staff_referral_overview(date_from=None, date_to=None, q=None, internal_only=False):
+    """직원소개 상담을 소개자별로 집계 — 기관·부서·소개 환자 상세까지 함께 낸다.
+
+    직원소개는 전환율이 높아(도입 시점 45.5%, 전체 평균 26%) 효과가 큰 유입 경로다.
+    소개자를 (기관·부서·이름)으로 나눠 입력하면 기관/부서 단위 성과와, 소개자별로
+    어떤 환자를 소개했는지(환자명·주상병·소개일·입원일)까지 볼 수 있다.
+    internal_only=True면 소개자 기관이 재단 3개 기관인 건만 센다(외부 지인·타병원 제외).
     """
+    from config import STAFF_REFERRAL_ORGS
+    internal_orgs = set(STAFF_REFERRAL_ORGS)
     where = ["referral_source_detail LIKE ?"]
     vals = [f"%{REFERRAL_DETAIL_STAFF}%"]
     if date_from:
@@ -4598,12 +4609,18 @@ def staff_referral_overview(date_from=None, date_to=None, q=None):
         where.append("consult_date<=?"); vals.append(date_to)
     conn = get_db()
     raw = conn.execute(
-        f"""SELECT TRIM(COALESCE(referrer_person,'')) person, patient_id, admission_status,
-            consult_date, referral_source_detail FROM consultations
+        f"""SELECT TRIM(COALESCE(c.referrer_person,'')) person,
+                   TRIM(COALESCE(c.referrer_org,'')) org, TRIM(COALESCE(c.referrer_dept,'')) dept,
+                   c.patient_id, c.admission_status, c.consult_date, c.referral_source_detail,
+                   c.id cid, c.primary_diagnosis,
+                   COALESCE(c.actual_admission_date, c.admission_date) admitted_at,
+                   p.name patient_name
+            FROM consultations c LEFT JOIN patients p ON p.id = c.patient_id
             WHERE {' AND '.join(where)}""", vals).fetchall()
     conn.close()
 
     groups, unnamed = {}, {"referrals": 0, "admissions": 0}
+    org_agg, dept_agg, monthly = {}, {}, {}
     for r in raw:
         # LIKE는 '직원소개'가 다른 값의 일부로 들어간 경우도 걸리므로 정확히 확인한다.
         try:
@@ -4612,14 +4629,28 @@ def staff_referral_overview(date_from=None, date_to=None, q=None):
             details = []
         if REFERRAL_DETAIL_STAFF not in details:
             continue
+        org = r["org"] or ""
+        if internal_only and org not in internal_orgs:
+            continue
         admitted = r["admission_status"] in ("입원완료", "퇴원완료")
+        mkey = (r["consult_date"] or "")[:7]
+        if mkey:
+            m = monthly.setdefault(mkey, {"referrals": 0, "admissions": 0})
+            m["referrals"] += 1; m["admissions"] += 1 if admitted else 0
+        if org:  # 기관·부서 롤업 (재단 내 환자 흐름 = 기관별 → 복주회복병원 소개)
+            oa = org_agg.setdefault(org, {"referrals": 0, "admissions": 0})
+            oa["referrals"] += 1; oa["admissions"] += 1 if admitted else 0
+            if r["dept"]:
+                da = dept_agg.setdefault((org, r["dept"]), {"referrals": 0, "admissions": 0})
+                da["referrals"] += 1; da["admissions"] += 1 if admitted else 0
         key = staff_referrer_key(r["person"])
         if not key:
             unnamed["referrals"] += 1
             unnamed["admissions"] += 1 if admitted else 0
             continue
         g = groups.setdefault(key, {"referrals": 0, "admissions": 0, "patient_ids": set(),
-                                    "latest_consult": None, "spellings": {}})
+                                    "latest_consult": None, "spellings": {},
+                                    "orgs": {}, "depts": {}, "rows": []})
         g["referrals"] += 1
         if admitted:
             g["admissions"] += 1
@@ -4628,14 +4659,34 @@ def staff_referral_overview(date_from=None, date_to=None, q=None):
         if (r["consult_date"] or "") > (g["latest_consult"] or ""):
             g["latest_consult"] = r["consult_date"]
         g["spellings"][r["person"]] = g["spellings"].get(r["person"], 0) + 1
+        if org:
+            g["orgs"][org] = g["orgs"].get(org, 0) + 1
+        if r["dept"]:
+            g["depts"][r["dept"]] = g["depts"].get(r["dept"], 0) + 1
+        lead = None  # 소개 → 입원 소요일
+        if admitted and r["consult_date"] and r["admitted_at"]:
+            try:
+                lead = (date.fromisoformat(str(r["admitted_at"])[:10])
+                        - date.fromisoformat(str(r["consult_date"])[:10])).days
+            except ValueError:
+                lead = None
+        g["rows"].append({"cid": r["cid"], "patient_name": r["patient_name"] or "?",
+                          "diagnosis": r["primary_diagnosis"] or "", "consult_date": r["consult_date"],
+                          "admitted_at": r["admitted_at"] if admitted else None,
+                          "admitted": admitted, "lead_days": lead})
+
+    def _mode(d):
+        return sorted(d.items(), key=lambda kv: (-kv[1], kv[0]))[0][0] if d else ""
 
     items = []
     for name, g in groups.items():
         variants = sorted(g["spellings"].items(), key=lambda kv: (-kv[1], kv[0]))
-        item = {"name": name, "referrals": g["referrals"], "admissions": g["admissions"],
+        rows = sorted(g["rows"], key=lambda x: (x["consult_date"] or ""), reverse=True)
+        item = {"name": name, "org": _mode(g["orgs"]), "dept": _mode(g["depts"]),
+                "referrals": g["referrals"], "admissions": g["admissions"],
                 "patients": len(g["patient_ids"]), "latest_consult": g["latest_consult"],
                 "variants": [{"name": n, "referrals": c} for n, c in variants],
-                "variant_count": len(variants)}
+                "variant_count": len(variants), "rows": rows}
         item["conversion"] = round(100 * item["admissions"] / item["referrals"], 1) if item["referrals"] else 0
         items.append(item)
     items.sort(key=lambda d: (-d["admissions"], -d["referrals"], d["name"]))
@@ -4648,17 +4699,25 @@ def staff_referral_overview(date_from=None, date_to=None, q=None):
                  if key in d["name"] or any(key in re.sub(r"\s+", "", v["name"]) for v in d["variants"])]
     referrals = sum(x["referrals"] for x in items) + (unnamed["referrals"] if not key else 0)
     admissions = sum(x["admissions"] for x in items) + (unnamed["admissions"] if not key else 0)
+
+    orgs = sorted((_with_conversion({"org": o, **v}) for o, v in org_agg.items()),
+                  key=lambda d: (-d["admissions"], -d["referrals"], d["org"]))
+    depts = sorted((_with_conversion({"org": o, "dept": dp, **v}) for (o, dp), v in dept_agg.items()),
+                   key=lambda d: (-d["admissions"], -d["referrals"], d["org"]))
+    months = [{"month": m, **v} for m, v in sorted(monthly.items())]
     return {"referrers": items, "referrer_count": len(items), "total_count": total_count,
             "max_referrals": max_referrals, "q": (q or "").strip(),
             "unnamed": unnamed, "referrals": referrals, "admissions": admissions,
-            "conversion": round(100 * admissions / referrals, 1) if referrals else 0}
+            "conversion": round(100 * admissions / referrals, 1) if referrals else 0,
+            "orgs": orgs, "depts": depts, "monthly": months,
+            "internal_only": internal_only, "org_options": list(STAFF_REFERRAL_ORGS)}
 
 
 # ─── 모병원 종별(상급종합·종합병원·병원·의원·요양병원…) ───
 
 # 화면에 붙이는 짧은 표기. 심평원 종별 그대로는 칸이 넓어진다.
 HOSPITAL_KIND_SHORT = {
-    "상급종합": "상급종합", "종합병원": "종합", "병원": "병원", "의원": "의원",
+    "상급종합": "상급", "종합병원": "종합", "병원": "병원", "의원": "의원",
     "요양병원": "요양", "한방병원": "한방", "한의원": "한의", "정신병원": "정신",
     "치과병원": "치과", "치과의원": "치과", "보건소": "보건소", "보건지소": "보건소",
 }
