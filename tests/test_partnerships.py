@@ -366,6 +366,40 @@ class CooperationTests(unittest.TestCase):
         # 1월에 이미 온 병원이라 2월 신규 모병원으로 세면 안 된다 (표기만 달라진 경우 포함)
         self.assertEqual(models._new_hospitals_count(2026,2),0)
 
+    def test_hospital_kind_matches_short_names_to_official_directory(self):
+        """상담의 짧은 병원명을 명부의 정식 명칭과 맞춰 종별을 붙인다. 애매하면 비운다."""
+        coop.import_facility_directory([
+            {'official_code':'A1','name':'의료법인안동병원','kind':'종합병원','region':'경북','address':'안동'},
+            {'official_code':'A2','name':'의료법인 안동의료재단 용상안동병원','kind':'정신병원','region':'경북','address':'안동'},
+            {'official_code':'B1','name':'부산성소병원','kind':'병원','region':'부산','address':'부산'},
+            {'official_code':'B2','name':'안동성소병원','kind':'종합병원','region':'경북','address':'안동'},
+            {'official_code':'C1','name':'연세대학교의과대학 강남세브란스병원','kind':'상급종합','region':'서울','address':'서울'},
+            {'official_code':'D1','name':'서울아산병원','kind':'상급종합','region':'서울','address':'서울'},
+            {'official_code':'D2','name':'보령아산병원','kind':'종합병원','region':'충남','address':'보령'},
+            {'official_code':'E1','name':'경북대학교병원','kind':'상급종합','region':'대구','address':'대구'},
+            {'official_code':'F1','name':'계명대학교 동산병원','kind':'상급종합','region':'대구','address':'대구'},
+        ],'test')
+        db=models.get_db()
+        db.execute("INSERT OR IGNORE INTO source_hospitals(name,kind,region,active) VALUES ('길주요양병원','요양병원','경북',1)")
+        db.commit(); db.close()
+        models._kind_index_cache['stamp']=None   # 색인 새로 만들게
+        self.assertEqual(models.hospital_kind('안동병원'),'종합병원')        # 법인명 뗀 정식명 일치 — 용상안동병원에 안 밀린다
+        self.assertEqual(models.hospital_kind('성소병원'),'종합병원')        # 부산·안동 갈리면 본원 인근(경북)
+        self.assertEqual(models.hospital_kind('강남세브란스병원'),'상급종합')  # 정식명이 짧은 이름으로 끝남
+        self.assertIsNone(models.hospital_kind('아산병원'))                 # 서울·보령 종별이 갈리고 인근도 아님 → 비움
+        self.assertEqual(models.hospital_kind('경북대병원'),'상급종합')      # 대학병원 줄임말
+        self.assertEqual(models.hospital_kind('계명대 동산병원'),'상급종합')
+        self.assertEqual(models.hospital_kind('길주요양병원'),'요양병원')    # 명부에 없는 요양병원은 마스터에서
+        self.assertIsNone(models.hospital_kind('없는병원'))
+        db=models.get_db()
+        pid=db.execute("INSERT INTO patients(name) VALUES ('종별환자')").lastrowid
+        db.execute("INSERT INTO consultations(patient_id,consult_date,admission_status,source_hospital) VALUES (?,'2026-06-01','입원완료','안동병원')",(pid,))
+        db.commit(); db.close()
+        page=self.client.get('/stats/hospitals?preset=custom&from=2026-06-01&to=2026-06-30').get_data(as_text=True)
+        self.assertIn('class="kind-badge kind-종합병원"',page)
+        self.assertIn('직접 문의',page)
+        self.assertNotIn('직접 방문',page)
+
     def test_linked_referrals_split_and_non_institution_excluded(self):
         """기관연계와 직접 방문을 나눠 세고, '집' 같은 비기관 값은 집계에서 뺀다."""
         db=models.get_db()
@@ -395,7 +429,7 @@ class CooperationTests(unittest.TestCase):
         self.assertNotIn('집',[x['label'] for x in stats['by_hospital_performance']])
         page=self.client.get('/stats/hospitals?preset=custom&from=2026-04-01&to=2026-04-30&sort=linked').get_data(as_text=True)
         self.assertIn('기관연계',page)
-        self.assertIn('직접 방문',page)
+        self.assertIn('직접 문의',page)
         self.assertNotIn('>집<',page)
 
     def test_staff_referral_merges_name_variants(self):
