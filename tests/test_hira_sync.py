@@ -74,6 +74,56 @@ class HiraSyncTests(unittest.TestCase):
             out = hira_sync.run('bad')
         self.assertFalse(out['ok']); self.assertIn('API 오류', out['error'])
 
+    def test_details_only_for_recent_hospitals_and_partners(self):
+        """상세는 최근 1년 상담에 나온 모병원 + 협력기관만 받고, 명부에 진료과목·병상·간호간병을 쓴다."""
+        rows = [
+            {'ykiho': 'K1', 'yadmNm': '의료법인안동병원', 'clCdNm': '종합병원', 'sidoCdNm': '경북', 'addr': 'a', 'telno': '1'},
+            {'ykiho': 'K2', 'yadmNm': '먼곳병원', 'clCdNm': '병원', 'sidoCdNm': '서울', 'addr': 'b', 'telno': '2'},
+            {'ykiho': 'K3', 'yadmNm': '협력기관병원', 'clCdNm': '병원', 'sidoCdNm': '경북', 'addr': 'c', 'telno': '3'},
+        ]
+        with patch.object(hira_sync, '_fetch_page', _fake_pages(rows, 10)), \
+             patch.object(hira_sync, 'service_key', return_value='dummy'), patch.object(hira_sync.time, 'sleep'), \
+             patch.object(hira_sync, 'sync_details', return_value={'targets': 0, 'updated': 0, 'failed': [], 'failed_count': 0}):
+            hira_sync.run('base')
+        db = models.get_db()
+        pid = db.execute("INSERT INTO patients(name) VALUES ('상세환자')").lastrowid
+        recent = (hira_sync.datetime.now() - hira_sync.timedelta(days=30)).date().isoformat()
+        db.execute("INSERT INTO consultations(patient_id,consult_date,admission_status,source_hospital) VALUES (?,?,'상담중','안동병원')", (pid, recent))
+        # 협력기관: 명부 K3에 연결
+        d_id = db.execute("SELECT id FROM cooperation_facility_directory WHERE official_code='K3'").fetchone()[0]
+        h_id = db.execute("SELECT id FROM source_hospitals WHERE name='협력기관병원'").fetchone()[0]
+        db.execute("INSERT INTO cooperation_partners(hospital_id,directory_id,official_name) VALUES (?,?,'협력기관병원')", (h_id, d_id))
+        db.commit(); db.close()
+        models._kind_index_cache['stamp'] = None
+
+        targets = hira_sync.detail_targets()
+        self.assertEqual(set(targets.values()), {'안동병원', '협력기관병원'})   # 먼곳병원은 대상 아님
+
+        def fake_detail(key, ykiho):
+            return {'K1': {'departments': {'내과', '재활의학과'}, 'integrated': True, 'beds': 1049},
+                    'K3': {'departments': {'정형외과'}, 'integrated': False, 'beds': 120}}[ykiho]
+        with patch.object(hira_sync, 'fetch_detail', side_effect=fake_detail), patch.object(hira_sync.time, 'sleep'):
+            out = hira_sync.sync_details('dummy')
+        self.assertEqual((out['targets'], out['updated'], out['failed_count']), (2, 2, 0))
+        db = models.get_db()
+        r = db.execute("SELECT departments, bed_count, integrated_nursing, detail_updated_at FROM cooperation_facility_directory WHERE official_code='K1'").fetchone()
+        untouched = db.execute("SELECT bed_count FROM cooperation_facility_directory WHERE official_code='K2'").fetchone()[0]
+        db.close()
+        self.assertEqual((r[0], r[1], r[2]), ('내과, 재활의학과', 1049, 1))
+        self.assertRegex(r[3], r'^\d{4}-\d{2}-\d{2}$')
+        self.assertIsNone(untouched)
+
+    def test_detail_failure_of_one_hospital_does_not_stop_the_rest(self):
+        def flaky(key, ykiho):
+            if ykiho == 'BAD':
+                raise AttributeError("'int' object has no attribute 'strip'")   # 실제로 났던 오류 — 어떤 예외든 삼켜야 한다
+            return {'departments': {'내과'}, 'integrated': False, 'beds': 10}
+        coop.import_facility_directory([{'official_code': 'OK', 'name': '정상병원', 'kind': '병원'},
+                                        {'official_code': 'BAD', 'name': '불통병원', 'kind': '병원'}], 'test')
+        with patch.object(hira_sync, 'fetch_detail', side_effect=flaky), patch.object(hira_sync.time, 'sleep'):
+            out = hira_sync.sync_details('dummy', targets={'BAD': '불통병원', 'OK': '정상병원'})
+        self.assertEqual((out['updated'], out['failed']), (1, ['불통병원']))
+
     def test_next_run_lands_on_configured_weekday_hour(self):
         with patch.object(hira_sync, 'WEEKDAY', 0), patch.object(hira_sync, 'HOUR', 6):
             secs = hira_sync._seconds_until_next_run()

@@ -4772,6 +4772,7 @@ HOSPITAL_KIND_SHORT = {
 
 # 본원(복주회복병원, 경북 안동) 인근. 같은 짧은 이름이 여러 지역에 있을 때 이쪽을 고른다.
 _HOME_REGIONS = ("경북", "대구")
+_LOCAL_TIEBREAK_MAX = 3  # 이보다 후보가 많으면 흔한 이름이라 보고 추측하지 않는다
 
 _kind_index_cache = {"stamp": None, "exact": {}, "stripped": {}, "tail": {}}
 
@@ -4802,17 +4803,17 @@ def _hospital_kind_index():
     exact, stripped, tail = {}, {}, {}
     seen = set()
     rows = list(conn.execute(
-        "SELECT name, kind, region FROM cooperation_facility_directory WHERE kind IS NOT NULL AND kind!=''"))
+        "SELECT name, kind, region, official_code FROM cooperation_facility_directory WHERE kind IS NOT NULL AND kind!=''"))
     # 요양병원·한방병원은 명부에 없고 병원 마스터에만 있다. 명부와 겹치면 명부를 우선한다.
     rows += list(conn.execute(
-        "SELECT name, kind, region FROM source_hospitals WHERE kind IS NOT NULL AND kind!='' AND active=1"))
+        "SELECT name, kind, region, official_code FROM source_hospitals WHERE kind IS NOT NULL AND kind!='' AND active=1"))
     conn.close()
     for r in rows:
         key = _hospital_substring_key(r["name"])
         if not key or (key, r["kind"]) in seen:
             continue
         seen.add((key, r["kind"]))
-        entry = (key, r["kind"], (r["region"] or "")[:2])
+        entry = (key, r["kind"], (r["region"] or "")[:2], (r["official_code"] or "").strip() or None)
         exact.setdefault(key, []).append(entry)
         bare = _strip_corp_prefix(key)
         if bare != key:
@@ -4830,40 +4831,72 @@ def _pick_kind(cands):
     """
     if not cands:
         return None
-    kinds = {kind for _, kind, _ in cands}
+    kinds = {kind for _, kind, _, _ in cands}
     if len(kinds) == 1:
         return cands[0][1]
-    local = {kind for _, kind, region in cands if region in _HOME_REGIONS}
+    # 인근 우선은 후보가 두어 개일 때만('성소병원' = 부산·안동). '아산병원'처럼 전국에
+    # 열 곳이면 인근에 하나 있다는 것만으로 그곳이라 단정할 수 없다(서울아산일 수도).
+    if len(cands) > _LOCAL_TIEBREAK_MAX:
+        return None
+    local = {kind for _, kind, region, _ in cands if region in _HOME_REGIONS}
     return local.pop() if len(local) == 1 else None
 
 
-def hospital_kind(name, idx=None):
-    """모병원 이름 → 종별. 못 정하면 None.
+def _hospital_candidates(name, idx=None):
+    """이름으로 명부 후보를 찾는다. 종별·요양기호 조회가 같은 규칙을 쓴다.
 
     ① 정확 일치 → ② 법인명을 뗀 정식 명칭과 일치('의료법인안동병원'='안동병원')
-    → ③ 정식 명칭이 이 이름으로 끝남('연세대학교의과대학강남세브란스병원'). ②를 ③보다
-    앞세워야 '용상안동병원'(정신병원)이 '안동병원'을 가로채지 않는다.
+    → ③ 정식 명칭이 이 이름으로 끝남('연세대학교의과대학강남세브란스병원')
+    → ④ 대학병원 줄임말('경북대병원'→'경북대학교병원'). ②를 ③보다 앞세워야
+    '용상안동병원'(정신병원)이 '안동병원'을 가로채지 않는다.
     한 화면에서 수백 번 부르므로 idx를 넘겨 색인을 재사용한다.
     """
     key = _hospital_substring_key(name)
     if not key:
-        return None
+        return []
     idx = idx or _hospital_kind_index()
-    kind = _pick_kind(idx["exact"].get(key))
-    if kind is None:
-        kind = _pick_kind(idx["stripped"].get(key))
-    if kind is None and len(key) >= 4:
-        kind = _pick_kind([e for e in idx["tail"].get(key[-4:], ())
-                           if e[0].endswith(key) and len(e[0]) > len(key)])
-    # ④ 대학병원 줄임말 — '경북대병원'→'경북대학교병원', '계명대동산병원'→'계명대학교동산병원'.
-    if kind is None and "대학교" not in key:
+    cands = idx["exact"].get(key)
+    if not cands:
+        stripped = idx["stripped"].get(key) or []
+        tail = ([e for e in idx["tail"].get(key[-4:], ()) if e[0].endswith(key) and len(e[0]) > len(key)]
+                if len(key) >= 4 else [])
+        # 법인명을 뗀 일치는 본원 인근이면 그대로 믿는다('의료법인안동병원'). 멀리 있는
+        # 곳이면 우연히 이름만 같을 수 있다 — 충남 아산시의 정신병원 '아산병원'이
+        # 상담의 '아산병원'(대개 서울·강릉아산)을 가로채지 않도록 뒤끝 일치 후보와
+        # 함께 놓고 판단한다.
+        if stripped and (all(e[2] in _HOME_REGIONS for e in stripped) or not tail):
+            cands = stripped
+        else:
+            cands = stripped + [e for e in tail if e not in stripped]
+    if not cands and "대학교" not in key:
         for expanded in (re.sub(r"대병원$", "대학교병원", key),
                          re.sub(r"대(?=[가-힣]{2,}병원$)", "대학교", key, count=1)):
             if expanded != key:
-                kind = hospital_kind(expanded, idx)
-                if kind:
+                cands = _hospital_candidates(expanded, idx)
+                if cands:
                     break
-    return kind
+    return cands or []
+
+
+def hospital_kind(name, idx=None):
+    """모병원 이름 → 종별. 못 정하면 None (틀린 종별보다 빈 칸이 낫다)."""
+    return _pick_kind(_hospital_candidates(name, idx))
+
+
+def hospital_official_code(name, idx=None):
+    """모병원 이름 → 심평원 요양기호. 후보가 한 기관으로 좁혀질 때만 돌려준다.
+
+    종별은 후보가 여럿이어도 종별만 같으면 답할 수 있지만, 요양기호는 기관을
+    특정해야 하므로 더 엄격하다. 갈리면 본원 인근(경북·대구) 것 하나만 인정.
+    """
+    cands = [c for c in _hospital_candidates(name, idx) if c[3]]
+    codes = {c[3] for c in cands}
+    if len(codes) == 1:
+        return codes.pop()
+    if len(cands) > _LOCAL_TIEBREAK_MAX:
+        return None
+    local = {c[3] for c in cands if c[2] in _HOME_REGIONS}
+    return local.pop() if len(local) == 1 else None
 
 
 def hospital_display_map():

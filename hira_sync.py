@@ -6,8 +6,8 @@
 받는 것: 전국 병의원 기본 목록(요양기호·기관명·종별·시도·주소·전화).
   → source_hospitals(상담 입력 자동완성·종별 배지)와
     cooperation_facility_directory(협력기관 전국 검색) 두 곳을 함께 갱신한다.
-받지 않는 것: 진료과목·병상·간호간병 상세. 그건 병원별로 한 건씩 불러야 해서
-  4만 곳을 매주 돌릴 수 없다. 분기 XLSX(import_cooperation_facility_details.py)로 유지.
+상세(진료과목·병상·간호간병통합)는 병원별로 한 건씩 불러야 해서 4만 곳 전부는 무리다.
+  실제로 화면에 나오는 곳 — 최근 1년 상담에 등장한 모병원 + 협력기관 — 만 받는다(수백 곳, 몇 분).
 
 환자 정보는 한 글자도 밖으로 나가지 않는다 — 공공 목록을 받아오기만 한다.
 
@@ -17,7 +17,8 @@
   HIRA_SYNC_WEEKDAY=0       0=월 … 6=일 (기본 월요일)
   HIRA_SYNC_HOUR=6          기본 06시 (백업 03시 뒤, 업무 시작 전)
 
-수동 실행:  python hira_sync.py            (지금 한 번 받기)
+수동 실행:  python hira_sync.py            (기본 목록 + 상세, 지금 한 번)
+            python hira_sync.py --details  (상세만 다시)
             python hira_sync.py --status   (마지막 갱신 결과)
 """
 from __future__ import annotations
@@ -115,6 +116,89 @@ def apply(entries: list[dict]) -> dict:
     return {"directory": directory, "master": master, "fetched": len(entries)}
 
 
+# ── 상세(진료과목·병상·간호간병) ──
+
+DETAIL_BASE = "https://apis.data.go.kr/B551182/MadmDtlInfoService2.8"
+# 병상 합계 — 분기 XLSX 적재(import_cooperation_facility_details.BED_COLUMNS)와 같은 조합.
+# 실측: 의료법인안동병원 850+68+76+10+4+34+7 = 1,049 = XLSX 값과 일치.
+BED_FIELDS = ("stdSickbdCnt", "hghrSickbdCnt", "aduChldSprmCnt", "chldSprmCnt", "nbySprmCnt",
+              "partumCnt", "psydeptClsHghrSbdCnt", "psydeptClsGnlSbdCnt",
+              "psydeptOpenHghrSbdCnt", "psydeptOpenGnlSbdCnt", "isnrSbdCnt", "anvirTrrmSbdCnt")
+DETAIL_WINDOW_DAYS = 365
+
+
+def _detail_items(key: str, op: str, ykiho: str) -> list[dict]:
+    url = f"{DETAIL_BASE}/{op}?{urlencode({'serviceKey': key, 'ykiho': ykiho, 'pageNo': 1, 'numOfRows': 100, '_type': 'json'})}"
+    with urlopen(url, timeout=30) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    body = ((payload.get("response") or {}).get("body") or {})
+    items = body.get("items") or {}
+    items = items.get("item", []) if isinstance(items, dict) else []
+    return [items] if isinstance(items, dict) else (items or [])
+
+
+def fetch_detail(key: str, ykiho: str) -> dict:
+    """한 기관의 진료과목·병상·간호간병통합(특수진료 KH)."""
+    # API가 코드를 숫자로 주는 경우가 있다(srchCd 등). 전부 문자열로 다룬다.
+    departments = {str(it.get("dgsbjtCdNm") or "").strip() for it in _detail_items(key, "getDgsbjtInfo2.8", ykiho)}
+    special = {str(it.get("srchCd") or "").strip() for it in _detail_items(key, "getSpclDiagInfo2.8", ykiho)}
+    beds = None
+    for it in _detail_items(key, "getEqpInfo2.8", ykiho)[:1]:
+        beds = sum(int(it.get(f) or 0) for f in BED_FIELDS)
+    return {"departments": {d for d in departments if d}, "integrated": "KH" in special, "beds": beds}
+
+
+def detail_targets() -> dict[str, str]:
+    """상세를 받을 기관 — 최근 1년 상담에 나온 모병원 + 협력기관. {요양기호: 이름}.
+
+    4만 곳 전부는 병원별 호출이라 무리이고, 화면에 실제로 나오는 곳만 받으면 충분하다.
+    """
+    since = (datetime.now() - timedelta(days=DETAIL_WINDOW_DAYS)).date().isoformat()
+    targets = {}
+    overview = models.hospital_referral_overview(since, datetime.now().date().isoformat())
+    idx = models._hospital_kind_index()
+    for h in overview["hospitals"]:
+        code = models.hospital_official_code(h["name"], idx)
+        if code is None:
+            code = next((c for c in (models.hospital_official_code(v["name"], idx) for v in h["variants"]) if c), None)
+        if code:
+            targets.setdefault(code, h["name"])
+    conn = models.get_db()
+    for r in conn.execute("""SELECT d.official_code, COALESCE(p.official_name, h.name) name
+                             FROM cooperation_partners p JOIN source_hospitals h ON h.id=p.hospital_id
+                             LEFT JOIN cooperation_facility_directory d ON d.id=p.directory_id
+                             WHERE d.official_code IS NOT NULL"""):
+        targets.setdefault(r["official_code"], r["name"])
+    conn.close()
+    return targets
+
+
+def sync_details(key: str, *, targets: dict[str, str] | None = None, progress=None) -> dict:
+    """대상 기관의 상세를 받아 명부에 반영. 기관당 3회 호출, 0.1초 간격."""
+    targets = detail_targets() if targets is None else targets
+    departments, beds, integrated, failed = {}, {}, set(), []
+    for i, (code, name) in enumerate(targets.items(), 1):
+        try:
+            d = fetch_detail(key, code)
+        except Exception as e:  # noqa: BLE001 — 한 기관이 어떤 이유로 깨져도 나머지는 계속 받는다
+            failed.append(name)
+            logger.warning("상세 실패 %s: %s", name, e)
+            continue
+        if d["departments"]:
+            departments[code] = d["departments"]
+        if d["beds"] is not None:
+            beds[code] = d["beds"]
+        if d["integrated"]:
+            integrated.add(code)
+        if progress:
+            progress(i, len(targets), name)
+        time.sleep(0.1)
+    updated = partnerships.import_facility_details(
+        departments=departments, beds=beds, integrated_codes=integrated,
+        updated_at=datetime.now().strftime("%Y-%m-%d"))
+    return {"targets": len(targets), "updated": updated, "failed": failed[:20], "failed_count": len(failed)}
+
+
 def _write_status(**fields):
     STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
     data = {"at": datetime.now().isoformat(timespec="seconds"), **fields}
@@ -139,8 +223,12 @@ def run(reason: str = "manual") -> dict:
     try:
         entries = fetch_all(key)
         result = apply(entries)
+        # 기본 목록이 갱신된 뒤에 상세를 받아야 새로 생긴 기관도 대상에 든다.
+        detail = sync_details(key)
+        result["details"] = detail
         took = round(time.time() - started, 1)
-        logger.info("심평원 갱신 완료(%s) — 명부 %d, 마스터 %d, %.1f초", reason, result["directory"], result["master"], took)
+        logger.info("심평원 갱신 완료(%s) — 명부 %d, 마스터 %d, 상세 %d/%d곳, %.1f초",
+                    reason, result["directory"], result["master"], detail["updated"], detail["targets"], took)
         return _write_status(ok=True, reason=reason, seconds=took, **result)
     except HTTPError as e:
         msg = e.read().decode("utf-8", "ignore")[:300]
@@ -186,6 +274,10 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     if "--status" in sys.argv:
         print(json.dumps(status(), ensure_ascii=False, indent=2))
+    elif "--details" in sys.argv:
+        # 기본 목록은 두고 상세만 다시 (대상 확인·재시도용)
+        out = sync_details(service_key(), progress=lambda i, n, name: print(f"  {i}/{n} {name}", end="\r"))
+        print(); print(json.dumps(out, ensure_ascii=False, indent=2))
     else:
         out = run("manual")
         print(json.dumps(out, ensure_ascii=False, indent=2))
