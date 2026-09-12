@@ -18,6 +18,10 @@
 # root 전용 위치(/root, 700)에 두면 sudoers NOPASSWD 대상으로 삼아도 안전하다.
 set -euo pipefail
 
+# sudo 로 돌면 PATH 가 /usr/bin:/bin 정도로 줄어 DSM 패키지 명령(docker-compose 등)을
+# 못 찾는다. 시놀로지가 심볼릭 링크를 두는 /usr/local/bin 을 뒤에 붙여 둔다.
+export PATH="$PATH:/usr/local/bin"
+
 # ── 프로젝트 폴더 찾기 (이 스크립트와 같은 폴더 → 그 안 bokju-crm/ → 환경변수/기본 경로) ──
 HERE="$(cd "$(dirname "$0")" && pwd)"
 DEFAULT_PROJ="${BOKJU_PROJ:-/volume1/docker/bokju-crm}"
