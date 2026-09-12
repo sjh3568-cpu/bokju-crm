@@ -13,10 +13,21 @@
   <a class="btn btn-secondary" href="/stats/staff">초기화</a>
 </form>
 
+<div class="staff-quick">
+  <span>기간</span>
+  {% for r in quick_ranges %}
+  <a class="{{ 'on' if date_from==r.from and date_to==r.to }}" href="/stats/staff?preset=custom&amp;from={{ r.from }}&amp;to={{ r.to }}{% if internal_only %}&amp;internal=1{% endif %}{% if q %}&amp;q={{ q|urlencode }}{% endif %}">{{ r.label }}</a>
+  {% endfor %}
+  <small>직원소개는 누적 성과라, 기본 ‘이번달’엔 몇 건만 보입니다. ‘전체’로 넓혀 보세요.</small>
+</div>
+
 <div class="staff-toggle">
   <a class="{{ 'on' if not internal_only }}" href="{{ url_with(internal='0') }}">전체 소개</a>
   <a class="{{ 'on' if internal_only }}" href="{{ url_with(internal='1') }}">재단 내부 직원만</a>
-  <small>재단 내부 = 소개자 기관이 <b>복주회복병원·경도요양병원·복주요양원</b>인 건만 (외부 지인·타병원 제외)</small>
+  <small class="staff-toggle-desc">
+    <b>전체 소개</b> = 직원소개로 기록된 모든 상담(주변지인·타 병원 직원 등 외부 포함).
+    <b>재단 내부 직원만</b> = 소개자 기관이 <b>복주회복병원·경도요양병원·복주요양원</b>으로 입력된 건만(순수 재단 직원). 기관을 입력한 상담만 잡히므로, 이름만 있는 기존 기록은 아직 빠집니다.
+  </small>
 </div>
 
 {% if q %}<div class="staff-searched">‘<b>{{ q }}</b>’ 검색 — 전체 {{ data.total_count }}명 중 <b>{{ data.referrer_count }}명</b><a href="{{ url_with(q='') }}">전체 보기 ✕</a></div>{% endif %}
@@ -152,6 +163,13 @@ document.querySelectorAll('.staff-table .ref-toggle').forEach(function (t) {
 .staff-toggle a{padding:5px 13px;border:1px solid var(--border);border-radius:20px;color:#4b6357;text-decoration:none;font-size:.8rem;font-weight:750}
 .staff-toggle a.on{border-color:#15803d;background:#eafaf0;color:#15633a}
 .staff-toggle small{color:#94a3b8;font-size:.72rem}
+.staff-toggle-desc{display:block;line-height:1.6;color:#64748b!important;font-size:.76rem!important;margin-top:2px}
+.staff-toggle-desc b{color:#334155}
+.staff-quick{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:-6px 0 12px}
+.staff-quick>span{color:#94a3b8;font-size:.74rem;font-weight:750}
+.staff-quick a{padding:4px 11px;border:1px solid var(--border);border-radius:8px;color:#4b6357;text-decoration:none;font-size:.76rem;font-weight:750}
+.staff-quick a.on{border-color:#15803d;background:#eafaf0;color:#15633a}
+.staff-quick small{color:#a0aec0;font-size:.72rem;margin-left:4px}
 .staff-searched{display:flex;align-items:center;gap:8px;margin:-6px 0 14px;padding:9px 13px;border:1px solid #bbe6cb;border-radius:10px;background:#f2fbf5;color:#17633a;font-size:.82rem}
 .staff-searched a{margin-left:auto;color:#3f6b53;font-size:.76rem;text-decoration:none}
 .staff-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}

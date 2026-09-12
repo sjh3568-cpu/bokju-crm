@@ -2684,6 +2684,14 @@ def staff_referral_view():
     internal_only = request.args.get("internal") in ("1", "true", "yes")
     data = models.staff_referral_overview(date_from, date_to, q=q or None,
                                           internal_only=internal_only)
+    # 기간 빠른선택 — 직원소개는 누적 성과라 '이번 달' 기본으론 몇 건뿐이다.
+    _t = date.today()
+    quick_ranges = [
+        {"label": "이번달", "from": _t.replace(day=1).isoformat(), "to": _t.isoformat()},
+        {"label": "올해", "from": _t.replace(month=1, day=1).isoformat(), "to": _t.isoformat()},
+        {"label": "최근 1년", "from": _t.replace(year=_t.year - 1).isoformat(), "to": _t.isoformat()},
+        {"label": "전체", "from": "2023-01-01", "to": _t.isoformat()},
+    ]
     keys = {"admissions": lambda r: (-r["admissions"], -r["referrals"]),
             "referrals": lambda r: (-r["referrals"], -r["admissions"]),
             "conversion": lambda r: (-r["conversion"], -r["admissions"])}
@@ -2691,7 +2699,7 @@ def staff_referral_view():
                                key=lambda r: (*keys.get(sort, keys["admissions"])(r), r["name"]))
     return render_template(
         "stats_staff.html", preset=preset, date_from=date_from, date_to=date_to,
-        q=q, sort=sort, data=data, internal_only=internal_only,
+        q=q, sort=sort, data=data, internal_only=internal_only, quick_ranges=quick_ranges,
     )
 
 
