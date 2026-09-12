@@ -106,7 +106,7 @@
         <tr class="ref-detail" data-detail="{{ loop.index }}" hidden>
           <td colspan="9">
             <table class="ref-patients">
-              <thead><tr><th>환자</th><th>주상병</th><th>소개일</th><th>입원일</th><th>소요일</th><th>상태</th></tr></thead>
+              <thead><tr><th>환자</th><th>주상병</th><th>소개일</th><th>입원일</th><th>소요일</th><th>상태</th><th>구분</th></tr></thead>
               <tbody>
                 {% for p in r.rows %}
                 <tr>
@@ -116,6 +116,7 @@
                   <td class="nowrap">{{ p.admitted_at|krdate if p.admitted_at else '—' }}</td>
                   <td class="num">{% if p.lead_days is not none %}{{ p.lead_days }}일{% else %}—{% endif %}</td>
                   <td>{% if p.admitted %}<span class="pill in">입원</span>{% else %}<span class="pill">미입원</span>{% endif %}</td>
+                  <td class="nowrap">{% if p.care == '회복기(S005)' %}<span class="pill s005">회복기 S005</span>{% elif p.care == '비회복기(S006)' %}<span class="pill s006">비회복기 S006</span>{% else %}—{% endif %}</td>
                 </tr>
                 {% endfor %}
               </tbody>
@@ -213,6 +214,7 @@ document.querySelectorAll('.staff-table .ref-toggle').forEach(function (t) {
 .ref-patients a{color:#15633a;font-weight:700}
 .pill{display:inline-block;padding:1px 8px;border-radius:10px;background:#eef2f0;color:#64748b;font-size:.72rem;font-weight:700}
 .pill.in{background:#dcfce7;color:#166534}
+.pill.s005{background:#dbeafe;color:#1e40af}.pill.s006{background:#f1f5f9;color:#64748b}
 .empty-state{padding:40px!important;text-align:center;color:#64748b}
 @media(max-width:800px){.staff-filter{align-items:stretch;flex-wrap:wrap}.staff-filter .staff-q{flex-basis:100%}.staff-kpis{grid-template-columns:1fr 1fr}.panel-title{flex-wrap:wrap}.staff-sort{margin-left:0}}
 </style>

@@ -70,6 +70,21 @@ class StaffReferralTests(unittest.TestCase):
         self.assertEqual(alld["referrals"], 3)      # 박수정 2 + 주변지인 1
         self.assertEqual(internal["referrals"], 2)  # 기관 없는 주변지인 제외
 
+    def test_referred_patient_care_phase(self):
+        """소개해서 입원한 환자의 회복기(S005)/비회복기(S006) 구분이 상세에 붙는다."""
+        with models.get_db() as conn:
+            conn.execute(
+                """INSERT INTO admission_episodes
+                   (patient_id, episode_no, status, admitted_at, care_type, roster_key)
+                   VALUES (1, 1, 'admitted', '2026-08-10', '회복기(S005)', 'chart1|2026-08-10')""")
+        d = models.staff_referral_overview()
+        park = next(r for r in d["referrers"] if r["name"] == "박수정")
+        ga = next(row for row in park["rows"] if row["patient_name"] == "환자가")
+        self.assertEqual(ga["care"], "회복기(S005)")
+        # 입원 안 한 환자(환자나)는 회차가 없어 구분 없음
+        na = next(row for row in park["rows"] if row["patient_name"] == "환자나")
+        self.assertEqual(na["care"], "")
+
     def test_monthly_trend(self):
         d = models.staff_referral_overview()
         aug = next(m for m in d["monthly"] if m["month"] == "2026-08")

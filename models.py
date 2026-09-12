@@ -4680,10 +4680,11 @@ def staff_referral_overview(date_from=None, date_to=None, q=None, internal_only=
                 dx = ", ".join(dl[:3])
             except (json.JSONDecodeError, TypeError):
                 dx = ""
-        g["rows"].append({"cid": r["cid"], "patient_name": r["patient_name"] or "?",
+        g["rows"].append({"cid": r["cid"], "patient_id": r["patient_id"],
+                          "patient_name": r["patient_name"] or "?",
                           "diagnosis": dx, "consult_date": r["consult_date"],
                           "admitted_at": r["admitted_at"] if admitted else None,
-                          "admitted": admitted, "lead_days": lead})
+                          "admitted": admitted, "lead_days": lead, "care": ""})
 
     def _mode(d):
         return sorted(d.items(), key=lambda kv: (-kv[1], kv[0]))[0][0] if d else ""
@@ -4712,6 +4713,7 @@ def staff_referral_overview(date_from=None, date_to=None, q=None, internal_only=
 
     # 소개환자의 질 — 소개해서 입원한 환자의 회복기 비율·평균 재원일(원무 명부 기준).
     quality = {"patients": 0, "recovery": 0, "recovery_ratio": 0, "avg_stay": 0}
+    care_by_pid = {}   # 소개해서 입원한 환자의 회복기(S005)/비회복기(S006) 구분
     if quality_pids:
         conn2 = get_db()
         ph = ",".join("?" * len(quality_pids))
@@ -4741,12 +4743,21 @@ def staff_referral_overview(date_from=None, date_to=None, q=None, internal_only=
                 except ValueError:
                     pass
             stays.append((end - a).days + 1)   # 입원일이 1일째
-            if (e["care_type"] or "").startswith("회복"):
+            ct = (e["care_type"] or "")
+            if ct.startswith("회복"):
                 rec += 1
+                care_by_pid[e["patient_id"]] = "회복기(S005)"
+            elif ct.startswith("비회복"):
+                care_by_pid[e["patient_id"]] = "비회복기(S006)"
         n = len(stays)
         quality = {"patients": n, "recovery": rec,
                    "recovery_ratio": round(100 * rec / n, 1) if n else 0,
                    "avg_stay": round(sum(stays) / n) if n else 0}
+
+    # 소개 환자 상세에 회복기/비회복기 구분을 붙인다(입원한 환자만).
+    for item in items:
+        for row in item["rows"]:
+            row["care"] = care_by_pid.get(row["patient_id"], "")
 
     orgs = sorted((_with_conversion({"org": o, **v}) for o, v in org_agg.items()),
                   key=lambda d: (-d["admissions"], -d["referrals"], d["org"]))
