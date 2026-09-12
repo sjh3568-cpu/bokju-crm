@@ -4,7 +4,7 @@
 """
 
 # 화면에 표시하는 CRM 제품 정보. 릴리스 시 APP_VERSION을 갱신한다.
-APP_VERSION = "1.8.7"
+APP_VERSION = "1.8.8"
 APP_DEVELOPER = "미래전략실 신재희"
 
 # 보험유형 — 사용자 정의 10종
