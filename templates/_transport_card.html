@@ -1,0 +1,84 @@
+{# 🚐 차량 운행(픽업) 요청 — 상담 상세에 include. transport.py 가 템플릿 전역 transport_info() 를 제공한다. #}
+{% set ti = transport_info(c.id) %}
+{% set tr = ti.req %}
+<div class="card" id="transport" data-cid="{{ c.id }}">
+    <h3>🚐 차량 운행(픽업) 요청
+        <span class="muted" style="font-size:0.66em">— 안동·예천 인근은 관리과 차량으로 모셔옵니다. 저장하면 운행팀 구글 시트에 자동 기입</span></h3>
+    <div class="tp-status {% if tr %}tp-{{ tr.sheet_status }}{% endif %}" id="tp-status">
+        {% if not tr %}<b>미정</b> — 운행 필요 여부를 아직 정하지 않았습니다.
+        {% elif tr.needed == 'no' %}<b>운행 불필요</b> (보호자 직접 이동)
+        {% else %}<b>{{ ti.status_label }}</b>
+            {% if tr.sheet_status == 'sent' %}· 탭 {{ tr.sheet_tab }} {{ tr.sheet_row }}행
+                {% if tr.driver or tr.vehicle %}· <span class="tp-assign">배정: {{ tr.driver or '?' }} / {{ tr.vehicle or '차량 미정' }}</span>
+                {% else %}· <span class="tp-wait">운행팀 배정 대기</span>{% endif %}
+            {% elif tr.sheet_status == 'pending' %}· 운행팀에 {{ tr.pickup_date|krdate if tr.pickup_date else '해당 날짜' }} 탭 추가 요청 필요
+            {% elif tr.sheet_status == 'error' %}· {{ tr.last_error }}
+            {% elif not ti.sheet_configured %}· 시트 연동 미설정(관리자)
+            {% endif %}
+        {% endif %}
+    </div>
+    <div class="tp-form">
+        <label class="tp-need"><input type="radio" name="tp-needed" value="yes" {% if tr and tr.needed == 'yes' %}checked{% endif %}> 차량 필요</label>
+        <label class="tp-need"><input type="radio" name="tp-needed" value="no" {% if tr and tr.needed == 'no' %}checked{% endif %}> 불필요 (보호자 직접)</label>
+        <div class="tp-fields" id="tp-fields" {% if tr and tr.needed == 'no' %}hidden{% endif %}>
+            <label>날짜(탭) <input type="date" id="tp-date" value="{{ (tr.pickup_date if tr and tr.pickup_date else c.planned_admission_date) or '' }}"></label>
+            <label>이동수단
+                <select id="tp-mobility">
+                    <option value="">선택</option>
+                    {% for m in ti.mobility_options %}<option value="{{ m }}" {% if tr and tr.mobility == m %}selected{% endif %}>{{ m }}</option>{% endfor %}
+                </select></label>
+            <label>요청이유
+                <select id="tp-reason">
+                    {% for rs in ti.reason_options %}<option value="{{ rs }}" {% if (tr and tr.reason == rs) or (not tr and loop.first) %}selected{% endif %}>{{ rs }}</option>{% endfor %}
+                </select></label>
+            <label class="tp-wide">요청 장소 <input type="text" id="tp-place" placeholder="예: 안동병원 814호"
+                   value="{{ tr.place if tr and tr.place else ((c.source_hospital ~ ' ') if c.source_hospital else '') }}"></label>
+            <label>도착시간 <input type="time" id="tp-time" value="{{ (tr.arrive_time or '')[:5] if tr else '' }}"> <small class="muted">→ "14:00 도착"</small></label>
+            <label class="tp-wide">연락처 <input type="text" id="tp-contact" placeholder="예: 형님 010-0000-0000 (산소 3L 준비)"
+                   value="{{ tr.contact if tr and tr.contact else (((c.guardian_relation ~ ' ') if c.guardian_relation else '') ~ (c.guardian_phone or '')) }}"></label>
+        </div>
+        <div class="tp-actions">
+            <button type="button" class="btn btn-primary btn-sm" id="tp-save">저장{% if ti.sheet_configured %} · 시트 전송{% endif %}</button>
+            <span class="tp-msg muted" id="tp-msg"></span>
+        </div>
+    </div>
+</div>
+<style>
+.tp-status { padding:7px 10px; border-radius:7px; background:#f1f5f9; font-size:0.88em; margin-bottom:8px; }
+.tp-status.tp-sent { background:#dcfce7; } .tp-status.tp-pending, .tp-status.tp-error { background:#fee2e2; }
+.tp-status.tp-skip { background:#f1f5f9; color:#64748b; }
+.tp-assign { color:#166534; font-weight:700; } .tp-wait { color:#b45309; font-weight:600; }
+.tp-form { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; }
+.tp-need { font-size:0.9em; font-weight:600; }
+.tp-fields { display:grid; grid-template-columns:repeat(3, minmax(160px, 1fr)); gap:6px 12px; width:100%; }
+.tp-fields label { display:flex; flex-direction:column; font-size:0.8em; color:#475569; gap:2px; }
+.tp-fields .tp-wide { grid-column: span 2; }
+.tp-fields input, .tp-fields select { padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:0.95em; }
+.tp-actions { width:100%; display:flex; gap:8px; align-items:center; }
+.tp-msg.err { color:var(--danger); } .tp-msg.ok { color:var(--success); }
+@media (max-width:700px) { .tp-fields { grid-template-columns:1fr; } .tp-fields .tp-wide { grid-column:auto; } }
+</style>
+<script>
+(function () {
+    const card = document.getElementById('transport'); if (!card) return;
+    const cid = card.dataset.cid, msg = document.getElementById('tp-msg'), fields = document.getElementById('tp-fields');
+    card.querySelectorAll('input[name="tp-needed"]').forEach(r => r.addEventListener('change', () => { fields.hidden = r.value === 'no' && r.checked; }));
+    document.getElementById('tp-save').addEventListener('click', async () => {
+        const needed = (card.querySelector('input[name="tp-needed"]:checked') || {}).value;
+        if (!needed) { msg.className = 'tp-msg err'; msg.textContent = '차량 필요 / 불필요를 선택하세요.'; return; }
+        const payload = { needed, pickup_date: document.getElementById('tp-date').value,
+            mobility: document.getElementById('tp-mobility').value, reason: document.getElementById('tp-reason').value,
+            place: document.getElementById('tp-place').value, arrive_time: document.getElementById('tp-time').value,
+            contact: document.getElementById('tp-contact').value };
+        msg.className = 'tp-msg muted'; msg.textContent = '저장 중...';
+        try {
+            const j = await api.post(`/api/consult/${cid}/transport`, payload);
+            const p = j.push || {};
+            if (p.status === 'sent') toast(`운행 시트 전송 완료 (${p.tab} ${p.row}행)`, 'success');
+            else if (p.status === 'pending') toast('시트에 해당 날짜 탭이 없어 전송 대기 — 운행팀에 탭 요청', 'warning');
+            else if (p.status === 'error') toast('시트 전송 실패: ' + (p.error || ''), 'error');
+            location.reload();
+        } catch (e) { msg.className = 'tp-msg err'; msg.textContent = '저장 실패: ' + e.message; }
+    });
+})();
+</script>

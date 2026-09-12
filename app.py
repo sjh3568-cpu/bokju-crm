@@ -113,6 +113,8 @@ import partnerships
 import support_requests
 app.register_blueprint(partnerships.bp)
 app.register_blueprint(support_requests.bp)
+import transport
+app.register_blueprint(transport.bp)
 app.secret_key = os.getenv("SECRET_KEY") or secrets.token_hex(32)
 app.permanent_session_lifetime = timedelta(hours=int(os.getenv("SESSION_HOURS", "4")))
 _REMEMBER_COOKIE = "bokju_remember"
@@ -148,6 +150,7 @@ def initialize():
         models.init_db()
         partnerships.init_schema()
         support_requests.init_schema()
+        transport.init_schema()
         release_notes.publish_release_notes()
         admin_pw = os.getenv("APP_PASSWORD", "").strip()
         if admin_pw:
@@ -165,6 +168,11 @@ def initialize():
         hira_sync.start_scheduler()
     except Exception:
         app.logger.exception("심평원 자동 갱신 스케줄러를 시작하지 못했습니다")
+    # 운행 시트(구글) 연동 — TRANSPORT_SHEET_URL이 있을 때만 주기 동기화
+    try:
+        transport.start_scheduler()
+    except Exception:
+        app.logger.exception("운행 시트 동기화를 시작하지 못했습니다")
     # 홈페이지 문의 메일 브릿지 — IMAP 설정 시에만 활성 (빌더형 홈페이지 대응)
     try:
         import homepage_inbox
@@ -1282,6 +1290,13 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
             35,
             age_days=days,
         )
+
+    # 차량 운행(픽업) — 오늘·내일 입원인데 운행 여부 미정 / 시트 전송 안 됨 / 배정 대기
+    try:
+        for t in transport.dashboard_alerts():
+            add(t["kind"], t["tone"], t["title"], t["detail"], t["meta"], t["href"], t["sort"], age_days=0)
+    except Exception:
+        app.logger.exception("운행 경고 계산 실패")
 
     # 입원예정 상태인데 planned_admission_date가 비어 있는 상담 — 날짜 지정 필요.
     # 오래 방치될수록 우선순위 상승 (consult_date 기준 경과일).
