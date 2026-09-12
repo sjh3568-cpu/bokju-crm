@@ -2564,6 +2564,32 @@ def list_consultations(*, date_from=None, date_to=None,
             names,
         ).fetchall():
             homonym_counts[name] = n
+
+    # 발병일 — consultations.disease_onset는 폼 입력분이라 사실상 비어 있다(8천여 건 중 0).
+    # 실제 발병일은 원무 명부 backfill로 admission_episodes.onset_date에 들어 있으므로,
+    # 재원 census와 같은 회차↔상담 매칭 규칙(_link_episodes)으로 이 페이지 상담에 얹는다.
+    # 표시 전용 필드(onset_display)로만 넘겨 회복기 자동판정(disease_onset 사용)은 건드리지 않는다.
+    onset_by_consult = {}
+    if patient_ids:
+        pid_ph = ",".join("?" * len(patient_ids))
+        onset_eps = [dict(r) for r in conn.execute(
+            f"""SELECT id, patient_id, admitted_at, onset_date
+                FROM admission_episodes
+                WHERE roster_key IS NOT NULL
+                  AND onset_date IS NOT NULL AND onset_date != ''
+                  AND admitted_at IS NOT NULL AND admitted_at != ''
+                  AND patient_id IN ({pid_ph})""", patient_ids)]
+        if onset_eps:
+            by_patient = {}
+            for row in conn.execute(
+                    f"""SELECT id, patient_id, consult_date FROM consultations
+                        WHERE patient_id IN ({pid_ph})
+                          AND consult_date IS NOT NULL AND consult_date != ''""",
+                    patient_ids):
+                by_patient.setdefault(row["patient_id"], []).append(
+                    (row["consult_date"][:10], row["id"]))
+            linked, _ = _link_episodes(onset_eps, by_patient)
+            onset_by_consult = {cid: ep["onset_date"] for cid, ep in linked.items()}
     conn.close()
 
     out = []
@@ -2571,6 +2597,11 @@ def list_consultations(*, date_from=None, date_to=None,
         d = _deserialize_consultation(dict(r))
         d["prior_consult_count"] = consult_counts.get(r["patient_id"], 1) - 1  # 자신 제외
         d["homonym_count"] = homonym_counts.get(r["patient_name"], 1)  # 본인 포함
+        # 폼 발병일이 비었으면 원무 명부 발병일을 표시용으로 채운다.
+        if not (d.get("disease_onset") or "").strip():
+            od = onset_by_consult.get(r["id"])
+            if od:
+                d["onset_display"] = od
         out.append(d)
     return out
 

@@ -339,15 +339,16 @@
                         {% if status == '입원완료' %}
                             {% set dw = r|discharge_watch %}
                             {% if dw and dw.state %}
+                            {# D-day 표시는 '입원기간 만료일' 열과 중복이라 제거(2026-09-13). 퇴원 임박 시 hover 액션만 유지 #}
                             <div class="discharge-watch">
-                                <span class="badge st-discharge-due{% if dw.days_left <= 7 %} dc-urgent{% endif %}" title="{{ dw.state }} — 유효 퇴원예정일 {{ dw.due_date }}{% if dw.days_left <= 7 %} · 임박 — 퇴원 계획 확인 필요{% endif %}">{% if dw.days_left < 0 %}{{ -dw.days_left }}일초과{% else %}D-{{ dw.days_left }}{% endif %}</span>
                                 <span class="dc-actions"><button type="button" class="dc-btn" data-act="complete" data-cid="{{ r.id }}" title="퇴원완료로 처리">퇴원완료</button><button type="button" class="dc-btn" data-act="extend" data-cid="{{ r.id }}" data-due="{{ dw.due_date }}" title="입원연장 (퇴원예정일 변경)">입원연장</button></span>
                             </div>
                             {% endif %}
                         {% endif %}
                     {% endif %}
                 </td>
-                <td class="onset-date-cell" title="{{ r.disease_onset or '' }}">{{ (r.disease_onset or '')|krdate_short }}</td>
+                {% set onset_val = r.disease_onset or r.onset_display %}
+                <td class="onset-date-cell{% if not r.disease_onset and r.onset_display %} onset-roster{% endif %}" title="{{ onset_val or '' }}{% if not r.disease_onset and r.onset_display %} (원무 명부 발병일){% endif %}">{{ (onset_val or '')|krdate_short }}</td>
                 <td class="admission-date-cell">
                     {% set actual = r.actual_admission_date or r.admission_date %}
                     {% if actual %}<span class="admission-date-main">{{ actual|krdate_short_wd }}</span>{% endif %}
@@ -438,20 +439,30 @@
 /* 상담목록은 19컬럼이라 base.html의 1200px 제한 풀고 전체 화면 활용 */
 body .container { max-width: none; padding: 0 12px; }
 
-/* 가로 스크롤 컨테이너 — 정 안 들어가도 우아하게 처리 */
-.tbl-wrap { overflow-x: auto; }
+/* 표 영역을 '자체 스크롤 박스'로 만든다 — 높이를 화면 남는 만큼으로 고정(스크립트가 실측)하고
+   가로·세로 모두 이 안에서만 스크롤. 그러면 thead가 이 박스 top:0에 안정적으로 고정돼
+   (뷰포트 sticky는 브라우저별로 불안정), 폭·상세필터 상태와 무관하게 표 헤더가 항상 보인다.
+   위쪽 초록 헤더·검색바·빠른필터는 스크롤에 묻히지 않고 그대로 남는다. 예전엔 표(.tbl)의
+   overflow:hidden과 래퍼의 overflow-x:auto가 sticky를 무력화해 스크롤 시 상단이 사라졌다. */
+.tbl-wrap {
+    overflow: auto;
+    max-height: var(--tbl-wrap-max-h, 72vh);
+}
 
 /* 한 줄 표기 + 시인성 (2026-09-11 사용자 요청: 글자 키우고, 칸마다 한 줄, 열 간격 좁게)
    — 모든 칸은 줄바꿈 없이 넘치면 말줄임. 전체 내용은 hover title·상담 상세에서. */
-.tbl-compact { table-layout: fixed; width: 100%; min-width: 1580px; }
+/* .tbl의 overflow:hidden(둥근 모서리용)은 표 자체를 클립 컨테이너로 만들어
+   thead의 position:sticky를 무력화한다 → 목록에선 풀어서 헤더 고정이 동작하게. */
+.tbl-compact { table-layout: fixed; width: 100%; min-width: 1580px; overflow: visible; border-radius: 0; }
 .tbl-compact th, .tbl-compact td {
     padding: 4px 3px; font-size:0.86em; line-height:1.3; vertical-align:middle;
     text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 .tbl-compact th { padding-top:6px; padding-bottom:6px; }
 .tbl-compact th { font-weight: 600; background: #f8fafc; border-bottom: 2px solid #e2e8f0; }
-.tbl-compact thead th { position: sticky; top: 0; z-index: 5; }
-.tbl-compact thead tr.filter-row th { top: 31px; z-index: 4; }
+/* 표 헤더 고정 — 스크롤 박스(.tbl-wrap) 안에서는 <th>가 아니라 <thead>에 sticky를 줘야
+   실제로 붙는다(브라우저 특성). 헤더 행+필터 행이 한 덩어리로 상단에 고정된다. */
+.tbl-compact thead { position: sticky; top: 0; z-index: 5; }
 .tbl-compact tbody tr { border-bottom: 1px solid #f1f5f9; }
 .tbl-compact tbody tr:hover { background: #fafbfc; cursor: pointer; }
 .tbl-compact tr.selected, .tbl-compact tr.selected:hover { background: #fef9c3; }
@@ -521,6 +532,14 @@ body .container { max-width: none; padding: 0 12px; }
 }
 .cf-range { display: flex; gap: 2px; }
 .cf-range .cf-in { min-width: 0; }
+/* 성별(4번)·상담방법(12번) 열은 폭이 좁아(36·48px) select 기본 드롭다운
+   화살표가 '전체' 글자 위로 겹쳐 보였다 → 화살표 제거하고 글자만 가운데. */
+.tbl-compact tr.filter-row th:nth-child(4) select.cf-in,
+.tbl-compact tr.filter-row th:nth-child(12) select.cf-in {
+    appearance: none; -webkit-appearance: none; -moz-appearance: none;
+    padding-left: 2px; padding-right: 2px;
+    background-image: none; text-align: center; text-align-last: center;
+}
 
 .patient-cell .patient-link { font-weight: 600; color: var(--primary); }
 .patient-cell .meta { color: var(--text-light); font-size: 0.85em; margin-left: 4px; }
@@ -783,6 +802,8 @@ body .container { max-width: none; padding: 0 12px; }
 .admexp-row { display:grid; grid-template-columns:auto auto; justify-content:center; align-items:center; gap:3px; white-space:normal; }
 .admexp-row .admexp-dday, .admexp-row .admexp-est { grid-column:1 / -1; justify-self:center; }
 .tbl-compact td.onset-date-cell { white-space:normal; overflow-wrap:anywhere; }
+/* 원무 명부에서 채운 발병일 — 폼 입력값과 구분되게 옅게 표시(마우스오버 시 출처 안내) */
+.tbl-compact td.onset-date-cell.onset-roster { color: var(--text-light); }
 .tbl-compact td.admission-date-cell, .tbl-compact td.admexp-cell { white-space:normal; }
 .admission-date-main { display:block; white-space:nowrap; }
 .admexp-kind { display:inline-block; padding:1px 4px; border-radius:7px; font-weight:700; white-space:nowrap; }
@@ -810,6 +831,32 @@ body .container { max-width: none; padding: 0 12px; }
 
 <script>
 (function() {
+    // ─── 표 영역을 화면 남는 높이에 맞춰, thead가 그 박스 안에서 고정되게 한다 ───
+    // .tbl-wrap 높이를 (뷰포트 - 표 시작 위치)로 정하면 위쪽(헤더·검색바·빠른필터)은 그대로
+    // 남고 표만 안에서 스크롤되며, thead의 sticky가 안정적으로 최상단에 붙는다.
+    // 화면 크기·상세필터 펼침·폰트 로드로 위치가 바뀌므로 resize/load/ResizeObserver로 다시 잰다.
+    function syncStickyTop() {
+        const root = document.documentElement.style;
+        const headRow = document.querySelector('.tbl-compact thead tr:first-child');
+        if (headRow) root.setProperty('--list-headrow-h', Math.round(headRow.getBoundingClientRect().height) + 'px');
+        const wrap = document.querySelector('.tbl-wrap');
+        if (wrap) {
+            // 스크롤 상태와 무관하게 문서 기준 표 시작 y를 구한다.
+            const docTop = wrap.getBoundingClientRect().top + window.scrollY;
+            const avail = Math.max(240, Math.round(window.innerHeight - docTop - 14));
+            root.setProperty('--tbl-wrap-max-h', avail + 'px');
+        }
+    }
+    syncStickyTop();
+    window.addEventListener('resize', syncStickyTop);
+    window.addEventListener('load', syncStickyTop);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(syncStickyTop);
+    const _wrapEl = document.querySelector('.tbl-wrap');
+    if (window.ResizeObserver && _wrapEl && _wrapEl.parentElement) {
+        // 위쪽 영역(빠른필터·필터칩 등) 높이가 바뀌면 표 높이도 다시 맞춘다.
+        new ResizeObserver(syncStickyTop).observe(document.querySelector('main') || document.body);
+    }
+
     const STATUS_CLASS = {
         '미정': 'st-pending', '': 'st-pending', '입원보류': 'st-hold',
         '입원취소': 'st-cancelled', '입원완료': 'st-completed',
