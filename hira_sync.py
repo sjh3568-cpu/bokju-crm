@@ -99,13 +99,19 @@ def fetch_all(key: str, *, progress=None) -> list[dict]:
 
 # ── 적재 ──
 
+# 협력기관 검색 명부에 넣는 종별. 치과의원·한의원·보건소·조산원까지 넣으면 4만→8만으로
+# 불어나 검색이 지저분해진다. 환자가 실제로 오는 급성기·요양·한방·정신 병원과 의원까지.
+DIRECTORY_KINDS = {"상급종합", "종합병원", "병원", "의원", "요양병원", "한방병원", "정신병원"}
+# 상담 입력 자동완성 마스터도 같은 범위. 자동완성은 입력한 글자로 좁혀지므로 의원이 있어도 무방하다.
+MASTER_KINDS = DIRECTORY_KINDS  # 기존 마스터에 의원이 이미 들어 있어 같은 범위로 맞춘다
+
+
 def apply(entries: list[dict]) -> dict:
     """두 테이블에 upsert. 이름이 바뀐 기관은 요양기호 기준으로 따라간다."""
-    directory = partnerships.import_facility_directory(entries, source="hira-api")
-    # 병원 마스터는 의원까지 넣으면 자동완성이 흐려지므로 병원급만 (기존 XLSX 적재와 같은 기준)
-    hospital_kinds = {"상급종합", "종합병원", "병원", "요양병원", "정신병원", "치과병원", "한방병원"}
+    directory = partnerships.import_facility_directory(
+        [e for e in entries if e["kind"] in DIRECTORY_KINDS], source="hira-api")
     master = models.upsert_source_hospitals(
-        [e for e in entries if e["kind"] in hospital_kinds], source="hira-api")
+        [e for e in entries if e["kind"] in MASTER_KINDS], source="hira-api")
     return {"directory": directory, "master": master, "fetched": len(entries)}
 
 

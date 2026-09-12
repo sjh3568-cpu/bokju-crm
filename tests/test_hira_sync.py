@@ -45,8 +45,8 @@ class HiraSyncTests(unittest.TestCase):
         self.assertEqual(db.execute("SELECT COUNT(*) FROM cooperation_facility_directory").fetchone()[0], 4)  # 명부는 의원 포함
         kinds = {r[0]: r[1] for r in db.execute("SELECT name, kind FROM source_hospitals")}
         db.close()
-        self.assertEqual(kinds.get('길주요양병원'), '요양병원')   # 마스터는 병원급만
-        self.assertNotIn('동네의원', kinds)
+        self.assertEqual(kinds.get('길주요양병원'), '요양병원')
+        self.assertEqual(kinds.get('동네의원'), '의원')          # 마스터도 의원까지 (기존 마스터와 같은 범위)
         self.assertEqual(hira_sync.status()['fetched'], 4)
         # 종별 배지가 API로 받은 명부에서 바로 잡힌다
         models._kind_index_cache['stamp'] = None
