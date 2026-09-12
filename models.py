@@ -4612,7 +4612,7 @@ def staff_referral_overview(date_from=None, date_to=None, q=None, internal_only=
         f"""SELECT TRIM(COALESCE(c.referrer_person,'')) person,
                    TRIM(COALESCE(c.referrer_org,'')) org, TRIM(COALESCE(c.referrer_dept,'')) dept,
                    c.patient_id, c.admission_status, c.consult_date, c.referral_source_detail,
-                   c.id cid, c.primary_diagnosis,
+                   c.id cid, c.primary_diagnosis, c.diseases,
                    COALESCE(c.actual_admission_date, c.admission_date) admitted_at,
                    p.name patient_name
             FROM consultations c LEFT JOIN patients p ON p.id = c.patient_id
@@ -4670,8 +4670,15 @@ def staff_referral_overview(date_from=None, date_to=None, q=None, internal_only=
                         - date.fromisoformat(str(r["consult_date"])[:10])).days
             except ValueError:
                 lead = None
+        dx = (r["primary_diagnosis"] or "").strip()
+        if not dx:  # 주상병은 대개 diseases(JSON 리스트)에 있다.
+            try:
+                dl = [str(x).strip() for x in json.loads(r["diseases"] or "[]") if str(x).strip()]
+                dx = ", ".join(dl[:3])
+            except (json.JSONDecodeError, TypeError):
+                dx = ""
         g["rows"].append({"cid": r["cid"], "patient_name": r["patient_name"] or "?",
-                          "diagnosis": r["primary_diagnosis"] or "", "consult_date": r["consult_date"],
+                          "diagnosis": dx, "consult_date": r["consult_date"],
                           "admitted_at": r["admitted_at"] if admitted else None,
                           "admitted": admitted, "lead_days": lead})
 

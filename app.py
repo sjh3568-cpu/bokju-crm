@@ -57,6 +57,7 @@ from config import (
     PERM_HIDDEN, PERM_VIEW, PERM_EDIT, PERM_CREATE,
     PERM_LEVELS, PERM_LEVEL_LABELS,
     INSURANCE_TYPES, OTHERS_CHECKLIST, REFERRAL_SOURCE_GROUPS, REFERRAL_TYPES,
+    STAFF_REFERRAL_ORGS, STAFF_REFERRAL_DEPTS,
     LIFECYCLE_STAGES, LIFECYCLE_EVENT_TYPES, LEGACY_STAGE_MAP, CARE_PHASES,
     SIDO_LIST, SIGUNGU_INDEX, SIGUNGU_LIST,
     SMS_TEMPLATE_GROUPS, SMS_PLACEHOLDERS,
@@ -158,6 +159,12 @@ def initialize():
         _db_initialized = True
     if os.getenv("BACKUP_ENABLED", "1") == "1":
         backup.start_scheduler()
+    # 심평원 병원 명부 자동 갱신 — HIRA_SERVICE_KEY가 있을 때만 매주 돈다
+    try:
+        import hira_sync
+        hira_sync.start_scheduler()
+    except Exception:
+        app.logger.exception("심평원 자동 갱신 스케줄러를 시작하지 못했습니다")
     # 홈페이지 문의 메일 브릿지 — IMAP 설정 시에만 활성 (빌더형 홈페이지 대응)
     try:
         import homepage_inbox
@@ -456,6 +463,8 @@ def _inject_globals():
         "INFO_PROVIDED_OPTIONS": INFO_PROVIDED_OPTIONS,
         "REFERRAL_SOURCE_GROUPS": REFERRAL_SOURCE_GROUPS,
         "REFERRAL_TYPES": REFERRAL_TYPES,
+        "STAFF_REFERRAL_ORGS": STAFF_REFERRAL_ORGS,
+        "STAFF_REFERRAL_DEPTS": STAFF_REFERRAL_DEPTS,
         "SIDO_LIST": SIDO_LIST,
         "SIGUNGU_LIST": SIGUNGU_LIST,
         "SIGUNGU_INDEX": SIGUNGU_INDEX,
@@ -2672,7 +2681,9 @@ def staff_referral_view():
     preset, date_from, date_to = _stats_period_from_request()
     q = (request.args.get("q") or "").strip()
     sort = request.args.get("sort") or "admissions"
-    data = models.staff_referral_overview(date_from, date_to, q=q or None)
+    internal_only = request.args.get("internal") in ("1", "true", "yes")
+    data = models.staff_referral_overview(date_from, date_to, q=q or None,
+                                          internal_only=internal_only)
     keys = {"admissions": lambda r: (-r["admissions"], -r["referrals"]),
             "referrals": lambda r: (-r["referrals"], -r["admissions"]),
             "conversion": lambda r: (-r["conversion"], -r["admissions"])}
@@ -2680,7 +2691,7 @@ def staff_referral_view():
                                key=lambda r: (*keys.get(sort, keys["admissions"])(r), r["name"]))
     return render_template(
         "stats_staff.html", preset=preset, date_from=date_from, date_to=date_to,
-        q=q, sort=sort, data=data,
+        q=q, sort=sort, data=data, internal_only=internal_only,
     )
 
 
@@ -3142,6 +3153,7 @@ def consult_new():
                         "current_location_type", "current_location_name",
                         "referral_source_detail",
                         "referrer_person", "referrer_institution",
+                        "referrer_org", "referrer_dept",
                         "attending_doctor",
                     )
                     prefill_consult = {k: last.get(k) for k in SAFE_PREFILL if last.get(k)}

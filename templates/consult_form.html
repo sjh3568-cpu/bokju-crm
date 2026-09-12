@@ -953,6 +953,20 @@
                         <div class="ac-list" hidden></div>
                     </div>
                 </div>
+                {# 직원소개 전용 — 소개자 기관·부서. '직원소개' 체크 시 펼쳐진다(form.js). #}
+                <div class="referrer-row staff-ref-row"{% set _staff_on = ('직원소개' in referral_set) %}{% if not _staff_on %} hidden{% endif %}>
+                    <select name="consultation.referrer_org" class="staff-ref-org">
+                        <option value="">소개자 기관</option>
+                        {% for org in STAFF_REFERRAL_ORGS %}
+                        <option value="{{ org }}" {% if (consultation.referrer_org if is_edit else (prefill.referrer_org if prefill else '')) == org %}selected{% endif %}>{{ org }}</option>
+                        {% endfor %}
+                    </select>
+                    <input type="text" name="consultation.referrer_dept" list="staff-dept-list" placeholder="부서 (직접 입력 가능)"
+                           value="{{ consultation.referrer_dept if is_edit and consultation.referrer_dept else ((prefill.referrer_dept if prefill else '') or '') }}">
+                    <datalist id="staff-dept-list">
+                        {% for d in STAFF_REFERRAL_DEPTS %}<option value="{{ d }}"></option>{% endfor %}
+                    </datalist>
+                </div>
                 {% elif group_name == '기타' %}
                 <div class="referrer-row">
                     <input type="text" name="consultation.referral_etc_note" placeholder="기타 경로 직접 입력"
@@ -963,6 +977,17 @@
             {% endfor %}
         </div>
     </div>
+    <script>
+    // 직원소개 체크 시에만 소개자 기관·부서 칸을 보여준다.
+    (function () {
+        var box = document.querySelector('.staff-ref-row');
+        var cb = document.querySelector('input[name="consultation.referral_source_detail[]"][value="직원소개"]');
+        if (!box || !cb) return;
+        function sync() { box.hidden = !cb.checked; }
+        cb.addEventListener('change', sync);
+        sync();
+    })();
+    </script>
 
     <div class="field">
         <label>보험유형</label>
