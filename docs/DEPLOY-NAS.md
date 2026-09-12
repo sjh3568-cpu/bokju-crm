@@ -157,7 +157,11 @@ sudo /root/deploy.sh v1.8.4      # 지정 태그로 배포
 sudo /root/deploy.sh             # 최신 태그로 배포
 sudo /root/deploy.sh --rollback  # 직전 태그로 되돌리기
 sudo /root/deploy.sh --check     # 점검만 (아무것도 바꾸지 않음)
+sudo /root/deploy.sh main        # 태그 없이 main 최신으로 (작은 수정을 바로 볼 때)
 ```
+
+태그 배포 뒤에는 저장소가 "브랜치 아님" 상태이므로, 운영 폴더에서 손으로 `git pull`
+하지 말고 `main` 모드를 쓴다(스크립트가 main 으로 돌아온 뒤 받는다).
 
 개발 PC에서 NAS에 들어가지 않고 바로 실행하려면(아래 '최초 1회 준비' 6번까지 마친 뒤):
 

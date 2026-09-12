@@ -4,6 +4,7 @@
 #
 #   sudo ./deploy.sh v1.8.4      지정한 태그로 배포
 #   sudo ./deploy.sh             원격의 최신 태그로 배포
+#   sudo ./deploy.sh main        태그 없이 main 최신으로 배포 (빠른 수정용, 롤백은 --rollback 으로 직전 태그)
 #   sudo ./deploy.sh --rollback  직전 태그로 되돌리기
 #   sudo ./deploy.sh --check     점검만 (아무것도 바꾸지 않음)
 #   sudo ./deploy.sh --yes       업무시간 확인 질문 생략 (무인 실행용, 태그와 같이 써도 됨)
@@ -62,13 +63,18 @@ PREV_TAG=$(git tag --sort=-creatordate | sed -n 2p || true)
 
 if [ "$MODE" = "--check" ]; then
     echo "✓ 점검 통과 — git·$DC·curl 준비됨, 저장소 깨끗함."
-    echo "  현재: $(git describe --tags --exact-match 2>/dev/null || echo '태그 아님')"
+    echo "  현재: $(git describe --tags --exact-match 2>/dev/null || echo "태그 아님 ($(git rev-parse --abbrev-ref HEAD) $(git rev-parse --short HEAD))")"
     echo "  최신 태그: $(git tag --sort=-creatordate | sed -n 1p || echo '없음')"
     exit 0
 fi
 
 # ── 1. 대상 태그 결정 ──
-if [ "$MODE" = "--rollback" ]; then
+if [ "$MODE" = "main" ]; then
+    # 태그 배포 뒤엔 HEAD 가 브랜치에서 떨어져 있으므로 main 으로 돌아온 뒤 받는다.
+    git checkout -q main || fail "main 브랜치로 전환하지 못했습니다."
+    git pull -q --ff-only origin main || fail "main 을 받지 못했습니다(fast-forward 불가 = NAS 저장소에 다른 커밋이 있음)."
+    TAG="main"
+elif [ "$MODE" = "--rollback" ]; then
     TAG="$PREV_TAG"
     [ -n "$TAG" ] || fail "되돌릴 직전 태그가 없습니다."
     echo "↩ 롤백 대상: $TAG"
@@ -80,8 +86,9 @@ else
 fi
 git rev-parse "$TAG" >/dev/null 2>&1 || fail "태그 '$TAG'를 찾을 수 없습니다. (sudo ./deploy.sh --check 로 최신 태그 확인)"
 
-CUR=$(git describe --tags --exact-match 2>/dev/null || echo "(태그 아님)")
-echo "현재: $CUR   →   배포: $TAG"
+CUR=$(git describe --tags --exact-match 2>/dev/null || echo "(태그 아님 $(git rev-parse --short HEAD))")
+DEST="$TAG"; [ "$TAG" = "main" ] && DEST="main $(git rev-parse --short main)"
+echo "현재: $CUR   →   배포: $DEST"
 
 # ── 업무시간 경고 (재시작 순간 저장 유실 위험) ──
 # 평일 09~18시엔 한 번 묻는다. 터미널이 아니면(ssh 무인 실행) 물을 수 없으므로
