@@ -838,8 +838,15 @@ def _admission_expiry(consultation):
     if not consultation:
         return None
     rec = _recovery_status(consultation)
+    # 중추신경계 판정은 상담 병명 우선, 없으면 명부 주상병(진단명)으로 보완한다.
+    # 상담 병명칸에 뇌졸중을 안 적어(주상병엔 있는데) 비중추로 새면 퇴원예정이
+    # 입원일+1년이 아니라 회복기 종료로 짧게 잡힌다.
+    diseases = consultation.get("diseases")
+    dx = str(consultation.get("roster_diagnosis") or consultation.get("primary_diagnosis") or "")
+    if dx and not is_cns_diseases(diseases) and any(kw in dx for kw in _CNS_KW):
+        diseases = list(diseases or []) + ["중추신경계"]
     period = compute_admission_period(
-        consultation.get("diseases"),
+        diseases,
         consultation.get("roster_care_phase") or rec.get("label"),
     )
     if not period:
@@ -855,7 +862,35 @@ def _admission_expiry(consultation):
     except (ValueError, TypeError):
         return None
     today = datetime.now().date()
-    total_d = _day_of(ad, period["total"])
+    cns = is_cns_diseases(diseases)
+    onset = _parse_date(consultation.get("onset_date"))
+    rehab_end = (_parse_date(consultation.get("rehab_end_date"))
+                 if consultation.get("rehab_end_imported") else None)
+
+    # ── 총 입원 만료일(퇴원 예정) ──
+    if cns:
+        # 뇌졸중 등 중추 — 입원일 + 1년. 단 발병일 + 2년을 넘길 수 없다(상한).
+        # 연장(6개월×최대2회)은 수동으로 discharge_due_date에 반영한다.
+        total_d = _day_of(ad, period["total"])
+        if onset:
+            cap = _day_of(onset, PERIOD_CALC_CAP_YEARS * 365)
+            if cap < total_d:
+                total_d = cap
+    elif rehab_end:
+        # 비중추 — 회복기 기간이 곧 입원 기간(무조건 종료). 명부 재활종료일을 만료로 쓴다.
+        total_d = rehab_end
+    else:
+        total_d = _day_of(ad, period["total"])
+
+    # ── 회복기 수가(S005) 종료일 — 중추만 '전환'이 있다. 명부 실제 재활종료일 우선,
+    #    없으면 입원일+180 추정. 비중추는 전환 개념이 없어 billing 없음(퇴원=회복기 종료). ──
+    if cns and rehab_end:
+        billing_d = rehab_end
+    elif period["billing"]:
+        billing_d = _day_of(ad, period["billing"])
+    else:
+        billing_d = None
+
     out = {
         "basis": "actual" if actual else "planned",
         "mandatory": period.get("mandatory", False),
@@ -863,15 +898,11 @@ def _admission_expiry(consultation):
         "total_date": total_d.isoformat(),
         "total_left": (total_d - today).days,
         "billing_days": period["billing"],
-        "billing_date": None,
-        "billing_left": None,
+        "billing_date": billing_d.isoformat() if billing_d else None,
+        "billing_left": (billing_d - today).days if billing_d else None,
     }
-    if period["billing"]:
-        bd = _day_of(ad, period["billing"])
-        out["billing_date"] = bd.isoformat()
-        out["billing_left"] = (bd - today).days
     extension_d = (total_d + timedelta(days=180)
-                   if period["total"] == TOTAL_STAY_DAYS else None)
+                   if cns else None)
     out["extension_date"] = extension_d.isoformat() if extension_d else None
     out["extension_left"] = (extension_d - today).days if extension_d else None
     out["is_extended_6m"] = bool(
@@ -2129,7 +2160,23 @@ def dashboard():
     census = models.current_admission_census()
     admitted = models.list_consultations(admission_status="입원완료", limit=10000)
     if census["has_roster"]:
-        admitted = [c for c in admitted if c["id"] in census["by_consultation"]]
+        # census 재원만 남기고, 회복기·만료 계산이 /ward와 같아지도록 명부값
+        # (실제 입원일·수가구분·재활종료일·발병일)을 상담에 얹는다.
+        residents = []
+        for c in admitted:
+            ep = census["by_consultation"].get(c["id"])
+            if not ep:
+                continue
+            c = dict(c)
+            c["actual_admission_date"] = ep["admitted_at"]
+            c["discharge_date"] = None
+            c["roster_care_phase"] = _roster_care_phase(ep.get("care_type"))
+            c["rehab_end_date"] = ep.get("rehab_end_date")
+            c["rehab_end_imported"] = ep.get("rehab_end_imported")
+            c["onset_date"] = ep.get("onset_date")
+            c["roster_diagnosis"] = ep.get("diagnosis_name")
+            residents.append(c)
+        admitted = residents
     window = DASHBOARD_DUE_WINDOW_DAYS
     recovery_transition_due = []
     discharge_due = []
@@ -4393,6 +4440,8 @@ def ward_view():
         c["roster_care_phase"] = _roster_care_phase(ep.get("care_type"))
         c["rehab_end_date"] = ep.get("rehab_end_date")
         c["rehab_end_imported"] = ep.get("rehab_end_imported")
+        c["onset_date"] = ep.get("onset_date")
+        c["roster_diagnosis"] = ep.get("diagnosis_name")
     # 상담 없이 입원한 환자 — 명부에만 있다. 인원에서 빠지면 재원 수가 틀리므로
     # 회차가 들고 있는 값만으로 행을 만든다. 상담 id가 없어 화면에서 상담 상세와
     # 외진·퇴원 버튼은 뜨지 않는다(그 환자는 상담일지 자체가 없다).
@@ -4423,9 +4472,12 @@ def ward_view():
         c["away"] = _ward_current_away(c, away_by_pid)
         c["stay_days"] = _days_since(adm)
         c.update(_care_phase(c))
-        c["recovery_due"] = (c.get("care_phase") == "회복기"
-                             and c.get("phase_dday") is not None
-                             and c["phase_dday"] <= 30)
+        # 회복기 종료 임박 — 대시보드 '회복기 만료 D-30'과 같은 정의(명부 재활종료일
+        # 기준 ±DASHBOARD_DUE_WINDOW_DAYS). 두 화면이 같은 숫자를 내게 맞춘다.
+        _ax = _admission_expiry(c)
+        c["recovery_due"] = bool(
+            _ax and _ax.get("billing_left") is not None
+            and -DASHBOARD_DUE_WINDOW_DAYS <= _ax["billing_left"] <= DASHBOARD_DUE_WINDOW_DAYS)
         dw = _discharge_watch(c)
         if dw:
             c["discharge_dday"] = dw["days_left"]
@@ -4512,12 +4564,13 @@ def ward_view():
         "discharge_soon": sum(1 for c in admitted
                               if c.get("discharge_dday") is not None
                               and c["discharge_dday"] <= 7),
+        # 퇴원 예정 D-30 — 대시보드 '퇴원 예정 D-30'과 같은 ±DASHBOARD_DUE_WINDOW_DAYS 창.
         "discharge_due_30": sum(1 for c in admitted
                                 if c.get("discharge_dday") is not None
-                                and c["discharge_dday"] <= 30),
+                                and -DASHBOARD_DUE_WINDOW_DAYS <= c["discharge_dday"] <= DASHBOARD_DUE_WINDOW_DAYS),
         "discharge_due_unchecked": sum(1 for c in admitted
                                         if c.get("discharge_dday") is not None
-                                        and c["discharge_dday"] <= 30
+                                        and -DASHBOARD_DUE_WINDOW_DAYS <= c["discharge_dday"] <= DASHBOARD_DUE_WINDOW_DAYS
                                         and not c.get("discharge_sms_at")),
         "ext1": sum(1 for c in admitted if c.get("ext_tier") == 1),
         "ext2": sum(1 for c in admitted if c.get("ext_tier") == 2),
@@ -5050,6 +5103,7 @@ def _ward_row_from_episode(ep):
         "roster_care_phase": _roster_care_phase(ep.get("care_type")),
         "rehab_end_date": ep.get("rehab_end_date"),
         "rehab_end_imported": ep.get("rehab_end_imported"),
+        "onset_date": ep.get("onset_date"),
         "roster_only": True,
     }
 

@@ -865,6 +865,8 @@ def init_db():
         "care_type": "TEXT",
         "rehab_end_date": "DATE",
         "rehab_end_imported": "INTEGER NOT NULL DEFAULT 0",
+        # 발병일 — 원무 명부 L열. 뇌졸중 퇴원예정 상한(발병일+2년) 계산에 쓴다.
+        "onset_date": "DATE",
         # 명부 1행 = 차트번호+입원일. 재적재해도 같은 회차를 덮어쓰도록 UNIQUE.
         # excel_import가 멱등이 아니라 중복이 섞였던 전례가 있어 키를 박아둔다.
         "roster_key": "TEXT",
