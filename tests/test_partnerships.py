@@ -302,7 +302,7 @@ class CooperationTests(unittest.TestCase):
         self.assertEqual(target['admissions'],1)
         page=self.client.get('/stats/hospitals?preset=custom&from=2026-02-01&to=2026-02-28').get_data(as_text=True)
         self.assertIn('모병원 전체 현황',page)
-        self.assertIn('상담의뢰 내림차순',page)
+        self.assertIn('상담의뢰 순',page)
         self.assertIn('병원명 검색',page)
         hit=models.hospital_referral_overview('2026-02-01','2026-02-28',q='테스트')
         self.assertEqual([h['name'] for h in hit['hospitals']],['테스트의원'])
