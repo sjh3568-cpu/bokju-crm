@@ -30,6 +30,17 @@
 
 {% if data.unnamed.referrals and not q %}<p class="staff-note">소개자 이름이 적히지 않은 상담이 <b>{{ data.unnamed.referrals }}건</b>(입원 {{ data.unnamed.admissions }}건) 있어 아래 표에서 빠졌습니다. 상담일지의 ‘소개자’ 칸에 이름을 적어주시면 함께 집계됩니다.</p>{% endif %}
 
+{% if data.quality.patients %}
+<section class="card staff-quality">
+  <div class="rollup-head"><h2>소개환자의 질</h2><small>소개해서 입원한 환자 기준 (원무 명부)</small></div>
+  <div class="quality-grid">
+    <div><small>소개 → 입원 환자</small><strong>{{ data.quality.patients }}</strong><span>명</span></div>
+    <div class="rate"><small>회복기(S005) 비율</small><strong>{{ data.quality.recovery_ratio }}</strong><span>% · {{ data.quality.recovery }}명</span></div>
+    <div><small>평균 재원일</small><strong>{{ data.quality.avg_stay }}</strong><span>일</span></div>
+  </div>
+</section>
+{% endif %}
+
 {# ── 기관·부서별 성과 (재단 내 환자 흐름) ── #}
 {% if data.orgs %}
 <section class="card staff-rollup">
@@ -148,7 +159,14 @@ document.querySelectorAll('.staff-table .ref-toggle').forEach(function (t) {
 .staff-kpis small{display:block;color:#64748b;font-weight:750}
 .staff-kpis strong{font-size:1.85rem;color:#17633a}.staff-kpis span{margin-left:3px;color:#64748b}
 .staff-note{margin:-6px 0 14px;padding:9px 13px;border-left:3px solid #fcd34d;background:#fffbeb;color:#8a6410;font-size:.78rem}
-.staff-rollup,.staff-monthly{padding:18px 20px;margin-bottom:14px}
+.staff-rollup,.staff-monthly,.staff-quality{padding:18px 20px;margin-bottom:14px}
+.staff-quality h2{font-size:1.02rem}
+.quality-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
+.quality-grid>div{padding:15px;border:1px solid #dbe5df;border-radius:11px;background:#fff}
+.quality-grid>div.rate{border-color:#bbe6cb;background:#f6fbf8}
+.quality-grid small{display:block;color:#64748b;font-weight:750;font-size:.74rem}
+.quality-grid strong{font-size:1.7rem;color:#17633a}.quality-grid span{margin-left:3px;color:#64748b;font-size:.8rem}
+@media(max-width:700px){.quality-grid{grid-template-columns:1fr}}
 .staff-rollup h2,.staff-monthly h2{font-size:1.02rem;margin-bottom:2px}
 .staff-rollup h2 small,.staff-monthly h2 small{font-weight:600;color:#94a3b8;font-size:.72rem}
 .rollup-head{display:flex;align-items:baseline;gap:8px;margin-bottom:12px}.rollup-head small{color:#94a3b8;font-size:.74rem}

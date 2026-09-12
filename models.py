@@ -4621,6 +4621,7 @@ def staff_referral_overview(date_from=None, date_to=None, q=None, internal_only=
 
     groups, unnamed = {}, {"referrals": 0, "admissions": 0}
     org_agg, dept_agg, monthly = {}, {}, {}
+    quality_pids = set()   # 소개해서 입원한 환자 — 회복기 비율·평균 재원일 산출용
     for r in raw:
         # LIKE는 '직원소개'가 다른 값의 일부로 들어간 경우도 걸리므로 정확히 확인한다.
         try:
@@ -4633,6 +4634,8 @@ def staff_referral_overview(date_from=None, date_to=None, q=None, internal_only=
         if internal_only and org not in internal_orgs:
             continue
         admitted = r["admission_status"] in ("입원완료", "퇴원완료")
+        if admitted and r["patient_id"]:
+            quality_pids.add(r["patient_id"])
         mkey = (r["consult_date"] or "")[:7]
         if mkey:
             m = monthly.setdefault(mkey, {"referrals": 0, "admissions": 0})
@@ -4707,6 +4710,44 @@ def staff_referral_overview(date_from=None, date_to=None, q=None, internal_only=
     referrals = sum(x["referrals"] for x in items) + (unnamed["referrals"] if not key else 0)
     admissions = sum(x["admissions"] for x in items) + (unnamed["admissions"] if not key else 0)
 
+    # 소개환자의 질 — 소개해서 입원한 환자의 회복기 비율·평균 재원일(원무 명부 기준).
+    quality = {"patients": 0, "recovery": 0, "recovery_ratio": 0, "avg_stay": 0}
+    if quality_pids:
+        conn2 = get_db()
+        ph = ",".join("?" * len(quality_pids))
+        eps = conn2.execute(
+            f"""SELECT patient_id, admitted_at, discharged_at, care_type
+                FROM admission_episodes
+                WHERE roster_key IS NOT NULL AND patient_id IN ({ph})
+                  AND admitted_at IS NOT NULL AND admitted_at != ''""",
+            list(quality_pids)).fetchall()
+        conn2.close()
+        latest = {}   # 환자별 최근 입원 회차
+        for e in eps:
+            prev = latest.get(e["patient_id"])
+            if prev is None or e["admitted_at"] > prev["admitted_at"]:
+                latest[e["patient_id"]] = e
+        today = date.today()
+        stays, rec = [], 0
+        for e in latest.values():
+            try:
+                a = date.fromisoformat(str(e["admitted_at"])[:10])
+            except ValueError:
+                continue
+            end = today
+            if e["discharged_at"]:
+                try:
+                    end = date.fromisoformat(str(e["discharged_at"])[:10])
+                except ValueError:
+                    pass
+            stays.append((end - a).days + 1)   # 입원일이 1일째
+            if (e["care_type"] or "").startswith("회복"):
+                rec += 1
+        n = len(stays)
+        quality = {"patients": n, "recovery": rec,
+                   "recovery_ratio": round(100 * rec / n, 1) if n else 0,
+                   "avg_stay": round(sum(stays) / n) if n else 0}
+
     orgs = sorted((_with_conversion({"org": o, **v}) for o, v in org_agg.items()),
                   key=lambda d: (-d["admissions"], -d["referrals"], d["org"]))
     depts = sorted((_with_conversion({"org": o, "dept": dp, **v}) for (o, dp), v in dept_agg.items()),
@@ -4716,7 +4757,7 @@ def staff_referral_overview(date_from=None, date_to=None, q=None, internal_only=
             "max_referrals": max_referrals, "q": (q or "").strip(),
             "unnamed": unnamed, "referrals": referrals, "admissions": admissions,
             "conversion": round(100 * admissions / referrals, 1) if referrals else 0,
-            "orgs": orgs, "depts": depts, "monthly": months,
+            "orgs": orgs, "depts": depts, "monthly": months, "quality": quality,
             "internal_only": internal_only, "org_options": list(STAFF_REFERRAL_ORGS)}
 
 
