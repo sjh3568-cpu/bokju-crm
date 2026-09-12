@@ -5285,7 +5285,10 @@ def aggregate_monthly(year: int, month: int) -> dict:
         "prev_referrals": sr_prev["referrals"], "prev_admissions": sr_prev["admissions"],
         "delta_referrals": _delta_pct(sr_this["referrals"], sr_prev["referrals"]),
         "delta_admissions": _delta_pct(sr_this["admissions"], sr_prev["admissions"]),
-        "top_referrers": sr_this["referrers"][:3],   # 입원순 상위 3명
+        "top_referrers": sr_this["referrers"][:5],   # 입원순 상위 5명(표)
+        # 그래프용 슬림 데이터 — top_referrers엔 환자목록까지 있어 tojson이 무겁다.
+        "chart": [{"name": r["name"], "referrals": r["referrals"], "admissions": r["admissions"]}
+                  for r in sr_this["referrers"][:6]],
         "orgs": sr_this["orgs"][:4],                 # 기관별
         "recovery_ratio": sr_this["quality"]["recovery_ratio"],
         "quality_patients": sr_this["quality"]["patients"],
