@@ -4961,6 +4961,8 @@ def hospital_referral_overview(date_from=None, date_to=None, q=None):
             'max_referrals':max_referrals,'q':(q or '').strip(),
             'linked_referrals':sum(x['linked_referrals'] for x in items),
             'linked_admissions':sum(x['linked_admissions'] for x in items),
+            'direct_referrals':sum(x['direct_referrals'] for x in items),
+            'direct_admissions':sum(x['direct_admissions'] for x in items),
             'referrals':sum(x['referrals'] for x in items),'admissions':sum(x['admissions'] for x in items),
             'conversion':round(100*sum(x['admissions'] for x in items)/sum(x['referrals'] for x in items),1) if sum(x['referrals'] for x in items) else 0}
 
