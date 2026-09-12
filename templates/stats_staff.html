@@ -22,11 +22,14 @@
 </div>
 
 <div class="staff-toggle">
-  <a class="{{ 'on' if not internal_only }}" href="{{ url_with(internal='0') }}">전체 소개</a>
-  <a class="{{ 'on' if internal_only }}" href="{{ url_with(internal='1') }}">재단 내부 직원만</a>
+  <a class="{{ 'on' if not internal_only and not org }}" href="{{ url_with(internal='0', org='') }}">전체 소개</a>
+  <a class="{{ 'on' if internal_only and not org }}" href="{{ url_with(internal='1', org='') }}">재단 내부</a>
+  <span class="toggle-sep"></span>
+  {% for o in data.org_options %}
+  <a class="org-btn {{ 'on' if org == o }}" href="{{ url_with(org=o, internal='') }}">{{ o }}</a>
+  {% endfor %}
   <small class="staff-toggle-desc">
-    <b>전체 소개</b> = 직원소개로 기록된 모든 상담(주변지인·타 병원 직원 등 외부 포함).
-    <b>재단 내부 직원만</b> = 소개자 기관이 <b>복주회복병원·경도요양병원·복주요양원</b>으로 입력된 건만(순수 재단 직원). 기관을 입력한 상담만 잡히므로, 이름만 있는 기존 기록은 아직 빠집니다.
+    <b>전체 소개</b> = 모든 직원소개(외부 지인·타 병원 포함) · <b>재단 내부</b> = 재단 3개 기관 소개만 · <b>기관 버튼</b> = 그 기관 소개만. 기관·부서를 입력한 상담만 기관별로 잡히므로, 이름만 있는 기존 기록은 아직 빠집니다.
   </small>
 </div>
 
@@ -43,7 +46,7 @@
 
 {% if data.quality.patients %}
 <section class="card staff-quality">
-  <div class="rollup-head"><h2>소개환자의 질</h2><small>소개해서 입원한 환자 기준 (원무 명부)</small></div>
+  <div class="rollup-head"><h2>소개 입원환자 현황</h2><small>소개해서 입원한 환자의 회복기 비율·평균 재원일 (원무 명부)</small></div>
   <div class="quality-grid">
     <div><small>소개 → 입원 환자</small><strong>{{ data.quality.patients }}</strong><span>명</span></div>
     <div class="rate"><small>회복기(S005) 비율</small><strong>{{ data.quality.recovery_ratio }}</strong><span>% · {{ data.quality.recovery }}명</span></div>
@@ -78,18 +81,18 @@
 {% if data.monthly|length > 1 %}
 {% set mmax = data.monthly|map(attribute='referrals')|max %}
 <section class="card staff-monthly">
-  <div class="rollup-head"><h2>월별 소개 추이</h2><small>월별 소개 건수와 입원 전환</small></div>
-  <div class="month-bars">
+  <div class="rollup-head"><h2>월별 소개 추이</h2><small>월평균 소개 <b>{{ data.avg_monthly_referrals }}</b> · 입원 <b>{{ data.avg_monthly_admissions }}</b></small></div>
+  <div class="month-chart"><div class="month-bars">
     {% for m in data.monthly %}
     <div class="mb" title="{{ m.month }} · 소개 {{ m.referrals }} · 입원 {{ m.admissions }}">
       <b class="mb-adm-n">{{ m.admissions }}</b>
       <div class="mb-bar"><i class="mb-ref" style="height:{{ (m.referrals*100/(mmax or 1))|round }}%"></i><i class="mb-adm" style="height:{{ (m.admissions*100/(mmax or 1))|round }}%"></i></div>
-      <span class="mb-ref-n">소개 {{ m.referrals }}</span>
+      <span class="mb-ref-n">{{ m.referrals }}</span>
       <span class="mb-mon">{{ m.month[2:] }}</span>
     </div>
     {% endfor %}
-  </div>
-  <div class="month-legend"><span><i class="lg-adm"></i><b>입원 전환</b> (강조)</span><span><i class="lg-ref"></i>소개 건수</span></div>
+  </div></div>
+  <div class="month-legend"><span><i class="lg-adm"></i>입원 전환</span><span><i class="lg-ref"></i>소개 건수</span></div>
 </section>
 {% endif %}
 
@@ -175,6 +178,9 @@ document.querySelectorAll('.staff-table .ref-toggle').forEach(function (t) {
 .staff-toggle>a{padding:7px 17px;border:1px solid var(--border);border-radius:22px;color:#4b6357;text-decoration:none;font-size:.85rem;font-weight:800;background:#fff;transition:.14s}
 .staff-toggle>a:hover{border-color:#a7cbb6}
 .staff-toggle>a.on{border-color:transparent;background:linear-gradient(135deg,var(--primary-light),var(--primary));color:#fff;box-shadow:0 5px 13px rgba(20,83,45,.24)}
+.toggle-sep{width:1px;height:22px;background:var(--border);margin:0 4px}
+.staff-toggle .org-btn{font-size:.82rem;padding:7px 15px}
+.staff-toggle .org-btn:not(.on){color:#5a7566;background:#f4f8f6}
 .staff-toggle-desc{flex-basis:100%;line-height:1.7;color:var(--text-light);font-size:.77rem;margin-top:2px;padding:11px 14px;background:#f7faf8;border:1px solid var(--border);border-radius:11px}
 .staff-toggle-desc b{color:var(--primary)}
 .staff-searched{display:flex;align-items:center;gap:8px;margin:-6px 0 14px;padding:10px 14px;border:1px solid #bfe6cd;border-radius:11px;background:#f2fbf5;color:var(--primary);font-size:.82rem}
@@ -207,7 +213,7 @@ document.querySelectorAll('.staff-table .ref-toggle').forEach(function (t) {
 .staff-monthly .rollup-head::before{background:linear-gradient(180deg,#5eead4,#0d9488);box-shadow:0 2px 7px rgba(13,148,136,.25)}
 .staff-overview{border-top:3px solid var(--primary)}
 
-/* 소개환자의 질 */
+/* 소개 입원환자 현황 */
 .quality-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
 .quality-grid>div{padding:17px 18px;border:1px solid #e4ebe7;border-radius:14px;background:linear-gradient(145deg,#fff 42%,#f7fbf9);box-shadow:var(--shadow-sm)}
 .quality-grid>div.rate{border-color:#bfe6cd;background:linear-gradient(145deg,#f4fbf6,#eafaf0)}
@@ -231,15 +237,16 @@ document.querySelectorAll('.staff-table .ref-toggle').forEach(function (t) {
 .rollup-note{margin:14px 0 0;color:#a0aec0;font-size:.73rem}
 
 /* 월별 추이 차트 */
-.month-bars{display:flex;align-items:end;gap:10px;overflow-x:auto;padding:10px 2px 0;border-bottom:1px solid var(--border)}
-.mb{display:flex;flex-direction:column;align-items:center;gap:5px;min-width:46px}
-.mb-bar{position:relative;width:26px;height:110px;display:flex;align-items:end;justify-content:center}
-.mb-bar i{position:absolute;bottom:0;border-radius:5px 5px 0 0}
-.mb-ref{width:26px;background:#e3ecf6;box-shadow:inset 0 0 0 1px #d4e0ee}
-.mb-adm{width:26px;background:linear-gradient(180deg,var(--primary-light),var(--primary))}
-.mb .mb-adm-n{font-size:1.02rem;color:#fff;font-weight:850;background:linear-gradient(135deg,var(--primary-light),var(--primary));padding:3px 10px;border-radius:11px;box-shadow:0 3px 9px rgba(20,83,45,.32);min-width:26px;text-align:center;letter-spacing:-.01em}
-.mb .mb-ref-n{font-size:.63rem;color:#a3aebb;font-weight:700}
-.mb .mb-mon{font-size:.68rem;color:#64748b;font-weight:800}
+.month-chart{overflow-x:auto;padding-top:4px}
+.month-bars{display:flex;align-items:end;gap:12px;padding:8px 4px 0;min-width:min-content;border-bottom:2px solid #e5eae8}
+.mb{display:flex;flex-direction:column;align-items:center;gap:5px;min-width:40px}
+.mb-bar{position:relative;width:28px;height:122px;display:flex;align-items:end;justify-content:center}
+.mb-bar i{position:absolute;bottom:0;border-radius:6px 6px 0 0;transition:height .35s ease}
+.mb-ref{width:28px;background:#ebf0ee;box-shadow:inset 0 0 0 1px #dde6e2}
+.mb-adm{width:28px;background:linear-gradient(180deg,#26c26a,var(--primary));box-shadow:0 -1px 5px rgba(20,83,45,.18)}
+.mb .mb-adm-n{font-size:.92rem;color:var(--primary);font-weight:850;letter-spacing:-.01em}
+.mb .mb-ref-n{font-size:.66rem;color:#a3aebb;font-weight:750}
+.mb .mb-mon{font-size:.67rem;color:#64748b;font-weight:800}
 .month-legend{display:flex;gap:14px;margin-top:11px;font-size:.73rem;color:var(--text-light);font-weight:700}
 .month-legend i{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:4px}
 .month-legend .lg-ref{background:#e3ecf6;box-shadow:inset 0 0 0 1px #d4e0ee}.month-legend .lg-adm{background:linear-gradient(180deg,var(--primary-light),var(--primary))}

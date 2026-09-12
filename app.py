@@ -2658,19 +2658,25 @@ def api_stats():
 @app.route("/stats/hospitals")
 @login_required
 def hospital_stats_view():
-    """모병원 전체의 상담의뢰·입원완료 성과를 상담의뢰 순으로 표시."""
+    """모병원 전체의 상담의뢰·입원완료 성과 + 전기 대비·질환군·협력기관 여부·종별/지역 필터."""
+    import hospital_analysis as ha
+    import partnerships
     preset, date_from, date_to = _stats_period_from_request()
     q = (request.args.get("q") or "").strip()
     sort = request.args.get("sort") or "referrals"
-    data=models.hospital_referral_overview(date_from,date_to,q=q or None)
-    # 기관연계 순은 협력 성과, 상담·입원 순은 유입 규모를 본다.
-    keys={"referrals":lambda h:(-h["referrals"],-h["admissions"]),
-          "admissions":lambda h:(-h["admissions"],-h["referrals"]),
-          "linked":lambda h:(-h["linked_admissions"],-h["linked_referrals"],-h["admissions"])}
-    data["hospitals"]=sorted(data["hospitals"],key=lambda h:(*keys.get(sort,keys["referrals"])(h),h["name"]))
+    kind = (request.args.get("kind") or "").strip() or None
+    region = (request.args.get("region") or "").strip() or None
+    partner = (request.args.get("partner") or "").strip() or None
+    data = ha.enrich(date_from, date_to, q=q or None)
+    options = ha.filter_options(data["hospitals"])          # 필터 목록은 걸러내기 전 전체 기준
+    data["hospitals"] = ha.apply_filters(data["hospitals"], kind=kind, region=region, partner=partner)
+    data["hospital_count"] = len(data["hospitals"])
+    key = ha.SORT_KEYS.get(sort, ha.SORT_KEYS["referrals"])
+    data["hospitals"] = sorted(data["hospitals"], key=lambda h: (*key(h), h["name"]))
     return render_template(
         "stats_hospitals.html", preset=preset, date_from=date_from, date_to=date_to,
-        q=q, sort=sort, data=data,
+        q=q, sort=sort, kind=kind, region=region, partner=partner, options=options, data=data,
+        csrf=partnerships._csrf(), can_edit_partners=menu_level(current_user(), "partners") >= PERM_EDIT,
     )
 
 
@@ -2682,8 +2688,11 @@ def staff_referral_view():
     q = (request.args.get("q") or "").strip()
     sort = request.args.get("sort") or "admissions"
     internal_only = request.args.get("internal") in ("1", "true", "yes")
+    org = (request.args.get("org") or "").strip() or None
+    if org and org not in STAFF_REFERRAL_ORGS:
+        org = None
     data = models.staff_referral_overview(date_from, date_to, q=q or None,
-                                          internal_only=internal_only)
+                                          internal_only=internal_only, org=org)
     # 기간 빠른선택 — 직원소개는 누적 성과라 '이번 달' 기본으론 몇 건뿐이다.
     _t = date.today()
     quick_ranges = [
@@ -2699,7 +2708,8 @@ def staff_referral_view():
                                key=lambda r: (*keys.get(sort, keys["admissions"])(r), r["name"]))
     return render_template(
         "stats_staff.html", preset=preset, date_from=date_from, date_to=date_to,
-        q=q, sort=sort, data=data, internal_only=internal_only, quick_ranges=quick_ranges,
+        q=q, sort=sort, data=data, internal_only=internal_only, org=org,
+        quick_ranges=quick_ranges,
     )
 
 

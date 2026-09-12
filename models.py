@@ -4607,7 +4607,7 @@ def _with_conversion(a):
     return a
 
 
-def staff_referral_overview(date_from=None, date_to=None, q=None, internal_only=False):
+def staff_referral_overview(date_from=None, date_to=None, q=None, internal_only=False, org=None):
     """직원소개 상담을 소개자별로 집계 — 기관·부서·소개 환자 상세까지 함께 낸다.
 
     직원소개는 전환율이 높아(도입 시점 45.5%, 전체 평균 26%) 효과가 큰 유입 경로다.
@@ -4617,6 +4617,7 @@ def staff_referral_overview(date_from=None, date_to=None, q=None, internal_only=
     """
     from config import STAFF_REFERRAL_ORGS
     internal_orgs = set(STAFF_REFERRAL_ORGS)
+    org_filter = (org or "").strip() or None   # 특정 기관만 볼 때
     where = ["referral_source_detail LIKE ?"]
     vals = [f"%{REFERRAL_DETAIL_STAFF}%"]
     if date_from:
@@ -4647,7 +4648,10 @@ def staff_referral_overview(date_from=None, date_to=None, q=None, internal_only=
         if REFERRAL_DETAIL_STAFF not in details:
             continue
         org = r["org"] or ""
-        if internal_only and org not in internal_orgs:
+        if org_filter:
+            if org != org_filter:
+                continue
+        elif internal_only and org not in internal_orgs:
             continue
         admitted = r["admission_status"] in ("입원완료", "퇴원완료")
         if admitted and r["patient_id"]:
@@ -4780,12 +4784,17 @@ def staff_referral_overview(date_from=None, date_to=None, q=None, internal_only=
     depts = sorted((_with_conversion({"org": o, "dept": dp, **v}) for (o, dp), v in dept_agg.items()),
                    key=lambda d: (-d["admissions"], -d["referrals"], d["org"]))
     months = [{"month": m, **v} for m, v in sorted(monthly.items())]
+    nm = len(months) or 1   # 월 평균 소개·입원 인원
+    avg_ref = round(sum(m["referrals"] for m in months) / nm, 1)
+    avg_adm = round(sum(m["admissions"] for m in months) / nm, 1)
     return {"referrers": items, "referrer_count": len(items), "total_count": total_count,
             "max_referrals": max_referrals, "q": (q or "").strip(),
             "unnamed": unnamed, "referrals": referrals, "admissions": admissions,
             "conversion": round(100 * admissions / referrals, 1) if referrals else 0,
             "orgs": orgs, "depts": depts, "monthly": months, "quality": quality,
-            "internal_only": internal_only, "org_options": list(STAFF_REFERRAL_ORGS)}
+            "avg_monthly_referrals": avg_ref, "avg_monthly_admissions": avg_adm,
+            "internal_only": internal_only, "org_filter": org_filter,
+            "org_options": list(STAFF_REFERRAL_ORGS)}
 
 
 # ─── 모병원 종별(상급종합·종합병원·병원·의원·요양병원…) ───
