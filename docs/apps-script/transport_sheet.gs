@@ -115,14 +115,20 @@ function upsert(ss, body) {
   }
   var inserted = false;
   if (!target) {
-    var lr2 = lastDataRow(tab);
-    target = lr2 + 1;
-    // 바로 아래 줄이 병합 셀(메모 블록 등)에 걸려 있으면 값이 조용히 사라진다 → 한 줄 끼워 넣는다
-    if (target > tab.getMaxRows() || tab.getRange(target, 1, 1, COL.CONTACT).getMergedRanges().length > 0) {
-      tab.insertRowsAfter(lr2, 1); inserted = true;
+    // 새 행은 항상 "끼워 넣는다". 그냥 다음 줄에 쓰면 아래쪽 병합 셀 구역(병동·협조부서 띠 등)에
+    // 들어가 값이 조용히 사라진다. 자리는 마지막 '진료협력' 행 바로 아래(서식도 그대로 물려받음),
+    // 진료협력 행이 없으면 마지막 데이터 행 아래.
+    var lr2 = lastDataRow(tab), after = lr2;
+    if (lr2 > HEADER_ROWS) {
+      var depts = tab.getRange(HEADER_ROWS + 1, COL.DEPT, lr2 - HEADER_ROWS, 1).getValues();
+      for (var k = depts.length - 1; k >= 0; k--) {
+        if (String(depts[k][0]).trim() === String(row[0]).trim()) { after = HEADER_ROWS + 1 + k; break; }
+      }
     }
-    var prevNo = target > HEADER_ROWS + 1 ? Number(tab.getRange(target - 1, COL.NO).getValue()) : 0;
-    tab.getRange(target, COL.NO).setValue(isNaN(prevNo) ? '' : prevNo + 1);
+    tab.insertRowsAfter(after, 1); inserted = true;
+    target = after + 1;
+    var prevNo = Number(tab.getRange(after, COL.NO).getValue());
+    tab.getRange(target, COL.NO).setValue(isNaN(prevNo) || prevNo === 0 ? '' : prevNo + 1);
   }
   tab.getRange(target, COL.DEPT, 1, row.length).setValues([row]);
   SpreadsheetApp.flush();

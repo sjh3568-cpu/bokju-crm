@@ -211,7 +211,8 @@ def refresh_assignments(days_back: int = 1, days_ahead: int = 14) -> dict:
         by_row = {int(x["row"]): x for x in res.get("rows") or [] if x.get("row")}
         by_name = {(x.get("name") or "").strip(): x for x in res.get("rows") or []}
         for r in [x for x in rows if x["pickup_date"] == d]:
-            hit = by_row.get(r.get("sheet_row") or -1) or by_name.get(r["patient_name"].strip())
+            # 스크립트가 행을 끼워 넣으면 저장해 둔 행 번호가 밀린다 → 이름으로 먼저 찾는다
+            hit = by_name.get(r["patient_name"].strip()) or by_row.get(r.get("sheet_row") or -1)
             if not hit:
                 continue
             conn.execute("""UPDATE transport_requests SET driver=?, vehicle=?, sheet_row=?, assigned_checked_at=CURRENT_TIMESTAMP
