@@ -440,6 +440,7 @@ def kpi_metrics(today=None, spark_days=7, trend_days=30):
         "consult": block(consults),
         "admission": block(admissions),
         "roster_admission": block(flow, "in"),
+        "discharge": block(flow, "out"),          # 명부 기준 퇴원 — 오늘·지난주 같은 요일·7일 스파크
         "census": block(census),
         "away": block(away),
         "trend": trend,

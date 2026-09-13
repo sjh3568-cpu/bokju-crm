@@ -370,10 +370,12 @@
             <span class="s">지난주 {{ today_weekday }}요일 <b>{{ mx.consult.last_week }}건</b> · 상담사 <b>{{ counselor_today|length }}명</b>{% if today_outcome.follow_up %} · 후속 <b>{{ today_outcome.follow_up }}</b>{% endif %}</span>
         </a>
         <a class="kc" href="#admission-schedule">
-            <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg></span><svg data-spark="{{ mx.admission.spark|join(',') }}" aria-hidden="true"></svg>
+            <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg></span><svg data-spark="{{ mx.admission.spark|join(',') }}" data-spark2="{{ mx.discharge.spark|join(',') }}" aria-hidden="true"><title>최근 7일 — 청록: 입원, 주황: 퇴원</title></svg>
             <span class="l">오늘 입원 · 퇴원</span>
-            <span class="v"><b class="num">{{ summary.admission_today or 0 }}</b><small>입원</small><b class="num pair">{{ discharges_today|length }}<small>퇴원</small></b>{{ delta_chip(mx.admission.delta) }}</span>
-            <span class="s">예정 <b>{{ summary.admission_today_planned or 0 }}</b> · 완료 <b>{{ summary.admission_today_completed or 0 }}</b> · 지난주 {{ today_weekday }} 입원 <b>{{ mx.admission.last_week }}</b>{% if unassigned_planned %} · <em class="warn-text">병실 미배정 {{ unassigned_planned|length }}</em>{% endif %}</span>
+            {% set discharge_today_due = discharge_due|selectattr('watch.days_left', 'equalto', 0)|list|length %}
+            <span class="v"><b class="num">{{ summary.admission_today or 0 }}</b><small>입원</small>{{ delta_chip(mx.admission.delta) }}<b class="num pair">{{ discharges_today|length }}<small class="c2">퇴원</small></b>{{ delta_chip(mx.discharge.delta) }}</span>
+            <span class="s" title="입원 예정=오늘 입원예정인데 아직 미완료 · 완료=오늘 입원완료 처리 · 지난주 같은 요일의 입원 수(▲▼ 배지의 비교 기준)">입원 예정 <b>{{ summary.admission_today_planned or 0 }}</b> · 완료 <b>{{ summary.admission_today_completed or 0 }}</b> · 지난주 {{ today_weekday }} <b>{{ mx.admission.last_week }}</b>{% if unassigned_planned %} · <em class="warn-text">병실 미배정 {{ unassigned_planned|length }}</em>{% endif %}</span>
+            <span class="s" title="퇴원 예정=퇴원 예정일이 오늘인 재원 · 완료=명부상 오늘 퇴원 처리 · 지난주 같은 요일의 퇴원 수(▲▼ 배지의 비교 기준)">퇴원 예정 <b>{{ discharge_today_due }}</b> · 완료 <b>{{ discharges_today|length }}</b> · 지난주 {{ today_weekday }} <b>{{ mx.discharge.last_week }}</b></span>
         </a>
         <a class="kc" href="/consultations?from={{ mk.from }}&to={{ mk.to }}">
             <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 7l-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/></svg></span><svg data-spark="{{ mk.spark_total|join(',') }}" aria-hidden="true"></svg>
@@ -383,7 +385,7 @@
         </a>
         <a class="kc" href="/stats">
             <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg></span><svg data-spark="{{ mk.spark_done|join(',') }}" aria-hidden="true"></svg>
-            <span class="l">이번달 입원 성사 · 전환율</span>
+            <span class="l">이번달 입원 · 전환율</span>
             <span class="v"><b class="num">{{ mk.done }}</b><small>건</small><b class="num rate">{{ mk.rate }}<small>%</small></b>{% if mk.delta_rate > 0 %}<span class="d up">▲ +{{ mk.delta_rate }}%p</span>{% elif mk.delta_rate < 0 %}<span class="d dn">▼ {{ mk.delta_rate }}%p</span>{% else %}<span class="d n">= 지난달</span>{% endif %}</span>
             <span class="s">지난달 동기간 <b>{{ mk.prev.done }}건 · {{ mk.prev.rate }}%</b> · 예정 <b>{{ mk.planned }}</b> · 보류 <b>{{ mk.hold }}</b></span>
         </a>
@@ -995,13 +997,18 @@ document.querySelectorAll('.due-tab').forEach(btn=>{
     function el(p,n,at,tx){const e=document.createElementNS(NS,n);for(const k in at)e.setAttribute(k,at[k]);if(tx!=null)e.textContent=tx;p.appendChild(e);return e;}
     document.querySelectorAll('svg[data-spark]').forEach(s=>{
         const v=s.dataset.spark.split(',').map(Number).filter(n=>!isNaN(n));if(v.length<2)return;
-        const w=120,h=44,mn=Math.min(...v),mx=Math.max(...v),r=(mx-mn)||1;
-        const pts=v.map((y,i)=>[i*(w/(v.length-1)),h-4-(y-mn)/r*(h-10)]);
+        // 두 번째 계열(data-spark2, 예: 퇴원)이 있으면 같은 축으로 겹쳐 그린다
+        const v2=(s.dataset.spark2||'').split(',').map(Number).filter(n=>!isNaN(n));const both=v2.length===v.length?v.concat(v2):v;
+        const w=120,h=44,mn=Math.min(...both),mx=Math.max(...both),r=(mx-mn)||1;
+        const toPts=arr=>arr.map((y,i)=>[i*(w/(arr.length-1)),h-4-(y-mn)/r*(h-10)]);
+        const pts=toPts(v);
         s.setAttribute('viewBox','0 0 '+w+' '+h);
-        const d=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+        const path=p=>p.map((q,i)=>(i?'L':'M')+q[0].toFixed(1)+' '+q[1].toFixed(1)).join(' ');
+        const d=path(pts);
         el(s,'path',{d:d+' L'+w+' '+h+' L0 '+h+' Z',class:'sp-area'});
         el(s,'path',{d:d,class:'sp-line'});
         const l=pts[pts.length-1];el(s,'circle',{cx:l[0],cy:l[1],r:3.5,class:'sp-dot'});
+        if(v2.length===v.length){const p2=toPts(v2);el(s,'path',{d:path(p2),class:'sp-line sp-line2'});const l2=p2[p2.length-1];el(s,'circle',{cx:l2[0],cy:l2[1],r:3,class:'sp-dot sp-dot2'});}
     });
     const svg=document.getElementById('dash-trend');
     if(!svg)return;
