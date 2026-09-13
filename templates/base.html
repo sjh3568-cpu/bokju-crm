@@ -23,7 +23,7 @@
                         <a href="/" {% if request.path == '/' %}class="active"{% endif %}><span class="nav-icon nav-icon-dashboard">🏠</span>대시보드{% if inbound_badge %}<span class="nav-notice-new" id="nav-inbound-badge" title="미처리 상담 문의">{{ inbound_badge }}</span>{% else %}<span class="nav-notice-new" id="nav-inbound-badge" hidden></span>{% endif %}</a>
                         <button type="button" class="nav-menu-toggle" aria-label="대시보드 하위 메뉴" aria-expanded="false">▾</button>
                         <div class="nav-dropdown">
-                            <a href="/calendar" {% if request.path.startswith('/calendar') %}class="active"{% endif %}><span>🗓️</span><span><b>통합 달력</b><small>상담·입원·퇴원·To-Do 일정</small></span></a>
+                            <a href="/calendar" {% if request.path.startswith('/calendar') %}class="active"{% endif %}><span>🗓️</span><span><b>통합 달력</b><small>상담·입원·퇴원·To-Do 일정</small></span>{% if calendar_badge %}<b class="calendar-tool-badge" title="오늘 일정·ToDo {{ calendar_badge }}건">{{ calendar_badge }}</b>{% endif %}</a>
                             <a href="/#admission-schedule"><span>🏥</span><span><b>입원 현황</b><small>과거·오늘·입원예정 조회</small></span></a>
                         </div>
                     </div>
@@ -83,7 +83,7 @@
                 </nav>
         <div class="sidebar-foot">
                 {# 계산기·할 일·분류체계 — 사이드바 레이아웃(≥1024px)에서는 JS가 우하단 플로팅 버튼을 여기로 옮겨 상시 펼침 #}
-                <div class="sidebar-tools" id="sidebar-tools" aria-label="도구">{% if P.get('dashboard',0) >= 1 %}<a id="calendar-tool" href="/calendar" class="{% if request.path.startswith('/calendar') %}active{% endif %}" title="통합 달력 — 상담·입원·퇴원·To-Do 일정"><span>🗓️</span><span class="calendar-tool-text">통합 달력</span>{% if calendar_badge %}<b class="calendar-tool-badge" title="오늘 일정·ToDo {{ calendar_badge }}건">{{ calendar_badge }}</b>{% endif %}</a>{% endif %}</div>
+                <div class="sidebar-tools" id="sidebar-tools" aria-label="도구"></div>{# 계산기·To-DO·분류체계 버튼이 스크립트로 이 안에 들어온다. 통합 달력은 대시보드 하위 메뉴 하나로만 #}
                 <details class="user-tag account-menu"><summary data-initial="{{ (current_user.display_name or current_user.username or '?')[:1] }}">{{ current_user.display_name }}<small class="role-chip">{{ ROLE_LABELS.get(current_user.role, current_user.role) }}</small><span>⌄</span></summary><div><a href="{{ url_for('account_settings') }}"><b>⚙ 내 계정 설정</b><small>개인화·권한·비밀번호</small></a><a href="{{ url_for('account_settings') }}#permissions">권한 확인·요청</a><a href="/support/">개선 요청·문의</a><form action="/logout" method="post"><button type="submit">로그아웃</button></form></div></details>
         </div>
     </aside>
@@ -254,26 +254,20 @@
     #sidebar-tools { position:fixed; left:0; bottom:0; z-index:125; width:var(--sbw, 244px); box-sizing:border-box;
         display:grid; gap:4px; padding:8px 12px 12px; background:#fff; border-top:1px solid var(--border); border-right:1px solid var(--border); }
     @media (max-width:1023px) { #sidebar-tools { display:none; } }
-    #sidebar-tools > a { display:flex; align-items:center; gap:9px; min-height:36px; padding:6px 10px; border:1px solid #bfe3dc; border-radius:9px;
-        background:var(--teal-soft); color:var(--teal-ink); font:inherit; font-size:.8rem; font-weight:700; line-height:1.2; text-decoration:none; }
+    /* 도구 3개(계산기·To-DO·분류체계 <button>)는 사이드바 메뉴와 같은 크기 */
     .calendar-tool-badge { margin-left:auto; min-width:18px; height:18px; line-height:18px; padding:0 6px; border-radius:9px; background:#0f8a7a; color:#fff; font-size:.68rem; font-weight:800; text-align:center; }
-    .sidebar-collapsed #sidebar-tools .calendar-tool-badge { position:absolute; right:2px; top:2px; margin:0; }
-    #sidebar-tools > a:hover, #sidebar-tools > a.active { background:#cdeee7; }
-    #sidebar-tools > a > span:first-child { width:20px; flex:0 0 20px; text-align:center; font-size:1rem; }
-    .sidebar-collapsed #sidebar-tools > a { justify-content:center; padding:6px 0; }
-    .sidebar-collapsed #sidebar-tools .calendar-tool-text { display:none; }
     @media (min-width:1024px) { body.has-sidebar .sidebar { padding-bottom:140px; } }   /* 계정 메뉴가 도구 칸에 가려지지 않게 */
     .sidebar-collapsed #sidebar-tools { padding:8px 8px 10px; }
-    #sidebar-tools > button { position:relative; right:auto; bottom:auto; width:100%; height:auto; min-height:36px; padding:6px 10px;
-        justify-content:flex-start; gap:9px; border:1px solid var(--border); border-radius:9px; background:#f4f7f5; color:var(--text);
-        font-size:.8rem; font-weight:700; opacity:1; transform:none; box-shadow:none; backdrop-filter:none; -webkit-backdrop-filter:none; transition:background .12s; }
-    #sidebar-tools > button:hover, #sidebar-tools > button:focus-visible { width:100%; padding:6px 10px; justify-content:flex-start; transform:none;
-        background:var(--teal-soft); color:var(--teal-ink); box-shadow:none; }
-    #sidebar-tools > button > span:first-child { width:20px; flex:0 0 20px; text-align:center; font-size:1rem; }
+    #sidebar-tools > button { position:relative; right:auto; bottom:auto; width:100%; height:auto; min-height:40px; padding:8px 12px;
+        justify-content:flex-start; gap:10px; border:1px solid var(--border); border-radius:10px; background:#f4f7f5; color:var(--text);
+        font-family:inherit; font-size:.92rem; font-weight:650; letter-spacing:-.01em; line-height:1.2; opacity:1; transform:none; box-shadow:none; backdrop-filter:none; -webkit-backdrop-filter:none; transition:background .12s; filter:none; }
+    #sidebar-tools > button:hover, #sidebar-tools > button:focus-visible { width:100%; padding:8px 12px; justify-content:flex-start; transform:none;
+        background:#e9efec; color:var(--text); box-shadow:none; filter:none; }
+    #sidebar-tools > button > span:first-child { width:22px; flex:0 0 22px; text-align:center; font-size:.95rem; }
     #sidebar-tools .krpg-fab-text, #sidebar-tools .todo-fab-text, #sidebar-tools .calc-fab-text { flex:1; max-width:none; opacity:1; text-align:left; transition:none; }
     #sidebar-tools .todo-fab-badge { position:static; margin-left:auto; }
-    .sidebar-collapsed #sidebar-tools > button { justify-content:center; padding:6px 0; }
-    .sidebar-collapsed #sidebar-tools > button:hover { justify-content:center; padding:6px 0; }
+    .sidebar-collapsed #sidebar-tools > button { justify-content:center; padding:8px 0; }
+    .sidebar-collapsed #sidebar-tools > button:hover { justify-content:center; padding:8px 0; }
     .sidebar-collapsed #sidebar-tools .krpg-fab-text, .sidebar-collapsed #sidebar-tools .todo-fab-text, .sidebar-collapsed #sidebar-tools .calc-fab-text { display:none; }
     .sidebar-collapsed #sidebar-tools .todo-fab-badge { position:absolute; right:2px; top:2px; margin:0; }
     #todo-fab:hover .todo-fab-badge,#todo-fab:focus-visible .todo-fab-badge { right:8px; }
