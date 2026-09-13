@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}통합 달력 · 복주 상담CRM{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div><h1>통합 달력</h1><p class="muted">환자 상담·입원·퇴원 일정과 나의 ToDo·공유받은 ToDo. 날짜를 누르면 그날 ToDo를 바로 등록합니다.</p></div>
+</div>
+<section class="card dash-calendar-card" id="integrated-calendar">
+    <div id="dash-calendar-body" class="dash-calendar-body">
+        <div class="dash-calendar-topline">
+            <div class="dash-calendar-legend" aria-label="일정 구분 — 눌러서 켜고 끄기" title="구분을 누르면 달력에서 숨기거나 다시 보입니다">
+                <button type="button" class="cal-filter consult" data-kind="consult" aria-pressed="true">상담</button><button type="button" class="cal-filter admission" data-kind="admission" aria-pressed="true">입원예정</button>
+                <button type="button" class="cal-filter admitted" data-kind="admitted" aria-pressed="true">입원</button><button type="button" class="cal-filter discharge" data-kind="discharge" aria-pressed="true">퇴원예정·퇴원</button>
+                <button type="button" class="cal-filter recovery" data-kind="recovery" aria-pressed="true">회복기 전환</button>
+                <button type="button" class="cal-filter todo" data-kind="todo" aria-pressed="true">나의 ToDo</button><button type="button" class="cal-filter shared" data-kind="shared" aria-pressed="true">공유 ToDo</button>
+                <span class="holiday-legend">공휴일·일요일</span>
+            </div>
+            <div class="dash-calendar-controls">
+                <div class="dash-cal-scope" role="group" aria-label="담당 범위">
+                    <a href="/calendar?cal_year={{ cal_year }}&cal_month={{ cal_month }}&cal_mine=1" class="{{ 'on' if cal_mine }}">내 담당만</a>
+                    <a href="/calendar?cal_year={{ cal_year }}&cal_month={{ cal_month }}&cal_mine=0" class="{{ 'on' if not cal_mine }}">전체</a>
+                </div>
+                <div class="dash-calendar-nav">
+                    <a class="btn btn-secondary btn-sm" href="/calendar?cal_year={{ cal_prev_year }}&cal_month={{ cal_prev_month }}&cal_mine={{ '1' if cal_mine else '0' }}" aria-label="이전 달">◀</a>
+                    <strong>{{ cal_label }}</strong>
+                    <a class="btn btn-secondary btn-sm" href="/calendar?cal_year={{ cal_next_year }}&cal_month={{ cal_next_month }}&cal_mine={{ '1' if cal_mine else '0' }}" aria-label="다음 달">▶</a>
+                    <a class="btn btn-secondary btn-sm" href="/calendar?cal_mine={{ '1' if cal_mine else '0' }}">오늘</a>
+                </div>
+            </div>
+        </div>
+        <div class="dash-calendar-wrap">
+        <table class="dash-calendar">
+            <thead><tr><th class="sun">일</th><th>월</th><th>화</th><th>수</th><th>목</th><th>금</th><th class="sat">토</th></tr></thead>
+            <tbody>
+            {% for week in dashboard_calendar_weeks %}<tr>
+                {% for cell in week %}
+                <td class="{% if not cell.in_month %}other-month {% endif %}{% if cell.is_today %}today {% endif %}{% if cell.holiday %}holiday {% endif %}" data-date="{{ cell.date }}" title="{{ cell.date }} 일정 등록">
+                    <div class="dash-cal-dayrow">
+                        <button type="button" class="dash-cal-day dash-cal-add{% if cell.is_holiday %} sun{% elif cell.weekday == 6 %} sat{% endif %}" data-date="{{ cell.date }}" aria-label="{{ cell.date }} 일정 등록">{{ cell.day }}</button>
+                        {% if cell.lunar %}<span class="dash-cal-lunar">{{ cell.lunar }}</span>{% endif %}
+                    </div>
+                    {% if cell.holiday %}<div class="dash-cal-holiday" title="{{ cell.holiday }}">{{ cell.holiday }}</div>{% endif %}
+                    <div class="dash-cal-events">
+                    {% for event in cell.events %}
+                        <a class="dash-cal-event {{ event.kind }}{% if event.done %} done{% endif %}" href="{{ event.href }}" title="{{ event.meta }} · {{ event.title }}{% if event.done %} (완료){% endif %}">
+                            {% if event.time %}<time>{{ event.time }}</time>{% endif %}{% if event.done %}<span class="dash-cal-check">✓</span>{% endif %}<b>{{ event.meta }}</b><span>{{ event.title }}</span>
+                        </a>
+                    {% endfor %}
+                    </div>
+                </td>
+                {% endfor %}
+            </tr>{% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+</section>
+<style>
+.dash-calendar-card{margin-top:16px}.dash-calendar-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:8px}.dash-calendar-head h3{margin:0}.dash-calendar-head p{margin:3px 0 0;color:var(--text-light);font-size:.82em}.dash-calendar-nav{display:flex;align-items:center;gap:6px}.dash-calendar-nav strong{min-width:82px;text-align:center;color:var(--primary);font-size:1.05rem}.dash-calendar-legend{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.dash-calendar-legend span{padding:3px 8px;border-radius:999px;font-size:.72em;font-weight:750}.dash-calendar-wrap{overflow-x:auto}.dash-calendar{width:100%;min-width:980px;border-collapse:collapse;table-layout:fixed}.dash-calendar th{padding:7px;border:1px solid var(--border);background:#f8fafc;color:var(--text-light);font-size:.78rem}.dash-calendar td{height:126px;padding:5px;vertical-align:top;border:1px solid var(--border);background:#fff}.dash-calendar td.other-month{background:#f8fafc;opacity:.62}.dash-calendar td.today{background:#ecfdf5;box-shadow:inset 0 0 0 2px var(--primary-light)}.dash-calendar .sun{color:#dc2626}.dash-calendar .sat{color:#2563eb}.dash-cal-day{font-size:.8rem;font-weight:800;margin-bottom:4px}.dash-cal-events{max-height:102px;overflow-y:auto;display:flex;flex-direction:column;gap:3px}.dash-cal-event{display:grid;grid-template-columns:auto auto minmax(0,1fr);align-items:center;gap:4px;padding:3px 5px;border-radius:5px;text-decoration:none;font-size:.69rem;line-height:1.2}.dash-cal-event time{font-variant-numeric:tabular-nums;font-weight:800}.dash-cal-event b{white-space:nowrap}.dash-cal-event span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dash-cal-event.consult,.dash-calendar-legend .consult{background:#dbeafe;color:#1e40af}.dash-cal-event.admission,.dash-calendar-legend .admission{background:#fef3c7;color:#92400e}.dash-cal-event.admitted,.dash-calendar-legend .admitted{background:#dcfce7;color:#166534}.dash-cal-event.discharge,.dash-cal-event.discharged,.dash-calendar-legend .discharge{background:#fee2e2;color:#991b1b}.dash-cal-event.todo,.dash-calendar-legend .todo{background:#f1f5f9;color:#334155}.dash-cal-event.shared,.dash-calendar-legend .shared{background:#ede9fe;color:#6d28d9}.dash-cal-event.done{opacity:.55}.dash-cal-event.done b,.dash-cal-event.done span{text-decoration:line-through}.dash-cal-check{font-weight:800;color:#16a34a}.dash-calendar-legend .holiday-legend{background:#fef2f2;color:#dc2626;box-shadow:inset 0 0 0 1px #fecaca}.dash-calendar-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.dash-cal-scope{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}.dash-cal-scope a{padding:5px 12px;font-size:.82em;font-weight:700;color:var(--text-light);text-decoration:none;background:#fff}.dash-cal-scope a.on{background:var(--primary);color:#fff}@media(max-width:700px){.dash-calendar-head{align-items:flex-start;flex-direction:column}.dash-calendar-nav{width:100%;justify-content:flex-end}}
+.dash-calendar td{height:132px}.dash-calendar td.holiday{background:#fff7f7}.dash-calendar td.today{background:#ecfdf5}.dash-cal-dayrow{display:flex;align-items:baseline;gap:5px;min-height:18px}.dash-cal-day{margin-bottom:0}.dash-cal-lunar{color:#94a3b8;font-size:.65rem}.dash-cal-holiday{margin:0 0 3px;color:#dc2626;font-size:.66rem;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dash-calendar-card{padding:0;overflow:hidden;border-color:#d8e3dc;box-shadow:0 4px 18px rgba(15,82,45,.06)}.dash-calendar-head{margin:0;padding:15px 17px;background:linear-gradient(105deg,#fff 0%,#f4faf6 100%)}.dash-calendar-head p{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.dash-calendar-month-chip{padding:2px 7px;border-radius:999px;background:#dcfce7;color:#166534;font-size:.78em;font-weight:800}.dash-calendar-toggle{display:inline-flex;align-items:center;gap:8px;min-width:154px;justify-content:center;padding:9px 13px;border:1px solid #b7d4c1;border-radius:999px;background:rgba(255,255,255,.9);color:var(--primary);font:inherit;font-size:.82rem;font-weight:800;cursor:pointer;box-shadow:0 3px 10px rgba(20,83,45,.09);transition:background .18s,box-shadow .18s,transform .18s}.dash-calendar-toggle:hover{background:#ecfdf5;box-shadow:0 5px 14px rgba(20,83,45,.16);transform:translateY(-1px)}.dash-toggle-icon{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--primary);color:#fff;font-size:1.15rem;line-height:1;transition:transform .22s}.dash-calendar-toggle[aria-expanded=true] .dash-toggle-icon{transform:rotate(180deg)}.dash-calendar-body{padding:0 16px 16px;border-top:1px solid #e6eee9}.dash-calendar-body[hidden]{display:none}.dash-calendar-topline{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:10px}.dash-calendar-topline .dash-calendar-legend{margin:0}@media(max-width:700px){.dash-calendar-head{flex-direction:row;align-items:center}.dash-calendar-head p{display:none}.dash-calendar-toggle{min-width:132px}.dash-calendar-topline{align-items:flex-start;flex-direction:column}.dash-calendar-nav{justify-content:flex-start}}
+.dash-calendar td[data-date]{cursor:pointer;transition:background-color .15s,box-shadow .15s}.dash-calendar td[data-date]:hover{background:#f3faf5;box-shadow:inset 0 0 0 1px #86b99a}.dash-cal-add{appearance:none;border:0;background:transparent;padding:1px 4px;border-radius:5px;font-family:inherit;font-weight:800;color:inherit;cursor:pointer}.dash-cal-add:hover,.dash-cal-add:focus-visible{background:#dff4e6;outline:2px solid #79ad8b;outline-offset:1px}
+.dash-cal-event,.dash-cal-event.admitted,.dash-cal-event.discharged{min-width:0;max-width:100%;height:21px;box-sizing:border-box;white-space:nowrap;overflow:hidden}.dash-cal-event>*{min-width:0}.dash-cal-event.admitted span,.dash-cal-event.discharged span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dash-calendar-card{margin-top:0}.dash-calendar-body{padding:0 16px 16px}.dash-calendar-body[hidden]{display:block}.dash-calendar-body{border-top:0}
+/* 구분 필터 — 누르면 그 구분을 숨긴다 (브라우저에 기억) */
+.dash-calendar-legend .cal-filter{border:0;cursor:pointer;font:inherit;padding:3px 8px;border-radius:999px;font-size:.72em;font-weight:750;line-height:1.4}
+.dash-calendar-legend .cal-filter[aria-pressed=false]{opacity:.38;text-decoration:line-through}
+.dash-cal-event.recovery,.dash-calendar-legend .recovery{background:#ccfbf1;color:#0f766e}
+.dash-calendar.hide-consult .dash-cal-event.consult,.dash-calendar.hide-admission .dash-cal-event.admission,.dash-calendar.hide-admitted .dash-cal-event.admitted,
+.dash-calendar.hide-discharge .dash-cal-event.discharge,.dash-calendar.hide-discharge .dash-cal-event.discharged,.dash-calendar.hide-recovery .dash-cal-event.recovery,
+.dash-calendar.hide-todo .dash-cal-event.todo,.dash-calendar.hide-shared .dash-cal-event.shared{display:none}
+</style>
+<script>
+(function(){
+    const calendar=document.querySelector('.dash-calendar');
+    if(!calendar)return;
+    // 구분 켜고 끄기 — localStorage 'bokju:cal-hide'
+    const KEY='bokju:cal-hide';let hidden=[];try{hidden=JSON.parse(localStorage.getItem(KEY)||'[]');}catch(e){hidden=[];}
+    const filters=document.querySelectorAll('.cal-filter');
+    function applyFilters(){filters.forEach(b=>{const k=b.dataset.kind,off=hidden.includes(k);b.setAttribute('aria-pressed',off?'false':'true');calendar.classList.toggle('hide-'+k,off);});}
+    filters.forEach(b=>b.addEventListener('click',()=>{const k=b.dataset.kind;hidden=hidden.includes(k)?hidden.filter(x=>x!==k):[...hidden,k];try{localStorage.setItem(KEY,JSON.stringify(hidden));}catch(e){}applyFilters();}));
+    applyFilters();
+    calendar.addEventListener('click',function(e){
+        if(e.target.closest('.dash-cal-event'))return;
+        const cell=e.target.closest('td[data-date]');
+        if(!cell)return;
+        document.dispatchEvent(new CustomEvent('bokju:todo-open',{detail:{date:cell.dataset.date}}));
+    });
+})();
+</script>
+{% endblock %}

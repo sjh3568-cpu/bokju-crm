@@ -9,23 +9,22 @@
     {% block head_extra %}{% endblock %}
 </head>
 {%- set P = current_user.perms if current_user else {} -%}
-<body class="app-page {% if request.path == '/' %}page-dashboard{% elif request.path.startswith('/consult') %}page-consult{% elif request.path.startswith('/ward') or request.path.startswith('/patients') %}page-ward{% elif request.path.startswith('/stats') %}page-stats{% elif request.path.startswith('/report') %}page-report{% elif request.path.startswith('/notices') %}page-notices{% elif request.path.startswith('/admin') %}page-admin{% elif request.path.startswith('/help') %}page-help{% endif %} {% if current_user %}{% if P.get('consult',0) >= 2 %}cw-consult {% endif %}{% if P.get('consult',0) >= 3 %}cc-consult {% endif %}{% if P.get('ward',0) >= 2 %}cw-ward {% endif %}{% if P.get('sms',0) >= 3 %}cc-sms {% endif %}{% endif %}"{% block body_attrs %}{% endblock %}>
-    <header>
-        <div class="container">
-            <div class="header-inner">
-                <a href="/" class="logo">복주 상담실 CRM</a>
-                {% if current_user %}
-                <div class="command-status" aria-label="오늘의 운영 현황"><span>{{ today_header }}</span><a href="/?schedule_date={{ today_str }}#admission-schedule">입원 <b>{{ command_metrics.admit }}</b></a><a href="/ward">퇴원 <b>{{ command_metrics.discharge }}</b></a><a href="{{ inbox_url }}">미처리 <b>{{ command_metrics.pending }}</b></a></div>
-                <div class="global-search"><form id="global-search-form" action="/consultations"><span aria-hidden="true">⌕</span><input id="global-search-input" name="q" placeholder="메뉴·환자·연락처·상담·협력기관 검색" autocomplete="off" aria-label="통합검색" aria-expanded="false"><kbd>/</kbd></form><div id="global-search-results" class="global-search-results" hidden></div></div>
+<body class="app-page {% if current_user %}has-sidebar{% endif %} {% if request.path == '/' %}page-dashboard{% elif request.path.startswith('/consult') %}page-consult{% elif request.path.startswith('/ward') or request.path.startswith('/patients') %}page-ward{% elif request.path.startswith('/stats') %}page-stats{% elif request.path.startswith('/report') %}page-report{% elif request.path.startswith('/notices') %}page-notices{% elif request.path.startswith('/admin') %}page-admin{% elif request.path.startswith('/help') %}page-help{% endif %} {% if current_user %}{% if P.get('consult',0) >= 2 %}cw-consult {% endif %}{% if P.get('consult',0) >= 3 %}cc-consult {% endif %}{% if P.get('ward',0) >= 2 %}cw-ward {% endif %}{% if P.get('sms',0) >= 3 %}cc-sms {% endif %}{% endif %}"{% block body_attrs %}{% endblock %}>
+    {% if current_user %}
+    {# ── 좌측 사이드바: 로고 + 주 메뉴 + 계정. 1024px 미만에서는 ☰ 로 여는 서랍. ── #}
+    <aside class="sidebar" id="sidebar" aria-label="주 메뉴">
+        <div class="sidebar-head">
+            <a href="/" class="logo"><i aria-hidden="true">복</i><span>복주 상담실 CRM</span></a>
+            <button type="button" class="sidebar-collapse" id="sidebar-collapse" aria-label="메뉴 접기/펼치기" title="메뉴 접기/펼치기">⟨</button>
+        </div>
                 <nav class="main-nav" aria-label="주 메뉴">
                     {% if P.get('dashboard',0) >= 1 %}
-                    <div class="nav-menu-group {% if request.path == '/' %}active{% endif %}">
+                    <div class="nav-menu-group {% if request.path == '/' or request.path.startswith('/calendar') %}active{% endif %}">
                         <a href="/" {% if request.path == '/' %}class="active"{% endif %}><span class="nav-icon nav-icon-dashboard">🏠</span>대시보드{% if inbound_badge %}<span class="nav-notice-new" id="nav-inbound-badge" title="미처리 상담 문의">{{ inbound_badge }}</span>{% else %}<span class="nav-notice-new" id="nav-inbound-badge" hidden></span>{% endif %}</a>
                         <button type="button" class="nav-menu-toggle" aria-label="대시보드 하위 메뉴" aria-expanded="false">▾</button>
                         <div class="nav-dropdown">
-                            <a href="/#integrated-calendar"><span>🗓️</span><span><b>통합 달력</b><small>상담·입원·퇴원·To-Do 일정</small></span></a>
+                            <a href="/calendar" {% if request.path.startswith('/calendar') %}class="active"{% endif %}><span>🗓️</span><span><b>통합 달력</b><small>상담·입원·퇴원·To-Do 일정</small></span></a>
                             <a href="/#admission-schedule"><span>🏥</span><span><b>입원 현황</b><small>과거·오늘·입원예정 조회</small></span></a>
-                            <a href="/#weekly-status"><span>📋</span><span><b>주간 현황</b><small>주간 상담 실적·공유 자료</small></span></a>
                         </div>
                     </div>
                     {% endif %}
@@ -63,6 +62,7 @@
                             <a href="/stats" {% if request.path == '/stats' %}class="active"{% endif %}><span>📊</span><span><b>통계 대시보드</b><small>상담·입원 핵심 지표</small></span></a>
                             <a href="/stats/hospitals" {% if request.path.startswith('/stats/hospitals') %}class="active"{% endif %}><span>🏥</span><span><b>모병원 분석</b><small>병원별 환자 유입·입원 성과</small></span></a>
                             <a href="/stats/staff" {% if request.path.startswith('/stats/staff') %}class="active"{% endif %}><span>🤝</span><span><b>직원소개 분석</b><small>소개한 직원별 상담·입원 성과</small></span></a>
+                            {% if P.get('report',0) >= 1 %}<a href="/report/weekly" {% if request.path.startswith('/report/weekly') %}class="active"{% endif %}><span>📋</span><span><b>주간 현황</b><small>주간 상담 실적·공유 자료</small></span></a>{% endif %}
                             {% if P.get('report',0) >= 1 %}<a href="/report/monthly" {% if request.path.startswith('/report') %}class="active"{% endif %}><span class="nav-icon nav-icon-report">📈</span><span><b>월간보고서</b><small>월별 핵심 실적 보고</small></span></a>{% endif %}
                         </div>
                     </div>
@@ -72,7 +72,8 @@
                     <a href="/support/" class="nav-support {% if request.path.startswith('/support') %}active{% endif %}" title="기능 개선·오류 신고·사용 문의"><span class="nav-icon" aria-hidden="true">💡</span>개선 요청</a>
                     {% if P.get('users',0) >= 2 %}
                     <div class="nav-menu-group nav-admin-group {% if request.path.startswith('/admin') %}active{% endif %}">
-                        <button type="button" class="nav-admin-button nav-menu-toggle" aria-expanded="false"><span class="nav-icon nav-icon-admin">⚙️</span>관리{% if password_reset_badge %}<span class="nav-notice-new">{{ password_reset_badge }}</span>{% endif %}<span class="nav-caret">▾</span></button>
+                        <a href="/admin/users" {% if request.path.startswith('/admin') %}class="active"{% endif %}><span class="nav-icon nav-icon-admin">⚙️</span>관리{% if password_reset_badge %}<span class="nav-notice-new">{{ password_reset_badge }}</span>{% endif %}</a>
+                        <button type="button" class="nav-menu-toggle" aria-label="관리 하위 메뉴" aria-expanded="false">▾</button>
                         <div class="nav-dropdown">
                             <a href="/admin/users" {% if request.path.startswith('/admin/users') or request.path.startswith('/admin/password-reset') %}class="active"{% endif %}><span class="nav-icon nav-icon-users">👥</span><span><b>사용자 관리</b><small>계정·권한·초기화 요청</small></span></a>
                             <a href="/admin/audit" {% if request.path.startswith('/admin/audit') %}class="active"{% endif %}><span class="nav-icon nav-icon-audit">🕘</span><span><b>이력 관리</b><small>조회·등록·변경 기록</small></span></a>
@@ -80,15 +81,32 @@
                     </div>
                     {% endif %}
                 </nav>
+        <div class="sidebar-foot">
+                {# 계산기·할 일·분류체계 — 사이드바 레이아웃(≥1024px)에서는 JS가 우하단 플로팅 버튼을 여기로 옮겨 상시 펼침 #}
+                <div class="sidebar-tools" id="sidebar-tools" aria-label="도구">{% if P.get('dashboard',0) >= 1 %}<a id="calendar-tool" href="/calendar" class="{% if request.path.startswith('/calendar') %}active{% endif %}" title="통합 달력 — 상담·입원·퇴원·To-Do 일정"><span>🗓️</span><span class="calendar-tool-text">통합 달력</span>{% if calendar_badge %}<b class="calendar-tool-badge" title="오늘 일정·ToDo {{ calendar_badge }}건">{{ calendar_badge }}</b>{% endif %}</a>{% endif %}</div>
+                <details class="user-tag account-menu"><summary data-initial="{{ (current_user.display_name or current_user.username or '?')[:1] }}">{{ current_user.display_name }}<small class="role-chip">{{ ROLE_LABELS.get(current_user.role, current_user.role) }}</small><span>⌄</span></summary><div><a href="{{ url_for('account_settings') }}"><b>⚙ 내 계정 설정</b><small>개인화·권한·비밀번호</small></a><a href="{{ url_for('account_settings') }}#permissions">권한 확인·요청</a><a href="/support/">개선 요청·문의</a><form action="/logout" method="post"><button type="submit">로그아웃</button></form></div></details>
+        </div>
+    </aside>
+    <div class="sidebar-backdrop" id="sidebar-backdrop" hidden></div>
+    {% endif %}
+
+    <div class="app-main">
+    <header class="topbar">
+        <div class="header-inner">
+            {% if current_user %}
+            <button type="button" class="sidebar-open" id="sidebar-open" aria-label="메뉴 열기" aria-controls="sidebar" aria-expanded="false">☰</button>
+                <div class="command-status" aria-label="오늘의 운영 현황"><span>{{ today_header }}</span><a href="/?schedule_date={{ today_str }}#admission-schedule">입원 <b>{{ command_metrics.admit }}</b></a><a href="/ward">퇴원 <b>{{ command_metrics.discharge }}</b></a><a href="{{ inbox_url }}">미처리 <b>{{ command_metrics.pending }}</b></a></div>
+                <div class="global-search"><form id="global-search-form" action="/consultations"><span aria-hidden="true">⌕</span><input id="global-search-input" name="q" placeholder="메뉴·환자·연락처·상담·협력기관 검색" autocomplete="off" aria-label="통합검색" aria-expanded="false"><kbd>/</kbd></form><div id="global-search-results" class="global-search-results" hidden></div></div>
                 {% set alert_total = (todo_badge or 0) + (inbound_badge or 0) + (password_reset_badge or 0) + (1 if has_unread_required_notice else 0) %}
                 <div class="header-tools">
                     <button type="button" class="header-tool-btn alert-bell-btn" id="alert-center-btn" aria-label="통합 알림센터" aria-expanded="false" title="통합 알림센터" data-fixed-count="{{ alert_total - (inbound_badge or 0) }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><b id="alert-total-badge"{% if not alert_total %} hidden{% endif %}>{{ alert_total }}</b></button>
                     <a href="/help" class="header-tool-btn help-tool-btn {% if request.path.startswith('/help') %}active{% endif %}" aria-label="상담 매뉴얼" title="상담 매뉴얼">📖</a>
                     <button type="button" class="header-tool-btn" id="display-settings-btn" aria-label="화면 설정" aria-expanded="false">Aa</button>
                 </div>
-                <details class="user-tag account-menu"><summary>{{ current_user.display_name }}<small class="role-chip">{{ ROLE_LABELS.get(current_user.role, current_user.role) }}</small><span>⌄</span></summary><div><a href="{{ url_for('account_settings') }}"><b>⚙ 내 계정 설정</b><small>개인화·권한·비밀번호</small></a><a href="{{ url_for('account_settings') }}#permissions">권한 확인·요청</a><a href="/support/">개선 요청·문의</a><form action="/logout" method="post"><button type="submit">로그아웃</button></form></div></details>
-                {% endif %}
-            </div>
+            {% if P.get('consult',0) >= 3 %}<a href="/consult/new" class="header-new-consult"><span aria-hidden="true">＋</span> 새 상담</a>{% endif %}
+            {% else %}
+            <a href="/" class="logo"><i aria-hidden="true">복</i><span>복주 상담실 CRM</span></a>
+            {% endif %}
         </div>
     </header>
 
@@ -185,6 +203,7 @@
             <p>본 시스템은 사내망에서만 동작합니다. 환자 정보는 외부로 전송되지 않습니다.</p>
         </div>
     </footer>
+    </div><!-- /.app-main -->
     {% block scripts %}{% endblock %}
     {% if current_user %}
     <script src="/static/js/date-presets.js"></script>
@@ -231,6 +250,32 @@
     #krpg-fab:hover .krpg-fab-text,#todo-fab:hover .todo-fab-text,#calc-fab:hover .calc-fab-text,
     #krpg-fab:focus-visible .krpg-fab-text,#todo-fab:focus-visible .todo-fab-text,#calc-fab:focus-visible .calc-fab-text { max-width:105px; opacity:1; transition-delay:.04s; }
     .todo-fab-badge { position:absolute; right:-2px; top:-5px; }
+    /* 좌측 제일 하단 도구 3줄 — 화면에 고정(fixed)이라 본문을 아무리 내려도 늘 보인다. 사이드바 폭(--sbw)을 따라간다. */
+    #sidebar-tools { position:fixed; left:0; bottom:0; z-index:125; width:var(--sbw, 244px); box-sizing:border-box;
+        display:grid; gap:4px; padding:8px 12px 12px; background:#fff; border-top:1px solid var(--border); border-right:1px solid var(--border); }
+    @media (max-width:1023px) { #sidebar-tools { display:none; } }
+    #sidebar-tools > a { display:flex; align-items:center; gap:9px; min-height:36px; padding:6px 10px; border:1px solid #bfe3dc; border-radius:9px;
+        background:var(--teal-soft); color:var(--teal-ink); font:inherit; font-size:.8rem; font-weight:700; line-height:1.2; text-decoration:none; }
+    .calendar-tool-badge { margin-left:auto; min-width:18px; height:18px; line-height:18px; padding:0 6px; border-radius:9px; background:#0f8a7a; color:#fff; font-size:.68rem; font-weight:800; text-align:center; }
+    .sidebar-collapsed #sidebar-tools .calendar-tool-badge { position:absolute; right:2px; top:2px; margin:0; }
+    #sidebar-tools > a:hover, #sidebar-tools > a.active { background:#cdeee7; }
+    #sidebar-tools > a > span:first-child { width:20px; flex:0 0 20px; text-align:center; font-size:1rem; }
+    .sidebar-collapsed #sidebar-tools > a { justify-content:center; padding:6px 0; }
+    .sidebar-collapsed #sidebar-tools .calendar-tool-text { display:none; }
+    @media (min-width:1024px) { body.has-sidebar .sidebar { padding-bottom:140px; } }   /* 계정 메뉴가 도구 칸에 가려지지 않게 */
+    .sidebar-collapsed #sidebar-tools { padding:8px 8px 10px; }
+    #sidebar-tools > button { position:relative; right:auto; bottom:auto; width:100%; height:auto; min-height:36px; padding:6px 10px;
+        justify-content:flex-start; gap:9px; border:1px solid var(--border); border-radius:9px; background:#f4f7f5; color:var(--text);
+        font-size:.8rem; font-weight:700; opacity:1; transform:none; box-shadow:none; backdrop-filter:none; -webkit-backdrop-filter:none; transition:background .12s; }
+    #sidebar-tools > button:hover, #sidebar-tools > button:focus-visible { width:100%; padding:6px 10px; justify-content:flex-start; transform:none;
+        background:var(--teal-soft); color:var(--teal-ink); box-shadow:none; }
+    #sidebar-tools > button > span:first-child { width:20px; flex:0 0 20px; text-align:center; font-size:1rem; }
+    #sidebar-tools .krpg-fab-text, #sidebar-tools .todo-fab-text, #sidebar-tools .calc-fab-text { flex:1; max-width:none; opacity:1; text-align:left; transition:none; }
+    #sidebar-tools .todo-fab-badge { position:static; margin-left:auto; }
+    .sidebar-collapsed #sidebar-tools > button { justify-content:center; padding:6px 0; }
+    .sidebar-collapsed #sidebar-tools > button:hover { justify-content:center; padding:6px 0; }
+    .sidebar-collapsed #sidebar-tools .krpg-fab-text, .sidebar-collapsed #sidebar-tools .todo-fab-text, .sidebar-collapsed #sidebar-tools .calc-fab-text { display:none; }
+    .sidebar-collapsed #sidebar-tools .todo-fab-badge { position:absolute; right:2px; top:2px; margin:0; }
     #todo-fab:hover .todo-fab-badge,#todo-fab:focus-visible .todo-fab-badge { right:8px; }
     @media (max-width:680px) {
         #krpg-fab,#todo-fab,#calc-fab,#krpg-fab:hover,#todo-fab:hover,#calc-fab:hover { right:14px; width:48px; height:48px; padding:0; justify-content:center; }
@@ -486,6 +531,34 @@
     const pairs=[['alert-center-btn','alert-center'],['display-settings-btn','display-settings']];
     function closeAll(except){pairs.forEach(([bid,pid])=>{if(pid===except)return;const panel=document.getElementById(pid),btn=document.getElementById(bid);if(panel)panel.hidden=true;if(btn)btn.setAttribute('aria-expanded','false');});}
     pairs.forEach(([bid,pid])=>{const btn=document.getElementById(bid),panel=document.getElementById(pid);if(!btn||!panel)return;btn.addEventListener('click',e=>{e.stopPropagation();const opening=panel.hidden;closeAccountMenu();closeNavMenus();closeAll(opening?pid:null);panel.hidden=!opening;btn.setAttribute('aria-expanded',String(opening));});panel.addEventListener('click',e=>e.stopPropagation());});
+    // ── 사이드바: 데스크톱은 접기(아이콘만)/펼치기, 좁은 화면은 서랍 열기/닫기 ──
+    (function(){
+        const body=document.body,side=document.getElementById('sidebar'),backdrop=document.getElementById('sidebar-backdrop');
+        const openBtn=document.getElementById('sidebar-open'),collapseBtn=document.getElementById('sidebar-collapse');
+        if(!side)return;
+        const KEY='bokju:sidebar';
+        // 상담일지 폼(종이 양식 1:1, 넓음)은 처음 열 때 접힌 채로 시작한다 — 저장된 취향과 무관.
+        const formPage=/^\/consult\/(new|\d+\/edit)/.test(location.pathname);
+        let stored=null;try{stored=localStorage.getItem(KEY);}catch(e){}
+        const collapsed=formPage?true:(stored==='collapsed');
+        body.classList.toggle('sidebar-collapsed',collapsed);
+        function setCollapsed(v,persist){body.classList.toggle('sidebar-collapsed',v);if(persist&&!formPage){try{localStorage.setItem(KEY,v?'collapsed':'open');}catch(e){}}}
+        collapseBtn?.addEventListener('click',()=>setCollapsed(!body.classList.contains('sidebar-collapsed'),true));
+        // 계산기·할 일·분류체계 — 사이드바 레이아웃에서는 좌측 하단(사이드바 발치)에 상시 펼침, 좁은 화면은 우하단 플로팅.
+        const tools=document.getElementById('sidebar-tools'), wide=window.matchMedia('(min-width:1024px)');
+        function placeTools(){
+            if(!tools)return;
+            const fabs=['calc-fab','todo-fab','krpg-fab'].map(id=>document.getElementById(id)).filter(Boolean);
+            if(wide.matches){fabs.forEach(b=>{if(b.parentNode!==tools)tools.appendChild(b);});}
+            else{fabs.forEach(b=>{if(b.parentNode===tools)document.body.appendChild(b);});}
+        }
+        placeTools(); wide.addEventListener?wide.addEventListener('change',placeTools):wide.addListener(placeTools);
+        function setDrawer(open){body.classList.toggle('sidebar-drawer-open',open);if(backdrop)backdrop.hidden=!open;openBtn?.setAttribute('aria-expanded',String(open));if(open)side.querySelector('a,button')?.focus();}
+        openBtn?.addEventListener('click',()=>setDrawer(!body.classList.contains('sidebar-drawer-open')));
+        backdrop?.addEventListener('click',()=>setDrawer(false));
+        document.addEventListener('keydown',e=>{if(e.key==='Escape'&&body.classList.contains('sidebar-drawer-open'))setDrawer(false);});
+        side.addEventListener('click',e=>{if(e.target.closest('a[href]')&&body.classList.contains('sidebar-drawer-open'))setDrawer(false);});
+    })();
     const navGroups=document.querySelectorAll('.nav-menu-group');
     function setNavMenuOpen(group, opening){
         group.classList.toggle('open',opening);
@@ -496,16 +569,12 @@
         const dropdown=group.querySelector('.nav-dropdown');
         if(!dropdown)return;
         dropdown.id='nav-dropdown-'+index;
-        group.addEventListener('pointerenter',e=>{
-            if(e.pointerType!=='mouse')return;
-            closeAll();
-            closeAccountMenu();
-            closeNavMenus(group);
-            setNavMenuOpen(group,true);
-        });
-        group.addEventListener('pointerleave',e=>{
-            if(e.pointerType==='mouse')setNavMenuOpen(group,false);
-        });
+        // 현재 페이지가 속한 그룹은 처음부터 펼쳐 둔다. 나머지는 마우스를 잠깐 올리면(120ms) 안쪽으로 펼쳐지고
+        // 벗어나면 잠시 뒤(180ms) 닫힌다 — ▾로 고정해 둔 그룹(.open)은 건드리지 않는다.
+        if(group.classList.contains('active'))setNavMenuOpen(group,true);
+        let hoverT;
+        group.addEventListener('mouseenter',()=>{clearTimeout(hoverT);hoverT=setTimeout(()=>group.classList.add('hover'),120);});
+        group.addEventListener('mouseleave',()=>{clearTimeout(hoverT);hoverT=setTimeout(()=>group.classList.remove('hover'),180);});
         group.querySelectorAll(':scope > a, :scope > .nav-menu-toggle').forEach(trigger=>{
             // 메뉴 이름(<a>)은 그대로 이동한다. 하위 메뉴를 펼치는 것은 ▾ 버튼과 마우스 올리기.
             // 예전에는 <a>에도 preventDefault를 걸어, 하위 메뉴에서 고르지 않으면
@@ -540,7 +609,7 @@
                 group.querySelector(':scope > a, :scope > .nav-menu-toggle').focus();
             }
         });
-        group.addEventListener('focusout',e=>{if(!group.contains(e.relatedTarget))setNavMenuOpen(group,false);});
+        group.addEventListener('focusout',e=>{if(!group.contains(e.relatedTarget)&&!group.classList.contains('active'))setNavMenuOpen(group,false);});
     });
     if(accountMenu){
         const summary=accountMenu.querySelector('summary');

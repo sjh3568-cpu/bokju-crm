@@ -30,6 +30,7 @@ from flask import (
 )
 
 import backup
+import dashboard_metrics
 import models
 import release_notes
 from auth import (
@@ -124,10 +125,10 @@ _remember_serializer = URLSafeTimedSerializer(app.secret_key, salt="bokju-auto-l
 # 통합 인박스(/inbox) — 2026-09-10 기능 보류로 기본 숨김.
 # 끄면 좌측 메뉴·통합검색·시작화면 선택지에서 사라지고 라우트는 404가 된다.
 # 데이터(옴니채널 커뮤니케이션)와 대시보드 '미처리 인바운드' 카드는 그대로 살아 있어
-# 미처리 문의는 대시보드(/#inbound)에서 계속 처리한다. 되살리려면 .env에 INBOX_ENABLED=1.
+# 미처리 문의는 대시보드 오늘 처리 필요(/#action-queue)에서 계속 처리한다. 되살리려면 .env에 INBOX_ENABLED=1.
 INBOX_ENABLED = os.getenv("INBOX_ENABLED", "0") == "1"
 # 인박스를 숨긴 동안 미처리 배지·알림은 대시보드 인바운드 카드로 보낸다.
-INBOX_URL = "/inbox" if INBOX_ENABLED else "/#inbound"
+INBOX_URL = "/inbox" if INBOX_ENABLED else "/#action-queue"
 
 _db_initialized = False
 # 다중 스레드(waitress) 환경에서 첫 요청 여러 건이 동시에 들어오면 init_db()가
@@ -287,8 +288,8 @@ def _route_requirement(path: str, method: str):
     if path.startswith("/report") or path.startswith("/api/report"):
         return "report", PERM_VIEW
 
-    # ── 대시보드 (루트) ──
-    if path == "/" or path.startswith("/api/dashboard"):
+    # ── 대시보드 (루트) · 통합 달력 ──
+    if path == "/" or path.startswith("/api/dashboard") or path.startswith("/calendar"):
         return "dashboard", PERM_VIEW
 
     return None, 0
@@ -386,6 +387,19 @@ def _inject_globals():
             todo_badge = models.todo_badge_count(_u["id"], date.today().isoformat())
         except Exception:
             todo_badge = 0
+    # 통합 달력 배지 — 오늘 잡힌 상담·입원·퇴원 일정 + 오늘 ToDo(나의·공유, 미완료) 건수
+    calendar_badge = 0
+    if _u:
+        try:
+            _t = date.today().isoformat()
+            for _r in models.dashboard_calendar_rows(_t, _t, None):
+                if any((_r.get(k) or "")[:10] == _t for k in (
+                        "consult_date", "planned_admission_date", "actual_admission_date",
+                        "admission_date", "discharge_due_date", "discharge_date")):
+                    calendar_badge += 1
+            calendar_badge += sum(1 for t in models.list_todos_range(_u["id"], _t, _t) if not t.get("done"))
+        except Exception:
+            calendar_badge = 0
     pending_notice = (models.first_unread_required_announcement(
         _u["id"], _u.get("role", "staff")) if _u else None)
     password_reset_badge = 0
@@ -416,6 +430,7 @@ def _inject_globals():
         "app_version": APP_VERSION,
         "app_developer": APP_DEVELOPER,
         "todo_badge": todo_badge,
+        "calendar_badge": calendar_badge,
         "has_unread_required_notice": bool(pending_notice),
         "password_reset_badge": password_reset_badge,
         "inbound_badge": inbound_badge,
@@ -1138,9 +1153,10 @@ _ACTION_GROUP_MAP = {
     "상담보류": "보류",
     "보류": "보류",
     "입원예정": "입원예정일",
+    "운행": "운행",
 }
 # 순서·묶음은 아래 KPI 카드 줄과 맞춘다 — 오늘(파랑) → 기한(주황) → 대기(회색).
-_ACTION_GROUP_ORDER = ("입원준비", "담당자", "전환체크", "퇴원예정",
+_ACTION_GROUP_ORDER = ("입원준비", "운행", "담당자", "퇴원예정",
                        "문의", "재연락", "보류", "입원예정일")
 _ACTION_GROUP_BAND = {
     "입원준비": "today", "담당자": "today",
@@ -1164,7 +1180,8 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
 
     STALE_THRESHOLD = 8  # 일. 이 이상 방치된 건은 '오래 방치' 섹션으로 분리.
 
-    def add(kind, tone, title, detail="", meta="", href=None, sort=50, age_days=0):
+    def add(kind, tone, title, detail="", meta="", href=None, sort=50, age_days=0, action=None):
+        # action = {"type": "comm"|"callback", "id": n} — 행에서 바로 완료/상담 등록을 누를 수 있게.
         items.append({
             "kind": kind,
             "tone": tone,
@@ -1175,6 +1192,8 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
             "sort": sort,
             "age_days": age_days or 0,
             "is_stale": (age_days or 0) >= STALE_THRESHOLD,
+            "action": action,
+            "group": _dashboard_action_group(kind),   # 카드의 세부 탭 이름
         })
 
     for m in open_comms:
@@ -1188,9 +1207,10 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
             who,
             (m.get("summary") or m.get("body") or "")[:70],
             _dashboard_elapsed_label(occurred),
-            "/#inbound",
+            f"/consult/new?comm_id={m.get('id')}" if m.get("id") else "/consultations",
             0 if tone == "danger" else 15 if tone == "warn" else 45,
             age_days=int(hours // 24),
+            action={"type": "comm", "id": m.get("id")} if m.get("id") else None,
         )
 
     for r in callbacks:
@@ -1207,9 +1227,10 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
                 r.get("consult_result_reason") or "",
             ) if v),
             meta,
-            f"/consult/{r.get('id')}" if r.get("id") else "/#inbound",
+            f"/consult/{r.get('id')}" if r.get("id") else "/consultations",
             8 if tone == "danger" else 25,
             age_days=days,
+            action={"type": "callback", "id": r.get("id")} if r.get("id") else None,
         )
 
     for r in data.get("admission_by_status", {}).get("planned", []):
@@ -1249,33 +1270,22 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
                 age_days=0,
             )
 
-    for d in recovery_due:
-        left = d["watch"].get("billing_left")
-        # left가 음수면 만료 후 경과일수 → 방치 판단 기준
-        age = -left if (left is not None and left < 0) else 0
-        add(
-            "전환체크",
-            "danger" if left is not None and left <= 0 else "warn",
-            d["con"].get("patient_name") or "환자 미지정",
-            "회복기 수가 만료 임박",
-            f"{abs(left)}일 초과" if left is not None and left < 0 else f"D-{left}",
-            f"/consult/{d['con'].get('id')}" if d["con"].get("id") else None,
-            6 if left is not None and left <= 0 else 22,
-            age_days=age,
-        )
+    # 회복기 전환(전환체크)은 아래 '기한 임박' 카드와 겹치므로 큐에 넣지 않는다 (2026-09-13).
 
+    # 퇴원예정: 예정일이 지났는데 아직 재원인 환자만(확인·연장 필요). 앞으로 올 D-30은 '기한 임박' 카드가 맡는다.
     for d in discharge_due:
         left = d["watch"].get("days_left")
-        age = -left if (left is not None and left < 0) else 0
+        if left is None or left >= 0:
+            continue
         add(
             "퇴원예정",
-            "danger" if left is not None and left <= 0 else "warn",
+            "danger",
             d["con"].get("patient_name") or "환자 미지정",
-            "퇴원 예정일 확인 필요",
-            f"{abs(left)}일 초과" if left is not None and left < 0 else f"D-{left}",
+            "퇴원 예정일이 지남 — 퇴원·연장 확인",
+            f"{-left}일 초과",
             f"/consult/{d['con'].get('id')}" if d["con"].get("id") else None,
-            10 if left is not None and left <= 0 else 30,
-            age_days=age,
+            10,
+            age_days=-left,
         )
 
     for h in data.get("holds", []):
@@ -1335,6 +1345,7 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
 
     return {
         "items": today_items[:14],
+        "items_all": today_items,
         "stale_items": stale_items[:30],
         "groups": groups,
         "today_total": len(today_items),
@@ -2034,7 +2045,20 @@ def _dashboard_calendar_context(uid, year, month, counselor=None):
                 done=bool(todo.get("done")))
             cursor += timedelta(days=1)
 
-    order = {"admission": 0, "admitted": 0, "discharge": 1, "discharged": 1,
+    # 회복기 전환일 — 재원 중 환자의 회복기 수가 만료일(30일 전 보호자 안내의 기준일). 달력에서 켜고 끌 수 있다.
+    try:
+        _census, residents = _dashboard_residents()
+        for con in residents:
+            if counselor and (con.get("counselor") or "").strip() != counselor:
+                continue
+            ax = _admission_expiry(con)
+            bd = ax.get("billing_date") if ax else None
+            if bd:
+                add(bd, "recovery", con.get("patient_name") or "환자 미지정", "회복기 전환", f"/consult/{con['id']}")
+    except Exception:
+        app.logger.exception("달력 회복기 전환일 계산 실패")
+
+    order = {"admission": 0, "admitted": 0, "discharge": 1, "discharged": 1, "recovery": 1,
              "consult": 2, "shared": 3, "todo": 4}
     kr_holidays = _kr_holidays(tuple(sorted({start.year, last.year})))
     weeks = []
@@ -2129,6 +2153,81 @@ def _ward_status_strip(census=None):
     return strip
 
 
+@app.route("/calendar")
+@login_required
+def calendar_page():
+    """통합 달력 — 대시보드에서 분리한 자기 페이지. 월 이동·내 담당/전체는 쿼리로."""
+    try:
+        cal_year = int(request.args.get("cal_year") or date.today().year)
+        cal_month = int(request.args.get("cal_month") or date.today().month)
+        if not 2000 <= cal_year <= 2100:
+            raise ValueError
+        date(cal_year, cal_month, 1)
+    except (TypeError, ValueError):
+        cal_year, cal_month = date.today().year, date.today().month
+    prefs = models.get_user_by_id(g.user["id"]).get("preferences_data", {})
+    cal_default = "1" if prefs.get("calendar_mine", True) else "0"
+    cal_mine = request.args.get("cal_mine", cal_default) != "0"
+    cal_counselor = g.user.get("display_name") if cal_mine else None
+    return render_template("calendar.html",
+                           **_dashboard_calendar_context(g.user["id"], cal_year, cal_month, cal_counselor))
+
+
+@app.route("/report/weekly")
+@login_required
+def report_weekly():
+    """주간 상담 현황 — 대시보드에서 분리. 집계는 dashboard_summary의 weekly_report 그대로."""
+    data = models.dashboard_summary()
+    return render_template("report_weekly.html", weekly_report=data["weekly_report"])
+
+
+def _recovery_projection(strip, recovery_due, discharge_due, horizon=7):
+    """회복기 비율 7일 전망 — 만료 예정·퇴원 예정만 반영한 보수적 추정.
+
+    입원 예정 환자의 회복기 여부는 입원 전엔 확정이 아니라 넣지 않는다. 그래서 실제는
+    이 값보다 좋아지면 좋아졌지 나빠지진 않는다. margin은 지금 비율이 40% 아래로
+    떨어지기까지 회복기 환자가 몇 명 빠져도 되는지(전환·퇴원 합계).
+    """
+    if not strip.get("has_roster") or not strip.get("admitted"):
+        return None
+    rec, tot = strip["recovery"] or 0, strip["admitted"]
+    expiring = [x for x in recovery_due if 0 <= (x["watch"].get("billing_left") or 0) <= horizon]
+    leaving = [x for x in discharge_due if 0 <= (x["watch"].get("days_left") or 0) <= horizon]
+    leaving_rec = sum(1 for x in leaving if _care_phase(x["con"]).get("care_phase") == "회복기")
+    rec2 = max(0, rec - len(expiring) - leaving_rec)
+    tot2 = max(1, tot - len(leaving))
+    ratio = round(rec2 / tot2 * 100, 1)
+    margin = rec - (-(-40 * tot // 100))   # ceil(0.4 * tot)
+    return {"ratio": ratio, "ok": ratio >= 40, "horizon": horizon,
+            "expiring": len(expiring), "leaving": len(leaving), "margin": margin}
+
+
+def _dashboard_residents():
+    """지금 재원 중인 상담(입원완료) 목록 — 원무 명부 census 기준. (census, residents)를 돌려준다.
+    대시보드 기한 임박·오늘 처리 필요와 통합 달력(회복기 전환일)이 같은 목록을 쓴다."""
+    census = models.current_admission_census()
+    admitted = models.list_consultations(admission_status="입원완료", limit=10000)
+    if census["has_roster"]:
+        # census 재원만 남기고, 회복기·만료 계산이 /ward와 같아지도록 명부값
+        # (실제 입원일·수가구분·재활종료일·발병일)을 상담에 얹는다.
+        residents = []
+        for c in admitted:
+            ep = census["by_consultation"].get(c["id"])
+            if not ep:
+                continue
+            c = dict(c)
+            c["actual_admission_date"] = ep["admitted_at"]
+            c["discharge_date"] = None
+            c["roster_care_phase"] = _roster_care_phase(ep.get("care_type"))
+            c["rehab_end_date"] = ep.get("rehab_end_date")
+            c["rehab_end_imported"] = ep.get("rehab_end_imported")
+            c["onset_date"] = ep.get("onset_date")
+            c["roster_diagnosis"] = ep.get("diagnosis_name")
+            residents.append(c)
+        admitted = residents
+    return census, admitted
+
+
 @app.route("/")
 @login_required
 def dashboard():
@@ -2157,12 +2256,10 @@ def dashboard():
                                    f"{admission_date_label(admission_from)} ~ {admission_date_label(admission_to)}"),
         "admission_quick_dates": [
             {"group": "today", "label": "오늘", "from": today_d.isoformat(), "to": today_d.isoformat(), "scope": "all"},
-            {"group": "past", "label": "15일 전", "from": (today_d - timedelta(days=15)).isoformat(), "to": (today_d - timedelta(days=15)).isoformat(), "scope": "completed"},
-            {"group": "past", "label": "7일 전", "from": (today_d - timedelta(days=7)).isoformat(), "to": (today_d - timedelta(days=7)).isoformat(), "scope": "completed"},
-            {"group": "past", "label": "3일 전", "from": (today_d - timedelta(days=3)).isoformat(), "to": (today_d - timedelta(days=3)).isoformat(), "scope": "completed"},
-            {"group": "future", "label": "3일 후", "from": (today_d + timedelta(days=1)).isoformat(), "to": (today_d + timedelta(days=3)).isoformat(), "scope": "planned"},
-            {"group": "future", "label": "7일 후", "from": (today_d + timedelta(days=1)).isoformat(), "to": (today_d + timedelta(days=7)).isoformat(), "scope": "planned"},
-            {"group": "future", "label": "15일 후", "from": (today_d + timedelta(days=1)).isoformat(), "to": (today_d + timedelta(days=15)).isoformat(), "scope": "planned"},
+            {"group": "past", "label": "3일 이내", "from": (today_d - timedelta(days=3)).isoformat(), "to": today_d.isoformat(), "scope": "completed"},
+            {"group": "past", "label": "7일 이내", "from": (today_d - timedelta(days=7)).isoformat(), "to": today_d.isoformat(), "scope": "completed"},
+            {"group": "future", "label": "3일 이내", "from": today_d.isoformat(), "to": (today_d + timedelta(days=3)).isoformat(), "scope": "planned"},
+            {"group": "future", "label": "7일 이내", "from": today_d.isoformat(), "to": (today_d + timedelta(days=7)).isoformat(), "scope": "planned"},
         ],
     })
     open_comms = models.inbox_open_communications()
@@ -2181,26 +2278,7 @@ def dashboard():
     # 됐다. 현황 스트립·/ward와 같은 원무 명부 census로 지금 재원인 상담만 남기고,
     # 만료일이 창(±DASHBOARD_DUE_WINDOW_DAYS) 안인 것만 담는다. 명부가 없는 환경은
     # 상담 상태로 대체한다.
-    census = models.current_admission_census()
-    admitted = models.list_consultations(admission_status="입원완료", limit=10000)
-    if census["has_roster"]:
-        # census 재원만 남기고, 회복기·만료 계산이 /ward와 같아지도록 명부값
-        # (실제 입원일·수가구분·재활종료일·발병일)을 상담에 얹는다.
-        residents = []
-        for c in admitted:
-            ep = census["by_consultation"].get(c["id"])
-            if not ep:
-                continue
-            c = dict(c)
-            c["actual_admission_date"] = ep["admitted_at"]
-            c["discharge_date"] = None
-            c["roster_care_phase"] = _roster_care_phase(ep.get("care_type"))
-            c["rehab_end_date"] = ep.get("rehab_end_date")
-            c["rehab_end_imported"] = ep.get("rehab_end_imported")
-            c["onset_date"] = ep.get("onset_date")
-            c["roster_diagnosis"] = ep.get("diagnosis_name")
-            residents.append(c)
-        admitted = residents
+    census, admitted = _dashboard_residents()
     window = DASHBOARD_DUE_WINDOW_DAYS
     recovery_transition_due = []
     discharge_due = []
@@ -2209,9 +2287,11 @@ def dashboard():
         con["disease_summary"] = "" if disease_labels == ["병명 미지정"] else ", ".join(disease_labels[:3])
         con["ward"] = _dashboard_ward_label(con.get("room_number"))
         ax = _admission_expiry(con)
-        if ax and ax.get("billing_left") is not None and -window <= ax["billing_left"] <= window:
+        # 회복기→비회복기 전환 30일 전 안내 대상 — 이미 전환된(음수) 환자는 안내 시점이 지났으므로 뺀다.
+        if ax and ax.get("billing_left") is not None and 0 <= ax["billing_left"] <= window:
             recovery_transition_due.append({"con": con, "watch": ax})
         dw = _discharge_watch(con)
+        # 기한 임박(앞으로 30일)과 초과분(오늘 처리 필요)을 한 목록에 담고, 화면에서 나눈다.
         if dw and dw.get("days_left") is not None and -window <= dw["days_left"] <= window:
             discharge_due.append({"con": con, "watch": dw})
     recovery_transition_due.sort(key=lambda x: x["watch"]["billing_left"])
@@ -2255,6 +2335,9 @@ def dashboard():
             if _dashboard_inbound_bucket(m) not in ("카카오채널", "홈페이지")
         ],
     }
+    # 퇴원 예정: 예정일이 지난 재원(초과)은 '오늘 처리 필요' 큐로, 앞으로 30일은 '기한 임박' 카드로.
+    discharge_all = discharge_due
+    discharge_due = [x for x in discharge_due if (x["watch"].get("days_left") or 0) >= 0]
     discharge_groups = {
         "disease": _dashboard_groups(discharge_due, lambda x: _dashboard_disease_labels(x["con"])),
         "ward": _dashboard_groups(discharge_due, lambda x: _dashboard_ward_label(x["con"].get("room_number"))),
@@ -2271,7 +2354,7 @@ def dashboard():
         "disease": _dashboard_groups(callbacks, _dashboard_disease_labels),
     }
     action_queue = _dashboard_action_queue(
-        data, open_comms, callbacks, recovery_transition_due, discharge_due,
+        data, open_comms, callbacks, recovery_transition_due, discharge_all,
         planned_missing_date=planned_missing_date,
     )
 
@@ -2310,6 +2393,25 @@ def dashboard():
     cal_counselor = g.user.get("display_name") if cal_mine else None
     data.update(_dashboard_calendar_context(g.user["id"], cal_year, cal_month, cal_counselor))
     data["ward_strip"] = _ward_status_strip(census)
+    # KPI 8장 — 지난주 같은 요일 비교·7일 스파크라인·병동별 재원·30일 입퇴원·요일 히트맵
+    data["metrics"] = dashboard_metrics.kpi_metrics(today_d)
+    data["month_kpi"] = dashboard_metrics.month_performance(today_d)
+    data["ward_occupancy"] = dashboard_metrics.ward_occupancy()
+    data["unassigned_planned"] = dashboard_metrics.unassigned_planned(2, today_d)
+    data["consult_heat"] = dashboard_metrics.consult_weekday_matrix(8, today_d)
+    data["discharges_today"] = dashboard_metrics.discharges_on(today_d.isoformat())
+    data["recovery_projection"] = _recovery_projection(
+        data["ward_strip"], recovery_transition_due, discharge_due)
+    # 인바운드 경과 — 1시간 넘긴 문의는 화면에서 따로 강조한다.
+    now_dt = datetime.now()
+    for m in open_comms:
+        occurred = _dashboard_parse_datetime(m.get("occurred_at") or m.get("created_at"))
+        mins = int((now_dt - occurred).total_seconds() // 60) if occurred else None
+        m["elapsed_min"] = mins
+        m["elapsed_label"] = _dashboard_elapsed_label(occurred) if occurred else ""
+        m["over_1h"] = bool(mins is not None and mins >= 60)
+    data["inbound_over_1h"] = sum(1 for m in open_comms if m.get("over_1h"))
+    data["today_weekday"] = "월화수목금토일"[today_d.weekday()]
     return render_template("dashboard.html", **data)
 
 
@@ -2656,10 +2758,11 @@ def api_todo_reminders():
 @login_required
 def stats_view():
     preset, date_from, date_to = _stats_period_from_request()
+    consult_heat = dashboard_metrics.consult_weekday_hour_matrix(date_from, date_to)
     return render_template(
         "stats.html",
         preset=preset, date_from=date_from, date_to=date_to,
-    )
+        consult_heat=consult_heat)
 
 
 @app.route("/api/stats.json")

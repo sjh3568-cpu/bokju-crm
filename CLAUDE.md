@@ -52,8 +52,9 @@ app.py             Flask 진입점, 모든 라우트, API
 models.py          SQLite 스키마 + 마이그레이션 (_ensure_columns) + JSON 직렬화
 auth.py            인증 + @login_required / @menu_required / @admin_required (계정별 메뉴 권한)
 config.py          상수 (보험·시도/시군구·병명 LAYOUT·입원경로 등)
-templates/         base.html, login, dashboard, consult_form/list/detail, patient_detail, error
-static/css/        style.css (Pretendard, 4 그룹 박스, dx-stretch 등)
+dashboard_metrics.py 대시보드 KPI 보조 지표 — 지난주 같은 요일 비교·7일 스파크라인·병동별 재원·30일 입퇴원·요일 히트맵
+templates/         base.html(좌측 사이드바 + 상단바), login, dashboard, consult_form/list/detail, patient_detail, error
+static/css/        style.css (Pretendard, 4 그룹 박스, dx-stretch, 앱 셸=사이드바), dashboard.css (대시보드 전용 스킨)
 static/js/         common.js, form.js (자동완성, 시군구→시도, 010 포맷, 콤보박스)
 serve.py           운영 진입점 — waitress WSGI (개발용 app.run 대체)
 backup.py          자동 백업 — 기동 시 1회 + 매일 03시, 보관기간 경과분 정리
@@ -319,3 +320,20 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
 - 협력기관 기본 보기는 목록형. 공식 상세정보는 2026.3 시설·진료과목·특수진료 XLSX를 기관코드로 연결해 진료과목, 입원 병상 합계, 간호간병통합서비스(KH)를 표시한다. 수동 `specialties`/`strengths`와 공식정보를 덮어쓰지 않고 함께 표시한다.
 - `cooperation_agreements`: 기관별 업무협약서 메타데이터(문서명, 체결/만료, 상태, 상대 담당자, 문서 보관 위치, 비고). 파일 자체를 DB에 저장하지 않는다.
 - 상세자료 갱신: `.venv-linux/bin/python tools/import_cooperation_facility_details.py <2026.3 XLSX 폴더> --updated-at 2026-03`.
+
+## 2026-09-13~14 대시보드 개편 · 좌측 사이드바
+
+- **기준 화면 폭은 1440px**(사용자 노트북, 고해상도 2배 스케일). 레이아웃 검증은 1440×850으로 한다 — 1920에서 멀쩡해도 1440에서 잘리거나 두 줄로 꺾이면 안 된다.
+
+- **앱 셸**: `base.html`이 `body.has-sidebar > aside.sidebar + div.app-main(header.topbar + main + footer)` 구조. 주 메뉴는 사이드바(하위 메뉴는 ▾로 고정 펼침 + 마우스를 올리면 안쪽으로 펼침, 현재 그룹은 자동 펼침; '관리'도 같은 구조), 상단바는 옅은 바탕에 흰 검색창·오늘 현황·알림·화면설정·새 상담. 1024px 미만은 ☰ 서랍. 접기(아이콘만)는 `localStorage bokju:sidebar`, 상담일지 폼은 항상 접힌 채로 시작. `body.has-sidebar{height:auto}`가 없으면 `html,body{height:100%}` 때문에 사이드바 sticky가 안 붙는다.
+- **좌측 하단 도구 칸** `#sidebar-tools`(`position:fixed`, 폭 `--sbw`): 통합 달력 링크(오늘 일정+ToDo 배지 `calendar_badge`) + 기간 계산기·To-DO·환자분류체계. ≥1024px에서 JS가 우하단 플로팅 버튼을 이 칸으로 옮기고, 좁은 화면은 플로팅으로 되돌린다. 사이드바엔 `padding-bottom:140px`로 자리 확보.
+- **대시보드**(`dashboard.html` + `static/css/dashboard.css`, 청록 포인트) — 내 담당 한 줄(청록 띠) → KPI 4장×2줄(오늘 상담·오늘 입원/퇴원·이번달 상담 유입·이번달 입원 성사+전환율 / 현재 재원·병상 가동률·외진 환자·회복기 비율; SVG 선 아이콘 배지, 설명은 핵심 숫자만 `<b>`) → **2×2 격자 `.dash-grid2`**(폭·높이 동일): 입원 환자 현황(+오늘 퇴원 하위 섹션) · 병동별 재원 / 오늘 처리 필요 · 기한 임박. 목록은 `data-limit="5"` + 더보기.
+- **오늘 처리 필요 vs 기한 임박**: 전자는 지금 손이 가야 하는 일(문의·재연락·보류·입원 준비 누락·운행·퇴원 예정일 초과)이고 구분 탭(`item.group`, 구분별 고정 색)이 있다. 후자는 앞으로 올 날짜 예고 — 회복기 전환 D-30(전환 전 0~30일만, 보호자에게 치료시간·비용 안내)과 퇴원 예정 D-30. 퇴원 예정일이 지난 재원은 전자(퇴원예정 탭)로 간다. 재원 목록은 `_dashboard_residents()`(명부 census 기준)를 같이 쓴다.
+- 입원 환자 현황 빠른 조회는 범위다: 과거 3·7일 이내(실제 입원), 오늘, 미래 3·7일 이내(입원 예정).
+- 통합 달력(`/calendar`): 구분 칩을 눌러 켜고 끔(`localStorage bokju:cal-hide`), 회복기 전환일 구분 포함.
+- 대시보드에서 분리한 것: 통합 달력 → `/calendar`(`calendar.html`, 대시보드 메뉴 하위·좌측 하단 도구 칸·대시보드 머리글 버튼), 주간 상담 현황 → `/report/weekly`(`report_weekly.html`, 통계·보고 메뉴 하위, report 권한), 요일×시간대 상담 히트맵 → `/stats` 2번 섹션(`dashboard_metrics.consult_weekday_hour_matrix`, 상담 시각이 입력되면 시간대 칸이 채워짐). 30일 입퇴원 추이·보류 목록·오늘 상담 병명별은 뺐다(재원 관리·상담목록에 있음).
+- KPI 비교값은 **지난주 같은 요일**(요일 편차 때문에 어제 대비는 쓰지 않는다). 재원·입퇴원·외진 스파크라인은 원무 명부 회차(`roster_key`)·`admission_events` 기준(`dashboard_metrics.py`).
+- 회복기 비율 7일 전망(`app._recovery_projection`)은 만료·퇴원 예정만 뺀 보수적 값 — 입원 예정은 회복기 확정이 아니라 넣지 않는다.
+- **병동별 재원**: 허가 병상 `config.WARD_BED_CAPACITIES`(8개 병동, 합 355 = `app.WARD_BED_CAPACITY`) → 가동률·여유/빡빡/포화 색. 남/여 빈 병상은 `config.ROOM_BED_CAPACITIES`(병실별 병상 수, 기본 4인실)로 센다 — 남자만 있는 방의 빈자리=남, 여자만=여, 빈 방=빈방, 병동 허가와 방 합계 차이=미확인, 명부에 병실이 없는 재원=병실 미기재. 방 번호는 `_norm_room`으로 숫자만 남겨 맞춘다('316호 ★' 같은 표기). 미해결: 13병동 방 합계 28 vs 허가 27, 2병동 4·12병동 3병상은 방 번호 미확인, 9병동은 방 정보 없음.
+- 상담 시각(`consult_time`)이 입력되지 않아 시간대별 히트맵은 만들지 않았다 — 입력이 쌓이면 요일×시간대로 바꿀 것.
+

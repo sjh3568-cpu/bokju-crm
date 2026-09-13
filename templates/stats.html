@@ -83,6 +83,31 @@
     </div>
 </div>
 
+<div class="card chart-card chart-card-wide" id="consult-heat-card">
+    <h3>요일 × 시간대 상담 <small>{{ consult_heat.from }} ~ {{ consult_heat.to }} · 상담 시각이 입력된 {{ consult_heat.timed }}건 / 전체 {{ consult_heat.total }}건</small></h3>
+    {% set hp = consult_heat.peak or 1 %}
+    <div class="consult-heat">
+        <span class="rl"></span>{% for wd in ['월','화','수','목','금','토','일'] %}<span class="hd">{{ wd }}</span>{% endfor %}
+        {% for h in consult_heat.hours %}
+        <span class="rl">{{ h.label }}</span>
+        {% for n in h.counts %}{% set lv = 0 if n == 0 else 1 if n <= hp*0.25 else 2 if n <= hp*0.5 else 3 if n <= hp*0.75 else 4 %}<span class="c l{{ lv }}">{{ n if n else '' }}</span>{% endfor %}
+        {% endfor %}
+        <span class="rl muted">시각 미입력</span>{% for n in consult_heat.unknown %}<span class="c u">{{ n if n else '' }}</span>{% endfor %}
+        <span class="rl"><b>합계</b></span>{% for n in consult_heat.totals %}<span class="c tot">{{ n }}</span>{% endfor %}
+    </div>
+    <p class="muted-sm consult-heat-note">{% if consult_heat.timed %}시간대 칸은 상담일지의 상담 시각 기준입니다.{% else %}아직 상담 시각이 입력된 상담이 없어 요일 합계만 채워져 있습니다 — 상담일지에 시각을 적기 시작하면 시간대 칸이 채워집니다.{% endif %}</p>
+</div>
+<style>
+.consult-heat{display:grid;grid-template-columns:78px repeat(7,1fr);gap:3px;font-size:.74rem;color:var(--text-light);margin-top:8px}
+.consult-heat .hd{text-align:center;font-weight:700;padding-bottom:2px}
+.consult-heat .rl{text-align:right;padding-right:8px;line-height:26px;white-space:nowrap}
+.consult-heat .c{height:26px;border-radius:4px;display:grid;place-items:center;color:var(--text);font-variant-numeric:tabular-nums;background:#f6f8f7}
+.consult-heat .c.l1{background:#e6f4f1}.consult-heat .c.l2{background:#b9e1d9}.consult-heat .c.l3{background:#7cc4b6}.consult-heat .c.l4{background:#0f6f62;color:#fff}
+.consult-heat .c.u{background:#f1f3f5;color:var(--text-light)}
+.consult-heat .c.tot{background:transparent;font-weight:800;color:var(--text-light);height:22px}
+.consult-heat-note{margin:8px 0 0}
+</style>
+
 <div class="section-heading priority"><b>3</b><span>질환별 상담·입원 성과</span><small>질환군별 상담 건수, 입원 건수와 전환율</small></div>
 <div class="chart-grid">
     <div class="card chart-card chart-card-combined chart-card-wide print-primary">

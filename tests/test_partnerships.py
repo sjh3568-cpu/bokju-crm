@@ -155,9 +155,8 @@ class CooperationTests(unittest.TestCase):
 
     def test_personal_briefing_and_start_page_setting(self):
         page=self.client.get('/').get_data(as_text=True)
-        self.assertIn('오늘의 개인 브리핑',page)
-        self.assertIn('나의 입원 환자',page)
-        self.assertIn('pb3-admission-split',page)
+        self.assertIn('dash-mine',page)
+        self.assertIn('내 담당',page)
         self.assertIn('입원예정',page)
         self.assertIn('입원완료',page)
         self.assertRegex(page,r'\d{4}\.\d{2}\.\d{2} \([월화수목금토일]\)')

@@ -520,7 +520,7 @@
     </div>
     {% if away %}
     <div class="tbl-wrap">
-        <table class="tbl wd-tbl">
+        <table class="tbl wd-tbl wd-away-tbl">
             <thead><tr>
                 <th>경과</th><th>환자</th><th>호실</th><th>이송 일시</th><th>유형</th><th>이송기관</th><th>사유</th>
                 <th>보호자</th><th>복귀</th>
@@ -537,7 +537,7 @@
                     <td class="nowrap"><a href="/consult/{{ c.id }}">{{ c.patient_name }}</a></td>
                     <td class="nowrap">{{ c.room_number or '-' }}</td>
                     <td class="nowrap">{{ a.event_date|krdate if a.event_date else '-' }}{% if a.event_time %} {{ a.event_time[:5] }}{% endif %}</td>
-                    <td>{{ a.event_type }}</td><td>{{ a.hospital or '-' }}</td><td>{{ a.memo or '-' }}</td>
+                    <td>{{ a.event_type }}</td><td>{{ a.hospital or '-' }}</td><td class="wd-memo" title="{{ a.memo or '' }}">{{ a.memo or '-' }}</td>
                     <td class="nowrap">{{ c.guardian_name or '' }} {{ c.guardian_phone or '' }}</td>
                     <td class="nowrap wd-back-cell">
                         <input type="date" class="wd-back-date" value="{{ today_str }}"

@@ -139,8 +139,9 @@ class DashboardDueQueueTests(DashboardStripTests):
         html = self.client.get("/").get_data(as_text=True)
         import re
         out = {}
-        for lab in ("회복기 만료 D-30", "퇴원 예정 D-30"):
-            m = re.search(re.escape(lab) + r'</div>\s*<div class="value">(\d+)</div>', html)
+        # 기한 임박 카드의 탭 버튼: '회복기 전환 D-30 <b class="num">22</b>' / '퇴원 예정 <b class="num">29</b>'
+        for lab, short in (("회복기 만료 D-30", "회복기 전환 D-30"), ("퇴원 예정 D-30", "퇴원 예정")):
+            m = re.search(re.escape(short) + r' <b class="num">(\d+)</b>', html)
             out[lab] = int(m.group(1))
         return out
 
@@ -168,20 +169,23 @@ class DashboardDueQueueTests(DashboardStripTests):
         counts = self._dashboard_counts()
         self.assertEqual(counts["퇴원 예정 D-30"], 1)
 
-    def test_window_drops_long_expired_and_keeps_recent_overrun(self):
+    def test_window_keeps_upcoming_and_moves_overrun_to_queue(self):
         base = (self.today - timedelta(days=100)).isoformat()
         with models.get_db() as conn:
-            for pid, name in ((6, "오래초과"), (7, "최근초과")):
+            for pid, name in ((6, "최근초과"), (7, "곧만료")):
                 conn.execute("INSERT INTO patients (id,name,gender) VALUES (?,?,'F')", (pid, name))
                 conn.execute(
                     """INSERT INTO admission_episodes
                        (patient_id, episode_no, status, admitted_at, roster_key)
                        VALUES (?, 1, 'admitted', ?, ?)""", (pid, base, "chart%d|x" % pid))
-        # 둘 다 재원. 만료일이 31일 전이면 빠지고, 30일 전이면 남는다.
-        self._add_admitted_consult(6, 6, base, (self.today - timedelta(days=31)).isoformat())
-        self._add_admitted_consult(7, 7, base, (self.today - timedelta(days=30)).isoformat())
+        # 둘 다 재원. 예정일이 지난 환자는 '기한 임박'이 아니라 '오늘 처리 필요'(퇴원예정 탭)로 간다.
+        self._add_admitted_consult(6, 6, base, (self.today - timedelta(days=5)).isoformat())
+        self._add_admitted_consult(7, 7, base, (self.today + timedelta(days=30)).isoformat())
         counts = self._dashboard_counts()
         self.assertEqual(counts["퇴원 예정 D-30"], 1)
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertIn("5일 초과", html)
+        self.assertIn("퇴원 예정일이 지남", html)
 
     def test_no_roster_falls_back_to_consultation_status(self):
         with models.get_db() as conn:
