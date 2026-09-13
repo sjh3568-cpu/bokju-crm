@@ -4,7 +4,7 @@
 흐름
   상담사: 상담 상세 → 🚐 운행 요청 칸에 필요 여부·이동수단·장소·도착시간·연락처 저장
   CRM   : 저장 즉시 시트의 해당 날짜 탭에 '진료협력' 행 추가 (탭이 없으면 전송 대기)
-  스케줄: 1시간마다 전송 대기분 재시도 + 운행팀이 채운 배정자·차량을 읽어와 표시
+  스케줄: 15분마다 전송 대기분 재시도 + 운행팀이 채운 배정자·차량을 읽어와 표시, 새로 배정되면 상담사 화면에 알림
   대시보드: 내일 입원인데 운행 여부 미정 / 전송 안 됨 / 배정 대기 경고
 
 시트 쪽은 Apps Script 웹앱(docs/apps-script/transport_sheet.gs)이 받는다. 탭은 절대
@@ -14,7 +14,7 @@
   TRANSPORT_SHEET_URL    Apps Script 웹앱 URL (없으면 CRM 안에만 기록)
   TRANSPORT_SHEET_TOKEN  스크립트와 맞춘 비밀 토큰
   TRANSPORT_MOBILITY_OPTIONS  이동수단 선택지 (기본 "W/C,walk,Rec") — 시트 드롭다운 값과 같게
-  TRANSPORT_SYNC_MINUTES 재시도·배정 읽기 주기 (기본 60)
+  TRANSPORT_SYNC_MINUTES 재시도·배정 읽기 주기 (기본 15)
 """
 from __future__ import annotations
 
@@ -86,6 +86,9 @@ def init_schema(conn=None):
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_transport_date ON transport_requests(pickup_date, sheet_status)")
+    models._ensure_columns(conn, "transport_requests", {
+        "assigned_at": "DATETIME",       # 운행팀이 배정자를 채운 것을 처음 확인한 시각 — 상담사 알림 기준
+    })
     if own:
         conn.commit(); conn.close()
 
@@ -215,10 +218,15 @@ def refresh_assignments(days_back: int = 1, days_ahead: int = 14) -> dict:
             hit = by_name.get(r["patient_name"].strip()) or by_row.get(r.get("sheet_row") or -1)
             if not hit:
                 continue
-            conn.execute("""UPDATE transport_requests SET driver=?, vehicle=?, sheet_row=?, assigned_checked_at=CURRENT_TIMESTAMP
-                            WHERE id=?""", ((hit.get("driver") or "").strip() or None, (hit.get("vehicle") or "").strip() or None,
-                                            hit.get("row") or r.get("sheet_row"), r["id"]))
+            driver = (hit.get("driver") or "").strip() or None
+            vehicle = (hit.get("vehicle") or "").strip() or None
+            newly = bool(driver) and not (r.get("driver") or "").strip()
+            conn.execute("""UPDATE transport_requests SET driver=?, vehicle=?, sheet_row=?, assigned_checked_at=CURRENT_TIMESTAMP,
+                            assigned_at=CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE assigned_at END WHERE id=?""",
+                         (driver, vehicle, hit.get("row") or r.get("sheet_row"), 1 if newly else 0, r["id"]))
             updated += 1
+            if newly:
+                logger.info("운행 배정 확인: 상담 %s → %s / %s", r["consultation_id"], driver, vehicle)
     conn.commit(); conn.close()
     return {"ok": True, "updated": updated}
 
@@ -249,7 +257,7 @@ def sync_once(trigger: str = "manual") -> dict:
 
 
 def _loop():
-    minutes = max(5, int(os.getenv("TRANSPORT_SYNC_MINUTES") or 60))
+    minutes = max(5, int(os.getenv("TRANSPORT_SYNC_MINUTES") or 15))
     while True:
         threading.Event().wait(minutes * 60)
         sync_once("scheduler")
@@ -260,7 +268,7 @@ def start_scheduler():
         logger.info("운행 시트 연동 꺼짐 (TRANSPORT_SHEET_URL 없음)")
         return
     threading.Thread(target=_loop, name="transport-sheet-sync", daemon=True).start()
-    logger.info("운행 시트 동기화 시작 — %s분마다", os.getenv("TRANSPORT_SYNC_MINUTES") or 60)
+    logger.info("운행 시트 동기화 시작 — %s분마다", os.getenv("TRANSPORT_SYNC_MINUTES") or 15)
 
 
 # ── 대시보드 경고 ────────────────────────────────────────────────────
@@ -293,6 +301,32 @@ def dashboard_alerts(today: date | None = None) -> list[dict]:
         elif r["needed"] == "yes" and r["sheet_status"] == "sent" and not r["driver"]:
             out.append(dict(kind="운행", tone="warn", title=r["patient_name"], detail="운행팀 배정자 미지정 (시트 확인)",
                             meta=when, href=href, sort=20))
+    return out
+
+
+def assignment_alerts(hours: int = 24) -> list[dict]:
+    """최근 배정된 건 — 상담사 브라우저 알림 피드(/api/inbound/alerts)에 얹는다.
+    브라우저가 id로 '이미 본 것'을 기억하므로 같은 건은 한 번만 뜬다."""
+    conn = models.get_db()
+    try:
+        rows = conn.execute("""
+            SELECT t.id, t.consultation_id, t.driver, t.vehicle, t.pickup_date, t.arrive_time, t.assigned_at, p.name AS patient_name
+            FROM transport_requests t JOIN patients p ON p.id=t.patient_id
+            WHERE t.assigned_at IS NOT NULL AND t.assigned_at >= datetime('now', ?)
+            ORDER BY t.assigned_at DESC""", (f"-{int(hours)} hours",)).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    conn.close()
+    out = []
+    for r in rows:
+        when = f"{(r['pickup_date'] or '')[5:].replace('-', '/')} {(r['arrive_time'] or '')[:5]}".strip()
+        out.append({
+            "id": f"transport-{r['id']}-{r['driver']}",
+            "channel": "운행", "bucket": "운행 배정",
+            "summary": f"{when} 픽업 배정 {r['driver']}{(' / ' + r['vehicle']) if r['vehicle'] else ''}",
+            "contact": "", "patient_name": r["patient_name"], "blacklist": False,
+            "created_at": r["assigned_at"], "href": f"/consult/{r['consultation_id']}#transport",
+        })
     return out
 
 

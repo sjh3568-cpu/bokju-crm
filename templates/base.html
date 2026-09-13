@@ -395,7 +395,7 @@
     var primed = false;  // 첫 로드는 알림 없이 현재 목록만 '이미 본 것'으로 기록
     function seen() { try { return JSON.parse(localStorage.getItem(SEEN) || '[]'); } catch (e) { return []; } }
     function markSeen(ids) { try { localStorage.setItem(SEEN, JSON.stringify(ids.slice(-500))); } catch (e) {} }
-    function bucketIcon(b) { return b === '홈페이지' ? '🌐' : (b === '카카오채널' ? '💬' : '📥'); }
+    function bucketIcon(b) { return b === '홈페이지' ? '🌐' : (b === '카카오채널' ? '💬' : (b === '운행 배정' ? '🚐' : '📥')); }
     function updateBadge(count) {
         var el = document.getElementById('nav-inbound-badge');
         if (el) {
@@ -432,7 +432,7 @@
                     if (window.toast) toast(title + ' — ' + body, m.blacklist ? 'error' : 'info');
                     if (supportsNotification && Notification.permission === 'granted') {
                         var n = new Notification(title, { body: body, tag: 'bokju-inbound-' + m.id });
-                        n.onclick = function () { window.focus(); location.href = '{{ inbox_url }}'; };
+                        n.onclick = function () { window.focus(); location.href = m.href || '{{ inbox_url }}'; };
                     }
                 });
                 markSeen(done);

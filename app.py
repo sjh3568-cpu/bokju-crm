@@ -5960,7 +5960,12 @@ def api_inbound_alerts():
             "blacklist": bool(m.get("blacklist")),
             "created_at": m.get("occurred_at") or m.get("created_at") or "",
         })
-    return jsonify({"count": len(items), "items": items})
+    count = len(items)                      # 배지는 미처리 문의 수만
+    try:
+        items += transport.assignment_alerts()   # 🚐 운행팀 배정 완료 — 토스트로만 알림
+    except Exception:
+        app.logger.exception("운행 배정 알림 조회 실패")
+    return jsonify({"count": count, "items": items})
 
 
 # ───────────────────── 인바운드 webhook (옴니채널 직수신) ─────────────────────
