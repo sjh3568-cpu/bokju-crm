@@ -74,12 +74,13 @@
 .page-dashboard .krow .gl { grid-column: 1 / -1; font-size: .7rem; font-weight: 800; letter-spacing: .06em; color: var(--dfaint); padding: 0 2px; margin-bottom: -6px; }
 .page-dashboard .kc { display: grid; grid-template-columns: minmax(0, 1fr) minmax(64px, 96px); overflow: hidden; grid-template-rows: auto auto auto; gap: 0 10px; min-width: 0; padding: 10px 16px 9px; background: var(--dcard); border: 1px solid var(--dborder); border-radius: var(--dradius); box-shadow: var(--dshadow); color: var(--dtext); text-decoration: none; transition: border-color .15s, transform .15s; }
 .page-dashboard .kc:hover { border-color: var(--da); transform: translateY(-1px); }
-.page-dashboard .kc .ic { grid-row: 1; width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; color: #fff;
-    background: linear-gradient(140deg, #19a68f 0%, #0f8a7a 55%, #0b6b5f 100%); box-shadow: 0 3px 8px rgba(15,138,122,.28), inset 0 1px 0 rgba(255,255,255,.28); }
-.page-dashboard .kc .ic svg { width: 18px; height: 18px; display: block; }
-.page-dashboard .kc.crit .ic { background: linear-gradient(140deg, #e05656, #b83232); box-shadow: 0 3px 8px rgba(209,59,59,.28), inset 0 1px 0 rgba(255,255,255,.28); }
+/* 아이콘 배지 — 연한 청록 바탕에 청록 선 아이콘, 그림자 없음 (숫자보다 눈에 띄지 않게) */
+.page-dashboard .kc .ic { grid-row: 1; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: var(--da-ink);
+    background: var(--da-soft); opacity: .9; }
+.page-dashboard .kc .ic svg { width: 16px; height: 16px; display: block; stroke-width: 1.8; }
+.page-dashboard .kc.crit .ic { background: var(--dcrit-bg); color: var(--dcrit); }
 .page-dashboard .kc > svg { grid-column: 2; grid-row: 1 / 3; width: 100%; max-width: 96px; min-width: 0; height: 38px; align-self: start; justify-self: end; overflow: visible; }
-.page-dashboard .kc .l { grid-column: 1; margin-top: 3px; color: var(--dmuted); font-size: .8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.page-dashboard .kc .l { grid-column: 1; margin-top: 3px; color: var(--dtext); font-size: .8rem; font-weight: 700; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .page-dashboard .kc .l em { font-style: normal; color: var(--dfaint); font-size: .7rem; margin-left: 4px; }
 .page-dashboard .kc .v { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .page-dashboard .kc .v b { font-size: 1.75rem; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; }
