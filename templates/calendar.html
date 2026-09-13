@@ -41,7 +41,7 @@
                     {% if cell.holiday %}<div class="dash-cal-holiday" title="{{ cell.holiday }}">{{ cell.holiday }}</div>{% endif %}
                     <div class="dash-cal-events">
                     {% for event in cell.events %}
-                        <a class="dash-cal-event {{ event.kind }}{% if event.done %} done{% endif %}" href="{{ event.href }}" title="{{ event.meta }} · {{ event.title }}{% if event.done %} (완료){% endif %}">
+                        <a class="dash-cal-event {{ event.kind }}{% if event.done %} done{% endif %}" href="{{ event.href }}" data-sub="{{ event.sub or '' }}" title="{{ event.meta }} · {{ event.title }}{% if event.sub %} ({{ event.sub }}){% endif %}{% if event.done %} (완료){% endif %}">
                             {% if event.time %}<time>{{ event.time }}</time>{% endif %}{% if event.done %}<span class="dash-cal-check">✓</span>{% endif %}<b>{{ event.meta }}</b><span>{{ event.title }}</span>
                         </a>
                     {% endfor %}
@@ -54,6 +54,13 @@
         </div>
     </div>
 </section>
+{# 날짜 상세 패널 — 칸에 다 못 담은 일정을 한 번에 본다 #}
+<div class="cal-day-backdrop" id="cal-day-backdrop" hidden></div>
+<aside class="cal-day-panel" id="cal-day-panel" hidden aria-label="선택한 날짜의 전체 일정">
+    <header><div><strong id="cal-day-title"></strong><span class="muted-sm" id="cal-day-count"></span></div><button type="button" class="cal-day-x" id="cal-day-close" aria-label="닫기">✕</button></header>
+    <div class="cal-day-list" id="cal-day-list"></div>
+    <footer><button type="button" class="btn btn-primary btn-sm" id="cal-day-todo">이날 ToDo 등록</button><span class="muted-sm">←→ 로 앞뒤 날짜</span></footer>
+</aside>
 <style>
 .dash-calendar-card{margin-top:16px}.dash-calendar-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:8px}.dash-calendar-head h3{margin:0}.dash-calendar-head p{margin:3px 0 0;color:var(--text-light);font-size:.82em}.dash-calendar-nav{display:flex;align-items:center;gap:6px}.dash-calendar-nav strong{min-width:82px;text-align:center;color:var(--primary);font-size:1.05rem}.dash-calendar-legend{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.dash-calendar-legend span{padding:3px 8px;border-radius:999px;font-size:.72em;font-weight:750}.dash-calendar-wrap{overflow-x:auto}.dash-calendar{width:100%;min-width:980px;border-collapse:collapse;table-layout:fixed}.dash-calendar th{padding:7px;border:1px solid var(--border);background:#f8fafc;color:var(--text-light);font-size:.78rem}.dash-calendar td{height:126px;padding:5px;vertical-align:top;border:1px solid var(--border);background:#fff}.dash-calendar td.other-month{background:#f8fafc;opacity:.62}.dash-calendar td.today{background:#ecfdf5;box-shadow:inset 0 0 0 2px var(--primary-light)}.dash-calendar .sun{color:#dc2626}.dash-calendar .sat{color:#2563eb}.dash-cal-day{font-size:.8rem;font-weight:800;margin-bottom:4px}.dash-cal-events{max-height:102px;overflow-y:auto;display:flex;flex-direction:column;gap:3px}.dash-cal-event{display:grid;grid-template-columns:auto auto minmax(0,1fr);align-items:center;gap:4px;padding:3px 5px;border-radius:5px;text-decoration:none;font-size:.69rem;line-height:1.2}.dash-cal-event time{font-variant-numeric:tabular-nums;font-weight:800}.dash-cal-event b{white-space:nowrap}.dash-cal-event span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dash-cal-event.consult,.dash-calendar-legend .consult{background:#dbeafe;color:#1e40af}.dash-cal-event.admission,.dash-calendar-legend .admission{background:#fef3c7;color:#92400e}.dash-cal-event.admitted,.dash-calendar-legend .admitted{background:#dcfce7;color:#166534}.dash-cal-event.discharge,.dash-cal-event.discharged,.dash-calendar-legend .discharge{background:#fee2e2;color:#991b1b}.dash-cal-event.todo,.dash-calendar-legend .todo{background:#f1f5f9;color:#334155}.dash-cal-event.shared,.dash-calendar-legend .shared{background:#ede9fe;color:#6d28d9}.dash-cal-event.done{opacity:.55}.dash-cal-event.done b,.dash-cal-event.done span{text-decoration:line-through}.dash-cal-check{font-weight:800;color:#16a34a}.dash-calendar-legend .holiday-legend{background:#fef2f2;color:#dc2626;box-shadow:inset 0 0 0 1px #fecaca}.dash-calendar-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.dash-cal-scope{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}.dash-cal-scope a{padding:5px 12px;font-size:.82em;font-weight:700;color:var(--text-light);text-decoration:none;background:#fff}.dash-cal-scope a.on{background:var(--primary);color:#fff}@media(max-width:700px){.dash-calendar-head{align-items:flex-start;flex-direction:column}.dash-calendar-nav{width:100%;justify-content:flex-end}}
 .dash-calendar td{height:132px}.dash-calendar td.holiday{background:#fff7f7}.dash-calendar td.today{background:#ecfdf5}.dash-cal-dayrow{display:flex;align-items:baseline;gap:5px;min-height:18px}.dash-cal-day{margin-bottom:0}.dash-cal-lunar{color:#94a3b8;font-size:.65rem}.dash-cal-holiday{margin:0 0 3px;color:#dc2626;font-size:.66rem;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -68,6 +75,24 @@
 .dash-calendar.hide-consult .dash-cal-event.consult,.dash-calendar.hide-admission .dash-cal-event.admission,.dash-calendar.hide-admitted .dash-cal-event.admitted,
 .dash-calendar.hide-discharge .dash-cal-event.discharge,.dash-calendar.hide-discharge .dash-cal-event.discharged,.dash-calendar.hide-recovery .dash-cal-event.recovery,
 .dash-calendar.hide-todo .dash-cal-event.todo,.dash-calendar.hide-shared .dash-cal-event.shared{display:none}
+/* 칸에는 4건까지만, 나머지는 "+N건"으로 접고 날짜 패널에서 전체를 본다 (칸 안 스크롤 없음) */
+.dash-cal-events{max-height:none;overflow:visible}
+.dash-cal-event.cal-folded{display:none!important}
+.dash-cal-more{display:block;width:100%;margin-top:2px;padding:3px 5px;border:1px dashed #94a3b8;border-radius:5px;background:#fff;color:#334155;font:700 .68rem inherit;cursor:pointer;text-align:center}
+.dash-cal-more:hover{background:#f1f5f9;border-color:var(--primary);color:var(--primary)}
+.cal-day-backdrop{position:fixed;inset:0;z-index:188;background:rgba(15,23,42,.28)}
+.cal-day-panel{position:fixed;top:0;right:0;bottom:0;z-index:189;width:min(400px,92vw);display:flex;flex-direction:column;background:#fff;box-shadow:-12px 0 36px rgba(15,23,42,.22)}
+.cal-day-panel[hidden],.cal-day-backdrop[hidden]{display:none}
+.cal-day-panel header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border)}
+.cal-day-panel header strong{display:block;font-size:1.05rem}
+.cal-day-x{border:0;background:none;font-size:1.05rem;color:var(--text-light);cursor:pointer;padding:2px 6px}
+.cal-day-list{flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+.cal-day-list .dash-cal-event{font-size:.84rem;padding:7px 9px;height:auto;white-space:normal}
+.cal-day-list .dash-cal-event span{white-space:normal}
+.cal-day-list .dash-cal-event{grid-template-columns:auto auto minmax(0,1fr) auto}.cal-day-list .cal-sub{color:inherit;opacity:.75;font-size:.76rem;font-weight:500;white-space:nowrap;margin-left:6px}
+.cal-day-group{margin:6px 0 2px;font-size:.72rem;font-weight:800;color:var(--text-light);letter-spacing:.04em}
+.cal-day-list .empty{padding:20px;text-align:center;color:var(--text-light)}
+.cal-day-panel footer{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 16px;border-top:1px solid var(--border)}
 </style>
 <script>
 (function(){
@@ -79,6 +104,51 @@
     function applyFilters(){filters.forEach(b=>{const k=b.dataset.kind,off=hidden.includes(k);b.setAttribute('aria-pressed',off?'false':'true');calendar.classList.toggle('hide-'+k,off);});}
     filters.forEach(b=>b.addEventListener('click',()=>{const k=b.dataset.kind;hidden=hidden.includes(k)?hidden.filter(x=>x!==k):[...hidden,k];try{localStorage.setItem(KEY,JSON.stringify(hidden));}catch(e){}applyFilters();}));
     applyFilters();
+
+    // ── 칸 접기(4건+더보기) + 날짜 상세 패널 ──
+    const LIMIT=4, KIND_LABEL={admission:'입원예정',admitted:'입원',discharge:'퇴원예정',discharged:'퇴원',recovery:'회복기 전환',consult:'상담',shared:'공유 ToDo',todo:'나의 ToDo'};
+    const KIND_ORDER=['admission','admitted','discharge','discharged','recovery','consult','shared','todo'];
+    function kindOf(ev){return KIND_ORDER.find(k=>ev.classList.contains(k))||'todo';}
+    function visibleEvents(cell){return [...cell.querySelectorAll('.dash-cal-event')].filter(ev=>{const k=kindOf(ev);const key=(k==='discharged')?'discharge':k;return !hidden.includes(key);});}
+    function foldCells(){
+        calendar.querySelectorAll('td[data-date]').forEach(cell=>{
+            const all=[...cell.querySelectorAll('.dash-cal-event')];const vis=visibleEvents(cell);
+            all.forEach(ev=>ev.classList.remove('cal-folded'));
+            vis.slice(LIMIT).forEach(ev=>ev.classList.add('cal-folded'));
+            let btn=cell.querySelector('.dash-cal-more');
+            const extra=vis.length-LIMIT;
+            if(extra>0){if(!btn){btn=document.createElement('button');btn.type='button';btn.className='dash-cal-more';cell.querySelector('.dash-cal-events').after(btn);}btn.textContent='+'+extra+'건 더보기 (전체 '+vis.length+')';}
+            else if(btn)btn.remove();
+        });
+    }
+    const panel=document.getElementById('cal-day-panel'),backdrop=document.getElementById('cal-day-backdrop');
+    const pTitle=document.getElementById('cal-day-title'),pCount=document.getElementById('cal-day-count'),pList=document.getElementById('cal-day-list');
+    let panelDate=null;
+    function openDay(dateStr){
+        const cell=calendar.querySelector('td[data-date="'+dateStr+'"]');if(!cell)return;
+        panelDate=dateStr;
+        const d=new Date(dateStr+'T00:00:00');
+        pTitle.textContent=d.getMonth()+1+'월 '+d.getDate()+'일 ('+'일월화수목금토'[d.getDay()]+')';
+        const vis=visibleEvents(cell);pCount.textContent=vis.length?' 일정 '+vis.length+'건':'';
+        pList.innerHTML='';
+        if(!vis.length){pList.innerHTML='<div class="empty">이날 일정이 없습니다.</div>';}
+        let last=null;
+        [...vis].sort((a,b)=>KIND_ORDER.indexOf(kindOf(a))-KIND_ORDER.indexOf(kindOf(b))).forEach(ev=>{
+            const k=kindOf(ev);if(k!==last){const g=document.createElement('div');g.className='cal-day-group';g.textContent=KIND_LABEL[k];pList.appendChild(g);last=k;}
+            const c=ev.cloneNode(true);c.classList.remove('cal-folded');if(c.dataset.sub){const sm=document.createElement('small');sm.className='cal-sub';sm.textContent=c.dataset.sub;c.appendChild(sm);}pList.appendChild(c);
+        });
+        panel.hidden=false;backdrop.hidden=false;
+    }
+    function closeDay(){panel.hidden=true;backdrop.hidden=true;panelDate=null;}
+    function localIso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+    function shiftDay(n){if(!panelDate)return;const d=new Date(panelDate+'T00:00:00');d.setDate(d.getDate()+n);const iso=localIso(d);if(calendar.querySelector('td[data-date="'+iso+'"]'))openDay(iso);}
+    calendar.addEventListener('click',e=>{const m=e.target.closest('.dash-cal-more');if(m){e.stopPropagation();openDay(m.closest('td').dataset.date);}},true);
+    document.getElementById('cal-day-close').addEventListener('click',closeDay);
+    backdrop.addEventListener('click',closeDay);
+    document.getElementById('cal-day-todo').addEventListener('click',()=>{const d=panelDate;closeDay();if(d)document.dispatchEvent(new CustomEvent('bokju:todo-open',{detail:{date:d}}));});
+    document.addEventListener('keydown',e=>{if(panel.hidden)return;if(e.key==='Escape')closeDay();else if(e.key==='ArrowLeft')shiftDay(-1);else if(e.key==='ArrowRight')shiftDay(1);});
+    filters.forEach(b=>b.addEventListener('click',foldCells));
+    foldCells();
     calendar.addEventListener('click',function(e){
         if(e.target.closest('.dash-cal-event'))return;
         const cell=e.target.closest('td[data-date]');

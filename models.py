@@ -3312,7 +3312,8 @@ def dashboard_calendar_rows(first_day: str, last_day: str, counselor: str | None
                c.admission_status, c.planned_admission_date, c.planned_admission_time,
                c.actual_admission_date, c.admission_date,
                c.discharge_due_date, c.discharge_date,
-               p.name AS patient_name
+               c.patient_age, c.primary_diagnosis, c.diseases,
+               p.name AS patient_name, p.gender
         FROM consultations c JOIN patients p ON p.id=c.patient_id
         WHERE {where_dates}{counselor_sql}
         ORDER BY c.consult_date, c.consult_time, c.id

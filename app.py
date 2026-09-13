@@ -2005,31 +2005,47 @@ def _dashboard_calendar_context(uid, year, month, counselor=None):
     last = days[-1]
     buckets = {d.isoformat(): [] for d in days}
 
-    def add(day, kind, title, meta="", href="#", time="", done=False):
+    def add(day, kind, title, meta="", href="#", time="", done=False, sub=""):
         key = (day or "")[:10]
         if key not in buckets:
             return
         buckets[key].append({"kind": kind, "title": title, "meta": meta,
-                             "href": href, "time": (time or "")[:5], "done": done})
+                             "href": href, "time": (time or "")[:5], "done": done, "sub": sub})
+
+    def patient_sub(row):
+        """이름 옆 부가정보 — 성별/나이 · 주상병 (달력 칸엔 툴팁, 날짜 패널엔 작은 글씨)."""
+        g = {"M": "남", "F": "여"}.get(row.get("gender") or "", "")
+        age = row.get("patient_age")
+        who = "/".join(v for v in (g, f"{age}세" if age else "") if v)
+        rec = dict(row)
+        if isinstance(rec.get("diseases"), str):
+            try:
+                rec["diseases"] = json.loads(rec["diseases"] or "[]")
+            except ValueError:
+                rec["diseases"] = []
+        labels = _dashboard_disease_labels(rec)
+        dx = "" if labels == ["병명 미지정"] else labels[0]
+        return " · ".join(v for v in (who, dx[:18]) if v)
 
     for row in models.dashboard_calendar_rows(start.isoformat(), last.isoformat(), counselor):
         name = row.get("patient_name") or "환자 미지정"
         href = f"/consult/{row['id']}"
+        sub = patient_sub(row)
         add(row.get("consult_date"), "consult", name,
             "상담" + (f" · {row['counselor']}" if row.get("counselor") else ""),
-            href, row.get("consult_time"))
+            href, row.get("consult_time"), sub=sub)
         actual = row.get("actual_admission_date") or row.get("admission_date")
         planned = row.get("planned_admission_date")
         if actual:
-            add(actual, "admitted", name, "입원", href, row.get("planned_admission_time"))
+            add(actual, "admitted", name, "입원", href, row.get("planned_admission_time"), sub=sub)
         if planned and (not actual or planned != actual):
-            add(planned, "admission", name, "입원예정", href, row.get("planned_admission_time"))
+            add(planned, "admission", name, "입원예정", href, row.get("planned_admission_time"), sub=sub)
         discharged = row.get("discharge_date")
         discharge_due = row.get("discharge_due_date")
         if discharged:
-            add(discharged, "discharged", name, "퇴원", href)
+            add(discharged, "discharged", name, "퇴원", href, sub=sub)
         elif discharge_due:
-            add(discharge_due, "discharge", name, "퇴원예정", href)
+            add(discharge_due, "discharge", name, "퇴원예정", href, sub=sub)
 
     todos = models.list_todos_range(uid, start.isoformat(), last.isoformat())
     for todo in todos:
@@ -2054,7 +2070,8 @@ def _dashboard_calendar_context(uid, year, month, counselor=None):
             ax = _admission_expiry(con)
             bd = ax.get("billing_date") if ax else None
             if bd:
-                add(bd, "recovery", con.get("patient_name") or "환자 미지정", "회복기 전환", f"/consult/{con['id']}")
+                add(bd, "recovery", con.get("patient_name") or "환자 미지정", "회복기 전환", f"/consult/{con['id']}",
+                    sub=patient_sub(con))
     except Exception:
         app.logger.exception("달력 회복기 전환일 계산 실패")
 
