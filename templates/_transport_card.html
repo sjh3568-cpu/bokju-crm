@@ -3,12 +3,13 @@
 {% set tr = ti.req %}
 <div class="card" id="transport" data-cid="{{ c.id }}">
     <h3>🚐 차량 운행(픽업) 요청
-        <span class="muted" style="font-size:0.66em">— 안동·예천 인근은 관리과 차량으로 모셔옵니다. 저장하면 운행팀 구글 시트에 자동 기입</span></h3>
+        <span class="muted" style="font-size:0.66em">— 안동·예천 인근은 관리과 차량으로 모셔옵니다. 저장하면 운행팀 구글 시트에 자동 기입</span>
+        {% if ti.sheet_link %}<a class="tp-sheet-link" href="{{ ti.tab_link or ti.sheet_link }}" target="_blank" rel="noopener" title="운행팀 구글 시트를 새 탭에서 엽니다">운행 시트 열기 ↗</a>{% endif %}</h3>
     <div class="tp-status {% if tr %}tp-{{ tr.sheet_status }}{% endif %}" id="tp-status">
         {% if not tr %}<b>미정</b> — 운행 필요 여부를 아직 정하지 않았습니다.
         {% elif tr.needed == 'no' %}<b>운행 불필요</b> (보호자 직접 이동)
         {% else %}<b>{{ ti.status_label }}</b>
-            {% if tr.sheet_status == 'sent' %}· 탭 {{ tr.sheet_tab }} {{ tr.sheet_row }}행
+            {% if tr.sheet_status == 'sent' %}· {% if ti.tab_link %}<a href="{{ ti.tab_link }}" target="_blank" rel="noopener">탭 {{ tr.sheet_tab }} {{ tr.sheet_row }}행 ↗</a>{% else %}탭 {{ tr.sheet_tab }} {{ tr.sheet_row }}행{% endif %}
                 {% if tr.driver or tr.vehicle %}· <span class="tp-assign">배정: {{ tr.driver or '?' }} / {{ tr.vehicle or '차량 미정' }}</span>
                 {% else %}· <span class="tp-wait">운행팀 배정 대기</span>{% endif %}
             {% elif tr.sheet_status == 'pending' %}· 운행팀에 {{ tr.pickup_date|krdate if tr.pickup_date else '해당 날짜' }} 탭 추가 요청 필요
@@ -44,6 +45,9 @@
     </div>
 </div>
 <style>
+.tp-sheet-link { float:right; font-size:0.62em; font-weight:700; padding:3px 10px; border:1px solid var(--border); border-radius:999px; text-decoration:none; color:#166534; background:#f0fdf4; }
+.tp-sheet-link:hover { background:#dcfce7; }
+.tp-status a { color:inherit; font-weight:700; }
 .tp-status { padding:7px 10px; border-radius:7px; background:#f1f5f9; font-size:0.88em; margin-bottom:8px; }
 .tp-status.tp-sent { background:#dcfce7; } .tp-status.tp-pending, .tp-status.tp-error { background:#fee2e2; }
 .tp-status.tp-skip { background:#f1f5f9; color:#64748b; }

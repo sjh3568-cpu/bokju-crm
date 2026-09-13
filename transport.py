@@ -52,6 +52,19 @@ def sheet_token() -> str:
     return (os.getenv("TRANSPORT_SHEET_TOKEN") or "").strip()
 
 
+_SHEET_LINK_CACHE = {"url": None}
+
+
+def sheet_link(gid=None) -> str:
+    """시트 바로가기. .env TRANSPORT_SHEET_LINK 가 있으면 그것, 없으면 스크립트 응답에서 받아 둔 URL.
+    gid 가 있으면 그 날짜 탭으로 바로 연다."""
+    base = (os.getenv("TRANSPORT_SHEET_LINK") or "").strip() or _SHEET_LINK_CACHE["url"] or ""
+    if not base:
+        return ""
+    base = base.split("#")[0]
+    return f"{base}#gid={gid}" if gid not in (None, "") else base
+
+
 def mobility_options() -> list[str]:
     raw = os.getenv("TRANSPORT_MOBILITY_OPTIONS") or "W/C,walk,Rec"
     return [x.strip() for x in raw.split(",") if x.strip()]
@@ -88,6 +101,7 @@ def init_schema(conn=None):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_transport_date ON transport_requests(pickup_date, sheet_status)")
     models._ensure_columns(conn, "transport_requests", {
         "assigned_at": "DATETIME",       # 운행팀이 배정자를 채운 것을 처음 확인한 시각 — 상담사 알림 기준
+        "sheet_gid": "TEXT",             # 날짜 탭 id — 시트 바로가기(#gid=)용
     })
     if own:
         conn.commit(); conn.close()
@@ -119,6 +133,8 @@ def info_for_template(cid: int) -> dict:
             "mobility_options": mobility_options(),
             "reason_options": REASON_OPTIONS,
             "sheet_configured": bool(sheet_url()),
+            "sheet_link": sheet_link(),
+            "tab_link": sheet_link((r or {}).get("sheet_gid")) if (r or {}).get("sheet_gid") else "",
         }
     return cache[cid]
 
@@ -144,7 +160,10 @@ def _call_sheet(action: str, **payload) -> dict:
     except (URLError, TimeoutError, OSError) as e:
         return {"ok": False, "error": f"연결 실패: {e}"}
     try:
-        return json.loads(text)
+        res = json.loads(text)
+        if isinstance(res, dict) and res.get("url"):
+            _SHEET_LINK_CACHE["url"] = res["url"]
+        return res
     except ValueError:
         # 로그인 페이지 HTML이 오면 배포 설정(액세스: 모든 사용자)이 틀린 것
         return {"ok": False, "error": "응답이 JSON이 아님 — 웹앱 배포 '액세스: 모든 사용자' 확인"}
@@ -179,8 +198,9 @@ def push(cid: int) -> dict:
     res = _call_sheet("upsert", date=r["pickup_date"], row=_row_values(r),
                       match_row=r.get("sheet_row") if r.get("sheet_tab") else None, match_name=r["patient_name"])
     if res.get("ok"):
-        conn.execute("""UPDATE transport_requests SET sheet_status='sent', sheet_tab=?, sheet_row=?, sent_at=CURRENT_TIMESTAMP,
-                        last_error=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=?""", (res.get("tab"), res.get("row"), r["id"]))
+        conn.execute("""UPDATE transport_requests SET sheet_status='sent', sheet_tab=?, sheet_row=?, sheet_gid=?, sent_at=CURRENT_TIMESTAMP,
+                        last_error=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=?""",
+                     (res.get("tab"), res.get("row"), str(res["gid"]) if res.get("gid") is not None else None, r["id"]))
         status = "sent"
     elif res.get("error") == "NO_TAB":
         conn.execute("UPDATE transport_requests SET sheet_status='pending', last_error=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=?", (r["id"],))

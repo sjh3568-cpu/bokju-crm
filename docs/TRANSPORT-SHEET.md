@@ -40,7 +40,11 @@
 TRANSPORT_SHEET_URL=https://script.google.com/macros/s/……/exec
 TRANSPORT_SHEET_TOKEN=(1-4에서 정한 값)
 TRANSPORT_MOBILITY_OPTIONS=W/C,walk,Rec
+TRANSPORT_SHEET_LINK=https://docs.google.com/spreadsheets/d/…/edit   # (선택) 카드의 "운행 시트 열기" 버튼
 ```
+
+`TRANSPORT_SHEET_LINK`를 비워도 스크립트가 응답에 시트 주소를 실어 보내므로 첫 통신 뒤에는 자동으로 채워진다.
+전송된 건은 그 날짜 탭으로 바로 여는 링크(`#gid=`)가 된다.
 
 `TRANSPORT_MOBILITY_OPTIONS`는 시트 '이동수단' 드롭다운에 있는 값과 **글자까지 똑같이** 적습니다
 (시트 쪽 데이터 확인 규칙에 걸리지 않게).

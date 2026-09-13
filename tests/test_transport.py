@@ -60,7 +60,7 @@ class TransportTests(unittest.TestCase):
         def fake(action, **p):
             calls.append((action, p))
             if action == 'upsert':
-                return {'ok': False, 'error': 'NO_TAB'} if fake.no_tab else {'ok': True, 'tab': '2026.9.14', 'row': 14}
+                return {'ok': False, 'error': 'NO_TAB'} if fake.no_tab else {'ok': True, 'tab': '2026.9.14', 'row': 14, 'url': 'https://docs.google.com/spreadsheets/d/X/edit', 'gid': 777}
             if action == 'read':
                 return {'ok': True, 'tab': '2026.9.14', 'rows': [{'row': 14, 'name': '한영도', 'driver': '권철호', 'vehicle': '6668'}]}
         fake.no_tab = True
@@ -77,6 +77,12 @@ class TransportTests(unittest.TestCase):
             self.assertEqual((out['retry']['sent'], out['assignments']['updated']), (1, 1))
             r = transport.get_request(self.cid)
             self.assertEqual((r['sheet_status'], r['sheet_tab'], r['sheet_row'], r['driver'], r['vehicle']), ('sent', '2026.9.14', 14, '권철호', '6668'))
+            self.assertEqual(r['sheet_gid'], '777')
+            # 링크: .env 주소 우선, 전송된 건은 그 탭(#gid)으로. (가짜 응답이라 스크립트 URL 캐시는 비어 있음)
+            with patch.dict(os.environ, {'TRANSPORT_SHEET_LINK': 'https://docs.google.com/spreadsheets/d/ENV/edit#gid=0'}):
+                self.assertEqual(transport.sheet_link('777'), 'https://docs.google.com/spreadsheets/d/ENV/edit#gid=777')
+                page = self.c.get(f'/consult/{self.cid}').get_data(as_text=True)
+            self.assertIn('운행 시트 열기', page); self.assertIn('#gid=777', page)
             self.assertEqual(transport.dashboard_alerts(), [])
             # 배정이 처음 확인된 순간 알림 피드에 오르고, 다시 동기화해도 같은 id(한 번만 토스트)
             alerts = transport.assignment_alerts()

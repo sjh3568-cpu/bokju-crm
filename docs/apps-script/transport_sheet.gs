@@ -50,7 +50,8 @@ function findTab(ss, isoDate) {
 
 function ping(ss, isoDate) {
   var tab = isoDate ? findTab(ss, isoDate) : null;
-  var out = { ok: true, sheet: ss.getName(), tabs: ss.getSheets().length, tab_for_date: tab ? tab.getName() : null };
+  var out = { ok: true, sheet: ss.getName(), tabs: ss.getSheets().length, tab_for_date: tab ? tab.getName() : null,
+              url: ss.getUrl(), gid: tab ? tab.getSheetId() : null };
   try { out.running_as = Session.getEffectiveUser().getEmail(); } catch (e) { out.running_as = '?'; }
   try { out.editors = ss.getEditors().map(function (u) { return u.getEmail(); }); } catch (e) { out.editors = 'getEditors 실패: ' + e.message; }
   try { out.owner = ss.getOwner() ? ss.getOwner().getEmail() : null; } catch (e) { out.owner = '?'; }
@@ -138,7 +139,7 @@ function upsert(ss, body) {
     return { ok: false, error: 'WRITE_NOT_PERSISTED', row: target, got: check,
              hint: '값이 저장되지 않음 — 실행 계정의 편집 권한 또는 시트 보호를 확인' };
   }
-  return { ok: true, tab: tab.getName(), row: target, inserted: inserted };
+  return { ok: true, tab: tab.getName(), row: target, inserted: inserted, url: ss.getUrl(), gid: tab.getSheetId() };
 }
 
 /** 그 날짜 탭의 진료협력 행 — 배정자·차량을 CRM이 읽어간다 */
@@ -156,5 +157,5 @@ function readRows(ss, isoDate) {
                   driver: String(v[COL.DRIVER - COL.DEPT]).trim(), vehicle: String(v[COL.VEHICLE - COL.DEPT]).trim() });
     }
   }
-  return { ok: true, tab: tab.getName(), rows: rows };
+  return { ok: true, tab: tab.getName(), rows: rows, url: ss.getUrl(), gid: tab.getSheetId() };
 }
