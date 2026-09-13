@@ -295,3 +295,5 @@
 .page-dashboard .aq-row.stale td { color: var(--dmuted); }
 /* KPI 카드 → #admission-schedule 같은 앵커 이동 시 sticky 상단바에 카드 머리글이 가려지지 않게 */
 .page-dashboard .card[id] { scroll-margin-top: 72px; }
+/* 병동별 재원 — 만석은 붉게 */
+.floors .fl .beds .num.full{color:#b91c1c}

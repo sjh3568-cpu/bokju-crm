@@ -471,18 +471,18 @@
 <div class="card" id="ward-occupancy">
             <div class="dash-section-head">
                 <h3>병동별 재원</h3>
-                <span class="muted-sm">{% if ws.admitted is not none %}재원 {{ ws.admitted }} / 허가 {{ ws.bed_capacity }}{% endif %}</span>
+                <span class="muted-sm" title="총 가용 = 허가 병상 − 재원 (정비·격리 등은 반영 안 됨)">{% if ws.admitted is not none %}재원 {{ ws.admitted }} / 허가 {{ ws.bed_capacity }}{% if ws.bed_capacity %} · 총 가용 {{ ws.bed_capacity - ws.admitted }}{% endif %}{% endif %}</span>
                 <a class="dash-more" href="/ward">재원 관리 →</a>
             </div>
             {% if ward_occupancy %}
             <div class="floors">
                 {% for w in ward_occupancy %}
-                <a class="fl {{ w.level }}" href="/ward?ward={{ w.ward }}" title="{{ w.ward }} 재원 {{ w.count }}명 (남 {{ w.male }} · 여 {{ w.female }}){% if w.capacity %} / 허가 {{ w.capacity }} · {{ w.pct }}% · 남은 {{ w.free }}{% endif %}">
+                <a class="fl {{ w.level }}" href="/ward?ward={{ w.ward }}" title="{{ w.ward }} 재원 {{ w.count }}명 (남 {{ w.male }} · 여 {{ w.female }}){% if w.capacity %} / 허가 {{ w.capacity }} · {{ w.pct }}% · 가용 {{ w.free }} (허가 {{ w.capacity }} − 재원 {{ w.count }}){% endif %}">
                     <b>{{ w.ward }}</b>
                     <span class="bar"><i style="width:{{ w.bar }}%"></i></span>
                     <span class="n num"><b>{{ w.count }}</b>{% if w.capacity %}/{{ w.capacity }}{% else %}명{% endif %}</span>
                     <span class="beds">
-                        {% if w.capacity %}<b class="num">남은 {{ w.free }}</b>{% endif %}
+                        {% if w.capacity %}{% if w.free <= 0 %}<b class="num full">만석</b>{% else %}<b class="num">가용 {{ w.free }}</b>{% endif %}{% endif %}
                         {% if w.rooms_known %}
                             <i class="m">남 {{ w.free_m }}</i><i class="f">여 {{ w.free_f }}</i>{% if w.free_open %}<i class="o">빈방 {{ w.free_open }}</i>{% endif %}{% if w.free_unknown %}<i class="u">미확인 {{ w.free_unknown }}</i>{% endif %}{% if w.no_room %}<i class="u" title="명부에 병실이 없는 재원">병실 미기재 {{ w.no_room }}</i>{% endif %}
                         {% else %}
