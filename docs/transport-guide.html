@@ -1,0 +1,109 @@
+<title>차량 픽업 요청 안내</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap">
+<style>
+:root{
+  --bg:#f6f7f4; --paper:#ffffff; --ink:#1b2b22; --ink-2:#4b5a52; --ink-3:#7d8a83;
+  --line:#dbe3dd; --mist:#e8efe9; --accent:#1f6b4a; --accent-ink:#ffffff;
+  --ok-bg:#dcefe2; --ok:#15613a; --wait-bg:#fdefd2; --wait:#8a4b06; --bad-bg:#fbdede; --bad:#a3231f; --off-bg:#eceeed; --off:#6b7570;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#141a17; --paper:#1c2420; --ink:#e9efeb; --ink-2:#b7c3bc; --ink-3:#7f8d86;
+  --line:#2c3833; --mist:#232d28; --accent:#57b283; --accent-ink:#10201a;
+  --ok-bg:#1e3a2b; --ok:#8fd9ae; --wait-bg:#3b2e14; --wait:#f0c26d; --bad-bg:#3d1f1f; --bad:#f19b98; --off-bg:#26302b; --off:#9aa6a0;
+}}
+:root[data-theme="dark"]{
+  --bg:#141a17; --paper:#1c2420; --ink:#e9efeb; --ink-2:#b7c3bc; --ink-3:#7f8d86;
+  --line:#2c3833; --mist:#232d28; --accent:#57b283; --accent-ink:#10201a;
+  --ok-bg:#1e3a2b; --ok:#8fd9ae; --wait-bg:#3b2e14; --wait:#f0c26d; --bad-bg:#3d1f1f; --bad:#f19b98; --off-bg:#26302b; --off:#9aa6a0;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Noto Sans KR","Pretendard","Apple SD Gothic Neo","Malgun Gothic",sans-serif;font-size:15px;line-height:1.6;padding-block:28px;padding-inline:16px}
+.sheet{max-width:780px;margin:0 auto;background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:36px 40px 32px}
+.eyebrow{font-size:.74rem;font-weight:700;letter-spacing:.12em;color:var(--accent);text-transform:uppercase;margin:0 0 6px}
+h1{font-size:1.75rem;font-weight:900;letter-spacing:-.01em;line-height:1.25;margin:0 0 6px;text-wrap:balance}
+.lead{margin:0 0 24px;color:var(--ink-2);max-width:60ch}
+h2{font-size:1rem;font-weight:800;margin:28px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--accent);display:flex;align-items:baseline;gap:10px}
+h2 small{font-weight:500;color:var(--ink-3);font-size:.82rem}
+.when{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.when div{background:var(--mist);border-radius:6px;padding:12px 14px}
+.when b{display:block;font-size:.8rem;color:var(--accent);margin-bottom:2px}
+.when p{margin:0;font-size:.92rem;color:var(--ink-2)}
+ol.steps{list-style:none;margin:0;padding:0;counter-reset:s;display:grid;gap:10px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:start;padding:12px 14px;border:1px solid var(--line);border-radius:6px}
+ol.steps li::before{content:counter(s);width:30px;height:30px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font-weight:900;display:grid;place-items:center;font-size:.95rem;font-variant-numeric:tabular-nums}
+ol.steps b{display:block;font-size:.98rem}
+ol.steps p{margin:2px 0 0;color:var(--ink-2);font-size:.9rem}
+.fields{display:grid;grid-template-columns:110px 1fr;gap:3px 12px;margin:8px 0 0;font-size:.88rem}
+.fields dt{color:var(--ink-3);font-weight:500}
+.fields dd{margin:0;color:var(--ink);display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.tag{display:inline-block;padding:0 7px;border-radius:4px;font-size:.74rem;font-weight:700;line-height:1.55}
+.tag.auto{background:var(--off-bg);color:var(--off)}
+.tag.you{background:var(--accent);color:var(--accent-ink)}
+.ex{font-family:"Noto Sans KR",monospace;color:var(--ink-2)}
+table{width:100%;border-collapse:collapse;font-size:.9rem}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:.76rem;color:var(--ink-3);font-weight:700;letter-spacing:.04em}
+.chip{display:inline-block;min-width:44px;text-align:center;padding:1px 8px;border-radius:5px;font-weight:900;font-size:.9rem;white-space:nowrap}
+.chip.bad{background:var(--bad-bg);color:var(--bad)}.chip.wait{background:var(--wait-bg);color:var(--wait)}.chip.ok{background:var(--ok-bg);color:var(--ok)}.chip.off{background:var(--off-bg);color:var(--off)}
+td.act{color:var(--ink-2)}
+.faq{display:grid;gap:8px}
+.faq div{display:grid;grid-template-columns:22px 1fr;gap:8px;font-size:.92rem}
+.faq div::before{content:"Q";font-weight:900;color:var(--accent)}
+.faq b{display:block}.faq span{color:var(--ink-2)}
+.foot{margin-top:26px;padding-top:12px;border-top:1px solid var(--line);font-size:.8rem;color:var(--ink-3);display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px}
+@media (max-width:560px){.sheet{padding:24px 18px}.when{grid-template-columns:1fr}.fields{grid-template-columns:1fr}.fields dt{margin-top:6px}}
+@media print{body{background:#fff;padding:0}.sheet{border:0;max-width:none;padding:10mm 12mm}@page{size:A4;margin:10mm}}
+</style>
+
+<div class="sheet">
+  <p class="eyebrow">복주회복병원 상담실 · CRM 안내</p>
+  <h1>입원 확정 환자 차량 픽업, CRM에서 한 번에</h1>
+  <p class="lead">안동·예천 인근 모병원에서 모셔오는 환자는 지금까지 운행팀 구글 시트에 따로 적었습니다. 이제 상담 상세 화면의 <b>🚐 차량 운행(픽업) 요청</b> 칸만 채우면 시트에는 자동으로 들어갑니다. 시트를 열 필요가 없습니다.</p>
+
+  <h2>언제 하나 <small>입원 확정 직후, 병실까지 정해졌을 때</small></h2>
+  <div class="when">
+    <div><b>차량이 필요한 환자</b><p>모병원 병동에서 우리 차량으로 이동. 이동수단·호실·도착시간을 적고 저장하면 운행팀 시트 「진료협력」 줄로 들어갑니다.</p></div>
+    <div><b>보호자가 직접 오는 환자</b><p><b>불필요</b>를 골라 저장합니다. 이걸 해 두어야 대시보드에 "운행 여부 미정" 경고가 뜨지 않습니다.</p></div>
+  </div>
+
+  <h2>순서 <small>1분이면 끝납니다</small></h2>
+  <ol class="steps">
+    <li><b>환자의 상담 상세 화면을 엽니다</b><p>상담 목록에서 환자 이름 클릭 → 아래로 내려가 <b>🚐 차량 운행(픽업) 요청</b> 카드.</p></li>
+    <li><b>「차량 필요」 또는 「불필요」를 고릅니다</b><p>불필요면 바로 <b>저장</b>. 끝.</p></li>
+    <li><b>비어 있는 칸만 채웁니다</b>
+      <dl class="fields">
+        <dt>날짜(탭)</dt><dd><span class="tag auto">자동</span> 입원예정일. 시트의 날짜 탭이 됩니다.</dd>
+        <dt>이동수단</dt><dd><span class="tag you">입력</span> W/C · walking · Recliner 중 선택</dd>
+        <dt>요청이유</dt><dd><span class="tag auto">자동</span> 픽업(입원). 다르면 바꿉니다.</dd>
+        <dt>요청 장소</dt><dd><span class="tag you">입력</span> 모병원 이름은 채워져 있음 — 호실만 추가 <span class="ex">예: 안동병원 605호</span></dd>
+        <dt>도착시간</dt><dd><span class="tag you">입력</span> 시간만 고르면 "14:00 도착"으로 들어갑니다</dd>
+        <dt>연락처</dt><dd><span class="tag auto">자동</span> 보호자 관계·번호. 준비물은 뒤에 덧붙입니다 <span class="ex">예: (산소 3L 준비)</span></dd>
+        <dt>요청부서·요청자</dt><dd><span class="tag auto">자동</span> 진료협력 · 로그인한 본인 이름</dd>
+      </dl>
+    </li>
+    <li><b>「저장 · 시트 전송」</b><p>"전송 완료 (2026.9.14 탭 15행)" 알림이 뜨면 시트에 들어간 것입니다. 잘못 적었으면 고쳐서 다시 저장 — 새 줄이 생기지 않고 그 줄이 고쳐집니다.</p></li>
+  </ol>
+
+  <h2>상태 읽기 <small>카드 상단 띠와 입원 대기 탭의 🚐 표시</small></h2>
+  <table>
+    <thead><tr><th>표시</th><th>뜻</th><th>할 일</th></tr></thead>
+    <tbody>
+      <tr><td><span class="chip bad">🚐?</span></td><td>운행 여부 미정</td><td class="act">필요/불필요 중 하나를 저장</td></tr>
+      <tr><td><span class="chip bad">🚐!</span></td><td>전송 대기 — 시트에 그 날짜 탭이 아직 없음</td><td class="act">운행팀에 탭을 만들어 달라고 요청. 탭이 생기면 1시간 안에 자동 전송</td></tr>
+      <tr><td><span class="chip wait">🚐…</span></td><td>시트에 들어갔고 운행팀 배정 대기</td><td class="act">없음. 운행팀이 배정자·차량을 채우면 자동으로 바뀜</td></tr>
+      <tr><td><span class="chip ok">🚐✓</span></td><td>배정 완료 — 카드에 "배정: 이름 / 차량" 표시</td><td class="act">보호자에게 시간·장소 안내</td></tr>
+      <tr><td><span class="chip off">🚐✕</span></td><td>운행 불필요 (보호자 직접)</td><td class="act">없음</td></tr>
+    </tbody>
+  </table>
+  <p style="margin:10px 0 0;font-size:.88rem;color:var(--ink-2)">오늘·내일 입원 예정인데 <b>🚐?</b> 또는 <b>🚐!</b>인 환자는 대시보드 「오늘 처리 필요」에 빨간 줄로 올라옵니다.</p>
+
+  <h2>자주 묻는 것</h2>
+  <div class="faq">
+    <div><b>입원 날짜가 바뀌면?</b><span>상담에서 입원예정일을 고친 뒤 🚐 카드의 날짜(탭)도 새 날짜로 바꿔 다시 저장합니다. 이전 날짜 탭의 줄은 시트에서 직접 지워 주세요.</span></div>
+    <div><b>시트에 있던 줄을 운행팀이 지웠는데 CRM은 "전송 완료"로 남아 있어요.</b><span>카드에서 다시 저장하면 새 줄로 들어갑니다.</span></div>
+    <div><b>배정자가 안 보여요.</b><span>운행팀이 채운 뒤 최대 1시간 뒤에 반영됩니다. 급하면 시트를 직접 보셔도 됩니다.</span></div>
+    <div><b>퇴원 귀가 운행도 여기서?</b><span>요청이유를 「퇴원」으로 바꾸고 날짜(탭)를 퇴원일로 지정하면 같은 방식으로 들어갑니다.</span></div>
+  </div>
+
+  <div class="foot"><span>문의: 미래전략실</span><span>2026-09 · CRM 상담 상세 → 🚐 차량 운행(픽업) 요청</span></div>
+</div>

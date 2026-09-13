@@ -72,6 +72,36 @@ CRM에 로그인한 브라우저 주소창에 `/transport/check` 를 붙여 엽�
 - 차량 필요인데 **전송 대기/실패** → 빨강
 - 전송됐는데 **배정자 없음** → 노랑
 
+## 7. 운영(NAS) 배포
+
+시트 연동은 코드가 아니라 **`.env` 세 줄**로 켜진다. 컨테이너는 `docker-compose.yml`의
+`env_file`로 `.env`를 읽으므로 NAS의 `.env`에 같은 값을 넣고 재시작하면 된다.
+
+1. **코드 배포** — 노트북에서 `./release.sh`로 태그를 찍고, 병원 PC에서 "배포해줘"
+   (= `ssh bokju-nas "sudo -n /root/deploy.sh --yes"`). `.env`는 배포가 건드리지 않는다.
+2. **NAS `.env`에 추가** — File Station으로 `/volume1/docker/bokju-crm/.env` 열어 맨 아래에
+   ```
+   TRANSPORT_SHEET_URL=https://script.google.com/macros/s/……/exec   ← 노트북 .env와 같은 값
+   TRANSPORT_SHEET_TOKEN=(같은 토큰)
+   TRANSPORT_MOBILITY_OPTIONS=W/C,walking,Recliner
+   ```
+3. **재시작** — Container Manager → 프로젝트 `bokju-crm` → 중지 → 시작
+   (또는 `ssh bokju-nas "sudo -n /root/deploy.sh --yes"`를 다시 실행해도 재시작된다).
+4. **점검** — 상담사 PC 브라우저에서 `http://<NAS>:8003/transport/check` → "정상 — 시트 연결됨".
+5. **개발 노트북 `.env`의 URL은 비운다** — 개발 서버에서 시험 저장한 것이 진짜 시트에 들어가지
+   않도록 `TRANSPORT_SHEET_URL=` 로 두면 CRM 안에만 기록된다(카드에 "시트 연동 미설정" 표시).
+   시트 쪽을 다시 시험할 일이 있을 때만 잠깐 채운다.
+
+**NAS가 인터넷으로 나갈 수 있어야 한다** — 스크립트 호출은 NAS → `script.google.com`
+방향의 HTTPS 아웃바운드다. 인바운드 포트를 열 필요는 없다. 사내 방화벽이 NAS의 외부
+접속을 막고 있으면 "연결 실패"로 나온다.
+
+**스크립트 URL은 한 개** — 운영과 개발이 같은 URL·토큰을 써도 된다(같은 시트에 쓰기
+때문에 5번처럼 개발 쪽은 비워 두는 것을 권장). 스크립트를 고쳤을 때는 "배포 관리 →
+새 버전"만 하면 URL이 유지되어 `.env`는 그대로다.
+
+**상담사 안내** — `docs/transport-guide.html`(1장, 인쇄용)을 상담실에 공유한다.
+
 ## 문제 해결
 
 | 증상 | 원인 | 조치 |
