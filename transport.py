@@ -183,7 +183,12 @@ def push(cid: int) -> dict:
         conn.execute("UPDATE transport_requests SET sheet_status='pending', last_error=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=?", (r["id"],))
         status = "pending"
     else:
-        conn.execute("UPDATE transport_requests SET sheet_status='error', last_error=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", (str(res.get("error"))[:300], r["id"]))
+        err = str(res.get("error"))
+        if err == "WRITE_NOT_PERSISTED":
+            err = "시트에 값이 저장되지 않음 — 스크립트 실행 계정의 편집 권한 또는 시트 보호 확인"
+        elif err == "BAD_TOKEN":
+            err = "토큰 불일치 — .env TRANSPORT_SHEET_TOKEN 과 스크립트 TOKEN 을 맞추세요"
+        conn.execute("UPDATE transport_requests SET sheet_status='error', last_error=?, updated_at=CURRENT_TIMESTAMP WHERE id=?", (err[:300], r["id"]))
         status = "error"
     conn.commit(); conn.close()
     return {"ok": status in ("sent", "pending"), "status": status, "error": res.get("error"), "tab": res.get("tab"), "row": res.get("row")}
@@ -367,6 +372,10 @@ def check_page():
             lines.append(f"시트 이름: {res.get('sheet')}")
             lines.append(f"탭 개수: {res.get('tabs')}")
             lines.append(f"오늘 탭: {res.get('tab_for_date') or '없음 (운행팀이 만들면 됨)'}")
+            if res.get("running_as"):
+                lines.append(f"스크립트 실행 계정: {res.get('running_as')}")
+            if res.get("editors") is not None:
+                lines.append(f"시트 편집 가능 계정: {res.get('editors')}")
         else:
             state, tone = "실패", "bad"
             hints = {"BAD_TOKEN": "토큰이 스크립트(TOKEN)와 .env(TRANSPORT_SHEET_TOKEN)에서 서로 다릅니다.",

@@ -25,6 +25,7 @@ function doPost(e) {
     if (body.action === 'ping') out = ping(ss, body.date);
     else if (body.action === 'upsert') out = upsert(ss, body);
     else if (body.action === 'read') out = readRows(ss, body.date);
+    else if (body.action === 'dump') out = dump(ss, body.date);
     else throw new Error('UNKNOWN_ACTION');
   } catch (err) {
     out = { ok: false, error: String(err.message || err) };
@@ -49,7 +50,31 @@ function findTab(ss, isoDate) {
 
 function ping(ss, isoDate) {
   var tab = isoDate ? findTab(ss, isoDate) : null;
-  return { ok: true, sheet: ss.getName(), tabs: ss.getSheets().length, tab_for_date: tab ? tab.getName() : null };
+  var out = { ok: true, sheet: ss.getName(), tabs: ss.getSheets().length, tab_for_date: tab ? tab.getName() : null };
+  try { out.running_as = Session.getEffectiveUser().getEmail(); } catch (e) { out.running_as = '?'; }
+  try { out.editors = ss.getEditors().map(function (u) { return u.getEmail(); }); } catch (e) { out.editors = 'getEditors 실패: ' + e.message; }
+  try { out.owner = ss.getOwner() ? ss.getOwner().getEmail() : null; } catch (e) { out.owner = '?'; }
+  if (tab) {
+    out.tab_last_row = tab.getLastRow(); out.tab_max_rows = tab.getMaxRows(); out.tab_last_data_row = lastDataRow(tab);
+    try { out.tab_protections = tab.getProtections(SpreadsheetApp.ProtectionType.SHEET).length + tab.getProtections(SpreadsheetApp.ProtectionType.RANGE).length; } catch (e) { out.tab_protections = '?'; }
+  }
+  return out;
+}
+
+/** 진단 — 그 날짜 탭의 데이터 끝부분(A~M) 원본 값·병합·확인규칙을 그대로 돌려준다 */
+function dump(ss, isoDate) {
+  var tab = findTab(ss, isoDate);
+  if (!tab) return { ok: false, error: 'NO_TAB' };
+  var lr = lastDataRow(tab), from = Math.max(HEADER_ROWS + 1, lr - 3), to = Math.min(tab.getMaxRows(), lr + 3);
+  var rng = tab.getRange(from, 1, to - from + 1, 13);
+  var merged = rng.getMergedRanges().map(function (r) { return r.getA1Notation(); });
+  var dv = [];
+  ['B', 'E', 'F'].forEach(function (col) {
+    var rule = tab.getRange(col + (lr + 1)).getDataValidation();
+    dv.push({ cell: col + (lr + 1), rule: rule ? rule.getCriteriaType() + ' allowInvalid=' + rule.getAllowInvalid() + ' ' + JSON.stringify(rule.getCriteriaValues()).slice(0, 200) : null });
+  });
+  return { ok: true, tab: tab.getName(), from_row: from, values: rng.getValues(), merged: merged, validation: dv,
+           last_row: tab.getLastRow(), last_data_row: lr, max_rows: tab.getMaxRows() };
 }
 
 /** 데이터가 있는 마지막 행 (이름 D열 기준) */
@@ -88,13 +113,26 @@ function upsert(ss, body) {
       }
     }
   }
+  var inserted = false;
   if (!target) {
-    target = lastDataRow(tab) + 1;
+    var lr2 = lastDataRow(tab);
+    target = lr2 + 1;
+    // 바로 아래 줄이 병합 셀(메모 블록 등)에 걸려 있으면 값이 조용히 사라진다 → 한 줄 끼워 넣는다
+    if (target > tab.getMaxRows() || tab.getRange(target, 1, 1, COL.CONTACT).getMergedRanges().length > 0) {
+      tab.insertRowsAfter(lr2, 1); inserted = true;
+    }
     var prevNo = target > HEADER_ROWS + 1 ? Number(tab.getRange(target - 1, COL.NO).getValue()) : 0;
     tab.getRange(target, COL.NO).setValue(isNaN(prevNo) ? '' : prevNo + 1);
   }
   tab.getRange(target, COL.DEPT, 1, row.length).setValues([row]);
-  return { ok: true, tab: tab.getName(), row: target };
+  SpreadsheetApp.flush();
+  // 실제로 남았는지 확인 — 편집 권한이 없거나 셀이 잠겨 있으면 여기서 걸린다
+  var check = String(tab.getRange(target, COL.NAME).getValue()).trim();
+  if (check !== String(row[2]).trim()) {
+    return { ok: false, error: 'WRITE_NOT_PERSISTED', row: target, got: check,
+             hint: '값이 저장되지 않음 — 실행 계정의 편집 권한 또는 시트 보호를 확인' };
+  }
+  return { ok: true, tab: tab.getName(), row: target, inserted: inserted };
 }
 
 /** 그 날짜 탭의 진료협력 행 — 배정자·차량을 CRM이 읽어간다 */
