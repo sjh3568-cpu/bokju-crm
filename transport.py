@@ -356,16 +356,29 @@ def api_ping():
 @login_required
 def check_page():
     """브라우저 주소창에 /transport/check 만 쳐도 연동 상태를 볼 수 있게 — 비개발자용 점검."""
+    lines = []
     if not sheet_url():
-        return jsonify({"ok": False, "상태": "미설정", "안내": ".env 에 TRANSPORT_SHEET_URL / TRANSPORT_SHEET_TOKEN 을 넣고 서버를 재시작하세요"})
-    res = _call_sheet("ping", date=date.today().isoformat())
-    if res.get("ok"):
-        res["상태"] = "정상 — 시트 연결됨"
-        res["오늘_탭"] = res.get("tab_for_date") or "없음 (운행팀이 만들면 됨)"
+        state, tone = "미설정", "bad"
+        lines.append(".env 에 TRANSPORT_SHEET_URL / TRANSPORT_SHEET_TOKEN 이 없거나, 넣은 뒤 서버를 다시 시작하지 않았습니다.")
     else:
-        hints = {"BAD_TOKEN": "토큰이 스크립트와 .env 에서 서로 다릅니다", "NOT_CONFIGURED": ".env 설정 없음"}
-        res["상태"] = "실패"; res["안내"] = hints.get(res.get("error"), res.get("error"))
-    return jsonify(res)
+        res = _call_sheet("ping", date=date.today().isoformat())
+        if res.get("ok"):
+            state, tone = "정상 — 시트 연결됨", "ok"
+            lines.append(f"시트 이름: {res.get('sheet')}")
+            lines.append(f"탭 개수: {res.get('tabs')}")
+            lines.append(f"오늘 탭: {res.get('tab_for_date') or '없음 (운행팀이 만들면 됨)'}")
+        else:
+            state, tone = "실패", "bad"
+            hints = {"BAD_TOKEN": "토큰이 스크립트(TOKEN)와 .env(TRANSPORT_SHEET_TOKEN)에서 서로 다릅니다.",
+                     "NOT_CONFIGURED": ".env 설정이 없습니다."}
+            lines.append(hints.get(res.get("error"), str(res.get("error"))))
+    body = "".join(f"<li>{x}</li>" for x in lines)
+    color = {"ok": "#166534", "bad": "#b91c1c"}[tone]
+    return (f'<!doctype html><meta charset="utf-8"><title>운행 시트 연동 점검</title>'
+            f'<body style="font-family:sans-serif;padding:24px;max-width:720px">'
+            f'<h2>🚐 운행 시트 연동 점검</h2>'
+            f'<p style="font-size:1.3em;font-weight:800;color:{color}">상태: {state}</p><ul>{body}</ul>'
+            f'<p style="color:#64748b;font-size:.9em">설정 방법: docs/TRANSPORT-SHEET.md · <a href="/">CRM으로</a></p></body>')
 
 
 @bp.app_template_global("transport_info")
