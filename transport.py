@@ -53,15 +53,16 @@ def sheet_token() -> str:
 
 
 _SHEET_LINK_CACHE = {"url": None}
+_GID_CACHE: dict[str, str] = {}      # 날짜(YYYY-MM-DD) → 탭 gid, 스크립트 응답에서 채움
 
 
 def sheet_link(gid=None) -> str:
     """시트 바로가기. .env TRANSPORT_SHEET_LINK 가 있으면 그것, 없으면 스크립트 응답에서 받아 둔 URL.
-    gid 가 있으면 그 날짜 탭으로 바로 연다."""
+    주소에 딸려 온 ?gid=/#gid= (복사할 때 열려 있던 탭)는 떼어 내고, gid 가 있으면 그 날짜 탭으로 연다."""
     base = (os.getenv("TRANSPORT_SHEET_LINK") or "").strip() or _SHEET_LINK_CACHE["url"] or ""
     if not base:
         return ""
-    base = base.split("#")[0]
+    base = base.split("#")[0].split("?")[0]
     return f"{base}#gid={gid}" if gid not in (None, "") else base
 
 
@@ -134,9 +135,17 @@ def info_for_template(cid: int) -> dict:
             "reason_options": REASON_OPTIONS,
             "sheet_configured": bool(sheet_url()),
             "sheet_link": sheet_link(),
-            "tab_link": sheet_link((r or {}).get("sheet_gid")) if (r or {}).get("sheet_gid") else "",
+            "tab_link": _tab_link(r),
         }
     return cache[cid]
+
+
+def _tab_link(r) -> str:
+    """요청이 보내진 탭(#gid) — 저장된 gid 우선, 없으면 같은 날짜로 통신한 적이 있을 때의 gid."""
+    if not r:
+        return ""
+    gid = r.get("sheet_gid") or _GID_CACHE.get(r.get("pickup_date") or "")
+    return sheet_link(gid) if gid else ""
 
 
 def _display_name() -> str:
@@ -161,8 +170,11 @@ def _call_sheet(action: str, **payload) -> dict:
         return {"ok": False, "error": f"연결 실패: {e}"}
     try:
         res = json.loads(text)
-        if isinstance(res, dict) and res.get("url"):
-            _SHEET_LINK_CACHE["url"] = res["url"]
+        if isinstance(res, dict):
+            if res.get("url"):
+                _SHEET_LINK_CACHE["url"] = res["url"]
+            if res.get("gid") is not None and payload.get("date"):
+                _GID_CACHE[str(payload["date"])] = str(res["gid"])
         return res
     except ValueError:
         # 로그인 페이지 HTML이 오면 배포 설정(액세스: 모든 사용자)이 틀린 것

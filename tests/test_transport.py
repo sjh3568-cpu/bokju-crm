@@ -79,8 +79,9 @@ class TransportTests(unittest.TestCase):
             self.assertEqual((r['sheet_status'], r['sheet_tab'], r['sheet_row'], r['driver'], r['vehicle']), ('sent', '2026.9.14', 14, '권철호', '6668'))
             self.assertEqual(r['sheet_gid'], '777')
             # 링크: .env 주소 우선, 전송된 건은 그 탭(#gid)으로. (가짜 응답이라 스크립트 URL 캐시는 비어 있음)
-            with patch.dict(os.environ, {'TRANSPORT_SHEET_LINK': 'https://docs.google.com/spreadsheets/d/ENV/edit#gid=0'}):
+            with patch.dict(os.environ, {'TRANSPORT_SHEET_LINK': 'https://docs.google.com/spreadsheets/d/ENV/edit?gid=5#gid=5'}):
                 self.assertEqual(transport.sheet_link('777'), 'https://docs.google.com/spreadsheets/d/ENV/edit#gid=777')
+                self.assertEqual(transport.sheet_link(), 'https://docs.google.com/spreadsheets/d/ENV/edit')   # 복사 시 열려 있던 탭은 무시
                 page = self.c.get(f'/consult/{self.cid}').get_data(as_text=True)
             self.assertIn('운행 시트 열기', page); self.assertIn('#gid=777', page)
             self.assertEqual(transport.dashboard_alerts(), [])
