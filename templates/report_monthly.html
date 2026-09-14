@@ -144,7 +144,7 @@
       <div class="sr-kpi accent"><small>입원</small><div><strong>{{ sr.admissions }}</strong><span>건</span></div>
         <em class="cmp"><span class="cmp-tag">전월</span>{% if sr.delta_admissions is none %}<span class="muted">신규</span>{% elif sr.delta_admissions>0 %}<span class="up">▲{{ sr.delta_admissions }}%</span>{% elif sr.delta_admissions<0 %}<span class="down">▼{{ sr.delta_admissions|abs }}%</span>{% else %}<span class="muted">0%</span>{% endif %}</em></div>
       <div class="sr-kpi"><small>전환율</small><div><strong>{{ sr.conversion }}</strong><span>%</span></div></div>
-      {% if sr.quality_patients %}<div class="sr-kpi"><small>소개환자 회복기</small><div><strong>{{ sr.recovery_ratio }}</strong><span>%</span></div></div>{% endif %}
+      {% if sr.quality_patients %}<div class="sr-kpi"><small>소개환자 회복기</small><div><strong>{{ sr.recovery_ratio|pct2 }}</strong><span>%</span></div></div>{% endif %}
     </div>
     {% if sr.top_referrers %}
     <table class="report-tbl compact">

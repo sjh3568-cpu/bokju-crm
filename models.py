@@ -4803,7 +4803,7 @@ def staff_referral_overview(date_from=None, date_to=None, q=None, internal_only=
                 care_by_pid[e["patient_id"]] = "비회복기(S006)"
         n = len(stays)
         quality = {"patients": n, "recovery": rec,
-                   "recovery_ratio": round(100 * rec / n, 1) if n else 0,
+                   "recovery_ratio": round(100 * rec / n, 2) if n else 0,
                    "avg_stay": round(sum(stays) / n) if n else 0}
 
     # 소개 환자 상세에 회복기/비회복기 구분을 붙인다(입원한 환자만).

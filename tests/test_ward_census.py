@@ -180,12 +180,12 @@ class WardCensusTests(unittest.TestCase):
         self.assertTrue(ins["ok"])
         self.assertEqual((ins["rec_out"], ins["rec_out_ratio"]), (1, 37.5))
         # 비회복기는 2명까지 (5/12=41.7%), 3명째 5/13=38.5%
-        self.assertEqual((ins["non_in"], ins["non_in_ratio"]), (2, 38.5))
+        self.assertEqual((ins["non_in"], ins["non_in_ratio"]), (2, 38.46))
         # 회복기 3 / 판정 10 = 30% → 회복기 2명 들어오면 5/12=41.7%, 비회복기 3명 나가면 3/7=42.9%
         ins = main._ratio_insight({"total": 10, "known": 10, "recovery": 3, "ratio": 30.0}, [], ratio_at, date(2026, 9, 11))
         self.assertFalse(ins["ok"])
-        self.assertEqual((ins["rec_in"], ins["rec_in_ratio"]), (2, 41.7))
-        self.assertEqual((ins["non_out"], ins["non_out_ratio"]), (3, 42.9))
+        self.assertEqual((ins["rec_in"], ins["rec_in_ratio"]), (2, 41.67))
+        self.assertEqual((ins["non_out"], ins["non_out_ratio"]), (3, 42.86))
         self.assertEqual(len(ins["forecast"]), 61)
         self.assertIsNone(main._ratio_insight({"total": 0, "known": 0, "recovery": 0, "ratio": 0}, [], ratio_at, date(2026, 9, 11)))
 
@@ -198,7 +198,7 @@ class WardCensusTests(unittest.TestCase):
         ]
         monthly = [{"date": "2026-09-30", "label": "26.09", "known": 50, "recovery": 20, "ratio": 40.0, "total": 50}]
         ts = main._trend_summary(daily, monthly)
-        self.assertEqual(ts["avg"], 41.8)            # 46/110
+        self.assertEqual(ts["avg"], 41.82)           # 46/110
         self.assertEqual(ts["avg_simple"], 27.5)     # (45+10)/2 — known 0인 날은 제외
         self.assertEqual((ts["days"], ts["below_days"], ts["below_first"]["label"]), (2, 1, "09.02"))
         self.assertEqual((ts["low"]["label"], ts["high"]["label"]), ("09.02", "09.01"))

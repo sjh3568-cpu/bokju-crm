@@ -413,8 +413,8 @@
         <a class="kc{% if ws.has_roster and not ws.recovery_ratio_ok %} crit{% endif %}" href="/ward?tab=trend">
             <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.2 15.9A10 10 0 1 1 8 2.8"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg></span>
             <span class="l">회복기 비율</span>
-            <span class="v"><b class="num">{% if ws.recovery_ratio is not none %}{{ ws.recovery_ratio }}{% else %}–{% endif %}</b><small>%</small>{% if ws.recovery_ratio is not none %}{% if ws.recovery_ratio_ok %}<span class="d ok">✓ 기준 40%</span>{% else %}<span class="d dn">⚠ 40% 미만</span>{% endif %}{% endif %}</span>
-            <span class="s">{% if ws.recovery is not none %}회복기 <b>{{ ws.recovery }}/{{ ws.admitted }}</b>{% if rp %} · 7일 후 <b>{{ rp.ratio }}%</b>{% if rp.margin >= 0 %} · 여유 <b>{{ rp.margin }}명</b>{% endif %}{% endif %}{% else %}명부 필요 — 원무 입퇴원 명부를 올리면 표시됩니다{% endif %}</span>
+            <span class="v"><b class="num">{% if ws.recovery_ratio is not none %}{{ ws.recovery_ratio|pct2 }}{% else %}–{% endif %}</b><small>%</small>{% if ws.recovery_ratio is not none %}{% if ws.recovery_ratio_ok %}<span class="d ok">✓ 기준 40%</span>{% else %}<span class="d dn">⚠ 40% 미만</span>{% endif %}{% endif %}</span>
+            <span class="s">{% if ws.recovery is not none %}회복기 <b>{{ ws.recovery }}/{{ ws.admitted }}</b>{% if rp %} · 7일 후 <b>{{ rp.ratio|pct2 }}%</b>{% if rp.margin >= 0 %} · 여유 <b>{{ rp.margin }}명</b>{% endif %}{% endif %}{% else %}명부 필요 — 원무 입퇴원 명부를 올리면 표시됩니다{% endif %}</span>
         </a>
     </div>
 </section>

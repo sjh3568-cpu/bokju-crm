@@ -657,6 +657,19 @@ def _simplify_label(label):
     return label.split("-", 1)[0]
 
 
+@app.template_filter("pct2")
+def _pct2(value):
+    """회복기 비율 표기 — 소수 둘째자리 고정(40 → 40.00, 42.5 → 42.50).
+
+    round()는 40.0을 '40.0'으로 찍어 화면마다 자릿수가 들쭉날쭉해진다. 40% 기준선을
+    눈으로 비교하는 숫자라 표기 자릿수를 고정한다.
+    """
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return value
+
+
 # 회복기 자동 판정 — 의료법(재활의료기관 본지정 고시) 기준
 # 진단군별 회복기 인정 기간(일). 가장 긴 매칭값을 채택.
 _RECOVERY_RULES = [
@@ -2158,7 +2171,7 @@ def _ward_status_strip(census=None):
         if _care_phase(_ward_row_from_episode(ep)).get("care_phase") == "회복기":
             recovery_n += 1
     # /ward KPI 카드와 같은 정의 — 전체 재원 대비 회복기 인원.
-    ratio = round(recovery_n / total_n * 100) if total_n else 0
+    ratio = round(recovery_n / total_n * 100, 2) if total_n else 0
     strip.update(
         admitted=total_n,
         bed_occupancy=round(total_n / WARD_BED_CAPACITY * 100, 1) if WARD_BED_CAPACITY else None,
@@ -2213,7 +2226,7 @@ def _recovery_projection(strip, recovery_due, discharge_due, horizon=7):
     leaving_rec = sum(1 for x in leaving if _care_phase(x["con"]).get("care_phase") == "회복기")
     rec2 = max(0, rec - len(expiring) - leaving_rec)
     tot2 = max(1, tot - len(leaving))
-    ratio = round(rec2 / tot2 * 100, 1)
+    ratio = round(rec2 / tot2 * 100, 2)
     margin = rec - (-(-40 * tot // 100))   # ceil(0.4 * tot)
     return {"ratio": ratio, "ok": ratio >= 40, "horizon": horizon,
             "expiring": len(expiring), "leaving": len(leaving), "margin": margin}
@@ -4714,7 +4727,7 @@ def ward_view():
     recovery_n = sum(1 for c in admitted if c.get("care_phase") == "회복기")
     nonrecovery_n = sum(1 for c in admitted if c.get("care_phase") == "비회복기")
     total_n = len(admitted)
-    recovery_ratio = round(recovery_n / total_n * 100) if total_n else 0
+    recovery_ratio = round(recovery_n / total_n * 100, 2) if total_n else 0
     bed_capacity = 355
     kpis = {
         "admitted": total_n,
@@ -4722,7 +4735,7 @@ def ward_view():
         "nonrecovery": nonrecovery_n,
         "recovery_ratio": recovery_ratio,
         "recovery_ratio_ok": recovery_ratio >= 40,
-        "nonrecovery_ratio": round(nonrecovery_n / total_n * 100) if total_n else 0,
+        "nonrecovery_ratio": round(nonrecovery_n / total_n * 100, 2) if total_n else 0,
         "bed_capacity": bed_capacity,
         "bed_occupancy": round(total_n / bed_capacity * 100, 1),
         "away": len(away),
@@ -4784,7 +4797,7 @@ def ward_view():
                 if rec_end is not None and snapshot <= rec_end:
                     recovery_count += 1
         return {"total": total, "known": known, "recovery": recovery_count,
-                "ratio": round(recovery_count * 100 / known, 1) if known else 0}
+                "ratio": round(recovery_count * 100 / known, 2) if known else 0}
 
     # 추이 기간 — 통계 페이지와 같은 preset/from/to 방식. 프리셋(30/90/180/365일)
     # 또는 custom(직접지정). 일별은 선택 기간 그대로, 월별은 기간을 덮는 달을 최소
@@ -5414,11 +5427,11 @@ def _trend_summary(daily, monthly, threshold=40):
         else:
             run = None
     months = [m for m in monthly if m["known"]]
-    month_avg = (round(sum(m["recovery"] for m in months) * 100 / sum(m["known"] for m in months), 1)
+    month_avg = (round(sum(m["recovery"] for m in months) * 100 / sum(m["known"] for m in months), 2)
                  if months else None)
     return {
-        "avg": round(rec_sum * 100 / known_sum, 1),
-        "avg_simple": round(sum(d["ratio"] for d in days) / len(days), 1),
+        "avg": round(rec_sum * 100 / known_sum, 2),
+        "avg_simple": round(sum(d["ratio"] for d in days) / len(days), 2),
         "days": len(days), "below_days": len(below),
         "below_first": below[0] if below else None,
         "below_runs": runs,
@@ -5449,7 +5462,7 @@ def _ratio_insight(now, admitted, ratio_at, today, threshold=40, horizon=60):
     # 회복기/비회복기 각각 x명 늘거나 줄 때의 비율
     def ratio_after(d_rec=0, d_non=0):
         r, k = R + d_rec, K + d_rec + d_non
-        return round(r * 100 / k, 1) if k > 0 else 0
+        return round(r * 100 / k, 2) if k > 0 else 0
     insight = {"ratio": now["ratio"], "recovery": R, "known": K, "total": now["total"],
                "ok": ok, "threshold": threshold}
     if ok:

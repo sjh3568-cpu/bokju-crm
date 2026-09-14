@@ -154,17 +154,17 @@
     </form>
 {% if trend_summary %}{% set ts = trend_summary %}
     <div class="wd-kpi wd-trend-kpi">
-        <div class="wd-k {% if trend_insight and trend_insight.ok %}ok{% endif %}"><span class="wd-k-n">{{ trend_insight.ratio if trend_insight else ts.last.ratio }}<small>%</small></span><span class="wd-k-l">오늘 회복기 비율 <small>{{ trend_insight.recovery if trend_insight else ts.last.recovery }}/{{ trend_insight.known if trend_insight else ts.last.known }}명</small></span></div>
-        <div class="wd-k {% if ts.ok %}ok{% else %}warn{% endif %}"><span class="wd-k-n">{{ ts.avg }}<small>%</small></span><span class="wd-k-l">기간 평균 <small>연인원 기준 · 단순평균 {{ ts.avg_simple }}%</small></span></div>
-        <div class="wd-k"><span class="wd-k-n">{{ ts.low.ratio }}<small>%</small></span><span class="wd-k-l">기간 최저 <small>{{ ts.low.label }} · {{ ts.low.recovery }}/{{ ts.low.known }}명</small></span></div>
-        <div class="wd-k"><span class="wd-k-n">{{ ts.high.ratio }}<small>%</small></span><span class="wd-k-l">기간 최고 <small>{{ ts.high.label }} · {{ ts.high.recovery }}/{{ ts.high.known }}명</small></span></div>
+        <div class="wd-k {% if trend_insight and trend_insight.ok %}ok{% endif %}"><span class="wd-k-n">{{ (trend_insight.ratio if trend_insight else ts.last.ratio)|pct2 }}<small>%</small></span><span class="wd-k-l">오늘 회복기 비율 <small>{{ trend_insight.recovery if trend_insight else ts.last.recovery }}/{{ trend_insight.known if trend_insight else ts.last.known }}명</small></span></div>
+        <div class="wd-k {% if ts.ok %}ok{% else %}warn{% endif %}"><span class="wd-k-n">{{ ts.avg|pct2 }}<small>%</small></span><span class="wd-k-l">기간 평균 <small>연인원 기준 · 단순평균 {{ ts.avg_simple|pct2 }}%</small></span></div>
+        <div class="wd-k"><span class="wd-k-n">{{ ts.low.ratio|pct2 }}<small>%</small></span><span class="wd-k-l">기간 최저 <small>{{ ts.low.label }} · {{ ts.low.recovery }}/{{ ts.low.known }}명</small></span></div>
+        <div class="wd-k"><span class="wd-k-n">{{ ts.high.ratio|pct2 }}<small>%</small></span><span class="wd-k-l">기간 최고 <small>{{ ts.high.label }} · {{ ts.high.recovery }}/{{ ts.high.known }}명</small></span></div>
         <div class="wd-k {% if ts.below_days %}warn{% else %}ok{% endif %}"><span class="wd-k-n">{{ ts.below_days }}<small>일 / {{ ts.days }}일</small></span><span class="wd-k-l">40% 미만 일수 <small>{% if ts.below_first %}첫 날 {{ ts.below_first.label }}{% else %}없음{% endif %}</small></span></div>
-        <div class="wd-k"><span class="wd-k-n">{% if ts.month_avg is not none %}{{ ts.month_avg }}<small>%</small>{% else %}-{% endif %}</span><span class="wd-k-l">{{ ts.month_count }}개월 평균 <small>월말 기준 연인원</small></span></div>
+        <div class="wd-k"><span class="wd-k-n">{% if ts.month_avg is not none %}{{ ts.month_avg|pct2 }}<small>%</small>{% else %}-{% endif %}</span><span class="wd-k-l">{{ ts.month_count }}개월 평균 <small>월말 기준 연인원</small></span></div>
     </div>
     {% if ts.below_runs %}
     <details class="wd-below-runs"><summary>40% 미만 구간 {{ ts.below_runs|length }}회 · 총 {{ ts.below_days }}일 보기</summary>
         <table class="wd-insight-table"><thead><tr><th>시작</th><th>종료</th><th>일수</th><th>최저</th></tr></thead><tbody>
-        {% for r in ts.below_runs %}<tr><td class="nowrap">{{ r.start.date }}</td><td class="nowrap">{{ r.end.date }}</td><td>{{ r.days }}일</td><td class="nowrap"><b>{{ r.low.ratio }}%</b> <small class="muted">{{ r.low.label }} · {{ r.low.recovery }}/{{ r.low.known }}명</small></td></tr>{% endfor %}
+        {% for r in ts.below_runs %}<tr><td class="nowrap">{{ r.start.date }}</td><td class="nowrap">{{ r.end.date }}</td><td>{{ r.days }}일</td><td class="nowrap"><b>{{ r.low.ratio|pct2 }}%</b> <small class="muted">{{ r.low.label }} · {{ r.low.recovery }}/{{ r.low.known }}명</small></td></tr>{% endfor %}
         </tbody></table>
     </details>
     {% endif %}
@@ -172,20 +172,20 @@
 {% if trend_insight %}{% set ti = trend_insight %}
     <div class="wd-insight {% if ti.ok %}ok{% else %}warn{% endif %}">
         <div class="wd-insight-head">
-            <span class="wd-insight-ratio">{{ ti.ratio }}%</span>
+            <span class="wd-insight-ratio">{{ ti.ratio|pct2 }}%</span>
             <span class="wd-insight-state">{% if ti.ok %}✓ 40% 이상 유지 중{% else %}⚠ 40% 미만{% endif %}</span>
             <span class="muted-sm">오늘 기준 · 회복기 {{ ti.recovery }}명 / 판정 가능 {{ ti.known }}명 (총 재원 {{ ti.total }}명)</span>
         </div>
         <ul class="wd-insight-list">
         {% if ti.ok %}
-            <li>회복기 환자 <b>{{ ti.rec_out }}명</b>까지 퇴원(또는 비회복기 전환)해도 40%가 유지됩니다. <b>{{ ti.rec_out + 1 }}명째</b>가 나가면 {{ ti.rec_out_ratio }}%로 기준선 아래로 떨어집니다.</li>
-            <li>비회복기 환자는 <b>{{ ti.non_in }}명</b>까지 더 받아도 40%가 유지됩니다. {{ ti.non_in + 1 }}명째부터 {{ ti.non_in_ratio }}%가 됩니다.</li>
+            <li>회복기 환자 <b>{{ ti.rec_out }}명</b>까지 퇴원(또는 비회복기 전환)해도 40%가 유지됩니다. <b>{{ ti.rec_out + 1 }}명째</b>가 나가면 {{ ti.rec_out_ratio|pct2 }}%로 기준선 아래로 떨어집니다.</li>
+            <li>비회복기 환자는 <b>{{ ti.non_in }}명</b>까지 더 받아도 40%가 유지됩니다. {{ ti.non_in + 1 }}명째부터 {{ ti.non_in_ratio|pct2 }}%가 됩니다.</li>
         {% else %}
-            <li>회복기 환자 <b>{{ ti.rec_in }}명</b>이 더 입원하면 {{ ti.rec_in_ratio }}%로 40%에 도달합니다.</li>
-            <li>또는 비회복기 환자 <b>{{ ti.non_out }}명</b>이 퇴원하면 {{ ti.non_out_ratio }}%로 40%에 도달합니다. (둘을 섞어도 됩니다 — 아래 계산기)</li>
+            <li>회복기 환자 <b>{{ ti.rec_in }}명</b>이 더 입원하면 {{ ti.rec_in_ratio|pct2 }}%로 40%에 도달합니다.</li>
+            <li>또는 비회복기 환자 <b>{{ ti.non_out }}명</b>이 퇴원하면 {{ ti.non_out_ratio|pct2 }}%로 40%에 도달합니다. (둘을 섞어도 됩니다 — 아래 계산기)</li>
         {% endif %}
-            <li>앞으로 {{ ti.horizon }}일 안에 회복기 종료 예정 <b>{{ ti.ending|length }}명</b>(30일 내 {{ ti.ending_30 }}명). 입·퇴원이 없다고 가정하면 {{ ti.forecast[-1].label }}에 <b>{{ ti.end_ratio }}%</b>가 됩니다.
-            {% if ti.cross %}<span class="wd-insight-cross">→ <b>{{ ti.cross.label }}</b>에 {{ ti.cross.ratio }}%로 처음 40% 아래로 내려갑니다.</span>{% elif ti.ok %}<span class="muted-sm">이 기간 안에는 40% 아래로 내려가지 않습니다.</span>{% endif %}</li>
+            <li>앞으로 {{ ti.horizon }}일 안에 회복기 종료 예정 <b>{{ ti.ending|length }}명</b>(30일 내 {{ ti.ending_30 }}명). 입·퇴원이 없다고 가정하면 {{ ti.forecast[-1].label }}에 <b>{{ ti.end_ratio|pct2 }}%</b>가 됩니다.
+            {% if ti.cross %}<span class="wd-insight-cross">→ <b>{{ ti.cross.label }}</b>에 {{ ti.cross.ratio|pct2 }}%로 처음 40% 아래로 내려갑니다.</span>{% elif ti.ok %}<span class="muted-sm">이 기간 안에는 40% 아래로 내려가지 않습니다.</span>{% endif %}</li>
         </ul>
         {% if ti.ending %}
         <details class="wd-insight-ending"><summary>회복기 종료 예정 {{ ti.ending|length }}명 보기</summary>
@@ -200,7 +200,7 @@
             <label>회복기 퇴원 <input type="number" min="0" value="0" data-k="rec_out"></label>
             <label>비회복기 입원 <input type="number" min="0" value="0" data-k="non_in"></label>
             <label>비회복기 퇴원 <input type="number" min="0" value="0" data-k="non_out"></label>
-            <span class="wd-whatif-out">→ <b id="wd-whatif-ratio">{{ ti.ratio }}%</b> <span id="wd-whatif-detail" class="muted-sm"></span></span>
+            <span class="wd-whatif-out">→ <b id="wd-whatif-ratio">{{ ti.ratio|pct2 }}%</b> <span id="wd-whatif-detail" class="muted-sm"></span></span>
         </div>
     </div>
 {% else %}
@@ -258,12 +258,12 @@
         <span class="wd-k-l">병상 가동률 · {{ kpis.admitted }}/{{ kpis.bed_capacity }}병상</span>
     </a>
     <a class="wd-k wd-k-mix" href="/ward?tab=trend">
-        <span class="wd-k-split"><b>{{ kpis.recovery }}<small>명 · {{ kpis.recovery_ratio }}%</small></b><b>{{ kpis.nonrecovery }}<small>명 · {{ kpis.nonrecovery_ratio }}%</small></b></span>
+        <span class="wd-k-split"><b>{{ kpis.recovery }}<small>명 · {{ kpis.recovery_ratio|pct2 }}%</small></b><b>{{ kpis.nonrecovery }}<small>명 · {{ kpis.nonrecovery_ratio|pct2 }}%</small></b></span>
         <span class="wd-k-l"><i class="rec"></i>회복기 <small>S005</small> · <i class="non"></i>비회복기 <small>S006</small></span>
     </a>
     <a class="wd-k {% if kpis.recovery_ratio_ok %}ok{% else %}danger{% endif %} {% if filt == 'recovery' %}on{% endif %}"
        href="/ward?filt=recovery{{ _dq }}#sec-ward" title="재활의료기관 유지 기준: 회복기 40% 이상 — 클릭 시 회복기 명단">
-        <span class="wd-k-n">{{ kpis.recovery_ratio }}<small>%</small></span>
+        <span class="wd-k-n">{{ kpis.recovery_ratio|pct2 }}<small>%</small></span>
         <span class="wd-k-l">회복기 비율 {% if kpis.recovery_ratio_ok %}<b>✓ 40%↑</b>{% else %}<b>⚠ 40%↓</b>{% endif %}</span>
     </a>
     <a class="wd-k {% if not kpis.away %}zero{% elif kpis.away_overdue %}danger{% else %}warn{% endif %}" href="#sec-away">
@@ -991,10 +991,10 @@
         const labelEvery = Math.max(1,Math.ceil(data.length/10));
         data.forEach((d,i) => {
             const dot=el('circle',{cx:x(i),cy:y(d.ratio),r:3.5,fill:'#fff',stroke:'#15803d','stroke-width':2});
-            const title=document.createElementNS(NS,'title'); title.textContent=`${d.date}: ${d.ratio}% (${d.recovery}/${d.total}명)`; dot.appendChild(title);
+            const title=document.createElementNS(NS,'title'); title.textContent=`${d.date}: ${(+d.ratio).toFixed(2)}% (${d.recovery}/${d.total}명)`; dot.appendChild(title);
             if (i%labelEvery===0 || i===data.length-1) {
                 el('text',{x:x(i),y:242,'text-anchor':'middle',fill:'#64748b','font-size':11},d.label);
-                el('text',{x:x(i),y:y(d.ratio)-7,'text-anchor':'middle',fill:'#166534','font-size':10,'font-weight':700},d.ratio+'%');
+                el('text',{x:x(i),y:y(d.ratio)-7,'text-anchor':'middle',fill:'#166534','font-size':10,'font-weight':700},(+d.ratio).toFixed(2)+'%');
             }
         });
     });
@@ -1007,8 +1007,8 @@
         const calc = () => {
             const v = {}; whatif.querySelectorAll('input').forEach(i => v[i.dataset.k] = Math.max(0, +i.value || 0));
             const R = R0 + v.rec_in - v.rec_out, K = K0 + v.rec_in - v.rec_out + v.non_in - v.non_out;
-            const ratio = K > 0 && R >= 0 ? Math.round(R * 1000 / K) / 10 : 0;
-            document.getElementById('wd-whatif-ratio').textContent = ratio + '%';
+            const ratio = K > 0 && R >= 0 ? Math.round(R * 10000 / K) / 100 : 0;
+            document.getElementById('wd-whatif-ratio').textContent = ratio.toFixed(2) + '%';
             document.getElementById('wd-whatif-detail').textContent = `(회복기 ${Math.max(0,R)}명 / ${Math.max(0,K)}명${ratio >= 40 ? ' · 40% 이상' : ' · 40% 미만'})`;
             out.classList.toggle('ok', ratio >= 40); out.classList.toggle('warn', ratio < 40);
         };
