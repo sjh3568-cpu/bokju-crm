@@ -4020,6 +4020,23 @@ def api_consult_status(cid):
                     fields["admission_date"] = adate
                 except ValueError:
                     return jsonify({"error": "입원일자 형식 오류"}), 400
+        elif status in ("입원예정", "입원대기"):
+            # 입원예정을 고르는 그 자리에서 예정일·시간까지 한 번에 — 헤더 칸을 따로 고치러 갈 필요 없게(2026-09-14).
+            pdate = (payload.get("planned_admission_date") or "").strip()
+            ptime = (payload.get("planned_admission_time") or "").strip()
+            if pdate:
+                try:
+                    datetime.strptime(pdate, "%Y-%m-%d")
+                except ValueError:
+                    return jsonify({"error": "입원예정일 형식 오류"}), 400
+                fields["planned_admission_date"] = pdate
+                audit.append(f"예정일:{pdate}")
+            elif status == "입원예정" and "planned_admission_date" in payload:
+                return jsonify({"error": "입원예정일을 입력하세요."}), 400
+            if "planned_admission_time" in payload:
+                if ptime and not re.fullmatch(r"\d{2}:\d{2}", ptime):
+                    return jsonify({"error": "입원예정 시간 형식 오류(HH:MM)"}), 400
+                fields["planned_admission_time"] = ptime or None
         elif status == "입원보류":
             hold_reason = (payload.get("hold_reason") or "").strip()
             if not hold_reason:
@@ -6751,6 +6768,20 @@ def api_sms_send():
 
 
 # ───────────────────── API: 자동완성 ─────────────────────
+
+@app.route("/api/room-status")
+@login_required
+def api_room_status():
+    """상담일지에서 병실을 적을 때 재원 현황과 맞춰 본다 — 만실·성별 불일치·다른 입원예정과 겹침(2026-09-14 요청).
+    ?room=316호&gender=F&exclude=<상담id>"""
+    room = (request.args.get("room") or "").strip()
+    if not room:
+        return jsonify({"ok": True, "known": False})
+    info = dashboard_metrics.room_status(
+        room, gender=(request.args.get("gender") or "").strip() or None,
+        exclude_cid=request.args.get("exclude", type=int))
+    return jsonify(info)
+
 
 @app.route("/api/autocomplete/hospital")
 @login_required

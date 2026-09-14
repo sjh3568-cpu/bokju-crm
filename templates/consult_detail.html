@@ -78,6 +78,14 @@
                 <input type="date" id="admission-date" value="{{ c.admission_date or '' }}">
             </label>
         </div>
+        <div class="status-completed-row status-planned-row {% if _status not in ('입원예정', '입원대기') %}hide{% endif %}">
+            <label>입원예정일
+                <input type="date" id="planned-date" value="{{ c.planned_admission_date or '' }}">
+            </label>
+            <label>시간
+                <input type="time" id="planned-time" value="{{ c.planned_admission_time or '' }}">
+            </label>
+        </div>
         <div class="status-hold-row {% if _status != '입원보류' %}hide{% endif %}">
             <input type="text" id="hold-reason" class="reason-detail" placeholder="입원보류 사유 (필수)"
                    value="{{ c.hold_reason or '' }}">
@@ -176,6 +184,9 @@
     const holdRow = card.querySelector('.status-hold-row');
     const cancelRow = card.querySelector('.status-cancel-row');
     const dateInput = card.querySelector('#admission-date');
+    const plannedRow = card.querySelector('.status-planned-row');
+    const plannedDate = card.querySelector('#planned-date');
+    const plannedTime = card.querySelector('#planned-time');
     const holdReason = card.querySelector('#hold-reason');
     const reasonRadios = card.querySelectorAll('input[name="rejection_reason"]');
     const reasonChips = card.querySelectorAll('.reason-chip');
@@ -194,6 +205,7 @@
         const st = checkedVal(stRadios);
         stRadios.forEach(r => r.closest('.status-chip').classList.toggle('on', r.checked));
         completedRow.classList.toggle('hide', st !== '입원완료');
+        if (plannedRow) plannedRow.classList.toggle('hide', st !== '입원예정' && st !== '입원대기');
         holdRow.classList.toggle('hide', st !== '입원보류');
         cancelRow.classList.toggle('hide', st !== '입원취소');
     }
@@ -220,6 +232,11 @@
             body.admission_status = st;
             if (st === '입원완료') {
                 body.admission_date = (dateInput && dateInput.value) || '';
+            } else if (st === '입원예정' || st === '입원대기') {
+                // 입원예정을 고르면서 예정일·시간까지 한 번에 저장 — 수정 화면을 따로 열 필요 없게
+                body.planned_admission_date = (plannedDate && plannedDate.value) || '';
+                body.planned_admission_time = (plannedTime && plannedTime.value) || '';
+                if (st === '입원예정' && !body.planned_admission_date) { alert('입원예정일을 입력하세요.'); return; }
             } else if (st === '입원보류') {
                 body.hold_reason = (holdReason && holdReason.value.trim()) || '';
                 if (!body.hold_reason) { alert('입원보류 사유를 입력하세요.'); return; }

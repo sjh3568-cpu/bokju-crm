@@ -2172,6 +2172,7 @@ def update_consultation(cid: int, **fields):
 # 결과(상담·입원 진행 단계) 변경 전용 — 폼 필드와 분리해서 실수 방지
 _META_FIELDS = ("consult_result", "consult_result_reason",
                 "admission_status", "admission_date", "rejection_reason",
+                "planned_admission_date", "planned_admission_time",
                 "rejection_reason_detail", "hold_reason",
                 "discharge_due_date", "discharge_date",
                 "discharge_destination", "discharge_reason",
@@ -3009,6 +3010,8 @@ def _autocomplete_facilities(q: str, *, table: str, aliases: dict, limit: int = 
         seen.add(canonical)
         row["name"] = canonical
         row["official"] = True
+        row["short_name"] = facility_short_name(canonical)
+        row["exact"] = score <= 1      # 폼 검증이 이 플래그로 '정확일치'를 판단해 공식명으로 자동 변환한다
         matches.append((score, -row["use_count"], len(row["name"]), row["name"], row))
     matches.sort(key=lambda x: (x[0], x[1], x[2], x[3]))
     return {
@@ -3031,8 +3034,28 @@ def _canonical_from_aliases(value, aliases):
     return raw
 
 
+# 심평원 명부의 공식명은 '의료법인삼백의료재단상주성모병원'·'재단법인아산사회복지재단 서울아산병원'처럼
+# 법인·재단 접두어가 붙어 있어, 상담사가 아는 이름(상주성모병원·서울아산병원)과 정확일치가 안 됐다.
+# 부분일치 후보가 여럿이면 폼이 "자동완성에서 선택하세요"로 막아 사실상 입력 불가(2026-09-14 보고).
+# → 접두어를 뗀 통칭(short name)을 만들어 그것과 같으면 정확일치로 친다.
+_LEGAL_PREFIX_RE = re.compile(
+    r"^(?:\((?:의|재|사|학|복)\)|(?:의료|재단|사단|학교|사회복지|종교)법인)?\s*"
+    r"(?:[가-힣A-Za-z0-9·]{1,14}?(?:의료재단|재단|법인))?\s*"
+)
+
+
+def facility_short_name(name: str | None) -> str:
+    """'의료법인 안동의료재단 용상안동병원' → '용상안동병원'. 뗄 게 없으면 그대로."""
+    raw = (name or "").strip()
+    if not raw:
+        return ""
+    short = _LEGAL_PREFIX_RE.sub("", raw, count=1).strip()
+    return short if len(short) >= 2 else raw
+
+
 def _facility_match_score(query, row, aliases):
-    """매칭 룰 — 병원·요양원 공통. 별칭 사전만 다름."""
+    """매칭 룰 — 병원·요양원 공통. 별칭 사전만 다름.
+    0 공식명 정확일치 · 1 통칭(법인 접두어 제거) 정확일치 · 3 통칭 앞부분 일치 · 5 부분일치 · 7+ 앞글자 축약 · 10 별칭."""
     q_raw = _hospital_substring_key(query)
     if not q_raw:
         return None
@@ -3040,6 +3063,11 @@ def _facility_match_score(query, row, aliases):
     name_raw = _hospital_substring_key(name)
     if q_raw == name_raw:
         return 0
+    short_raw = _hospital_substring_key(facility_short_name(name))
+    if short_raw and q_raw == short_raw:
+        return 1
+    if short_raw and short_raw.startswith(q_raw):
+        return 3
     if q_raw in name_raw:
         return 5
     if name_raw and len(q_raw) >= 4:

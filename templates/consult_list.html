@@ -1025,6 +1025,17 @@ body .container { max-width: none; padding: 0 12px; }
                     sel.value = old === '미정' ? '' : old;
                     return;
                 }
+            } else if (newStatus === '입원예정') {
+                // 예정일·시간을 여기서 바로 — 상세 화면을 따로 열지 않아도 되게
+                const today = new Date().toISOString().slice(0, 10);
+                const d = prompt('입원예정일을 입력하세요 (YYYY-MM-DD, 필수)', today);
+                if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d.trim())) { sel.value = old === '미정' ? '' : old; return; }
+                body.planned_admission_date = d.trim();
+                const t = prompt('입원예정 시간 (HH:MM, 없으면 비워두세요)', '');
+                if (t && t.trim()) {
+                    if (!/^\d{2}:\d{2}$/.test(t.trim())) { alert('시간은 HH:MM 형식으로 입력하세요.'); sel.value = old === '미정' ? '' : old; return; }
+                    body.planned_admission_time = t.trim();
+                }
             }
             await applyStatus(sel, body, newStatus || '미정', STATUS_CLASS);
         });

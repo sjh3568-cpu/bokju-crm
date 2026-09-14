@@ -752,6 +752,15 @@
 .aim-cand{margin:0 3px 3px 0;padding:2px 9px;background:#fff;border:1px solid #6366f1;color:#4338ca;border-radius:999px;font-size:.9em;cursor:pointer}
 .aim-cand:hover{background:#eef2ff}
 .aim-unreg{color:#b45309;font-weight:600}
+/* 병실 배정 충돌 경고(호실 칸 아래) — form.js가 /api/room-status 결과로 채운다 */
+.room-conflict { margin-top:6px; padding:8px 10px; border:1px solid #cbd5e1; border-radius:8px; background:#f8fafc; font-size:.86em; line-height:1.5; color:var(--text); }
+.room-conflict.is-conflict { border-color:#fca5a5; background:#fef2f2; color:#7f1d1d; }
+.room-conflict small { color:var(--text-light); }
+.room-conflict.is-conflict small { color:#991b1b; }
+.room-conflict-actions { display:flex; gap:6px; margin-top:6px; }
+.room-conflict-actions button { padding:4px 10px; border:1px solid #fca5a5; border-radius:6px; background:#fff; color:#991b1b; font:inherit; font-size:.92em; cursor:pointer; }
+.room-conflict-actions button[data-act=keep] { border-color:#cbd5e1; color:var(--text); }
+input.room-invalid { border-color:#ef4444 !important; box-shadow:0 0 0 2px rgba(239,68,68,.15); }
 </style>
 {% endif %}
 
@@ -1576,10 +1585,18 @@
                value="{{ consultation.admission_date if is_edit and consultation.admission_date else '' }}">
     </div>
     <div class="field" id="status-extra-planned" hidden>
-        <p class="muted" style="font-size:0.85em; margin:0; line-height:1.55; color:#92400e">
-            ⚠ 입원예정일은 상단 헤더의 <b>'입원예정 (월/일)'</b> 칸에서 지정하세요.
-            미지정 상태로 저장 시 <b>대시보드 '할 일' 목록</b>에 "입원예정일 미지정"으로 표시됩니다.
-        </p>
+        {# 여기서 바로 예정일·시간 — 헤더의 '입원예정 (월/일)' 칸과 양방향 동기화(form.js). 저장은 헤더 칸 이름으로 한 번만 #}
+        <div class="inline-pair" style="gap:10px; align-items:flex-end; flex-wrap:wrap">
+            <div class="field" style="margin:0">
+                <label>입원예정일 <span class="req">*</span></label>
+                <input type="date" class="boxed-input" data-mirror="consultation.planned_admission_date">
+            </div>
+            <div class="field" style="margin:0">
+                <label>시간</label>
+                <input type="time" class="boxed-input" data-mirror="consultation.planned_admission_time">
+            </div>
+            <p class="muted" style="font-size:0.82em; margin:0 0 6px; line-height:1.5">상단 헤더 칸과 같은 값입니다. 미지정으로 저장하면 대시보드 '할 일'에 "입원예정일 미지정"으로 뜹니다.</p>
+        </div>
     </div>
     <div class="field" id="status-extra-waiting" hidden>
         <p class="muted" style="font-size:0.85em; margin:0; line-height:1.55; color:#92400e">

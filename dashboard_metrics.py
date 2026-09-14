@@ -259,6 +259,52 @@ def _ward_of_room(room):
     return None
 
 
+def room_status(room, *, gender=None, exclude_cid=None):
+    """한 병실의 지금 상태 — 상담일지 병실 배정 충돌 확인용(2026-09-14 요청).
+    재원(명부 회차, 퇴원 전)과 아직 입원 안 한 '입원예정·입원대기' 상담의 같은 병실 배정을 함께 본다.
+    conflicts: full(만실) · gender(성별 다른 환자가 있는 방) · planned(다른 입원예정과 겹쳐 정원 초과)."""
+    key = _norm_room(room)
+    cap = ROOM_BED_CAPACITIES.get(key)
+    conn = get_db()
+    try:
+        residents = [dict(r) for r in conn.execute(
+            f"""SELECT p.name, p.gender, e.admitted_at, e.room_number
+                FROM admission_episodes e JOIN patients p ON p.id = e.patient_id
+                WHERE e.{ROSTER} AND e.discharged_at IS NULL
+                  AND e.admitted_at IS NOT NULL AND e.admitted_at != ''
+                  AND e.room_number IS NOT NULL AND e.room_number != ''""")
+            if _norm_room(r["room_number"]) == key]
+        planned = [dict(r) for r in conn.execute(
+            """SELECT c.id, p.name, p.gender, c.planned_admission_date, c.admission_status, c.room_number
+               FROM consultations c JOIN patients p ON p.id = c.patient_id
+               WHERE c.admission_status IN ('입원예정', '입원대기')
+                 AND c.room_number IS NOT NULL AND c.room_number != ''""")
+            if _norm_room(r["room_number"]) == key and r["id"] != exclude_cid]
+    finally:
+        conn.close()
+    used = len(residents)
+    genders = {g for g in (r.get("gender") for r in residents) if g in ("M", "F")}
+    conflicts = []
+    if cap is not None and used >= cap:
+        conflicts.append("full")
+    if gender in ("M", "F") and genders and gender not in genders:
+        conflicts.append("gender")
+    if cap is not None and used < cap and used + len(planned) >= cap:
+        conflicts.append("planned")
+
+    def mask(n):   # 화면엔 성만 — 다른 환자 이름을 폼에 그대로 띄우지 않는다
+        return (n[:1] + "○" * (len(n) - 1)) if n else ""
+    return {
+        "ok": True, "known": cap is not None, "room": key, "capacity": cap, "used": used,
+        "free": (cap - used) if cap is not None else None,
+        "genders": sorted(genders),
+        "residents": [{"name": mask(r["name"]), "gender": r.get("gender")} for r in residents],
+        "planned": [{"name": mask(r["name"]), "gender": r.get("gender"),
+                     "date": r.get("planned_admission_date"), "status": r.get("admission_status")} for r in planned],
+        "conflicts": conflicts,
+    }
+
+
 def ward_occupancy():
     """병동별 재원·남/여·빈 병상 → 가동률·압박 단계.
 

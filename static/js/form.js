@@ -445,8 +445,11 @@
             if (kind === 'hospital' || kind === 'nursing') {
                 // 같은 이름·약칭 후보 식별을 위해 region·kind를 함께 표시
                 const meta = [it.region, it.kind].filter(Boolean).join(' · ');
+                // 통칭(법인·재단 접두어 뗀 이름)을 굵게, 공식명은 작게 — 상담사가 아는 이름으로 고르게
+                const short = it.short_name && it.short_name !== it.name;
                 return `<div class="ac-item">
-                    <strong>${escHpw(it.name)}</strong>
+                    <strong>${escHpw(short ? it.short_name : it.name)}</strong>
+                    ${short ? `<span class="meta">${escHpw(it.name)}</span>` : ''}
                     ${meta ? `<span class="meta">${escHpw(meta)}</span>` : ''}
                 </div>`;
             }
@@ -494,8 +497,12 @@
             return;
         }
         const items = res.items || [];
-        const exact = items.find(it => it.name === raw);
-        if (exact) { markHospitalOfficial(input, exact.name); return; }
+        // 공식명 정확일치가 최우선, 없으면 법인·재단 접두어를 뗀 통칭 정확일치(exact 플래그) — '서울아산병원'→'재단법인아산사회복지재단 서울아산병원'
+        const exact = items.find(it => it.name === raw) || items.find(it => it.exact);
+        if (exact) {
+            if (exact.name !== raw) { input.value = exact.name; toast(`정식 명칭으로 자동 변환: ${raw} → ${exact.name}`, 'info'); }
+            markHospitalOfficial(input, exact.name); return;
+        }
         if (items.length === 1) {
             const official = items[0].name;
             input.value = official;
@@ -929,6 +936,62 @@
             ['change', 'input'].forEach(ev => dateEl.addEventListener(ev, show));
             show();
         });
+    })();
+
+    // ─── 입원예정일·시간 미러 칸(② 입원 진행 안) ↔ 헤더 칸 양방향 동기화 ───
+    // 입원예정을 고른 자리에서 바로 날짜·시간을 적게 한다. 저장은 헤더 칸(name 있음) 하나로만 나간다.
+    form.querySelectorAll('[data-mirror]').forEach(mirror => {
+        const src = form.querySelector(`[name="${mirror.dataset.mirror}"]`);
+        if (!src) return;
+        mirror.value = src.value;
+        mirror.addEventListener('input', () => { src.value = mirror.value; src.dispatchEvent(new Event('input', { bubbles: true })); src.dispatchEvent(new Event('change', { bubbles: true })); });
+        src.addEventListener('input', () => { if (mirror.value !== src.value) mirror.value = src.value; });
+    });
+
+    // ─── 병실 배정 충돌 확인 — 재원 현황(명부)·다른 입원예정과 맞춰 보고 경고 ───
+    (function() {
+        const roomEl = form.querySelector('input[name="consultation.room_number"]');
+        if (!roomEl) return;
+        const box = document.createElement('div');
+        box.className = 'room-conflict'; box.hidden = true;
+        roomEl.insertAdjacentElement('afterend', box);
+        const cid = (location.pathname.match(/^\/consult\/(\d+)\/edit/) || [])[1];
+        let seq = 0;
+        async function check() {
+            const room = roomEl.value.trim();
+            const my = ++seq;
+            if (!room) { box.hidden = true; roomEl.classList.remove('room-invalid'); return; }
+            const g = form.querySelector('input[name="patient.gender"]:checked');
+            let res;
+            try {
+                res = await api.get(`/api/room-status?room=${encodeURIComponent(room)}&gender=${g ? g.value : ''}${cid ? '&exclude=' + cid : ''}`);
+            } catch (e) { return; }
+            if (my !== seq) return;
+            if (!res.known) { box.hidden = true; roomEl.classList.remove('room-invalid'); return; }
+            const who = res.residents.map(r => `${r.name}${r.gender === 'M' ? '(남)' : r.gender === 'F' ? '(여)' : ''}`).join(', ');
+            const conflict = res.conflicts.length > 0;
+            const reasons = res.conflicts.map(c => ({
+                full: `만실 — ${res.used}/${res.capacity}명`,
+                gender: `성별 다름 — 지금 ${res.genders.map(x => x === 'M' ? '남' : '여').join('·')} 환자 방`,
+                planned: `다른 입원예정 ${res.planned.length}명과 겹쳐 정원 초과 예상`,
+            })[c]);
+            box.innerHTML = conflict
+                ? `<b>⚠ ${res.room} 배정 충돌</b> ${reasons.join(' · ')}<br>` +
+                  `<small>재원 ${res.used}/${res.capacity}${who ? ' · ' + who : ''}${res.planned.length ? ' · 입원예정 ' + res.planned.map(p => `${p.name}${p.date ? '(' + p.date.slice(5) + ')' : ''}`).join(', ') : ''}</small>` +
+                  `<span class="room-conflict-actions"><button type="button" data-act="retry">병실 다시 정하기</button><button type="button" data-act="keep">조율 완료, 그대로 둠</button></span>`
+                : `<small>✓ ${res.room} 재원 ${res.used}/${res.capacity} · 빈 병상 ${res.free}${who ? ' · ' + who : ''}</small>`;
+            box.classList.toggle('is-conflict', conflict);
+            roomEl.classList.toggle('room-invalid', conflict);
+            box.hidden = false;
+        }
+        box.addEventListener('click', e => {
+            const b = e.target.closest('[data-act]'); if (!b) return;
+            if (b.dataset.act === 'retry') { roomEl.value = ''; box.hidden = true; roomEl.classList.remove('room-invalid'); roomEl.focus(); }
+            else { roomEl.classList.remove('room-invalid'); box.classList.remove('is-conflict'); box.innerHTML = `<small>조율 완료 — ${roomEl.value.trim()} 그대로 둡니다.</small>`; }
+        });
+        roomEl.addEventListener('change', check);
+        form.querySelectorAll('input[name="patient.gender"]').forEach(r => r.addEventListener('change', () => { if (roomEl.value.trim()) check(); }));
+        if (roomEl.value.trim()) check();
     })();
 
     // ─── 상담 결과 ② 입원 진행: 입원예정/보류/취소/완료에 따른 부가칸 토글 ───
