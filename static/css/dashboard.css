@@ -273,35 +273,41 @@
 .page-dashboard .dash-grid2 > .card > .dash-subsection .tbl-wrap { margin: 0; }
 .page-dashboard .dash-grid2 .dash-subhead strong { font-size: .9rem; }
 @media (max-width: 1100px) { .page-dashboard .dash-grid2 { grid-template-columns: 1fr; grid-auto-rows: auto; } }
-/* 입원 환자 현황 — 13열 표라 그리드 반 칸(≈750px)에서는 늘 가로 스크롤이 생긴다.
-   카드를 한 줄 전체로 펼치고(아래에 병동별 재원·기한 임박이 좌우로), 열 간격을 좁혀
-   1440px 노트북에서도 스크롤 없이 한눈에 들어오게 한다. 열 순서: 1 일자 · 2 도착시간 ·
-   3 상태 · 4 환자 · 5 보험 · 6 병명 · 7 발병일 · 8 병실 · 9 회복기 · 10 상담사 · 11 주치의 · 12 기타 · 13 처리 */
-.page-dashboard .dash-grid2 > #admission-schedule { grid-column: 1 / -1; }
-/* 입원 환자 현황이 한 줄을 다 쓰면 병동별 재원·오늘 처리 필요가 좌우, 기한 임박은 혼자 남으므로 같이 전체 폭 */
-.page-dashboard .dash-grid2 > #due-card { grid-column: 1 / -1; }
-.page-dashboard #admission-schedule .dash-table { width: 100%; table-layout: auto; }
-.page-dashboard #admission-schedule .dash-table th,
-.page-dashboard #admission-schedule .dash-table td { padding: 6px 6px; font-size: .8rem; line-height: 1.3; }
-.page-dashboard #admission-schedule .dash-table th { white-space: nowrap; }
-.page-dashboard #admission-schedule .dash-table td:first-child { padding-left: 10px; }
-/* 병명·기타는 고정 폭 말줄임 대신 두 줄까지 접어 넣는다 — 폭이 부족할 때 이 두 열이 양보한다 */
-.page-dashboard #admission-schedule .dash-dx,
-.page-dashboard #admission-schedule .dash-note { max-width: none; white-space: normal; overflow: hidden;
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
-.page-dashboard #admission-schedule .dash-dx { min-width: 110px; }
-.page-dashboard #admission-schedule .dash-note { min-width: 90px; color: var(--dmuted); }
-/* 환자 칸의 (성별/나이)는 이름 옆에 붙되 폭이 모자라면 아래 줄로 */
-.page-dashboard #admission-schedule .dash-table td:nth-child(4) { white-space: normal; }
-.page-dashboard #admission-schedule .dash-table td:nth-child(4) a { white-space: nowrap; }
-.page-dashboard #admission-schedule .dash-table td:nth-child(4) .muted-sm { white-space: nowrap; font-size: .76em; }
-/* 처리 버튼 3개는 붙여서 */
-.page-dashboard #admission-schedule .dash-action-cell { padding-right: 10px; }
-.page-dashboard #admission-schedule .dash-action-cell .btn-xs { padding: 2px 6px; margin-right: 2px; }
-.page-dashboard #admission-schedule .dash-action-cell .btn-xs:last-child { margin-right: 0; }
+/* 입원 환자 현황 — 대시보드 반 칸(1920px 화면에서 ≈760px, 1440px에서 ≈540px)에 스크롤 없이.
+   13개 항목을 8칸에 두 줄로 묶었다(매크로 admission_table). 열: 1 일시 · 2 상태 · 3 환자 · 4 병명/발병일 ·
+   5 병실/회복기 · 6 담당 · 7 기타 · 8 처리. 병명·기타만 줄바꿈으로 양보하고 나머지는 한 줄 고정. */
+.page-dashboard .dash-adm-tbl { width: 100%; table-layout: auto; }
+.page-dashboard .dash-adm-tbl th, .page-dashboard .dash-adm-tbl td { padding: 5px 6px; font-size: .78rem; line-height: 1.25; vertical-align: middle; }
+.page-dashboard .dash-adm-tbl th { white-space: nowrap; }
+.page-dashboard .dash-adm-tbl td:first-child, .page-dashboard .dash-adm-tbl th:first-child { padding-left: 10px; }
+.page-dashboard .dash-adm-tbl td:last-child, .page-dashboard .dash-adm-tbl th:last-child { padding-right: 10px; }
+/* 두 줄 칸 — 위 줄이 주 정보, 아래 줄(small)이 보조 정보 */
+.page-dashboard .dash-adm-tbl td small { display: block; font-size: .86em; color: var(--dmuted); white-space: nowrap; }
+.page-dashboard .dash-adm-tbl .dash-adm-when b { font-weight: 700; }
+.page-dashboard .dash-adm-tbl .dash-adm-who a { white-space: nowrap; }
+.page-dashboard .dash-adm-tbl .dash-adm-room .badge { display: inline-block; margin-top: 2px; }
+.page-dashboard .dash-adm-tbl .badge { padding: 1px 6px; font-size: .72rem; }
+/* 병명·기타: 폭이 모자라면 두 줄까지 접고 그 이상은 말줄임 (전체는 툴팁) */
+.page-dashboard .dash-adm-tbl .dash-dx, .page-dashboard .dash-adm-tbl .dash-note { max-width: none; white-space: normal;
+    overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.page-dashboard .dash-adm-tbl .dash-adm-dx { min-width: 96px; }
+.page-dashboard .dash-adm-tbl .dash-note { min-width: 60px; color: var(--dmuted); }
+/* 처리: 완료 / 취소·보류 — 좁으면 두 줄로 */
+.page-dashboard .dash-adm-tbl .dash-action-cell { white-space: normal; max-width: 92px; }
+.page-dashboard .dash-adm-tbl .dash-action-cell .btn-xs { padding: 2px 6px; margin: 0 2px 2px 0; }
 @media (max-width: 1500px) {
-    .page-dashboard #admission-schedule .dash-table th,
-    .page-dashboard #admission-schedule .dash-table td { padding: 5px 5px; font-size: .76rem; }
+    /* 반 칸이 ≈515px까지 줄어드는 노트북(1440px) — 셀 3px·머리글 두 줄 허용·병명/기타 최소폭 축소로 맞춘다 */
+    .page-dashboard .dash-adm-tbl th, .page-dashboard .dash-adm-tbl td { padding: 4px 3px; font-size: .72rem; }
+    .page-dashboard .dash-adm-tbl th { white-space: normal; line-height: 1.15; word-break: keep-all; }  /* '병실 ·' / '회복기'처럼 띄어쓰기에서만 줄바꿈 */
+    .page-dashboard .dash-adm-tbl td:first-child, .page-dashboard .dash-adm-tbl th:first-child { padding-left: 6px; }
+    .page-dashboard .dash-adm-tbl td:last-child, .page-dashboard .dash-adm-tbl th:last-child { padding-right: 6px; }
+    .page-dashboard .dash-adm-tbl .dash-adm-dx { min-width: 78px; }
+    .page-dashboard .dash-adm-tbl .dash-note { min-width: 40px; }
+    .page-dashboard .dash-adm-tbl td small { font-size: .84em; }
+    .page-dashboard .dash-adm-tbl .badge { padding: 1px 4px; font-size: .68rem; }
+    /* 처리 버튼 3개가 세로로 쌓이지 않게 — 두 개씩 두 줄 */
+    .page-dashboard .dash-adm-tbl .dash-action-cell { min-width: 72px; max-width: 84px; }  /* '취소 보류'가 한 줄에 들어갈 폭 */
+    .page-dashboard .dash-adm-tbl .dash-action-cell .btn-xs { padding: 1px 4px; font-size: .7rem; margin: 0 1px 2px 0; }
 }
 
 /* 오늘 처리 필요 — 기한 임박과 같은 표·탭 */

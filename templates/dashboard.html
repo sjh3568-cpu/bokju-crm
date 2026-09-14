@@ -2,21 +2,18 @@
 {# 여러 명이 띄워놓고 보는 현황 화면 — 30초마다 자동 새로고침 #}
 {% block body_attrs %} data-autorefresh="30"{% endblock %}
 {% macro admission_table(rows, limit=None) %}
+{# 대시보드 반 칸(≈760px)에 스크롤 없이 들어가야 해서 13개 항목을 8칸에 두 줄로 묶는다:
+   일시(일자/시간) · 상태 · 환자(이름/성별·나이·보험) · 병명/발병일 · 병실/회복기 · 담당(상담사/주치의) · 기타 · 처리 #}
 <div class="tbl-wrap">
-    <table class="tbl dash-table"{% if limit %} data-limit="{{ limit }}"{% endif %}>
+    <table class="tbl dash-table dash-adm-tbl"{% if limit %} data-limit="{{ limit }}"{% endif %}>
         <thead>
             <tr>
-                <th>일자</th>
-                <th>도착시간</th>
+                <th>일시</th>
                 <th>상태</th>
                 <th>환자</th>
-                <th>보험</th>
-                <th>병명</th>
-                <th>발병일</th>
-                <th>병실</th>
-                <th>회복기</th>
-                <th>상담사</th>
-                <th>주치의</th>
+                <th>병명 · 발병일</th>
+                <th>병실 · 회복기</th>
+                <th>담당</th>
                 <th>기타</th>
                 <th>처리</th>
             </tr>
@@ -25,37 +22,42 @@
             {% for r in rows %}
             {% set rec = r|recovery_status %}
             <tr>
-                <td class="nowrap" title="{{ r.admission_display_date|krdate }}">{{ r.admission_display_date|krdate_short_wd }}</td>
-                <td class="nowrap">{{ r.planned_admission_time or '-' }}</td>
+                <td class="nowrap dash-adm-when" title="{{ r.admission_display_date|krdate }}">
+                    <b>{{ r.admission_display_date|krdate_short_wd }}</b>
+                    <small>{{ r.planned_admission_time or '시간 미정' }}</small>
+                </td>
                 <td class="nowrap dash-adm-state">
                     {% if r.admission_kind == 'return' %}<span class="badge {% if r.admission_bucket == 'completed' %}adm-completed{% else %}adm-planned{% endif %} adm-return" title="{{ r.other_note }}">{{ r.admission_bucket_label }}</span>
                     {% elif r.admission_bucket == 'completed' %}<span class="badge adm-completed">입원완료</span>
                     {% else %}<span class="badge adm-planned">입원예정</span>{% endif %}
                 </td>
-                <td class="nowrap">
+                <td class="dash-adm-who">
                     {% if r.blacklist %}<span class="bl-mark">블랙</span> {% endif %}
                     <a href="/consult/{{ r.id }}">{{ r.patient_name }}</a>
-                    <span class="muted-sm">({% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% else %}-{% endif %}/{% if r.patient_age is not none %}{{ r.patient_age }}세{% else %}-{% endif %})</span>
+                    <small>{% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% else %}-{% endif %}/{% if r.patient_age is not none %}{{ r.patient_age }}{% else %}-{% endif %}{% if r.insurance_type %} · {{ r.insurance_type }}{% endif %}</small>
                 </td>
-                <td class="nowrap">{{ r.insurance_type or '-' }}</td>
-                <td class="dash-dx" title="{{ r.admission_disease_summary }}">{{ r.admission_disease_summary or '-' }}</td>
-                <td class="nowrap">{{ r.disease_onset or '-' }}</td>
-                <td class="nowrap">{{ r.room_number or '-' }}</td>
-                <td class="nowrap">
+                <td class="dash-adm-dx" title="{{ r.admission_disease_summary }}{% if r.disease_onset %} · 발병 {{ r.disease_onset }}{% endif %}">
+                    <span class="dash-dx">{{ r.admission_disease_summary or '-' }}</span>
+                    {% if r.disease_onset %}<small>발병 {{ r.disease_onset|krdate_short }}</small>{% endif %}
+                </td>
+                <td class="nowrap dash-adm-room">
+                    <b>{{ r.room_number or '-' }}</b>
                     {% if rec.label == '회복기' %}<span class="badge rh-yes">회복기{% if rec.source == 'auto' %}*{% endif %}</span>
                     {% elif rec.label == '비회복기' %}<span class="badge rh-no">비회복기{% if rec.source == 'auto' %}*{% endif %}</span>
                     {% elif rec.label %}<span class="badge badge-pending">{{ rec.label }}</span>
-                    {% else %}<span class="muted">-</span>{% endif %}
+                    {% else %}<small class="muted">회복기 -</small>{% endif %}
                 </td>
-                <td class="nowrap">{{ r.counselor or '-' }}</td>
-                <td class="nowrap">{{ r.attending_doctor or '-' }}</td>
+                <td class="nowrap dash-adm-staff" title="상담사 {{ r.counselor or '-' }} · 주치의 {{ r.attending_doctor or '-' }}">
+                    <span>{{ r.counselor or '-' }}</span>
+                    <small>{{ r.attending_doctor|doctor_short if r.attending_doctor else '-' }}</small>
+                </td>
                 <td class="dash-note" title="{{ r.other_note }}">{{ r.other_note or '-' }}</td>
                 <td class="nowrap dash-action-cell">
                     {% if r.admission_kind == 'return' %}
                     {% if r.admission_bucket == 'planned' %}
                     <button type="button" class="btn btn-primary btn-xs adm-return-btn"
                             data-aevent="{{ r.away_event_id }}" data-name="{{ r.patient_name }}" title="오늘 외진 복귀 완료 — 입원 완료로 집계 (복귀 예정 때 적은 병실로 이동)">완료</button>
-                    {% else %}<span class="muted-sm">복귀 {{ r.returned_at|krdate }}</span>{% endif %}
+                    {% else %}<span class="muted-sm">복귀 {{ r.returned_at|krdate_short }}</span>{% endif %}
                     {% elif r.admission_bucket == 'planned' %}
                     <button type="button" class="btn btn-primary btn-xs adm-status-btn"
                             data-cid="{{ r.id }}" data-status="입원완료" title="입원완료로 변경">완료</button>
