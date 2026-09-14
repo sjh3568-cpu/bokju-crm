@@ -1,0 +1,85 @@
+{# 입원·퇴원 이력 탭 — ward_moves.report() 결과(moves) #}
+{% set f = moves.filters %}{% set s = moves.summary %}
+<section class="card wd-sec mv-head">
+    <div class="wd-sec-head"><h2>입원·퇴원 이력</h2><span class="muted-sm">원무 명부 기준 실제 입원일·퇴원일 · 기간 {{ f.date_from|krdate }} ~ {{ f.date_to|krdate }} ({{ s.days }}일)</span></div>
+</section>
+<div class="wd-kpi mv-kpi">
+    <div class="wd-k"><span class="wd-k-n">{{ s.admissions }}<small>명</small></span><span class="wd-k-l">입원</span></div>
+    <div class="wd-k"><span class="wd-k-n">{{ s.discharges }}<small>명</small></span><span class="wd-k-l">퇴원</span></div>
+    <div class="wd-k {% if s.net < 0 %}warn{% endif %}"><span class="wd-k-n">{{ '%+d'|format(s.net) }}<small>명</small></span><span class="wd-k-l">순증감 (입원 − 퇴원)</span></div>
+    <div class="wd-k"><span class="wd-k-n">{% if s.avg_stay is not none %}{{ s.avg_stay }}<small>일</small>{% else %}-{% endif %}</span><span class="wd-k-l">퇴원자 평균 재원일{% if s.long_stay %}<span class="mv-k-sub">1년 이상 재원 후 퇴원 {{ s.long_stay }}명</span>{% endif %}</span></div>
+    <div class="wd-k mv-k-wide"><span class="wd-k-l">입원 수가 구분</span><span class="mv-care">{% for label, n in s.care_in %}<b>{{ label }}</b> {{ n }}{% if not loop.last %} · {% endif %}{% else %}-{% endfor %}</span></div>
+</div>
+
+<section class="card wd-sec">
+    <div class="mv-toolbar">
+        <h3>명부 <span class="wd-n">{{ moves.rows|length }}건</span></h3>
+        <div class="mv-toolbar-right">
+            <div class="mv-kind" role="group" aria-label="구분">
+                {% for k, label in moves.kinds.items() %}<a href="{{ url_for('ward_view', **dict(request.args.to_dict(), tab='moves', kind=k)) }}" class="{% if f.kind == k %}on{% endif %}">{{ label }}</a>{% endfor %}
+            </div>
+            <a class="btn btn-secondary btn-sm" href="{{ url_for('ward_moves.moves_xlsx', **request.args.to_dict()) }}" title="현재 필터 그대로 엑셀 저장">⬇ 엑셀</a>
+        </div>
+    </div>
+    <form method="get" class="mv-filter" id="mv-filter">
+        <input type="hidden" name="tab" value="moves"><input type="hidden" name="kind" value="{{ f.kind }}">
+        <div class="mv-filter-row">
+            <span class="mv-range"><input type="date" name="date_from" value="{{ f.date_from }}" aria-label="시작일"><i>~</i><input type="date" name="date_to" value="{{ f.date_to }}" aria-label="종료일"></span>
+            <select name="doctor" aria-label="주치의"><option value="">주치의 전체</option>{% for d in moves.options.doctors %}<option {% if f.doctor == d %}selected{% endif %}>{{ d }}</option>{% endfor %}</select>
+            <select name="ward" aria-label="병동"><option value="">병동 전체</option>{% for w in moves.options.wards %}<option {% if f.ward == w %}selected{% endif %}>{{ w }}</option>{% endfor %}</select>
+            <select name="care" aria-label="수가 구분"><option value="">수가 전체</option>{% for c in moves.options.cares %}<option {% if f.care == c %}selected{% endif %}>{{ c }}</option>{% endfor %}</select>
+            <select name="counselor" aria-label="담당 상담사"><option value="">담당 전체</option>{% for c in moves.options.counselors %}<option {% if f.counselor == c %}selected{% endif %}>{{ c }}</option>{% endfor %}</select>
+            <input name="destination" value="{{ f.destination }}" placeholder="퇴원 장소 (귀가·전원·요양원…)" size="16">
+            <input name="reason" value="{{ f.reason }}" placeholder="퇴원 사유" size="12">
+            <input name="q" value="{{ f.q }}" placeholder="환자·진단·호실 검색" class="mv-q">
+            <button class="btn btn-primary btn-sm">조회</button>
+            <a class="btn btn-secondary btn-sm" href="/ward?tab=moves">초기화</a>
+        </div>
+    </form>
+    <div class="tbl-wrap">
+        <table class="tbl wd-tbl mv-tbl">
+            <thead><tr><th>날짜</th><th>구분</th><th>환자</th><th>병동·호실</th><th>주치의</th><th>수가</th><th>진단</th><th>입원일</th><th>재원일수</th><th>퇴원 장소</th><th>퇴원 사유</th><th>담당</th></tr></thead>
+            <tbody>
+            {% for r in moves.rows %}
+            <tr class="mv-{{ r.kind }}">
+                <td class="nowrap">{{ r.date|krdate_wd }}</td>
+                <td class="nowrap"><span class="mv-badge mv-badge-{{ r.kind }}">{{ moves.kinds[r.kind] }}</span></td>
+                <td class="nowrap">{% if r.consultation_id %}<a href="/consult/{{ r.consultation_id }}">{{ r.patient_name }}</a>{% else %}<a href="/patients/{{ r.patient_id }}">{{ r.patient_name }}</a>{% endif %} <span class="muted-sm">{% if r.age is not none %}{{ r.age }}세{% endif %}{% if r.gender == 'M' %}·남{% elif r.gender == 'F' %}·여{% endif %}</span></td>
+                <td class="nowrap">{{ r.ward or '' }}{% if r.ward and r.room %} · {% endif %}{{ r.room or '' }}{% if not r.ward and not r.room %}-{% endif %}</td>
+                <td class="nowrap">{{ r.doctor or '-' }}</td>
+                <td class="nowrap">{{ r.care or '-' }}</td>
+                <td class="mv-ell" title="{{ r.dx }}">{{ r.dx or '-' }}</td>
+                <td class="nowrap muted-sm">{{ r.admitted_at|krdate if r.admitted_at else '-' }}</td>
+                <td class="nowrap">{% if r.kind == 'out' and r.stay_days %}<b>{{ r.stay_days }}</b>일{% elif r.stay_days %}<span class="muted-sm">{{ r.stay_days }}일째</span>{% else %}-{% endif %}</td>
+                <td class="mv-ell">{% if r.kind == 'out' %}{{ r.destination or '-' }}{% else %}<span class="muted-sm">—</span>{% endif %}</td>
+                <td class="mv-ell" title="{{ r.reason }}">{% if r.kind == 'out' %}{{ r.reason or '-' }}{% else %}<span class="muted-sm">—</span>{% endif %}</td>
+                <td class="nowrap">{{ r.counselor or '-' }}</td>
+            </tr>
+            {% else %}<tr><td colspan="12" class="empty">이 기간에 {{ moves.kinds[f.kind] }} 기록이 없습니다.</td></tr>{% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+<style>
+.mv-kpi{grid-template-columns:repeat(5,minmax(0,1fr))}
+.mv-k-wide .mv-care{font-size:.9em;color:#334155;margin-top:2px}
+.mv-k-sub{display:block;font-size:.78em;color:#64748b;font-weight:600}
+/* 툴바·필터 — 외진환자관리 탭과 같은 모양(그쪽 CSS는 그 탭에만 실려 있어 여기서 다시 정의) */
+.mv-toolbar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+.mv-toolbar h3{margin:0}.mv-toolbar-right{display:flex;align-items:center;gap:8px}
+.mv-kind{display:inline-flex;border:1px solid var(--border);border-radius:999px;overflow:hidden;background:#fff}
+.mv-kind a{padding:5px 14px;font-size:.85em;font-weight:700;color:#475569;text-decoration:none}
+.mv-kind a.on{background:var(--primary);color:#fff}
+.mv-filter{margin:6px 0 10px}
+.mv-filter-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.mv-filter-row input,.mv-filter-row select{padding:5px 7px;border:1px solid var(--border);border-radius:6px;font:inherit;font-size:.88em;background:#fff}
+.mv-range{display:inline-flex;align-items:center;gap:3px}.mv-range i{font-style:normal;color:#94a3b8}
+.mv-q{flex:1 1 160px;min-width:130px}
+/* 표 — 한 줄 유지, 긴 글은 말줄임 */
+.mv-tbl th,.mv-tbl td{white-space:nowrap;font-size:.84em;padding:6px 8px}
+.mv-tbl td.mv-ell{max-width:220px;overflow:hidden;text-overflow:ellipsis}
+.mv-badge{display:inline-block;padding:1px 8px;border-radius:6px;font-size:.92em;font-weight:800;white-space:nowrap}
+.mv-badge-in{background:#dcfce7;color:#166534}.mv-badge-out{background:#e2e8f0;color:#334155}
+.mv-tbl tr.mv-in td:first-child{border-left:3px solid #22c55e}.mv-tbl tr.mv-out td:first-child{border-left:3px solid #94a3b8}
+@media (max-width:900px){.mv-kpi{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style>

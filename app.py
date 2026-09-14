@@ -117,6 +117,8 @@ app.register_blueprint(partnerships.bp)
 app.register_blueprint(support_requests.bp)
 import transport
 app.register_blueprint(transport.bp)
+import ward_moves
+app.register_blueprint(ward_moves.bp)
 app.secret_key = os.getenv("SECRET_KEY") or secrets.token_hex(32)
 app.permanent_session_lifetime = timedelta(hours=int(os.getenv("SESSION_HOURS", "4")))
 _REMEMBER_COOKIE = "bokju_remember"
@@ -1609,7 +1611,7 @@ def account_settings():
                 else: prefs.pop('calendar_mine',None)
                 if partner_view in ('list','feed'): prefs['partner_view']=partner_view
                 else: prefs.pop('partner_view',None)
-                if ward_tab in ('status','away','waiting','trend','blacklist','quality'): prefs['ward_tab']=ward_tab
+                if ward_tab in ('status','away','waiting','trend','blacklist','quality','moves'): prefs['ward_tab']=ward_tab
                 else: prefs.pop('ward_tab',None)
             models.set_user_preferences(g.user['id'],prefs);flash('개인 알림과 기본 보기를 저장했습니다.','success')
             return redirect(url_for('account_settings'))
@@ -4620,8 +4622,9 @@ def ward_view():
         stay_period = ""
     ward_prefs=models.get_user_by_id(g.user['id']).get('preferences_data',{})
     subtab = (request.args.get("tab") or ward_prefs.get('ward_tab') or "status").strip()
-    if subtab not in ("status", "away", "waiting", "trend", "blacklist", "quality"):
+    if subtab not in ("status", "away", "waiting", "trend", "blacklist", "quality", "moves"):
         subtab = "status"
+    moves_report = ward_moves.report(request.args) if subtab == "moves" else None
     if subtab == "quality" and g.user.get("role") != "admin":
         abort(403)
 
@@ -5007,7 +5010,7 @@ def ward_view():
         trend_flow=trend_flow,
         trend_summary=trend_summary,
         discharged=discharged,
-        subtab=subtab, away_report=away_report, away_candidates=admitted,
+        subtab=subtab, away_report=away_report, away_candidates=admitted, moves=moves_report,
         blacklisted=blacklisted,
         bed_waiting=bed_waiting,
         room_f=room_f, gender_f=gender_f, dx_f=dx_f,

@@ -111,6 +111,7 @@
     <a href="/ward" class="{% if subtab == 'status' %}on{% endif %}">재원 현황</a>
     <a href="/ward?tab=away" class="{% if subtab == 'away' %}on{% endif %}">외진환자관리</a>
     <a href="/ward?tab=waiting" class="{% if subtab == 'waiting' %}on{% endif %}">입원 대기 <b>{{ kpis.bed_waiting }}</b></a>
+    <a href="/ward?tab=moves" class="{% if subtab == 'moves' %}on{% endif %}">입원·퇴원 이력</a>
     <a href="/ward?tab=trend" class="{% if subtab == 'trend' %}on{% endif %}">회복기 비율 추이</a>
     <a href="/ward?tab=blacklist" class="{% if subtab == 'blacklist' %}on{% endif %}">블랙리스트 <b>{{ blacklisted|length }}</b></a>
     {% if current_user.role == 'admin' %}<a href="/ward?tab=quality" class="{% if subtab == 'quality' %}on{% endif %}">데이터·백업 점검 {% if quality_report and quality_report.total %}<b>{{ quality_report.total }}</b>{% endif %}</a>{% endif %}
@@ -118,6 +119,8 @@
 
 {% if subtab == 'away' %}
 {% include 'ward_away.html' %}
+{% elif subtab == 'moves' %}
+{% include '_ward_moves.html' %}
 {% elif subtab == 'quality' %}
 <section class="card wd-sec wd-quality">
     <div class="wd-sec-head"><h3>데이터 품질 점검 <span class="wd-n">{{ quality_report.total }}</span></h3><span class="muted-sm">오류를 수정하면 다음 조회 때 자동으로 정상 처리됩니다.</span></div>
@@ -586,14 +589,13 @@
 <div class="card wd-sec" id="sec-away">
     <div class="wd-sec-head">
         <h3>🚑 외진 중 <span class="wd-n">{{ away|length }}</span></h3>
-        <span class="muted-sm">복귀 기록이 없는 전체 환자 — 전원·퇴원으로 재원 명부에서 빠진 환자도 포함 · 재원 인원과 별도 집계 · [복귀 예정]은 대시보드 오늘 입원 예정에, 실제 복귀는 대시보드 입원 처리 [완료]</span>
+        <span class="muted-sm">지금 나가 있는 환자만 — 이력·복귀율·기관별 통계는 <a href="/ward?tab=away">외진환자관리</a></span>
     </div>
     {% if away %}
     <div class="tbl-wrap">
         <table class="tbl wd-tbl wd-away-tbl">
             <thead><tr>
-                <th>경과</th><th>환자</th><th>호실</th><th>이송 일시</th><th>유형</th><th>이송기관</th><th>사유</th>
-                <th>보호자</th><th>복귀</th>
+                <th>경과</th><th>환자</th><th>호실</th><th>이송 일시</th><th>유형</th><th>이송기관</th><th>사유</th><th>복귀</th>
             </tr></thead>
             <tbody>
                 {% for c in away %}
@@ -607,8 +609,7 @@
                     <td class="nowrap"><a href="/consult/{{ c.id }}">{{ c.patient_name }}</a></td>
                     <td class="nowrap">{{ c.room_number or '-' }}</td>
                     <td class="nowrap">{{ a.event_date|krdate if a.event_date else '-' }}{% if a.event_time %} {{ a.event_time[:5] }}{% endif %}</td>
-                    <td>{{ a.event_type }}</td><td>{{ a.hospital or '-' }}</td><td class="wd-memo" title="{{ a.memo or '' }}">{{ a.memo or '-' }}</td>
-                    <td class="nowrap">{{ c.guardian_name or '' }} {{ c.guardian_phone or '' }}</td>
+                    <td class="nowrap">{{ a.event_type }}</td><td class="nowrap">{{ a.hospital or '-' }}</td><td class="wd-memo" title="{{ a.memo or '' }}">{{ a.memo or '-' }}</td>
                     <td class="nowrap wd-back-cell">
                         {% if a.expected_return_date %}<span class="wd-exp-badge" title="대시보드 입원 처리에서 [완료]하면 입원 완료로 집계">복귀 예정 {{ a.expected_return_date|krdate }}</span>{% endif %}
                         <input type="date" class="wd-back-date" value="{{ a.expected_return_date or today_str }}"
@@ -627,12 +628,10 @@
     {% endif %}
 </div>
 
-<details class="card wd-sec wd-discharged" id="sec-discharged">
-    <summary>최근 퇴원환자 관리 <span class="wd-n">{{ discharged|length }}</span></summary>
-    <div class="tbl-wrap"><table class="tbl wd-tbl"><thead><tr><th>퇴원일</th><th>환자</th><th>퇴원기관·장소</th><th>퇴원 사유</th><th>담당자</th></tr></thead><tbody>
-    {% for c in discharged %}<tr><td class="nowrap">{{ c.discharge_date|krdate }}</td><td><a href="/consult/{{ c.id }}">{{ c.patient_name }}</a></td><td>{{ c.discharge_destination or '-' }}</td><td>{{ c.discharge_reason or '-' }}</td><td>{{ c.counselor or '-' }}</td></tr>{% else %}<tr><td colspan="5" class="empty">퇴원 기록이 없습니다.</td></tr>{% endfor %}
-    </tbody></table></div>
-</details>
+<div class="card wd-sec wd-discharged" id="sec-discharged">
+    <div class="wd-sec-head"><h3>최근 퇴원 <span class="wd-n">{{ discharged|length }}</span></h3><span class="muted-sm">기간·주치의·병동·퇴원 장소별 조회와 입원 이력은 <a href="/ward?tab=moves">입원·퇴원 이력</a> 탭</span></div>
+    <div class="wd-disc-line">{% for c in discharged[:8] %}<a href="{% if c.id %}/consult/{{ c.id }}{% else %}#{% endif %}" title="{{ c.discharge_destination or '' }} {{ c.discharge_reason or '' }}">{{ c.discharge_date|krdate }} {{ c.patient_name }}</a>{% else %}<span class="muted-sm">퇴원 기록이 없습니다.</span>{% endfor %}{% if discharged|length > 8 %}<a href="/ward?tab=moves&kind=out" class="wd-disc-more">+{{ discharged|length - 8 }} 더 →</a>{% endif %}</div>
+</div>
 
 {# ─── ③ 입원일 미확정 — 명부를 실제와 맞추는 입력 큐 ─── #}
 <div class="card wd-sec" id="sec-pending">
@@ -932,6 +931,13 @@
 .rm-beds .rm-bed { min-width:0; }
 .rm-beds .rm-empty { display:flex; align-items:center; justify-content:center; min-height:72px; color:var(--text-light); opacity:.55;
                      font-size:0.78em; border:1px dashed var(--border); border-left:1px dashed var(--border); background:transparent; }
+.wd-away-tbl td { white-space:nowrap; }
+.wd-away-tbl td.wd-memo { max-width:260px; overflow:hidden; text-overflow:ellipsis; }
+.wd-away-tbl .wd-back-cell { display:flex; flex-wrap:nowrap; gap:4px; align-items:center; }
+.wd-disc-line { display:flex; flex-wrap:wrap; gap:6px 14px; font-size:.88em; }
+.wd-disc-line a { color:#334155; text-decoration:none; white-space:nowrap; }
+.wd-disc-line a:hover { text-decoration:underline; }
+.wd-disc-line .wd-disc-more { color:var(--primary); font-weight:700; }
 /* 외진 중 — 1주일까지는 흐리게(자리는 비워 둔 상태), 1주일을 넘기면 다시 또렷하게 + 경고색 */
 .rm-bed.rm-dim { opacity:.45; filter:grayscale(.5); }
 .rm-bed.rm-dim:hover, .rm-bed.rm-dim:focus-within { opacity:1; filter:none; }

@@ -118,7 +118,7 @@ class WardCensusTests(unittest.TestCase):
         self.assertEqual([(r["patient_name"], r["discharged_at"]) for r in rows],
                          [("이미퇴원한사람", "2024-05-01")])
         html = self.client.get("/ward?view=list").get_data(as_text=True)
-        self.assertIn("최근 퇴원환자 관리 <span class=\"wd-n\">1</span>", html)
+        self.assertIn("최근 퇴원 <span class=\"wd-n\">1</span>", html)
 
     def test_ratio_trend_denominator_is_the_roster_census(self):
         """추이도 회차로 복원한다. 상담 기준이면 퇴원이 안 빠져 인원이 불어나기만 했다."""
