@@ -66,9 +66,9 @@
                     {% elif is_planned %}
                     <select class="adm-action-sel" data-kind="status" data-cid="{{ r.id }}" data-name="{{ r.patient_name }}" title="입원 처리">
                         <option value="">처리</option>
-                        <option value="입원완료">입원완료 (오늘)</option>
-                        <option value="입원취소">입원취소 (사유)</option>
-                        <option value="입원보류">입원보류 (사유)</option>
+                        <option value="입원완료">완료 — 오늘 입원</option>
+                        <option value="입원보류">보류 — 사유 입력</option>
+                        <option value="입원취소">취소 — 사유 입력</option>
                     </select>
                     {% else %}<span class="muted-sm">-</span>{% endif %}
                 </td>
@@ -496,7 +496,8 @@
                     <span class="beds">
                         {% if w.capacity %}{% if w.free <= 0 %}<b class="num full">만석</b>{% else %}<b class="num">가용 {{ w.free }}</b>{% endif %}{% endif %}
                         {% if w.rooms_known %}
-                            <i class="m">남 {{ w.free_m }}</i><i class="f">여 {{ w.free_f }}</i>{% if w.free_open %}<i class="o" title="아무도 없는 병실 {{ w.free_rooms }}개 · 그 안의 병상 {{ w.free_open }}개 (남녀 무관)">빈 병실 {{ w.free_open }}병상<em>({{ w.free_rooms }}실)</em></i>{% endif %}{% if w.free_unknown %}<i class="u">미확인 {{ w.free_unknown }}</i>{% endif %}{% if w.no_room %}<i class="u" title="명부에 병실이 없는 재원">병실 미기재 {{ w.no_room }}</i>{% endif %}
+                            {# 가용 = 남자 방 빈자리 + 여자 방 빈자리 + 빈 병실 병상(남녀 무관) − 병실 미기재 재원(어느 방인지 몰라 위 셈에서 빠짐) #}
+                            <em class="eq">=</em><i class="m" title="남자만 있는 병실의 빈 병상">남 {{ w.free_m }}</i><em class="eq">+</em><i class="f" title="여자만 있는 병실의 빈 병상">여 {{ w.free_f }}</i>{% if w.free_open %}<em class="eq">+</em><i class="o" title="아무도 없는 병실 {{ w.free_rooms }}개 · 그 안의 병상 {{ w.free_open }}개 — 남녀 어느 쪽이든 배정 가능">남녀무관 {{ w.free_open }}<em>(빈 병실 {{ w.free_rooms }})</em></i>{% endif %}{% if w.no_room %}<em class="eq">−</em><i class="u" title="명부에 병실이 비어 있는 재원 {{ w.no_room }}명 — 어느 방 침대를 쓰는지 몰라 남/여 빈 병상에 그만큼 더 잡혀 있다. 원무 명부에서 병실을 채우면 맞는다">병실 미기재 {{ w.no_room }}</i>{% endif %}{% if w.free_unknown %}<i class="u" title="병실별 병상 표에 없는 병상">미확인 {{ w.free_unknown }}</i>{% endif %}
                         {% else %}
                             <em>재원 남 {{ w.male }} · 여 {{ w.female }}</em>
                         {% endif %}

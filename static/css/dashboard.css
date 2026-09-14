@@ -284,7 +284,7 @@
 .page-dashboard .dash-adm-tbl col.c-room { width: 96px; }   /* '1004호 비회복기' */
 .page-dashboard .dash-adm-tbl col.c-cs { width: 48px; }     /* 상담사 이름 */
 .page-dashboard .dash-adm-tbl col.c-doc { width: 76px; }    /* '이성범(RM1)' */
-.page-dashboard .dash-adm-tbl col.c-note { width: 52px; }   /* 기타 — 세 글자 남짓+말줄임, 전체는 툴팁 */
+/* 기타(c-note)는 폭을 안 정해 병명(c-dx)과 남는 폭을 반씩 나눈다 — 둘 다 넘치면 말줄임, 전체는 툴팁 */
 .page-dashboard .dash-adm-tbl col.c-act { width: 62px; }    /* 처리 드롭다운 */
 .page-dashboard .dash-adm-tbl th, .page-dashboard .dash-adm-tbl td { padding: 6px 4px; font-size: .76rem; line-height: 1.3;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
@@ -321,6 +321,15 @@
     .page-dashboard .dash-adm-tbl .dash-adm-room .badge { display: inline-block; margin: 2px 0 0; }
     .page-dashboard .dash-adm-tbl .adm-action-sel { font-size: .66rem; padding: 2px 0; }
 }
+/* 카드 머리글 오른쪽 요약(입원 환자 현황 '날짜 · N명', 병동별 재원 '재원/허가/총 가용', 오늘 처리 필요 '긴급 N · 주의 N')은 진하게 */
+.page-dashboard #admission-schedule .dash-section-head > span.muted,
+.page-dashboard #action-queue .dash-section-head > span.muted,
+.page-dashboard #ward-occupancy .muted-sm[title^="총 가용"] { font-weight: 800; color: var(--dtext); }
+.page-dashboard #ward-occupancy .muted-sm[title^="총 가용"] b { font-weight: 900; }
+/* 병동 행의 빈 병상 등식: 가용 7 = 남 4 + 여 0 + 남녀무관 3(빈 병실 1) − 병실 미기재 1 */
+.page-dashboard .fl .beds em.eq { font-style: normal; color: var(--dfaint); font-weight: 700; padding: 0 1px; }
+.page-dashboard .fl .beds i.o em { font-weight: 500; opacity: .8; }
+.page-dashboard .fl .beds i.u { background: #fff4e5; color: #b45309; }
 /* 기한 임박 — 탭을 머리글 아래 줄에(오늘 처리 필요와 같은 구조). 카드 높이·표 시작 위치가 좌우 같아진다 */
 .page-dashboard .due-tabs-row { margin-left: 18px; }
 .page-dashboard .fl .beds .o em { font-style: normal; font-weight: 500; opacity: .8; }
