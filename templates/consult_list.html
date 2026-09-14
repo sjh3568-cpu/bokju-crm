@@ -103,7 +103,7 @@
 {% if filters.consult_result %}{% set _ = active_filters.append(('상담결과', filters.consult_result, url_with(consult_result=None, page=None))) %}{% endif %}
 {% if filters.admission_status %}{% set _ = active_filters.append(('입원진행', filters.admission_status, url_with(admission_status=None, page=None))) %}{% endif %}
 {% if filters.counselor %}{% set _ = active_filters.append(('상담자', filters.counselor, url_with(counselor=None, page=None))) %}{% endif %}
-{% if filters.stay_period %}{% set _ = active_filters.append(('입원기간', '6개월 연장 중', url_with(stay_period=None, page=None))) %}{% endif %}
+{% if filters.stay_period %}{% set _ = active_filters.append(('입원기간', {'ext1': '연장 1회', 'ext2': '연장 2회', 'extended_6m': '6개월 연장 중'}.get(filters.stay_period, filters.stay_period), url_with(stay_period=None, page=None))) %}{% endif %}
 {% if active_filters %}
 <div class="filter-chip-row">
     <span class="filter-chip-label">적용된 필터</span>
@@ -224,7 +224,9 @@
                 <th></th>
                 <th><select form="consult-filter" name="stay_period" class="cf-in cf-sm" title="입원기간 상태">
                     <option value="">전체</option>
-                    <option value="extended_6m" {% if filters.stay_period == 'extended_6m' %}selected{% endif %}>6개월 연장 중</option>
+                    <option value="ext1" {% if filters.stay_period == 'ext1' %}selected{% endif %}>연장 1회 (입원 1년 초과)</option>
+                    <option value="ext2" {% if filters.stay_period == 'ext2' %}selected{% endif %}>연장 2회 (1년 6개월 초과)</option>
+                    <option value="extended_6m" {% if filters.stay_period == 'extended_6m' %}selected{% endif %}>6개월 연장 중 (중추·1~1.5년)</option>
                 </select></th>
                 <th><select form="consult-filter" name="counselor" class="cf-in cf-sm">
                     <option value="">전체</option>

@@ -5401,8 +5401,8 @@ _WARD_FILTS = {
     "nonrecovery": ("비회복기 (S006)", lambda c: c.get("care_phase") == "비회복기"),
     "recdue":      ("회복기 종료 D-30", lambda c: c.get("recovery_due")),
     "dis30":       ("퇴원 예정 D-30",   lambda c: c.get("discharge_dday") is not None and c["discharge_dday"] <= 30),
-    "ext1":        ("연장 1회 (1.5년)", lambda c: c.get("ext_tier") == 1),
-    "ext2":        ("연장 2회 (2년)",   lambda c: c.get("ext_tier") == 2),
+    "ext1":        ("연장 1회 (입원 1년 초과)", lambda c: c.get("ext_tier") == 1),
+    "ext2":        ("연장 2회 (1년 6개월 초과)", lambda c: c.get("ext_tier") == 2),
 }
 
 
@@ -5773,40 +5773,49 @@ EXTENSION_DAYS = 180
 
 
 def _extension_tier(c):
-    """discharge_due_date(입원연장 시 새 퇴원예정일)가 기본 만료(입원일+1년)를 얼마나
-    넘는지로 연장 횟수 판정. 발병일+2년을 최종 한도로 함께 계산.
-    Returns dict(ext_tier 0/1/2, ext_label, ext_extra_days, ext_cap_date, ext_cap_left)."""
+    """입원일로부터 실제 경과일로 연장 단계를 판정한다(2026-09-14 사용자 정의).
+      기본  : 입원 1년(365일) 이내
+      연장 1회: 1년 초과 ~ 1년 6개월(545일)   — 6개월 연장 1회분
+      연장 2회: 1년 6개월 초과            — 최종 한도는 발병일 + 2년(730일)
+    예전엔 수동으로 늘린 퇴원예정일(discharge_due_date)로 판정해, 예정일을 안 고친 환자는
+    1년을 넘겨도 배지가 안 붙었다. 이제 예정일과 무관하게 경과일만 본다.
+    Returns dict(ext_tier 0/1/2, ext_label, ext_extra_days, ext_end_date/left, ext_cap_date/left)."""
     out = {"ext_tier": 0, "ext_label": "기본 (1년)", "ext_extra_days": 0,
+           "ext_end_date": None, "ext_end_left": None,
            "ext_cap_date": None, "ext_cap_left": None}
-    adm = c.get("admitted_on")
-    dd = (c.get("discharge_due_date") or "").strip()
-    # 최종 진단일(발병일) + 2년 = 절대 한도
-    onset = (c.get("disease_onset") or "").strip()
+    today = date.today()
+    onset = (c.get("disease_onset") or c.get("onset_date") or "").strip()
+    cap = None
     if onset:
         try:
-            od = datetime.strptime(onset[:10], "%Y-%m-%d").date()
-            cap = od + timedelta(days=730)
+            cap = datetime.strptime(onset[:10], "%Y-%m-%d").date() + timedelta(days=730)
             out["ext_cap_date"] = cap.isoformat()
-            out["ext_cap_left"] = (cap - date.today()).days
+            out["ext_cap_left"] = (cap - today).days
         except (ValueError, TypeError):
-            pass
-    if not adm or not dd:
+            cap = None
+    adm = c.get("admitted_on")
+    if not adm:
         return out
     try:
         ad = datetime.strptime(adm[:10], "%Y-%m-%d").date()
-        dr = datetime.strptime(dd[:10], "%Y-%m-%d").date()
     except (ValueError, TypeError):
         return out
-    extra = (dr - ad).days - TOTAL_STAY_DAYS      # 기본 1년 만료 대비 초과일
+    days = (today - ad).days
+    extra = days - TOTAL_STAY_DAYS
     out["ext_extra_days"] = max(0, extra)
-    if extra <= 30:                                # 소폭 조정은 기본으로 흡수
-        out["ext_tier"] = 0
-    elif extra <= EXTENSION_DAYS + 90:             # ≈ +180 → 1회
+    if extra <= 0:
+        out["ext_end_date"] = (ad + timedelta(days=TOTAL_STAY_DAYS)).isoformat()
+    elif days <= TOTAL_STAY_DAYS + EXTENSION_DAYS:
         out["ext_tier"] = 1
-        out["ext_label"] = "연장 1회 (1.5년)"
-    else:                                          # ≈ +360 → 2회
+        out["ext_label"] = "연장 1회 (1년 6개월까지)"
+        out["ext_end_date"] = (ad + timedelta(days=TOTAL_STAY_DAYS + EXTENSION_DAYS)).isoformat()
+    else:
         out["ext_tier"] = 2
-        out["ext_label"] = "연장 2회 (2년)"
+        out["ext_label"] = "연장 2회 (발병일 + 2년까지)"
+        end = cap or (ad + timedelta(days=TOTAL_STAY_DAYS + 2 * EXTENSION_DAYS))
+        out["ext_end_date"] = end.isoformat()
+    if out["ext_end_date"]:
+        out["ext_end_left"] = (date.fromisoformat(out["ext_end_date"]) - today).days
     return out
 
 

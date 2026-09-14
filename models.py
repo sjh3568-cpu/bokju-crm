@@ -2485,6 +2485,15 @@ def _build_consult_where(*, date_from=None, date_to=None, insurance=None, q=None
             f"AND ({cns_clause}))"
         )
         vals.extend(f"%{term}%" for term in _CNS_DISEASE_FILTER_TERMS)
+    elif stay_period in ("ext1", "ext2"):
+        # 입원일 경과 기준 연장 단계 — 재원 화면(_extension_tier)과 같은 경계: 1년(365)·1년 6개월(545).
+        # 상담 기록의 입원완료·퇴원일은 믿을 수 없어(퇴원일이 거의 비어 있음) 원무 명부의 '지금 재원 중인 회차'로 판정한다.
+        span = ("date(e.admitted_at, '+365 days') < date('now', 'localtime') AND date('now', 'localtime') <= date(e.admitted_at, '+545 days')"
+                if stay_period == "ext1" else "date(e.admitted_at, '+545 days') < date('now', 'localtime')")
+        where.append(
+            "(c.admission_status = '입원완료' AND EXISTS (SELECT 1 FROM admission_episodes e "
+            "WHERE e.patient_id = c.patient_id AND e.roster_key IS NOT NULL AND e.discharged_at IS NULL "
+            f"AND e.admitted_at IS NOT NULL AND e.admitted_at != '' AND {span}))")
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
     return where_sql, vals
 
