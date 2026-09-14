@@ -126,7 +126,7 @@ class WardCensusTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
         import json, re
-        series = json.loads(re.search(r"data-series='(\[.*?\])'", html).group(1))
+        series = json.loads(re.search(r"<svg class=\"wd-ratio-chart\"(?: data-forecast=\"1\")? data-series='(\[.*?\])'", html).group(1))
         today = series[-1]
         self.assertEqual(today["total"], 2)      # 지금 재원 2명
         # 상담이 안 붙은 회차는 비율 분모에서 빠진다 — 회복기 판정을 못 하기 때문
@@ -137,7 +137,7 @@ class WardCensusTests(unittest.TestCase):
         import json, re
         def series_of(url):
             html = self.client.get(url).get_data(as_text=True)
-            return [json.loads(m) for m in re.findall(r"data-series='(\[.*?\])'", html)], html
+            return [json.loads(m) for m in re.findall(r"<svg class=\"wd-ratio-chart\"(?: data-forecast=\"1\")? data-series='(\[.*?\])'", html)], html
         (daily, monthly, _f), html = series_of("/ward?tab=trend")
         self.assertEqual(len(daily), 30)          # 기본은 최근 30일
         self.assertEqual(len(monthly), 12)
@@ -160,7 +160,7 @@ class WardCensusTests(unittest.TestCase):
         """날짜만 바꾸고 라디오가 프리셋에 남아 있어도 입력한 기간을 쓴다."""
         import json, re
         html = self.client.get("/ward?tab=trend&preset=30&from=2025-01-05&to=2025-01-14").get_data(as_text=True)
-        daily = json.loads(re.findall(r"data-series='(\[.*?\])'", html)[0])
+        daily = json.loads(re.findall(r"<svg class=\"wd-ratio-chart\"(?: data-forecast=\"1\")? data-series='(\[.*?\])'", html)[0])
         self.assertEqual(len(daily), 10)
         self.assertIn('value="custom" checked', html)
         # 종료일만 과거로 바꿔도 직접지정
@@ -168,7 +168,7 @@ class WardCensusTests(unittest.TestCase):
         self.assertIn("2024-12-16 ~ 2025-01-14", html)
         # 프리셋 칩은 날짜칸을 비우고 넘어온다 — 빈 날짜는 프리셋을 흔들지 않는다
         html = self.client.get("/ward?tab=trend&preset=90&from=&to=").get_data(as_text=True)
-        self.assertEqual(len(json.loads(re.findall(r"data-series='(\[.*?\])'", html)[0])), 90)
+        self.assertEqual(len(json.loads(re.findall(r"<svg class=\"wd-ratio-chart\"(?: data-forecast=\"1\")? data-series='(\[.*?\])'", html)[0])), 90)
         self.assertIn('value="90" checked', html)
 
     def test_ratio_insight_margins(self):
@@ -188,6 +188,65 @@ class WardCensusTests(unittest.TestCase):
         self.assertEqual((ins["non_out"], ins["non_out_ratio"]), (3, 42.86))
         self.assertEqual(len(ins["forecast"]), 61)
         self.assertIsNone(main._ratio_insight({"total": 0, "known": 0, "recovery": 0, "ratio": 0}, [], ratio_at, date(2026, 9, 11)))
+
+    def test_trend_flow_applies_admissions_discharges_and_conversions(self):
+        """입·퇴원 D-30 반영 추이 — 날짜별 입원예정·퇴원 예정·회복기 종료가 비율에 순서대로 얹힌다."""
+        from datetime import date, timedelta
+        today = date(2026, 9, 14)
+        d = lambda n: (today + timedelta(days=n)).isoformat()
+        insight = {"recovery": 10, "known": 20, "total": 22, "ratio": 50.0, "threshold": 40}
+        planned = [
+            {"id": 1, "patient_name": "회복입원", "admission_status": "입원예정", "planned_admission_date": d(1),
+             "admission_purpose": "회복기재활"},
+            {"id": 2, "patient_name": "비회복입원", "admission_status": "입원예정", "planned_admission_date": d(1),
+             "admission_purpose": "비회복기재활"},
+            {"id": 3, "patient_name": "미판정입원", "admission_status": "입원예정", "planned_admission_date": d(2)},
+            {"id": 4, "patient_name": "창밖", "admission_status": "입원예정", "planned_admission_date": d(31),
+             "admission_purpose": "회복기재활"},
+        ]
+        admitted = [
+            # 회복기인데 종료(D+3)보다 퇴원(D+2)이 먼저 → 회복기로 나가고 전환은 없다
+            {"id": 11, "patient_name": "먼저퇴원", "care_phase": "회복기", "phase_dday": 3,
+             "discharge_dday": 2, "discharge_due": d(2)},
+            # 종료(D+4) 뒤 퇴원(D+6) → D+4 전환, D+6 비회복기 퇴원
+            {"id": 12, "patient_name": "전환후퇴원", "care_phase": "회복기", "phase_dday": 4,
+             "discharge_dday": 6, "discharge_due": d(6)},
+            # 상담 없는 명부 환자(id None)의 퇴원은 인원에서만 빠진다
+            {"id": None, "patient_name": "명부만", "care_phase": "미판정", "phase_dday": None,
+             "discharge_dday": 5, "discharge_due": d(5)},
+            {"id": 13, "patient_name": "비회복퇴원", "care_phase": "비회복기", "phase_dday": 20,
+             "discharge_dday": 40, "discharge_due": d(40)},   # 창 밖
+        ]
+        with patch.object(models, "list_consultations", return_value=planned):
+            flow = main._trend_flow(insight, admitted, today)
+        by = {row["dday"]: row for row in flow["days"]}
+        self.assertEqual(len(flow["days"]), 31)
+        self.assertEqual((by[1]["in_rec"], by[1]["in_non"], by[2]["in_unknown"]), (1, 1, 1))
+        self.assertEqual((by[2]["out_rec"], by[3]["rec_end"], by[4]["rec_end"], by[6]["out_non"], by[5]["out_unknown"]),
+                         (1, 0, 1, 1, 1))
+        # D+1: 회복기 11 / 판정 22 → 50.00, D+2: 미판정 입원은 분모 제외, 회복기 퇴원 → 10/21
+        self.assertEqual((by[1]["recovery"], by[1]["known"], by[1]["ratio"]), (11, 22, 50.0))
+        self.assertEqual((by[2]["recovery"], by[2]["known"], by[2]["total"], by[2]["ratio"]), (10, 21, 24, 47.62))
+        # D+4 전환: 9/21, D+5 명부만 퇴원: 인원만 -1, D+6 비회복기 퇴원: 9/20
+        self.assertEqual((by[4]["recovery"], by[4]["known"]), (9, 21))
+        self.assertEqual((by[5]["known"], by[5]["total"]), (21, 23))
+        self.assertEqual((by[6]["recovery"], by[6]["known"], by[6]["ratio"]), (9, 20, 45.0))
+        self.assertEqual(flow["sum"]["in_total"], 3)
+        self.assertEqual((flow["sum"]["out_rec"], flow["sum"]["out_non"], flow["sum"]["out_unknown"], flow["sum"]["rec_end"]),
+                         (1, 1, 1, 1))
+        self.assertEqual(len(flow["active"]), 5)
+        self.assertTrue(flow["ok"]); self.assertIsNone(flow["cross"])
+        self.assertIsNone(main._trend_flow(None, admitted, today))
+
+    def test_trend_page_renders_flow_section(self):
+        """추이 탭에 입·퇴원 D-30 섹션·막대 차트·가정 계산기가 실린다."""
+        html = self.client.get("/ward?tab=trend").get_data(as_text=True)
+        if "wd-insight" in html:
+            self.assertIn("입·퇴원 D-30 반영 추이", html)
+            self.assertIn('data-flow="1"', html)
+            self.assertIn('data-k="rec_end"', html)
+            self.assertIn("data-preset=", html)
+        self.assertIn("wd-chart-legend", html)
 
     def test_trend_summary_is_person_day_weighted(self):
         """기간 평균은 연인원 가중이라 인원이 적은 날에 끌려가지 않는다."""
@@ -344,7 +403,7 @@ class WardCensusTests(unittest.TestCase):
             self.assertEqual(patient["phase_end_date"], "2024-01-01")
         import json, re
         html = self.client.get("/ward?tab=trend").get_data(as_text=True)
-        series = json.loads(re.search(r"data-series='(\[.*?\])'", html).group(1))
+        series = json.loads(re.search(r"<svg class=\"wd-ratio-chart\"(?: data-forecast=\"1\")? data-series='(\[.*?\])'", html).group(1))
         self.assertEqual(series[-1]["recovery"], 0)
 
     def test_roster_expiry_boundaries_and_unknown_period(self):
@@ -381,7 +440,7 @@ class WardCensusTests(unittest.TestCase):
                              {1: "회복기", 3: "비회복기"})
         import json, re
         html = self.client.get("/ward?tab=trend").get_data(as_text=True)
-        series = json.loads(re.search(r"data-series='(\[.*?\])'", html).group(1))
+        series = json.loads(re.search(r"<svg class=\"wd-ratio-chart\"(?: data-forecast=\"1\")? data-series='(\[.*?\])'", html).group(1))
         self.assertEqual(series[-1]["total"], 2)
         self.assertEqual(series[-1]["known"], 2)
         self.assertEqual(series[-1]["recovery"], 1)

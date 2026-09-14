@@ -203,22 +203,67 @@
             </tbody></table>
         </details>
         {% endif %}
-        <div class="wd-whatif" data-recovery="{{ ti.recovery }}" data-known="{{ ti.known }}">
-            <strong>가정 계산기</strong>
-            <label>회복기 입원 <input type="number" min="0" value="0" data-k="rec_in"></label>
-            <label>회복기 퇴원 <input type="number" min="0" value="0" data-k="rec_out"></label>
-            <label>비회복기 입원 <input type="number" min="0" value="0" data-k="non_in"></label>
-            <label>비회복기 퇴원 <input type="number" min="0" value="0" data-k="non_out"></label>
-            <span class="wd-whatif-out">→ <b id="wd-whatif-ratio">{{ ti.ratio|pct2 }}%</b> <span id="wd-whatif-detail" class="muted-sm"></span></span>
+    </div>
+{% if trend_flow %}{% set tf = trend_flow %}
+    <div class="wd-flow {% if tf.ok %}ok{% else %}warn{% endif %}">
+        <div class="wd-sec-head"><h3>📅 입·퇴원 D-30 반영 추이</h3><span class="muted-sm">입원예정 상담 + 퇴원 예정 D-30 + 회복기 종료 · 오늘부터 {{ tf.horizon }}일</span></div>
+        <div class="wd-kpi wd-trend-kpi wd-flow-kpi">
+            <div class="wd-k"><span class="wd-k-n">{{ tf.sum.in_total }}<small>명</small></span><span class="wd-k-l">입원 예정 <small>회복기 {{ tf.sum.in_rec }} · 비회복기 {{ tf.sum.in_non }}{% if tf.sum.in_unknown %} · 미판정 {{ tf.sum.in_unknown }}{% endif %}</small></span></div>
+            <div class="wd-k"><span class="wd-k-n">{{ tf.sum.out_total }}<small>명</small></span><span class="wd-k-l">퇴원 예정 D-30 <small>회복기 {{ tf.sum.out_rec }} · 비회복기 {{ tf.sum.out_non }}{% if tf.sum.out_unknown %} · 미판정 {{ tf.sum.out_unknown }}{% endif %}</small></span></div>
+            <div class="wd-k"><span class="wd-k-n">{{ tf.sum.rec_end }}<small>명</small></span><span class="wd-k-l">회복기 종료(전환) <small>S005 수가 만료 · 퇴원 전 종료만</small></span></div>
+            <div class="wd-k {% if tf.ok %}ok{% else %}warn{% endif %}"><span class="wd-k-n">{{ tf.end.ratio|pct2 }}<small>%</small></span><span class="wd-k-l">{{ tf.horizon }}일 후 예상 <small>지금 {{ tf.start_ratio|pct2 }}% → {{ tf.end.recovery }}/{{ tf.end.known }}명{% if tf.cross %} · <b class="wd-insight-cross">{{ tf.cross.label }} 40% 아래</b>{% endif %}</small></span></div>
+        </div>
+        <div class="wd-trend-grid wd-flow-grid">
+            <div>
+                <strong>향후 {{ tf.horizon }}일 · 입원(＋)·퇴원(－)·회복기 종료 인원과 예상 비율</strong>
+                <svg class="wd-ratio-chart" data-flow="1" data-series='{{ tf.days|tojson }}' viewBox="0 0 1000 260" role="img" aria-label="입·퇴원 반영 회복기 비율 예상"></svg>
+                <div class="wd-chart-legend"><span><i style="background:#34d399"></i>입원 예정</span><span><i style="background:#fb923c"></i>퇴원 예정</span><span><i style="background:#fbbf24"></i>회복기 종료</span><span><i class="line" style="background:#0ea5e9"></i>예상 비율(왼쪽 축 %)</span><span class="muted">막대는 오른쪽 축(명)</span></div>
+            </div>
+            <div class="wd-flow-side">
+                <div class="wd-whatif" data-recovery="{{ ti.recovery }}" data-known="{{ ti.known }}"
+                     data-preset='{{ {"rec_in": tf.sum.in_rec, "rec_out": tf.sum.out_rec, "non_in": tf.sum.in_non, "non_out": tf.sum.out_non, "rec_end": tf.sum.rec_end}|tojson }}'>
+                    <strong>가정 계산기</strong> <span class="muted-sm">D-30 예정값이 채워져 있습니다 — 숫자를 바꿔 보세요</span>
+                    <div class="wd-whatif-row">
+                        <label>회복기 입원 <input type="number" min="0" value="{{ tf.sum.in_rec }}" data-k="rec_in"></label>
+                        <label>회복기 퇴원 <input type="number" min="0" value="{{ tf.sum.out_rec }}" data-k="rec_out"></label>
+                        <label>비회복기 입원 <input type="number" min="0" value="{{ tf.sum.in_non }}" data-k="non_in"></label>
+                        <label>비회복기 퇴원 <input type="number" min="0" value="{{ tf.sum.out_non }}" data-k="non_out"></label>
+                        <label>회복기 종료 <input type="number" min="0" value="{{ tf.sum.rec_end }}" data-k="rec_end"></label>
+                    </div>
+                    <div class="wd-whatif-row">
+                        <span class="wd-whatif-out">→ <b id="wd-whatif-ratio">{{ tf.end.ratio|pct2 }}%</b> <span id="wd-whatif-detail" class="muted-sm"></span></span>
+                        <button type="button" class="btn btn-secondary btn-sm" data-whatif="preset">D-30 예정값</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-whatif="zero">모두 0</button>
+                    </div>
+                </div>
+                {% if tf.active %}
+                <details class="wd-flow-days" open><summary>날짜별 내역 · 예정이 있는 {{ tf.active|length }}일</summary>
+                    <div class="wd-flow-table-wrap"><table class="wd-insight-table"><thead><tr><th>날짜</th><th>입원 예정</th><th>퇴원 예정</th><th>회복기 종료</th><th>예상 비율</th></tr></thead><tbody>
+                    {% for d in tf.active %}<tr>
+                        <td class="nowrap">{{ d.label }} <small class="muted">D+{{ d.dday }}</small></td>
+                        <td>{% for p in d.in_names %}<span class="wd-flow-name {% if p.phase == '회복기' %}rec{% elif p.phase == '비회복기' %}non{% else %}unk{% endif %}" title="{{ p.phase }}">{% if p.id %}<a href="/consult/{{ p.id }}">{{ p.name }}</a>{% else %}{{ p.name }}{% endif %}</span>{% endfor %}</td>
+                        <td>{% for p in d.out_names %}<span class="wd-flow-name {% if p.phase == '회복기' %}rec{% elif p.phase == '비회복기' %}non{% else %}unk{% endif %}" title="{{ p.phase }}">{% if p.id %}<a href="/consult/{{ p.id }}">{{ p.name }}</a>{% else %}{{ p.name }}{% endif %}</span>{% endfor %}</td>
+                        <td>{% for p in d.end_names %}<span class="wd-flow-name end">{% if p.id %}<a href="/consult/{{ p.id }}">{{ p.name }}</a>{% else %}{{ p.name }}{% endif %}</span>{% endfor %}</td>
+                        <td class="nowrap"><b{% if d.ratio < 40 %} class="wd-insight-cross"{% endif %}>{{ d.ratio|pct2 }}%</b> <small class="muted">{{ d.recovery }}/{{ d.known }}명</small></td>
+                    </tr>{% endfor %}
+                    </tbody></table></div>
+                    <p class="muted-sm wd-flow-note">초록 회복기 · 회색 비회복기 · 점선 미판정(인원에만 반영). 입원 예정은 상담의 입원예정일, 퇴원 예정은 재원 카드의 '퇴원 예정 D-30'과 같은 기준입니다.</p>
+                </details>
+                {% else %}
+                <p class="muted-sm">앞으로 {{ tf.horizon }}일 안에 입원예정·퇴원 예정·회복기 종료가 없습니다. 계산기에 직접 숫자를 넣어 보세요.</p>
+                {% endif %}
+            </div>
         </div>
     </div>
+{% endif %}
 {% else %}
     <p class="muted-sm">오늘 기준 회복기 판정이 가능한 재원 환자가 없어 40% 기준선 인사이트를 낼 수 없습니다. 원무 입퇴원 명부를 올리면 표시됩니다.</p>
 {% endif %}
+{% macro ratio_legend(forecast=false) %}<div class="wd-chart-legend"><span><i style="background:#86efac"></i>회복기</span><span><i style="background:#cbd5e1"></i>비회복기</span><span><i style="background:#e2e8f0;border:1px dashed #94a3b8"></i>미판정(비율 제외)</span><span><i class="line" style="background:{{ '#0ea5e9' if forecast else '#16a34a' }}"></i>{{ '예상 ' if forecast }}비율(왼쪽 축 %)</span><span class="muted">막대는 오른쪽 축(명)</span></div>{% endmacro %}
     <div class="wd-trend-grid">
-        <div><strong>{% if trend_preset in trend_ranges %}{{ trend_ranges[trend_preset] }}{% else %}선택 기간{% endif %} · 일별</strong><svg class="wd-ratio-chart" data-series='{{ daily_ratio_trend|tojson }}' viewBox="0 0 1000 260" role="img" aria-label="일별 회복기 환자 비율"></svg></div>
-        <div><strong>최근 {{ trend_month_count }}개월 · 월별</strong><svg class="wd-ratio-chart" data-series='{{ monthly_ratio_trend|tojson }}' viewBox="0 0 1000 260" role="img" aria-label="월별 회복기 환자 비율"></svg></div>
-        {% if trend_insight %}<div><strong>향후 {{ trend_insight.horizon }}일 · 예상 <small class="muted">(입·퇴원 없이 회복기 종료만 반영)</small></strong><svg class="wd-ratio-chart" data-forecast="1" data-series='{{ trend_insight.forecast|tojson }}' viewBox="0 0 1000 260" role="img" aria-label="향후 회복기 환자 비율 예상"></svg></div>{% endif %}
+        <div><strong>{% if trend_preset in trend_ranges %}{{ trend_ranges[trend_preset] }}{% else %}선택 기간{% endif %} · 일별</strong><svg class="wd-ratio-chart" data-series='{{ daily_ratio_trend|tojson }}' viewBox="0 0 1000 260" role="img" aria-label="일별 회복기 환자 비율"></svg>{{ ratio_legend() }}</div>
+        <div><strong>최근 {{ trend_month_count }}개월 · 월별</strong><svg class="wd-ratio-chart" data-series='{{ monthly_ratio_trend|tojson }}' viewBox="0 0 1000 260" role="img" aria-label="월별 회복기 환자 비율"></svg>{{ ratio_legend() }}</div>
+        {% if trend_insight %}<div><strong>향후 {{ trend_insight.horizon }}일 · 예상 <small class="muted">(입·퇴원 없이 회복기 종료만 반영)</small></strong><svg class="wd-ratio-chart" data-forecast="1" data-series='{{ trend_insight.forecast|tojson }}' viewBox="0 0 1000 260" role="img" aria-label="향후 회복기 환자 비율 예상"></svg>{{ ratio_legend(true) }}</div>{% endif %}
     </div>
 </section>
 {% elif subtab == 'blacklist' %}
@@ -787,6 +832,28 @@
 .wd-insight-list { margin:8px 0 0; padding-left:18px; font-size:.9em; line-height:1.6; color:#1e293b; }
 .wd-insight-cross { color:#b91c1c; }
 .wd-insight-ending { margin-top:6px; font-size:.85em; }
+.wd-chart-legend { display:flex; flex-wrap:wrap; gap:4px 14px; margin:2px 0 0 5px; font-size:.78em; color:#475569; }
+.wd-chart-legend span { display:inline-flex; align-items:center; gap:5px; }
+.wd-chart-legend i { display:inline-block; width:12px; height:10px; border-radius:2px; }
+.wd-chart-legend i.line { width:16px; height:3px; border-radius:2px; }
+.wd-flow { border:1px solid #e2e8f0; border-left:4px solid #0ea5e9; border-radius:8px; background:#f0f9ff; padding:10px 14px; margin:0 0 12px; }
+.wd-flow.warn { border-left-color:#f59e0b; background:#fffbeb; }
+.wd-flow .wd-sec-head { margin-bottom:6px; }
+.wd-flow-kpi { margin:0 0 10px; }
+.wd-flow-grid { grid-template-columns:1fr; }
+.wd-flow-kpi .wd-k-l { white-space:normal; overflow:visible; text-overflow:clip; }
+.wd-flow-kpi .wd-k-l b { background:none; color:#b91c1c; padding:0; }
+.wd-flow-side { display:flex; flex-direction:column; gap:8px; }
+.wd-flow-side .wd-whatif { margin-top:0; padding-top:0; border-top:0; flex-direction:column; align-items:stretch; gap:6px; }
+.wd-flow-table-wrap { max-height:360px; }
+.wd-whatif-row { display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; }
+.wd-flow-days { font-size:.85em; }
+.wd-flow-days summary { cursor:pointer; font-weight:600; color:#0369a1; }
+.wd-flow-table-wrap { max-height:320px; overflow:auto; margin-top:4px; }
+.wd-flow-name { display:inline-block; margin:1px 4px 1px 0; padding:0 6px; border-radius:999px; font-size:.92em; background:#f1f5f9; }
+.wd-flow-name.rec { background:#dcfce7; } .wd-flow-name.non { background:#e2e8f0; } .wd-flow-name.unk { background:#fff; border:1px dashed #94a3b8; } .wd-flow-name.end { background:#fef3c7; }
+.wd-flow-name a { color:inherit; text-decoration:none; }
+.wd-flow-note { margin:6px 0 0; }
 .wd-insight-ending summary { cursor:pointer; color:#334155; }
 .wd-insight-table { border-collapse:collapse; margin-top:6px; background:#fff; }
 .wd-insight-table th, .wd-insight-table td { padding:3px 8px; border-bottom:1px solid #e2e8f0; text-align:left; }
@@ -1001,27 +1068,61 @@
         });
     });
 
-    // 회복기 비율 추이 — 40% 기준선과 실제 비율을 같은 축에서 표시
+    // 회복기 비율 추이 — 왼쪽 축은 비율(%)·40% 기준선, 오른쪽 축은 인원(막대).
+    // 일별·월별·예상: 회복기/비회복기/미판정 누적 막대. 입·퇴원 반영(data-flow): 입원·퇴원·종료 묶음 막대.
     document.querySelectorAll('.wd-ratio-chart').forEach(svg => {
         const data = JSON.parse(svg.dataset.series || '[]');
         if (!data.length) return;
-        const NS = 'http://www.w3.org/2000/svg', left=48, right=980, top=18, bottom=210;
-        const x = i => data.length === 1 ? (left+right)/2 : left + (right-left)*i/(data.length-1);
+        const NS = 'http://www.w3.org/2000/svg', left=48, right=950, top=18, bottom=210;
+        const flow = svg.dataset.flow === '1', forecast = svg.dataset.forecast === '1' || flow;
+        const n = data.length, slot = (right-left)/n;
+        const x = i => left + slot*(i+0.5);
         const y = v => bottom - (bottom-top)*Math.max(0,Math.min(100,v))/100;
-        const el = (tag, attrs, value) => { const n=document.createElementNS(NS,tag); Object.entries(attrs||{}).forEach(([k,v])=>n.setAttribute(k,v)); if(value!==undefined)n.textContent=value; svg.appendChild(n); return n; };
+        const el = (tag, attrs, value) => { const e=document.createElementNS(NS,tag); Object.entries(attrs||{}).forEach(([k,v])=>e.setAttribute(k,v)); if(value!==undefined)e.textContent=value; svg.appendChild(e); return e; };
+        const counts = flow ? data.map(d=>Math.max(d.in_total||0, d.out_total||0, d.rec_end||0)) : data.map(d=>d.total||0);
+        const cmax = Math.max(1, ...counts);
+        const nice = m => { const p=Math.pow(10,Math.floor(Math.log10(m))), f=m/p; return Math.max(1,(f<=1?1:f<=2?2:f<=5?5:10)*p); };
+        const step = nice(cmax/4), cTop = Math.ceil(cmax/step)*step;
+        const yc = v => bottom - (bottom-top)*v/cTop;
         [0,20,40,60,80,100].forEach(v => {
             el('line',{x1:left,y1:y(v),x2:right,y2:y(v),stroke:v===40?'#f59e0b':'#e2e8f0','stroke-width':v===40?2:1,'stroke-dasharray':v===40?'5 4':''});
             el('text',{x:left-7,y:y(v)+4,'text-anchor':'end',fill:'#64748b','font-size':11},v+'%');
         });
-        const forecast = svg.dataset.forecast === '1';
-        el('polyline',{points:data.map((d,i)=>`${x(i)},${y(d.ratio)}`).join(' '),fill:'none',stroke:forecast?'#0ea5e9':'#16a34a','stroke-width':3,'stroke-linecap':'round','stroke-linejoin':'round','stroke-dasharray':forecast?'8 5':''});
-        const labelEvery = Math.max(1,Math.ceil(data.length/10));
+        for (let v=0; v<=cTop; v+=step) el('text',{x:right+6,y:yc(v)+4,'text-anchor':'start',fill:'#94a3b8','font-size':11},v+'명');
+        const bw = Math.max(1, Math.min(28, slot*0.7));
+        if (flow) {
+            const gw = bw/3;
+            data.forEach((d,i) => {
+                [[d.in_total,'#34d399'],[d.out_total,'#fb923c'],[d.rec_end,'#fbbf24']].forEach(([v,color],j) => {
+                    if (!v) return; const h=(bottom-top)*v/cTop;
+                    el('rect',{x:x(i)-bw/2+gw*j,y:bottom-h,width:gw,height:h,fill:color,rx:1});
+                });
+            });
+        } else {
+            data.forEach((d,i) => {
+                const rec=d.recovery||0, non=Math.max(0,(d.known||0)-rec), unk=Math.max(0,(d.total||0)-(d.known||0));
+                let base=bottom;
+                [[rec,'#86efac',''],[non,'#cbd5e1',''],[unk,'#e2e8f0','#94a3b8']].forEach(([v,color,stroke]) => {
+                    if (!v) return; const h=(bottom-top)*v/cTop;
+                    el('rect',{x:x(i)-bw/2,y:base-h,width:bw,height:h,fill:color,stroke:stroke,'stroke-width':stroke?0.8:0,'stroke-dasharray':stroke?'2 2':''});
+                    base-=h;
+                });
+            });
+        }
+        const lineColor = forecast ? '#0ea5e9' : '#16a34a';
+        el('polyline',{points:data.map((d,i)=>`${x(i)},${y(d.ratio)}`).join(' '),fill:'none',stroke:lineColor,'stroke-width':3,'stroke-linecap':'round','stroke-linejoin':'round','stroke-dasharray':forecast?'8 5':''});
+        const labelEvery = Math.max(1,Math.ceil(n/10));
         data.forEach((d,i) => {
-            const dot=el('circle',{cx:x(i),cy:y(d.ratio),r:3.5,fill:'#fff',stroke:'#15803d','stroke-width':2});
-            const title=document.createElementNS(NS,'title'); title.textContent=`${d.date}: ${(+d.ratio).toFixed(2)}% (${d.recovery}/${d.total}명)`; dot.appendChild(title);
-            if (i%labelEvery===0 || i===data.length-1) {
+            const dot=el('circle',{cx:x(i),cy:y(d.ratio),r:3.5,fill:'#fff',stroke:forecast?'#0369a1':'#15803d','stroke-width':2});
+            const title=document.createElementNS(NS,'title');
+            const pct=(+d.ratio).toFixed(2);
+            title.textContent = flow
+                ? `${d.date}: 예상 ${pct}% (회복기 ${d.recovery}/${d.known}명) · 입원 ${d.in_total} · 퇴원 ${d.out_total} · 회복기 종료 ${d.rec_end}`
+                : `${d.date}: ${pct}% (회복기 ${d.recovery}/${d.known}명 · 재원 ${d.total}명)`;
+            dot.appendChild(title);
+            if (i%labelEvery===0 || i===n-1) {
                 el('text',{x:x(i),y:242,'text-anchor':'middle',fill:'#64748b','font-size':11},d.label);
-                el('text',{x:x(i),y:y(d.ratio)-7,'text-anchor':'middle',fill:'#166534','font-size':10,'font-weight':700},(+d.ratio).toFixed(2)+'%');
+                el('text',{x:x(i),y:y(d.ratio)-7,'text-anchor':'middle',fill:forecast?'#0369a1':'#166534','font-size':10,'font-weight':700},pct+'%');
             }
         });
     });
@@ -1033,13 +1134,20 @@
         const out = whatif.querySelector('.wd-whatif-out');
         const calc = () => {
             const v = {}; whatif.querySelectorAll('input').forEach(i => v[i.dataset.k] = Math.max(0, +i.value || 0));
-            const R = R0 + v.rec_in - v.rec_out, K = K0 + v.rec_in - v.rec_out + v.non_in - v.non_out;
+            // 회복기 종료(전환)는 회복기에서만 빠지고 분모는 그대로다.
+            const R = R0 + v.rec_in - v.rec_out - (v.rec_end || 0), K = K0 + v.rec_in - v.rec_out + v.non_in - v.non_out;
             const ratio = K > 0 && R >= 0 ? Math.round(R * 10000 / K) / 100 : 0;
             document.getElementById('wd-whatif-ratio').textContent = ratio.toFixed(2) + '%';
             document.getElementById('wd-whatif-detail').textContent = `(회복기 ${Math.max(0,R)}명 / ${Math.max(0,K)}명${ratio >= 40 ? ' · 40% 이상' : ' · 40% 미만'})`;
             out.classList.toggle('ok', ratio >= 40); out.classList.toggle('warn', ratio < 40);
         };
         whatif.querySelectorAll('input').forEach(i => i.addEventListener('input', calc));
+        const preset = JSON.parse(whatif.dataset.preset || '{}');
+        whatif.querySelectorAll('[data-whatif]').forEach(btn => btn.addEventListener('click', () => {
+            const zero = btn.dataset.whatif === 'zero';
+            whatif.querySelectorAll('input').forEach(i => i.value = zero ? 0 : (preset[i.dataset.k] || 0));
+            calc();
+        }));
         calc();
     }
 

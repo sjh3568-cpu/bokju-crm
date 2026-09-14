@@ -4860,7 +4860,7 @@ def ward_view():
         trend_from, trend_to = trend_to, trend_from
     if (trend_to - trend_from).days > 730:
         trend_from = trend_to - timedelta(days=730)
-    daily_ratio_trend, monthly_ratio_trend, trend_insight, trend_summary = [], [], None, None
+    daily_ratio_trend, monthly_ratio_trend, trend_insight, trend_summary, trend_flow = [], [], None, None, None
     if subtab == "trend":
         snapshot = trend_from
         while snapshot <= trend_to:
@@ -4878,6 +4878,7 @@ def ward_view():
                                         "date": snapshot.isoformat(), **_ratio_at(snapshot)})
         trend_insight = _ratio_insight(_ratio_at(today_d), admitted, _ratio_at, today_d)
         trend_summary = _trend_summary(daily_ratio_trend, monthly_ratio_trend)
+        trend_flow = _trend_flow(trend_insight, admitted, today_d)
 
     # 최근 퇴원도 명부 기준이다 — 상담의 '퇴원완료' 상태로는 한 건도 안 잡힌다.
     # 상담이 붙은 회차는 그 상담의 퇴원 사유·담당자를 함께 싣는다.
@@ -4955,6 +4956,7 @@ def ward_view():
         trend_preset=trend_preset, trend_ranges=_WARD_TREND_RANGES,
         trend_from=trend_from.isoformat(), trend_to=trend_to.isoformat(),
         trend_month_count=len(monthly_ratio_trend), trend_insight=trend_insight,
+        trend_flow=trend_flow,
         trend_summary=trend_summary,
         discharged=discharged,
         subtab=subtab, away_report=away_report, away_candidates=admitted,
@@ -5524,6 +5526,84 @@ def _ratio_insight(now, admitted, ratio_at, today, threshold=40, horizon=60):
                    ending=ending, ending_30=sum(1 for c in ending if c["phase_dday"] <= 30),
                    end_ratio=forecast[-1]["ratio"])
     return insight
+
+
+def _trend_flow(insight, admitted, today, horizon=DASHBOARD_DUE_WINDOW_DAYS):
+    """입·퇴원 D-30을 얹은 회복기 비율 추이 — 추이 탭의 '입·퇴원 반영' 칼럼.
+
+    _ratio_insight의 예상은 회복기 종료(전환)만 본다. 여기엔 입원예정 상담
+    (planned_admission_date)과 퇴원 예정(discharge_due, 재원 카드의 '퇴원 예정 D-30'과
+    같은 값)을 날짜별로 더해 그날그날의 비율이 어디로 가는지 본다.
+    - 입원 예정자의 회복기 여부는 상담 판정(_recovery_status). 판정 불가는 인원(total)에만
+      들어가고 비율 분모(known)엔 안 들어간다 — 추이 그래프와 같은 규칙.
+    - 회복기 환자가 종료일과 퇴원일을 둘 다 가지면 먼저 오는 쪽만 회복기로 센다:
+      퇴원이 먼저면 회복기로 나가고(전환 없음), 종료가 먼저면 전환 뒤 비회복기로 나간다.
+    가정 계산기의 기본값(rec_in/rec_out/non_in/non_out/rec_end)도 여기서 나온다.
+    """
+    if not insight:
+        return None
+    today_iso = today.isoformat()
+    end_iso = (today + timedelta(days=horizon)).isoformat()
+    days = {}
+    for offset in range(horizon + 1):
+        d = today + timedelta(days=offset)
+        days[d.isoformat()] = {
+            "date": d.isoformat(), "label": d.strftime("%m.%d"), "dday": offset,
+            "in_rec": 0, "in_non": 0, "in_unknown": 0,
+            "out_rec": 0, "out_non": 0, "out_unknown": 0, "rec_end": 0,
+            "in_names": [], "out_names": [], "end_names": [],
+        }
+    def _who(c, phase):
+        return {"id": c.get("id"), "name": c.get("patient_name") or "환자 미지정", "phase": phase}
+    for c in models.list_consultations(admission_status="입원예정", limit=10000):
+        planned = (c.get("planned_admission_date") or "").strip()[:10]
+        if not today_iso <= planned <= end_iso:
+            continue
+        label = (_recovery_status(c) or {}).get("label")
+        row = days[planned]
+        row["in_rec" if label == "회복기" else "in_non" if label == "비회복기" else "in_unknown"] += 1
+        row["in_names"].append(_who(c, label or "미판정"))
+    for c in admitted:
+        phase = c.get("care_phase")
+        known = c.get("id") is not None
+        out_dday = c.get("discharge_dday")
+        leaving = out_dday is not None and 0 <= out_dday <= horizon and c.get("discharge_due") in days
+        end_dday = c.get("phase_dday") if phase == "회복기" else None
+        ending = end_dday is not None and 0 <= end_dday <= horizon
+        if phase == "회복기" and ending and leaving and out_dday <= end_dday:
+            ending = False          # 종료 전에 퇴원 — 회복기인 채로 나간다
+        if ending:
+            row = days[(today + timedelta(days=end_dday)).isoformat()]
+            row["rec_end"] += 1
+            row["end_names"].append(_who(c, "회복기"))
+            if leaving:
+                phase = "비회복기"   # 전환 뒤 퇴원
+        if leaving:
+            row = days[c["discharge_due"]]
+            key = ("out_rec" if phase == "회복기" else "out_non" if known else "out_unknown")
+            row[key] += 1
+            row["out_names"].append(_who(c, phase if known else "미판정"))
+    r, k, t = insight["recovery"], insight["known"], insight["total"]
+    series, cross = [], None
+    for row in sorted(days.values(), key=lambda x: x["dday"]):
+        row["in_total"] = row["in_rec"] + row["in_non"] + row["in_unknown"]
+        row["out_total"] = row["out_rec"] + row["out_non"] + row["out_unknown"]
+        r += row["in_rec"] - row["out_rec"] - row["rec_end"]
+        k += row["in_rec"] + row["in_non"] - row["out_rec"] - row["out_non"]
+        t += row["in_total"] - row["out_total"]
+        r, k, t = max(0, r), max(0, k), max(0, t)
+        row.update(recovery=r, known=k, total=t,
+                   ratio=round(r * 100 / k, 2) if k else 0)
+        if cross is None and k and r * 100 < insight["threshold"] * k:
+            cross = row
+        series.append(row)
+    total = {key: sum(d[key] for d in series)
+             for key in ("in_rec", "in_non", "in_unknown", "in_total",
+                         "out_rec", "out_non", "out_unknown", "out_total", "rec_end")}
+    active = [d for d in series if d["in_total"] or d["out_total"] or d["rec_end"]]
+    return {"horizon": horizon, "days": series, "active": active, "sum": total,
+            "start_ratio": insight["ratio"], "end": series[-1], "cross": cross,
+            "ok": series[-1]["known"] > 0 and series[-1]["recovery"] * 100 >= insight["threshold"] * series[-1]["known"]}
 
 
 _WARD_TREND_RANGES = {"30": "최근 30일", "90": "최근 90일", "180": "최근 6개월", "365": "최근 1년"}
