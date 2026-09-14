@@ -33,7 +33,7 @@
             {% set rec = r|recovery_status %}
             {% set is_return = r.admission_kind == 'return' %}
             {% set is_planned = r.admission_bucket == 'planned' %}
-            <tr>
+            <tr{% if r.admission_organisms %} class="has-organism" title="내성균 {{ r.admission_organisms|join(', ') }} — 격리·병실 배정 확인"{% endif %}>
                 <td class="dash-adm-when" title="{{ r.admission_display_date|krdate }}{% if r.planned_admission_time %} {{ r.planned_admission_time }}{% endif %}">
                     <b>{{ (r.admission_display_date|krdate_short_wd)[3:] }}</b><small>{{ r.planned_admission_time or '-' }}</small>
                 </td>
@@ -44,7 +44,7 @@
                 <td class="dash-adm-who" title="{{ r.patient_name }} ({% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% else %}-{% endif %}/{% if r.patient_age is not none %}{{ r.patient_age }}세{% else %}-{% endif %}){% if r.insurance_type %} · {{ r.insurance_type }}{% endif %}">
                     {% if r.blacklist %}<span class="bl-mark">블랙</span> {% endif %}<a href="/consult/{{ r.id }}">{{ r.patient_name }}</a><small>{% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% else %}-{% endif %}/{% if r.patient_age is not none %}{{ r.patient_age }}{% else %}-{% endif %}{% if r.insurance_type %} <i class="dash-ins">{{ ins_abbr.get(r.insurance_type, r.insurance_type[:2]) }}</i>{% endif %}</small>
                 </td>
-                <td class="dash-dx" title="{{ r.admission_disease_summary }}{% if r.disease_onset %} · 발병 {{ r.disease_onset }}{% endif %}">{{ r.admission_disease_summary or '-' }}</td>
+                <td class="dash-dx" title="{% if r.admission_organisms %}내성균 {{ r.admission_organisms|join(', ') }} · {% endif %}{{ r.admission_disease_summary }}{% if r.disease_onset %} · 발병 {{ r.disease_onset }}{% endif %}">{% for o in r.admission_organisms %}<span class="dash-org">{{ o }}</span>{% endfor %}{{ r.admission_disease_summary or '-' }}</td>
                 <td class="dash-adm-onset" title="발병일">{{ r.disease_onset|krdate_short if r.disease_onset else '-' }}</td>
                 <td class="dash-adm-room">
                     <b>{{ r.room_number or '-' }}</b>

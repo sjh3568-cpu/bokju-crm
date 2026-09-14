@@ -3774,26 +3774,29 @@ def dashboard_summary(admission_lookup_from: str | None = None,
             return f"{digits}병동"
         return room
 
-    def _admission_disease_summary(item):
-        """입원 현황에는 대표 질환 한 건과 감염균 표지만 간결하게 표시한다."""
-        main_disease = (item.get("primary_diagnosis") or "").strip()
-        if not main_disease:
-            main_disease = next(iter(_consult_disease_labels(item)), "")
+    _ORGANISM_TAGS = ("CRE", "VRE", "CPE", "MRSA", "MRAB", "MRPA")
 
+    def _admission_organisms(item):
+        """내성균 표지(CRE·VRE·CPE·MRSA·MRAB·MRPA) — 특수관리 항목·균 비고·진단/질환 문구 어디에 적혀 있든 잡는다.
+        대시보드 입원 환자 현황에서 격리·병실 배정을 미리 챙기라고 빨간 배지로 띄운다(2026-09-14 요청)."""
         special_care = item.get("special_care") or []
         if isinstance(special_care, str):
             special_care = [special_care]
-        special_text = " ".join(str(value).upper() for value in special_care)
-        organisms = []
-        for organism, note_key in (
-            ("MRSA", "special_mrsa_note"),
-            ("VRE", "special_vre_note"),
-            ("CRE", "special_cre_note"),
-        ):
-            if organism in special_text or (item.get(note_key) or "").strip():
-                organisms.append(organism)
+        text = " ".join([
+            " ".join(str(v) for v in special_care),
+            item.get("primary_diagnosis") or "", item.get("disease_detail") or "",
+            item.get("secondary_diagnosis") or "", " ".join(_consult_disease_labels(item)),
+            *(item.get(k) and tag for tag, k in (("MRSA", "special_mrsa_note"), ("VRE", "special_vre_note"), ("CRE", "special_cre_note"))
+              if (item.get(k) or "").strip()),
+        ]).upper()
+        return [tag for tag in _ORGANISM_TAGS if tag in text]
 
-        return " · ".join(value for value in [main_disease, *organisms] if value)
+    def _admission_disease_summary(item):
+        """입원 현황의 병명 칸 — 대표 질환 한 건. 내성균은 admission_organisms 배지로 따로 보여준다."""
+        main_disease = (item.get("primary_diagnosis") or "").strip()
+        if not main_disease:
+            main_disease = next(iter(_consult_disease_labels(item)), "")
+        return main_disease
 
     admission_schedule = []
     for r in admission_schedule_rows:
@@ -3812,6 +3815,7 @@ def dashboard_summary(admission_lookup_from: str | None = None,
         d["day_label"] = _day_label(display_date)
         d["admission_time"] = d.get("planned_admission_time") or ""
         d["admission_disease_summary"] = _admission_disease_summary(d)
+        d["admission_organisms"] = _admission_organisms(d)
         d["other_note"] = (
             d.get("external_referral_note")
             or d.get("disease_detail")
@@ -3842,6 +3846,7 @@ def dashboard_summary(admission_lookup_from: str | None = None,
         d["planned_admission_time"] = None
         d["admission_time"] = ""
         d["admission_disease_summary"] = _admission_disease_summary(d)
+        d["admission_organisms"] = _admission_organisms(d)
         d["other_note"] = " ".join(v for v in (
             d.get("away_event_type") or "외진",
             (d.get("away_event_date") or "")[5:].replace("-", "/"),

@@ -305,6 +305,9 @@
 .page-dashboard .dash-adm-tbl .badge { padding: 2px 5px; font-size: .74rem; }
 .page-dashboard .dash-adm-tbl .dash-adm-room .badge { margin-left: 3px; }
 .page-dashboard .dash-adm-tbl .dash-dx { max-width: none; }
+/* 내성균(CRE·VRE 등) — 재원 관리의 .wd-org와 같은 빨간 배지 + 행 왼쪽 빨간 선 */
+.page-dashboard .dash-adm-tbl .dash-org { display: inline-block; margin-right: 4px; padding: 1px 6px; border-radius: 6px; background: #b91c1c; color: #fff; font-size: .72rem; font-weight: 800; letter-spacing: .02em; vertical-align: middle; }
+.page-dashboard .dash-adm-tbl tr.has-organism td:first-child { box-shadow: inset 3px 0 0 #b91c1c; }
 .page-dashboard .dash-adm-tbl .dash-note { max-width: none; color: var(--dmuted); }
 .page-dashboard .dash-adm-tbl .adm-action-sel { width: 100%; max-width: 100%; padding: 3px 1px; font-size: .8rem; font-weight: 700;
     border: 1px solid var(--dborder); border-radius: 6px; background: #fff; color: var(--dtext); cursor: pointer; }
