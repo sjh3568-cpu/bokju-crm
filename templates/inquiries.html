@@ -75,7 +75,7 @@
         </table></div>
     </div>
     <div class="card">
-        <h2 class="iq-h2">월별 유입 <span class="muted-sm">최근 12개월 · 필터 무관</span></h2>
+        <h2 class="iq-h2">월별 유입 <span class="muted-sm">{{ monthly[0].ym }} ~ {{ monthly[-1].ym }} · {{ months }}개월 (선택 기간 끝 달 기준, 최소 6개월)</span></h2>
         <div class="tbl-wrap"><table class="tbl tbl-compact iq-monthly">
             <thead><tr><th>월</th><th>문의</th><th class="r">건수</th><th class="r">상담 등록</th><th class="r">입원</th></tr></thead>
             <tbody>

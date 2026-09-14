@@ -3584,9 +3584,13 @@ def inquiry_list():
     all_rows = rows if not f["stage"] else models.inquiry_rows(
         date_from=f["date_from"], date_to=f["date_to"], channel=f["channel"], q=f["q"])
     summary = models.inquiry_summary(all_rows)
-    monthly = models.inquiry_monthly(12)
+    # 월별 추이 — 선택 기간의 끝 달까지, 기간을 덮되 최소 6개월(상한 24). 짧은 기간을 골라도 추이 맥락은 남긴다.
+    d_from, d_to = date.fromisoformat(f["date_from"]), date.fromisoformat(f["date_to"])
+    span = (d_to.year - d_from.year) * 12 + (d_to.month - d_from.month) + 1
+    months = min(24, max(6, span))
+    monthly = models.inquiry_monthly(months, end=d_to)
     return render_template(
-        "inquiries.html", rows=rows, f=f, summary=summary, monthly=monthly,
+        "inquiries.html", rows=rows, f=f, summary=summary, monthly=monthly, months=months,
         channel_labels=INBOUND_CHANNEL_LABELS,
         monthly_max=max([m["total"] for m in monthly] + [1]),
         admin_ready=homepage_board.admin_configured(),

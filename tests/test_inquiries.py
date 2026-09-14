@@ -107,6 +107,19 @@ class InquiryTests(unittest.TestCase):
         self.assertEqual(m[-1]["total"], 3)
         self.assertEqual(m[-1]["converted"], 1)
         self.assertEqual(m[-1]["channels"], {"웹문의": 2, "카카오": 1})
+        # 끝 달을 과거로 주면 그 달까지만 — 이번 달 문의는 빠진다
+        past = date(2026, 3, 31)
+        m = models.inquiry_monthly(6, end=past)
+        self.assertEqual([x["ym"] for x in m], ["2025-10", "2025-11", "2025-12", "2026-01", "2026-02", "2026-03"])
+        self.assertEqual(sum(x["total"] for x in m), 0)
+
+    def test_monthly_span_follows_filter_with_minimum_six(self):
+        html = self.client.get('/consultations/inquiries').get_data(as_text=True)       # 이번 달 → 6개월
+        self.assertIn('6개월 (선택 기간 끝 달 기준', html)
+        html = self.client.get('/consultations/inquiries?from=2025-01-01&to=2025-12-31').get_data(as_text=True)
+        self.assertIn('2025-01 ~ 2025-12 · 12개월', html)
+        html = self.client.get('/consultations/inquiries?from=2020-01-01&to=2026-09-30').get_data(as_text=True)
+        self.assertIn('24개월', html)                                                     # 상한
 
     def test_page_renders_with_actions_and_sidebar_entry(self):
         r = self.client.get('/consultations/inquiries')

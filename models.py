@@ -6205,8 +6205,10 @@ def inquiry_summary(rows: list[dict]) -> dict:
     return {**bucket(rows), "by_channel": {ch: bucket(items) for ch, items in by_channel.items()}}
 
 
-def inquiry_monthly(months: int = 12) -> list[dict]:
-    """최근 N개월 월별·채널별 문의 수와 상담 전환 수 (오래된 달부터)."""
+def inquiry_monthly(months: int = 12, end: date | None = None) -> list[dict]:
+    """end가 속한 달까지 N개월의 월별·채널별 문의·상담 전환·입원 수 (오래된 달부터). end 기본은 오늘."""
+    end = end or date.today()
+    end_first = end.replace(day=1)
     conn = get_db()
     rows = conn.execute(
         """SELECT substr(COALESCE(m.occurred_at, datetime(m.created_at,'localtime')),1,7) AS ym,
@@ -6216,13 +6218,14 @@ def inquiry_monthly(months: int = 12) -> list[dict]:
                   SUM(CASE WHEN c.admission_status IN ('입원완료','퇴원완료') THEN 1 ELSE 0 END) AS admitted
            FROM communications m LEFT JOIN consultations c ON c.id = m.consultation_id
            WHERE (m.direction = 'in' OR m.direction IS NULL)
-             AND COALESCE(m.occurred_at, datetime(m.created_at,'localtime')) >= date('now','localtime','start of month', ?)
-           GROUP BY ym, channel ORDER BY ym""", (f"-{max(0, months - 1)} months",)).fetchall()
+             AND COALESCE(m.occurred_at, datetime(m.created_at,'localtime')) >= date(?, ?)
+             AND COALESCE(m.occurred_at, datetime(m.created_at,'localtime')) < date(?, '+1 month')
+           GROUP BY ym, channel ORDER BY ym""",
+        (end_first.isoformat(), f"-{max(0, months - 1)} months", end_first.isoformat())).fetchall()
     conn.close()
     by_month: dict[str, dict] = {}
-    today = date.today()
     for i in range(months - 1, -1, -1):
-        y, mo = today.year, today.month - i
+        y, mo = end_first.year, end_first.month - i
         while mo <= 0:
             y -= 1; mo += 12
         by_month[f"{y:04d}-{mo:02d}"] = {"ym": f"{y:04d}-{mo:02d}", "total": 0, "converted": 0, "admitted": 0, "channels": {}}
