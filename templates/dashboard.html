@@ -2,17 +2,17 @@
 {# 여러 명이 띄워놓고 보는 현황 화면 — 30초마다 자동 새로고침 #}
 {% block body_attrs %} data-autorefresh="30"{% endblock %}
 {% macro admission_table(rows, limit=None) %}
-{# 대시보드 반 칸(1920px 화면 ≈755px)에 한 줄로. 13개 항목을 9칸에 넣는다:
-   일시 · 상태 · 환자(이름 성별/나이 보험약칭) · 병명 · 발병일 · 병실·회복기 · 담당(상담사·주치의) · 기타 · 처리
-   colgroup 폭 + table-layout:fixed 라 어떤 값이 와도 가로 스크롤이 생기지 않는다 — 병명·기타가 말줄임(전체는 툴팁).
-   1500px 이하(반 칸 ≈515px)에서는 CSS가 발병일·기타 열을 숨기고 <small>을 아래 줄로 내린다. #}
+{# 대시보드 반 칸(1920px 화면 ≈755px)에 한 줄로. 10칸:
+   일시 · 상태(신규/복귀 + 예정/완료) · 환자(이름 성별/나이 보험약칭) · 병명 · 발병일 · 병실·회복기 · 상담 · 주치의 · 기타 · 처리(드롭다운)
+   colgroup 폭 + table-layout:fixed 라 어떤 값이 와도 가로 스크롤이 생기지 않는다 — 병명·기타는 말줄임(전체는 툴팁).
+   1500px 이하(반 칸 ≈515px)에서는 CSS가 발병일·기타 열을 접고 <small>을 아래 줄로 내린다. #}
 {% set ins_abbr = {'건강보험': '건보', '의료급여': '급여', '보호1종': '보호1', '보호2종': '보호2',
                    '차상위 1종': '차상1', '차상위 2종': '차상2', '장기요양': '장기', '암등록': '암'} %}
 <div class="tbl-wrap">
     <table class="tbl dash-table dash-adm-tbl"{% if limit %} data-limit="{{ limit }}"{% endif %}>
         <colgroup>
             <col class="c-when"><col class="c-state"><col class="c-who"><col class="c-dx"><col class="c-onset">
-            <col class="c-room"><col class="c-staff"><col class="c-note"><col class="c-act">
+            <col class="c-room"><col class="c-cs"><col class="c-doc"><col class="c-note"><col class="c-act">
         </colgroup>
         <thead>
             <tr>
@@ -22,7 +22,8 @@
                 <th>병명</th>
                 <th>발병일</th>
                 <th>병실 · 회복기</th>
-                <th>담당</th>
+                <th>상담</th>
+                <th>주치의</th>
                 <th>기타</th>
                 <th>처리</th>
             </tr>
@@ -30,14 +31,15 @@
         <tbody>
             {% for r in rows %}
             {% set rec = r|recovery_status %}
+            {% set is_return = r.admission_kind == 'return' %}
+            {% set is_planned = r.admission_bucket == 'planned' %}
             <tr>
                 <td class="dash-adm-when" title="{{ r.admission_display_date|krdate }}{% if r.planned_admission_time %} {{ r.planned_admission_time }}{% endif %}">
                     <b>{{ (r.admission_display_date|krdate_short_wd)[3:] }}</b><small>{{ r.planned_admission_time or '-' }}</small>
                 </td>
                 <td class="dash-adm-state">
-                    {% if r.admission_kind == 'return' %}<span class="badge {% if r.admission_bucket == 'completed' %}adm-completed{% else %}adm-planned{% endif %} adm-return" title="{{ r.admission_bucket_label }}{% if r.other_note %} — {{ r.other_note }}{% endif %}">{{ r.admission_bucket_label }}</span>
-                    {% elif r.admission_bucket == 'completed' %}<span class="badge adm-completed" title="입원완료">완료</span>
-                    {% else %}<span class="badge adm-planned" title="입원예정">예정</span>{% endif %}
+                    <span class="badge {% if is_planned %}adm-planned{% else %}adm-completed{% endif %}{% if is_return %} adm-return{% endif %}"
+                          title="{% if is_return %}외진 복귀{% if r.other_note %} — {{ r.other_note }}{% endif %}{% else %}신규 입원{% endif %} · {% if is_planned %}입원예정{% else %}입원완료{% endif %}">{{ '복귀' if is_return else '신규' }} {{ '예정' if is_planned else '완료' }}</span>
                 </td>
                 <td class="dash-adm-who" title="{{ r.patient_name }} ({% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% else %}-{% endif %}/{% if r.patient_age is not none %}{{ r.patient_age }}세{% else %}-{% endif %}){% if r.insurance_type %} · {{ r.insurance_type }}{% endif %}">
                     {% if r.blacklist %}<span class="bl-mark">블랙</span> {% endif %}<a href="/consult/{{ r.id }}">{{ r.patient_name }}</a><small>{% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% else %}-{% endif %}/{% if r.patient_age is not none %}{{ r.patient_age }}{% else %}-{% endif %}{% if r.insurance_type %} <i class="dash-ins">{{ ins_abbr.get(r.insurance_type, r.insurance_type[:2]) }}</i>{% endif %}</small>
@@ -51,26 +53,24 @@
                     {% elif rec.label %}<span class="badge badge-pending">{{ rec.label }}</span>
                     {% else %}<small class="muted">-</small>{% endif %}
                 </td>
-                <td class="dash-adm-staff" title="상담사 {{ r.counselor or '-' }} · 주치의 {{ r.attending_doctor or '-' }}">
-                    {{ r.counselor or '-' }}<small>{{ r.attending_doctor|doctor_short if r.attending_doctor else '-' }}</small>
-                </td>
-                <td class="dash-note" title="{{ r.other_note or '기타 없음' }}">{% if r.other_note %}📝{% else %}-{% endif %}</td>
+                <td class="dash-adm-cs" title="상담사 {{ r.counselor or '-' }}">{{ r.counselor or '-' }}</td>
+                <td class="dash-adm-doc" title="주치의 {{ r.attending_doctor or '-' }}">{{ r.attending_doctor|doctor_short if r.attending_doctor else '-' }}</td>
+                <td class="dash-note" title="{{ r.other_note or '' }}">{{ r.other_note or '-' }}</td>
                 <td class="dash-action-cell">
-                    {% if r.admission_kind == 'return' %}
-                    {% if r.admission_bucket == 'planned' %}
-                    <button type="button" class="btn btn-primary btn-xs adm-return-btn"
-                            data-aevent="{{ r.away_event_id }}" data-name="{{ r.patient_name }}" title="오늘 외진 복귀 완료 — 입원 완료로 집계 (복귀 예정 때 적은 병실로 이동)">완료</button>
-                    {% else %}<span class="muted-sm">복귀 {{ r.returned_at|krdate_short }}</span>{% endif %}
-                    {% elif r.admission_bucket == 'planned' %}
-                    <button type="button" class="btn btn-primary btn-xs adm-status-btn"
-                            data-cid="{{ r.id }}" data-status="입원완료" title="입원완료로 변경">완료</button>
-                    <button type="button" class="btn btn-secondary btn-xs adm-status-btn"
-                            data-cid="{{ r.id }}" data-status="입원취소" title="입원취소로 변경 (사유 입력)">취소</button>
-                    <button type="button" class="btn btn-secondary btn-xs adm-status-btn"
-                            data-cid="{{ r.id }}" data-status="입원보류" title="입원보류로 변경 (사유 입력)">보류</button>
-                    {% else %}
-                    <span class="muted-sm">-</span>
-                    {% endif %}
+                    {% if is_return and is_planned %}
+                    <select class="adm-action-sel" data-kind="return" data-aevent="{{ r.away_event_id }}" data-name="{{ r.patient_name }}" title="외진 복귀 처리">
+                        <option value="">처리</option>
+                        <option value="복귀완료">복귀 완료 (오늘)</option>
+                    </select>
+                    {% elif is_return %}<span class="muted-sm" title="복귀 {{ r.returned_at|krdate }}">복귀 {{ r.returned_at|krdate_short }}</span>
+                    {% elif is_planned %}
+                    <select class="adm-action-sel" data-kind="status" data-cid="{{ r.id }}" data-name="{{ r.patient_name }}" title="입원 처리">
+                        <option value="">처리</option>
+                        <option value="입원완료">입원완료 (오늘)</option>
+                        <option value="입원취소">입원취소 (사유)</option>
+                        <option value="입원보류">입원보류 (사유)</option>
+                    </select>
+                    {% else %}<span class="muted-sm">-</span>{% endif %}
                 </td>
             </tr>
             {% endfor %}
@@ -496,7 +496,7 @@
                     <span class="beds">
                         {% if w.capacity %}{% if w.free <= 0 %}<b class="num full">만석</b>{% else %}<b class="num">가용 {{ w.free }}</b>{% endif %}{% endif %}
                         {% if w.rooms_known %}
-                            <i class="m">남 {{ w.free_m }}</i><i class="f">여 {{ w.free_f }}</i>{% if w.free_open %}<i class="o" title="아무도 없는 병실 {{ w.free_rooms }}개 · 그 안의 병상 {{ w.free_open }}개 (남녀 무관)">빈 병실 {{ w.free_rooms }}<em>·{{ w.free_open }}병상</em></i>{% endif %}{% if w.free_unknown %}<i class="u">미확인 {{ w.free_unknown }}</i>{% endif %}{% if w.no_room %}<i class="u" title="명부에 병실이 없는 재원">병실 미기재 {{ w.no_room }}</i>{% endif %}
+                            <i class="m">남 {{ w.free_m }}</i><i class="f">여 {{ w.free_f }}</i>{% if w.free_open %}<i class="o" title="아무도 없는 병실 {{ w.free_rooms }}개 · 그 안의 병상 {{ w.free_open }}개 (남녀 무관)">빈 병실 {{ w.free_open }}병상<em>({{ w.free_rooms }}실)</em></i>{% endif %}{% if w.free_unknown %}<i class="u">미확인 {{ w.free_unknown }}</i>{% endif %}{% if w.no_room %}<i class="u" title="명부에 병실이 없는 재원">병실 미기재 {{ w.no_room }}</i>{% endif %}
                         {% else %}
                             <em>재원 남 {{ w.male }} · 여 {{ w.female }}</em>
                         {% endif %}
@@ -960,6 +960,46 @@ document.querySelectorAll('.discharge-interview-toggle').forEach(btn => {
 });
 
 // 입원예정 → 입원완료/입원취소/입원보류 변경 (당일 처리 케이스)
+// 입원 환자 현황 [처리] 드롭다운 — 버튼 3개 대신 한 칸. 아래 .adm-status-btn / .adm-return-btn 과 같은 API·확인 절차.
+document.querySelectorAll('.adm-action-sel').forEach(sel => {
+    sel.addEventListener('change', async () => {
+        const v = sel.value;
+        if (!v) return;
+        const reset = () => { sel.value = ''; sel.disabled = false; };
+        const today = new Date().toISOString().slice(0, 10);
+        let url, body;
+        if (sel.dataset.kind === 'return') {
+            if (!confirm(`${sel.dataset.name} 님 외진 복귀를 오늘(${today}) 완료 처리할까요? (입원 완료로 집계)`)) return reset();
+            url = `/api/admission-event/${sel.dataset.aevent}/return`;
+            body = { return_date: today };
+        } else {
+            body = { admission_status: v };
+            if (v === '입원완료') {
+                body.admission_date = today;
+                if (!confirm(`${sel.dataset.name} 님을 오늘(${today}) 입원완료로 처리할까요?`)) return reset();
+            } else if (v === '입원취소') {
+                const reason = prompt('입원취소 사유를 입력하세요 (필수)', '');
+                if (!reason || !reason.trim()) return reset();
+                body.rejection_reason_detail = reason.trim();
+            } else if (v === '입원보류') {
+                const reason = prompt('입원보류 사유를 입력하세요 (필수)', '');
+                if (!reason || !reason.trim()) return reset();
+                body.hold_reason = reason.trim();
+            }
+            url = `/api/consult/${sel.dataset.cid}/status`;
+        }
+        sel.disabled = true;
+        try {
+            const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+            location.reload();
+        } catch (e) {
+            alert('처리 실패: ' + e.message);
+            reset();
+        }
+    });
+});
+
 document.querySelectorAll('.adm-status-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
         const status = btn.dataset.status;
