@@ -18,7 +18,7 @@
         draftState.textContent = '임시저장 준비';
         form.prepend(draftState);
         const listBtn = document.getElementById('draft-list-btn');
-        const saveBtn = document.getElementById('draft-save-btn');
+        const saveBtns = ['draft-save-btn', 'draft-save-btn-top'].map(id => document.getElementById(id)).filter(Boolean);   // 하단 + 상단 우측
         const dialog = document.getElementById('draft-dialog');
         const list = document.getElementById('draft-list');
         const count = document.getElementById('draft-count');
@@ -77,7 +77,7 @@
             draftState.textContent = '작성 중…'; clearTimeout(draftTimer);
             draftTimer = setTimeout(() => saveDraft(false).catch(() => { draftState.textContent = '임시저장 실패 · 다시 시도해 주세요'; }), 1500);
         });
-        saveBtn?.addEventListener('click', () => saveDraft(true).catch(err => toast('임시저장 실패: ' + err.message, 'error')));
+        saveBtns.forEach(b => b.addEventListener('click', () => saveDraft(true).catch(err => toast('임시저장 실패: ' + err.message, 'error'))));
         listBtn?.addEventListener('click', () => { refreshDrafts(); dialog.showModal(); });
         document.getElementById('draft-dialog-close')?.addEventListener('click', () => dialog.close());
         dialog?.addEventListener('click', e => { if (e.target === dialog) dialog.close(); });
@@ -565,7 +565,9 @@
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         clearTimeout(draftTimer);
-        const btn = document.getElementById('save-btn');
+        // 하단 저장 버튼 + 상단 우측 저장 버튼을 함께 잠금/해제
+        const saveBtns = ['save-btn', 'save-btn-top'].map(id => document.getElementById(id)).filter(Boolean);
+        const btn = { set disabled(v) { saveBtns.forEach(b => { b.disabled = v; }); } };
         btn.disabled = true;
         // 상담 결과 ① 상담 진행 — 재입원/요청/보류/취소 사유 필수
         const crChecked = form.querySelector('input[name="consultation.consult_result"]:checked');
