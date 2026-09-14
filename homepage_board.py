@@ -278,8 +278,10 @@ def _register(post: dict, detail: dict | None) -> int:
     comm_id = models.create_communication(
         patient_id=pid, channel=CHANNEL, direction="in", contact=contact,
         summary=summary[:200], body=body[:4000], status="open", created_by=CREATED_BY,
-        # 목록엔 날짜만 있다 — 오늘 글은 감지 시각(created_at, 3분 이내)이 더 정확하니 비워 둔다.
-        occurred_at=(post.get("reg_date") if post.get("reg_date") and post["reg_date"] != date.today().isoformat() else None),
+        # 목록엔 날짜만 있다 — 오늘 글은 감지 시각(3분 이내)을 현지 시간으로 넣는다
+        # (created_at은 SQLite UTC라 대시보드 경과 시간이 9시간 어긋난다). 과거 글은 그 날짜.
+        occurred_at=(post["reg_date"] if post.get("reg_date") and post["reg_date"] != date.today().isoformat()
+                     else time.strftime("%Y-%m-%d %H:%M:%S")),
     )
     models.homepage_post_upsert(
         post["idx"], board_no=no, comm_id=comm_id, title=post.get("title") or "",
