@@ -48,7 +48,10 @@
 .page-dashboard .dash-head h1 { margin: 0; font-size: 1.3rem; font-weight: 800; letter-spacing: -.02em; color: var(--dtext); }
 .page-dashboard .dash-head p { margin: 2px 0 0; color: var(--dmuted); font-size: .86rem; }
 .page-dashboard .dash-head h1 small { font-size: .8rem; font-weight: 500; color: var(--dmuted); letter-spacing: 0; margin-left: 8px; }
-.page-dashboard .dash-calendar-link { border-radius: 10px; font-weight: 700; }
+.page-dashboard .dash-calendar-link { border-radius: 10px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
+/* 오늘 일정·ToDo 건수 — 사이드바 '통합 달력' 옆 배지와 같은 숫자(calendar_badge) */
+.page-dashboard .dash-calendar-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px;
+    border-radius: 999px; background: var(--dtext); color: #fff; font-size: .74rem; font-weight: 800; line-height: 1; }
 .page-dashboard .dash-head-actions { margin-left: auto; display: flex; align-items: center; gap: 12px; }
 .page-dashboard .start-page-setting summary { font-size: .78rem; color: var(--dmuted); font-weight: 700; cursor: pointer; list-style: none; }
 .page-dashboard .start-page-setting summary::before { content: "⚙ "; }
