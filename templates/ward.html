@@ -356,12 +356,15 @@
             <a href="?view=list&sort={{ sort }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if doctor %}&doctor={{ doctor|urlencode }}{% endif %}#sec-ward"
                class="wd-sort-btn {% if view != 'room' %}on{% endif %}">☰ 목록</a>
             {% if view == 'list' %}<label class="wd-page-size">표시 <select onchange="location.href='{{ url_with(page=1, page_size='__N__') }}#sec-ward'.replace('__N__',this.value)">{% for n in (30,50,100,200) %}<option value="{{ n }}" {% if page_size == n %}selected{% endif %}>{{ n }}명</option>{% endfor %}</select></label>{% endif %}
+            <button type="button" class="wd-roster-toggle wd-filter-toggle" id="wd-filter-toggle"
+                    aria-expanded="false" aria-controls="wd-filter-panel" title="검색·필터 열기/닫기">🔍 검색·필터 ▾</button>
             <button type="button" class="wd-roster-toggle" id="wd-roster-toggle"
                     aria-expanded="{{ 'true' if roster_open else 'false' }}" aria-controls="wd-roster-body">
                 {{ '명단 접기' if roster_open else '명단 펼치기' }}</button>
         </div>
     </div>
-    <div class="wd-filter-panel">
+    {# 검색·필터는 항상 접힌 채로 시작(2026-09-14 사용자 요청) — 적용 중인 조건은 위 제목 줄에 라벨로 보인다 #}
+    <div class="wd-filter-panel" id="wd-filter-panel" hidden>
         <div class="wd-filter-title"><strong>검색·필터</strong><span>조건을 선택하면 명단이 자동으로 펼쳐집니다.</span></div>
         <form id="ward-filter" class="wd-filter-search" method="get" action="/ward"
               data-detail-active="{{ 'true' if doctor or any_filter or column_filter else 'false' }}">
@@ -810,6 +813,7 @@
 .wd-roster-toggle { margin-left:6px; padding:4px 12px; border:1px solid #86efac; border-radius:999px;
     background:#f0fdf4; color:#166534; font:700 .78em inherit; cursor:pointer; }
 .wd-roster-toggle:hover { background:#dcfce7; border-color:#22c55e; }
+.wd-filter-panel[hidden] { display:none; }
 .wd-overview-grid { display:grid; grid-template-columns:minmax(0,2fr) minmax(260px,1fr); gap:12px; margin:12px 0; }
 .wd-overview { min-width:0; }
 .wd-trend-page { margin-top:8px; }
@@ -1046,6 +1050,15 @@
         detailToggle.addEventListener('click', () => setDetailOpen(detailFilter.hidden));
         detailFilter.querySelectorAll('select').forEach(select => select.addEventListener('change', () => filterForm.submit()));
     }
+    // 검색·필터 패널 — 상시 접힘. 버튼으로만 연다(조회 뒤 새로고침돼도 다시 접힌다)
+    const filterBtn = document.getElementById('wd-filter-toggle');
+    const filterPanel = document.getElementById('wd-filter-panel');
+    if (filterBtn && filterPanel) filterBtn.addEventListener('click', () => {
+        filterPanel.hidden = !filterPanel.hidden;
+        filterBtn.setAttribute('aria-expanded', String(!filterPanel.hidden));
+        filterBtn.textContent = filterPanel.hidden ? '🔍 검색·필터 ▾' : '🔍 검색·필터 ▴';
+        if (!filterPanel.hidden) filterPanel.querySelector('.wd-q')?.focus();
+    });
     const rosterBtn = document.getElementById('wd-roster-toggle');
     const rosterBody = document.getElementById('wd-roster-body');
     if (rosterBtn && rosterBody) rosterBtn.addEventListener('click', () => {

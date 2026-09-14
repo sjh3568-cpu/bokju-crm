@@ -124,7 +124,11 @@
     {% macro away_return(c) %}
         {% if c.transferred %}<strong class="away-moved">타 병원 전원</strong> <span class="muted-sm">{{ c.returned_at[:10] }}{% if c.return_hospital %} · {{ c.return_hospital }}{% endif %}</span>{% if c.return_note %}<span class="away-detail away-note muted-sm">{{ c.return_note }}</span>{% endif %}
         {% elif c.returned_at %}<strong class="away-ok">복귀 완료</strong> <span class="muted-sm">{{ c.returned_at[:10] }}{% if c.return_room %} · {{ c.return_room }}{% endif %}</span>{% if c.return_note %}<span class="away-detail away-note muted-sm">{{ c.return_note }}</span>{% endif %}
-        {% elif can_edit %}{% if c.expected_return_date %}<strong class="away-open away-expected" title="대시보드 오늘 입원 예정에 집계 · 실제 복귀는 대시보드 입원 처리 [완료]">복귀 예정 {{ c.expected_return_date }}</strong>{% endif %}<details class="away-return"><summary>{% if c.expected_return_date %}예정 변경 · 완료{% else %}미복귀 · 처리{% endif %}</summary><div class="wd-back-cell away-return-form">
+        {% elif can_edit %}{% if c.expected_return_date %}<strong class="away-open away-expected" title="대시보드 오늘 입원 예정에 집계 · 실제 복귀는 대시보드 입원 처리 [완료]">복귀 예정 {{ c.expected_return_date }}</strong>{% endif %}<button type="button" class="btn btn-secondary btn-xs away-return-toggle" aria-expanded="false">{% if c.expected_return_date %}예정 변경 · 완료 ▾{% else %}미복귀 · 처리 ▾{% endif %}</button>{% else %}<strong class="away-open">미복귀</strong>{% endif %}
+    {% endmacro %}
+    {# 복귀 처리 폼 — 좁은 칸 안에 접어 넣던 것을 한 줄(표는 아래 전체 폭 행, 피드는 카드 하단)로. 입력 요소·클래스는 그대로라
+       ward.html의 .wd-back / .wd-back-done / .wd-back-outcome 핸들러가 그대로 동작한다. #}
+    {% macro away_return_form(c) %}{% if can_edit and not c.returned_at %}<div class="wd-back-cell away-return-form away-return-line" hidden>
             <select class="wd-back-outcome" aria-label="{{ c.patient_name }} 처리 결과"><option value="복귀">복귀 예정</option><option value="전원">타 병원 전원</option></select>
             <input type="date" class="wd-back-date" value="{{ c.expected_return_date or today_str }}" min="{{ c.event_date or '' }}" aria-label="{{ c.patient_name }} 복귀 예정일·전원일">
             <input class="wd-back-room" maxlength="50" value="{{ c.return_room or c.room_number or '' }}" placeholder="복귀 병실" aria-label="{{ c.patient_name }} 복귀 병실">
@@ -132,8 +136,7 @@
             <input class="wd-back-note" maxlength="3000" value="{{ c.return_note or '' }}" placeholder="기타 사항" aria-label="{{ c.patient_name }} 기타 사항">
             <button type="button" class="btn btn-primary btn-xs wd-back" data-aevent="{{ c.away_id }}" data-label="복귀 예정 저장">복귀 예정 저장</button>
             {% if c.expected_return_date %}<button type="button" class="btn btn-secondary btn-xs wd-back-done" data-aevent="{{ c.away_id }}" title="오늘 실제 복귀 — 입원 완료로 집계">복귀 완료</button>{% endif %}
-        </div></details>{% else %}<strong class="away-open">미복귀</strong>{% endif %}
-    {% endmacro %}
+        </div>{% endif %}{% endmacro %}
 
     {% if report.view == 'feed' %}
     <div class="away-feed" aria-label="외진 환자 피드">
@@ -150,6 +153,7 @@
                 <div class="away-card-line muted-sm"><span class="away-lbl">주상병</span><strong class="away-dx-strong">{{ c.dx_primary|join(', ') or '-' }}</strong>{% if c.dx_secondary %} <small>({{ c.dx_secondary|join(', ') }})</small>{% endif %} · 본원 입원 {{ c.admitted_on or '미확인' }}{% if c.stay_days_inclusive is not none %} (재원 {{ c.stay_days_inclusive }}일){% endif %}</div>
             </div>
             <div class="away-card-side">{{ away_return(c) }}</div>
+            {% if can_edit and not c.returned_at %}<div class="away-card-foot">{{ away_return_form(c) }}</div>{% endif %}
         </article>
         {% endfor %}{% endfor %}
         {% if not report.rows %}<p class="empty">조건에 맞는 외진·전원 기록이 없습니다.</p>{% endif %}
@@ -172,7 +176,7 @@
             <td data-label="본원 입원일 · 재원일수"><div class="l1">{{ c.admitted_on or '입원일 미확인' }}</div>
                 <div class="l2">{% if c.stay_days_inclusive is not none %}재원 {{ c.stay_days_inclusive }}일{% else %}재원일수 미확인{% endif %}</div></td>
             <td data-label="복귀" class="away-col-return">{{ away_return(c) }}</td>
-        </tr>{% else %}<tr><td colspan="8" class="empty">조건에 맞는 외진·전원 기록이 없습니다.</td></tr>{% endfor %}</tbody>
+        </tr>{% if can_edit and not c.returned_at %}<tr class="away-return-row" hidden><td colspan="8">{{ away_return_form(c) }}</td></tr>{% endif %}{% else %}<tr><td colspan="8" class="empty">조건에 맞는 외진·전원 기록이 없습니다.</td></tr>{% endfor %}</tbody>
     </table></div>
     {% endif %}
     <p class="muted-sm away-foot">이름 뒤 숫자는 그 환자의 외진 차수(몇 번째 외진)입니다. 외진 일수는 나간 날을 1일째로 세며 재원일수에서 빼지 않습니다. 차수는 환자의 전체 외진·전원 기록 순서이고, 날짜가 없는 기록은 차수를 확정하지 않습니다. 입원일·병명·퇴원 D-day·나이는 연결된 상담 정보입니다.</p>
@@ -267,6 +271,20 @@
 .away-return summary::before{content:'▸ ';color:#94a3b8}
 .away-return[open] summary::before{content:'▾ '}
 .away-return-form{display:grid;grid-template-columns:1fr 1fr;gap:3px;min-width:190px;margin-top:4px}
+/* 한 줄 폼 — 좁은 칸(14%)에 2열 격자로 접혀 있어 글자가 잘리던 것. 표에서는 기록 행 아래 전체 폭 행, 피드에서는 카드 하단 */
+.away-return-line{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0;margin:0}
+.away-return-line[hidden]{display:none}
+.away-return-line .wd-back-outcome{width:120px;flex:0 0 auto}
+.away-return-line .wd-back-date{width:140px;flex:0 0 auto}
+.away-return-line .wd-back-room{width:120px;flex:0 0 auto}
+.away-return-line .wd-back-hospital{width:180px;flex:0 0 auto}
+.away-return-line .wd-back-note{flex:1 1 180px;min-width:140px}
+.away-return-line .btn{flex:0 0 auto;white-space:nowrap}
+.away-return-line select{box-sizing:border-box;padding:3px 4px;font:inherit;font-size:11.5px;border:1px solid var(--border);border-radius:4px}
+.away-return-row td{padding:4px 10px 8px;background:#f8fafc}
+.away-return-row[hidden]{display:none}
+.away-return-toggle{white-space:nowrap}
+.away-card-foot{grid-column:1/-1;padding-top:4px;border-top:1px dashed #e2e8f0}
 .away-return-form .wd-back-note,.away-return-form .wd-back{grid-column:span 1}
 .away-return-form input{box-sizing:border-box;width:100%;min-width:0;margin:0;padding:3px 4px;font:inherit;font-size:11.5px;border:1px solid var(--border);border-radius:4px}
 .away-return-form .wd-back{padding:3px 6px;font-size:11.5px}
@@ -338,6 +356,20 @@ document.addEventListener('DOMContentLoaded', () => {
         toggle.addEventListener('click', () => setOpen(detail.hidden));
         filter.querySelectorAll('.away-filter-row select').forEach(el => el.addEventListener('change', () => filter.submit()));
     }
+
+    // [미복귀 · 처리] — 표에서는 아래 전체 폭 행, 피드에서는 카드 하단의 한 줄 폼을 펼친다
+    document.querySelectorAll('.away-return-toggle').forEach(btn => btn.addEventListener('click', () => {
+        const row = btn.closest('tr');
+        const form = row ? row.nextElementSibling : btn.closest('.away-card')?.querySelector('.away-return-line');
+        if (!form) return;
+        const rowForm = row ? form.querySelector('.away-return-line') : form;
+        const open = form.hidden;
+        form.hidden = !open;
+        if (rowForm) rowForm.hidden = !open;
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        btn.textContent = btn.textContent.replace(/[▾▴]$/, open ? '▴' : '▾');
+        if (open) (rowForm || form).querySelector('input,select')?.focus();
+    }));
 
     // 처리 결과가 '타 병원 전원'이면 병실 대신 병원명을 받는다
     document.querySelectorAll('.wd-back-outcome').forEach(sel => sel.addEventListener('change', () => {

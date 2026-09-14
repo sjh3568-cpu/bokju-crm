@@ -330,6 +330,16 @@
 .page-dashboard .fl .beds em.eq { font-style: normal; color: var(--dfaint); font-weight: 700; padding: 0 1px; }
 .page-dashboard .fl .beds i.o em { font-weight: 500; opacity: .8; }
 .page-dashboard .fl .beds i.u { background: #fff4e5; color: #b45309; }
+/* 외진 복귀 한 줄 편집 행 (입원 환자 현황) */
+.page-dashboard .dash-adm-tbl tr.adm-return-editor[hidden] { display: none; }
+.page-dashboard .dash-adm-tbl tr.adm-return-editor td { padding: 6px 10px 8px; background: #f8fafc; white-space: normal; overflow: visible; }
+.page-dashboard .adm-return-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: .76rem; }
+.page-dashboard .adm-return-line label { display: inline-flex; align-items: center; gap: 4px; color: var(--dmuted); white-space: nowrap; }
+.page-dashboard .adm-return-line input { padding: 2px 5px; font: inherit; font-size: .76rem; border: 1px solid var(--dborder); border-radius: 6px; background: #fff; color: var(--dtext); }
+.page-dashboard .adm-return-line .are-date { width: 130px; }
+.page-dashboard .adm-return-line .are-room { width: 100px; }
+.page-dashboard .adm-return-line .are-note { width: 200px; }
+.page-dashboard .adm-return-line .btn-xs { padding: 2px 8px; font-size: .72rem; white-space: nowrap; }
 /* 기한 임박 — 탭을 머리글 아래 줄에(오늘 처리 필요와 같은 구조). 카드 높이·표 시작 위치가 좌우 같아진다 */
 .page-dashboard .due-tabs-row { margin-left: 18px; }
 .page-dashboard .fl .beds .o em { font-style: normal; font-weight: 500; opacity: .8; }

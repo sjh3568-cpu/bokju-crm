@@ -60,7 +60,9 @@
                     {% if is_return and is_planned %}
                     <select class="adm-action-sel" data-kind="return" data-aevent="{{ r.away_event_id }}" data-name="{{ r.patient_name }}" title="외진 복귀 처리">
                         <option value="">처리</option>
-                        <option value="복귀완료">복귀 완료 (오늘)</option>
+                        <option value="복귀완료">완료 — 오늘 복귀</option>
+                        <option value="복귀상세">완료 — 날짜·병실 지정</option>
+                        <option value="예정취소">취소 — 복귀 예정 취소</option>
                     </select>
                     {% elif is_return %}<span class="muted-sm" title="복귀 {{ r.returned_at|krdate }}">복귀 {{ r.returned_at|krdate_short }}</span>
                     {% elif is_planned %}
@@ -73,6 +75,22 @@
                     {% else %}<span class="muted-sm">-</span>{% endif %}
                 </td>
             </tr>
+            {% if is_return and is_planned %}
+            {# 외진 복귀 한 줄 편집 행 — 날짜·병실·기타 지정 완료 / 복귀 예정 취소. [처리 ▾]의 '날짜·병실 지정'으로 연다 #}
+            <tr class="adm-return-editor" hidden>
+                <td colspan="10">
+                    <div class="adm-return-line" data-aevent="{{ r.away_event_id }}" data-name="{{ r.patient_name }}">
+                        <b>{{ r.patient_name }}</b> 외진 복귀
+                        <label>복귀일 <input type="date" class="are-date" value="{{ today_iso }}" max="{{ today_iso }}"></label>
+                        <label>병실 <input class="are-room" maxlength="50" value="{{ r.return_room or r.room_number or '' }}" placeholder="복귀 병실"></label>
+                        <label>기타 <input class="are-note" maxlength="3000" value="{{ r.return_note or '' }}" placeholder="기타 사항"></label>
+                        <button type="button" class="btn btn-primary btn-xs are-save">복귀 완료 저장</button>
+                        <button type="button" class="btn btn-secondary btn-xs are-cancel" title="복귀 예정을 지운다 — 다시 '외진 중'으로만 남는다">복귀 예정 취소</button>
+                        <button type="button" class="btn btn-secondary btn-xs are-close">닫기</button>
+                    </div>
+                </td>
+            </tr>
+            {% endif %}
             {% endfor %}
         </tbody>
     </table>
@@ -970,9 +988,20 @@ document.querySelectorAll('.adm-action-sel').forEach(sel => {
         const today = new Date().toISOString().slice(0, 10);
         let url, body;
         if (sel.dataset.kind === 'return') {
-            if (!confirm(`${sel.dataset.name} 님 외진 복귀를 오늘(${today}) 완료 처리할까요? (입원 완료로 집계)`)) return reset();
-            url = `/api/admission-event/${sel.dataset.aevent}/return`;
-            body = { return_date: today };
+            if (v === '복귀상세') {           // 한 줄 편집 행을 펼친다 — 저장은 편집 행의 버튼이
+                const editor = sel.closest('tr')?.nextElementSibling;
+                if (editor && editor.classList.contains('adm-return-editor')) { editor.hidden = false; editor.querySelector('.are-date')?.focus(); }
+                return reset();
+            }
+            if (v === '예정취소') {
+                if (!confirm(`${sel.dataset.name} 님의 복귀 예정을 취소할까요? (외진 중으로만 남고 오늘 입원 예정에서 빠집니다)`)) return reset();
+                url = `/api/admission-event/${sel.dataset.aevent}/expected-return`;
+                body = { expected_return_date: '' };
+            } else {
+                if (!confirm(`${sel.dataset.name} 님 외진 복귀를 오늘(${today}) 완료 처리할까요? (입원 완료로 집계)`)) return reset();
+                url = `/api/admission-event/${sel.dataset.aevent}/return`;
+                body = { return_date: today };
+            }
         } else {
             body = { admission_status: v };
             if (v === '입원완료') {
@@ -999,6 +1028,33 @@ document.querySelectorAll('.adm-action-sel').forEach(sel => {
             reset();
         }
     });
+});
+
+// 외진 복귀 한 줄 편집 행 — 날짜·병실·기타 지정 완료 / 복귀 예정 취소 / 닫기
+document.querySelectorAll('.adm-return-line').forEach(line => {
+    const post = async (url, body, okMsg) => {
+        line.querySelectorAll('button').forEach(b => b.disabled = true);
+        try {
+            const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+            location.reload();
+        } catch (e) {
+            alert(okMsg + ' 실패: ' + e.message);
+            line.querySelectorAll('button').forEach(b => b.disabled = false);
+        }
+    };
+    line.querySelector('.are-save').addEventListener('click', () => {
+        const d = line.querySelector('.are-date').value;
+        if (!d) { alert('복귀일을 입력하세요.'); return; }
+        if (!confirm(`${line.dataset.name} 님 외진 복귀를 ${d} 완료 처리할까요? (입원 완료로 집계)`)) return;
+        post(`/api/admission-event/${line.dataset.aevent}/return`,
+             { return_date: d, return_room: line.querySelector('.are-room').value.trim(), return_note: line.querySelector('.are-note').value.trim() }, '복귀 완료');
+    });
+    line.querySelector('.are-cancel').addEventListener('click', () => {
+        if (!confirm(`${line.dataset.name} 님의 복귀 예정을 취소할까요? (외진 중으로만 남고 오늘 입원 예정에서 빠집니다)`)) return;
+        post(`/api/admission-event/${line.dataset.aevent}/expected-return`, { expected_return_date: '' }, '복귀 예정 취소');
+    });
+    line.querySelector('.are-close').addEventListener('click', () => { line.closest('tr').hidden = true; });
 });
 
 document.querySelectorAll('.adm-status-btn').forEach(btn => {
@@ -1131,7 +1187,7 @@ document.querySelectorAll('.due-tab').forEach(btn=>{
 /* 긴 목록은 10건까지만 — 더보기로 펼침 (table[data-limit]) */
 document.querySelectorAll('.page-dashboard [data-limit]').forEach(table=>{
     const limit=parseInt(table.dataset.limit,10)||5;
-    const rows=table.tagName==='TABLE'?[...table.tBodies[0]?.rows||[]]:[...table.children].filter(el=>el.matches('a,div,li'));
+    const rows=table.tagName==='TABLE'?[...table.tBodies[0]?.rows||[]].filter(r=>!r.classList.contains('adm-return-editor')):[...table.children].filter(el=>el.matches('a,div,li'));
     if(rows.length<=limit)return;
     const extra=rows.slice(limit);
     extra.forEach(r=>r.classList.add('dash-more-hidden'));
