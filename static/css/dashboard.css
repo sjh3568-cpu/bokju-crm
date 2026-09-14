@@ -271,7 +271,8 @@
 .page-dashboard .dash-admission-date-form .btn { flex: 0 0 auto; }
 
 /* ── 2×2 격자: 입원 환자 현황 · 병동별 재원 / 오늘 처리 필요 · 기한 임박 — 폭은 KPI 카드 2장, 높이는 네 칸 동일 ── */
-.page-dashboard .dash-grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-auto-rows: auto; gap: 12px; margin-bottom: 12px; align-items: stretch; }
+.page-dashboard .dash-grid2 { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); grid-auto-rows: auto; gap: 12px; margin-bottom: 12px; align-items: stretch; }
+/* 왼쪽(입원 환자 현황·오늘 처리 필요)은 10칸 표라 폭이 더 필요하고 오른쪽(병동별 재원·기한 임박)은 여유가 있어 1.4:1로 나눈다 */
 /* grid-auto-rows:1fr이면 전체 폭으로 펼친 입원 환자 현황 행까지 아래 행 높이에 맞춰 늘어나 표 밑이 빈다.
    auto로 두어도 align-items:stretch가 같은 행의 두 카드는 같은 높이로 맞춘다. */
 .page-dashboard .dash-grid2 > .card { min-width: 0; display: flex; flex-direction: column; }
@@ -284,16 +285,16 @@
    어떤 값이 와도 가로 스크롤이 안 생긴다. 열: 1 일시 · 2 상태 · 3 환자 · 4 병명 · 5 발병일 · 6 병실/회복기 ·
    7 상담 · 8 주치의 · 9 기타 · 10 처리. 병명·기타는 남는 폭을 쓰고 넘치면 말줄임(전체는 툴팁). */
 .page-dashboard .dash-adm-tbl { width: 100%; table-layout: fixed; }
-.page-dashboard .dash-adm-tbl col.c-when { width: 104px; }  /* '09.14(월) 10:30' */
-.page-dashboard .dash-adm-tbl col.c-state { width: 66px; }  /* '신규 예정' / '복귀 완료' */
-.page-dashboard .dash-adm-tbl col.c-who { width: 108px; }   /* '김영희 여/78 건보' */
-.page-dashboard .dash-adm-tbl col.c-onset { width: 58px; }
-.page-dashboard .dash-adm-tbl col.c-room { width: 96px; }   /* '1004호 비회복기' */
-.page-dashboard .dash-adm-tbl col.c-cs { width: 48px; }     /* 상담사 이름 */
-.page-dashboard .dash-adm-tbl col.c-doc { width: 76px; }    /* '이성범(RM1)' */
+.page-dashboard .dash-adm-tbl col.c-when { width: 118px; }  /* '09.14(월) 10:30' */
+.page-dashboard .dash-adm-tbl col.c-state { width: 76px; }  /* '신규 예정' / '복귀 완료' */
+.page-dashboard .dash-adm-tbl col.c-who { width: 128px; }   /* '김영희 여/78 건보' */
+.page-dashboard .dash-adm-tbl col.c-onset { width: 68px; }
+.page-dashboard .dash-adm-tbl col.c-room { width: 110px; }  /* '1004호 비회복기' */
+.page-dashboard .dash-adm-tbl col.c-cs { width: 58px; }     /* 상담사 이름 */
+.page-dashboard .dash-adm-tbl col.c-doc { width: 90px; }    /* '이성범(RM1)' */
 /* 기타(c-note)는 폭을 안 정해 병명(c-dx)과 남는 폭을 반씩 나눈다 — 둘 다 넘치면 말줄임, 전체는 툴팁 */
-.page-dashboard .dash-adm-tbl col.c-act { width: 62px; }    /* 처리 드롭다운 */
-.page-dashboard .dash-adm-tbl th, .page-dashboard .dash-adm-tbl td { padding: 6px 4px; font-size: .76rem; line-height: 1.3;
+.page-dashboard .dash-adm-tbl col.c-act { width: 68px; }    /* 처리 드롭다운 */
+.page-dashboard .dash-adm-tbl th, .page-dashboard .dash-adm-tbl td { padding: 9px 5px; font-size: .88rem; line-height: 1.3;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
 .page-dashboard .dash-adm-tbl td:first-child, .page-dashboard .dash-adm-tbl th:first-child { padding-left: 8px; }
 .page-dashboard .dash-adm-tbl td:last-child, .page-dashboard .dash-adm-tbl th:last-child { padding-right: 6px; }
@@ -301,11 +302,11 @@
 .page-dashboard .dash-adm-tbl td small { font-size: .88em; color: var(--dmuted); margin-left: 4px; }
 .page-dashboard .dash-adm-tbl .dash-adm-when b { font-weight: 700; }
 .page-dashboard .dash-adm-tbl .dash-ins { font-style: normal; font-size: .92em; padding: 0 4px; border-radius: 5px; background: var(--dgrid, #eef2f0); color: var(--dtext); }
-.page-dashboard .dash-adm-tbl .badge { padding: 1px 4px; font-size: .66rem; }
+.page-dashboard .dash-adm-tbl .badge { padding: 2px 5px; font-size: .74rem; }
 .page-dashboard .dash-adm-tbl .dash-adm-room .badge { margin-left: 3px; }
 .page-dashboard .dash-adm-tbl .dash-dx { max-width: none; }
 .page-dashboard .dash-adm-tbl .dash-note { max-width: none; color: var(--dmuted); }
-.page-dashboard .dash-adm-tbl .adm-action-sel { width: 100%; max-width: 100%; padding: 2px 1px; font-size: .7rem; font-weight: 700;
+.page-dashboard .dash-adm-tbl .adm-action-sel { width: 100%; max-width: 100%; padding: 3px 1px; font-size: .8rem; font-weight: 700;
     border: 1px solid var(--dborder); border-radius: 6px; background: #fff; color: var(--dtext); cursor: pointer; }
 .page-dashboard .dash-adm-tbl .adm-action-sel:disabled { opacity: .5; }
 @media (max-width: 1500px) {
