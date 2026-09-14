@@ -1004,24 +1004,35 @@ def replace_quick_filters(items):
 
 # ─── 사용자 / 감사 로그 ───
 
-def ensure_admin_user(username: str, password: str, display_name: str | None = None):
+def ensure_admin_user(username: str, password: str, display_name: str | None = None,
+                      *, force: bool = False):
+    """admin 계정 보장. 없으면 만들고, 있으면 **건드리지 않는다**.
+
+    예전엔 매 부팅마다 비밀번호·표시명·권한을 .env 값으로 덮어썼다(break-glass 동기화).
+    그러다 보니 사용자 관리에서 비밀번호를 바꿔도 다음 배포(컨테이너 재기동)마다
+    초기 비밀번호로 되돌아갔고, 표시명 변경도 유지되지 않았다(2026-09-14 하루 12번 배포).
+    비상 복구는 force=True(.env APP_PASSWORD_RESET=1)로만 — 그때는 비밀번호·표시명·
+    권한을 프리셋으로 되돌리고 계정을 다시 활성화한다.
+    """
     conn = get_db()
-    pw_hash = generate_password_hash(password)
-    perms = json.dumps(role_preset("admin"))
-    conn.execute(
-        """
-        INSERT INTO users (username, display_name, password_hash, role, permissions)
-        VALUES (?, ?, ?, 'admin', ?)
-        ON CONFLICT(username) DO UPDATE SET
-            password_hash = excluded.password_hash,
-            display_name = COALESCE(excluded.display_name, users.display_name),
-            permissions = excluded.permissions,
-            active = 1
-        """,
-        (username, display_name or username, pw_hash, perms),
-    )
-    conn.commit()
-    conn.close()
+    try:
+        exists = conn.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone()
+        pw_hash = generate_password_hash(password)
+        perms = json.dumps(role_preset("admin"))
+        if not exists:
+            conn.execute(
+                "INSERT INTO users (username, display_name, password_hash, role, permissions) "
+                "VALUES (?, ?, ?, 'admin', ?)",
+                (username, display_name or username, pw_hash, perms))
+        elif force:
+            conn.execute(
+                "UPDATE users SET password_hash = ?, display_name = COALESCE(?, display_name), "
+                "permissions = ?, role = 'admin', active = 1, password_changed_at = CURRENT_TIMESTAMP "
+                "WHERE username = ?",
+                (pw_hash, display_name, perms, username))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _hydrate_user(row) -> dict:

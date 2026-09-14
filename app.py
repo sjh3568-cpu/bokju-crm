@@ -139,7 +139,8 @@ _bootstrap_lock = threading.Lock()
 
 def initialize():
     """DB 초기화 + admin 계정 셋업 + 백업 스케줄러 기동. 몇 번 불러도 1회만 실행된다.
-    .env의 APP_PASSWORD를 admin 계정 비밀번호로 자동 동기화 (단일 비밀번호 MVP).
+    .env의 APP_PASSWORD는 admin·시드 계정의 '초기' 비밀번호다 — 계정이 없을 때만 쓴다.
+    admin 비밀번호를 잊었을 때만 .env에 APP_PASSWORD_RESET=1을 넣고 재기동해 되돌린다.
 
     serve.py(운영)는 기동 시점에, 개발 서버는 첫 요청 시점에 호출한다.
     """
@@ -156,8 +157,14 @@ def initialize():
         release_notes.publish_release_notes()
         admin_pw = os.getenv("APP_PASSWORD", "").strip()
         if admin_pw:
-            # 비상용 break-glass 계정 (매 부팅 시 .env 비번으로 동기화)
-            models.ensure_admin_user("admin", admin_pw, display_name="admin(비상)")
+            # 비상용 break-glass 계정 — 없을 때만 생성. 매 부팅 동기화는 하지 않는다:
+            # 그러면 사용자 관리에서 바꾼 비밀번호·표시명이 배포(재기동)마다 초기값으로
+            # 되돌아간다. 분실 복구는 APP_PASSWORD_RESET=1로 1회 되돌리고 플래그를 지운다.
+            reset = os.getenv("APP_PASSWORD_RESET", "").strip() == "1"
+            models.ensure_admin_user("admin", admin_pw, display_name="admin(비상)", force=reset)
+            if reset:
+                app.logger.warning("APP_PASSWORD_RESET=1 — admin 비밀번호·표시명·권한을 .env 초기값으로 "
+                                   "되돌렸습니다. 로그인 후 .env에서 플래그를 지우고 재기동하세요.")
             # 명명된 6개 계정 시드 — 없을 때만 생성, 초기 비번=APP_PASSWORD
             for username, display_name, role in SEED_USERS:
                 models.ensure_seed_user(username, display_name, role, admin_pw)

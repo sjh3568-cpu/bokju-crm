@@ -28,7 +28,8 @@ python serve.py            # 운영 — waitress, 0.0.0.0:8003 (NAS 컨테이너
 
 계정: 최초 부팅 시 `config.SEED_USERS` 6명 자동 생성 (어드민·관리자 + 상담사 4명).
 초기 비밀번호는 `.env`의 `APP_PASSWORD`, 이후 어드민이 `/admin/users`에서 개별 변경.
-`admin`은 비번 분실 대비 break-glass 계정 (매 부팅 시 `APP_PASSWORD`로 동기화).
+`admin`은 비번 분실 대비 break-glass 계정. 부팅 시 동기화하지 않으며(바꾼 비번·표시명 유지),
+분실 시 `.env`에 `APP_PASSWORD_RESET=1`을 넣고 재기동하면 1회 `APP_PASSWORD`로 되돌린 뒤 플래그를 지운다.
 
 **권한 — 계정별 메뉴 권한 매트릭스** (`users.permissions` JSON = `{menu: level}`):
 - 단계형 레벨: **미현시(0) < 조회(1) < 수정(2) < 등록(3)**, 상위가 하위 포함 (`config.PERM_*`).

@@ -125,4 +125,4 @@ python -m unittest discover -s tests     테스트 통과 확인
 | 포트 8003이 이미 사용 중 | 이 CRM이 이미 떠 있다. 기존 창을 닫거나 `.env`의 `PORT`를 바꾼다 |
 | 화면을 고쳤는데 안 바뀐다 | `app.py`·`models.py`·`config.py`는 서버를 껐다 켜야 반영된다 (템플릿은 즉시) |
 | `git push`가 거절된다 | 다른 PC에서 올린 작업이 있다. `git pull --rebase` 후 다시 push |
-| 로그인이 안 된다 | `.env`의 `APP_PASSWORD`를 바꾼 뒤에는 기존 DB의 비밀번호가 그대로다. `admin` 계정은 매 기동 시 `.env` 값으로 동기화되므로 `admin`으로 로그인한다 |
+| 로그인이 안 된다 | `.env`의 `APP_PASSWORD`는 계정을 처음 만들 때만 쓰이므로 바꿔도 기존 DB의 비밀번호는 그대로다. `admin` 비밀번호까지 잊었으면 `.env`에 `APP_PASSWORD_RESET=1`을 넣고 서버를 재기동 → `admin`/`APP_PASSWORD`로 로그인 → 플래그를 지우고 다시 재기동 |

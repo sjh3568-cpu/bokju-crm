@@ -7,7 +7,8 @@
   · 역할(admin/staff/viewer)은 이제 권한 '프리셋' 이름일 뿐 — 실제 판정은 perms.
   · 경로→메뉴→필요레벨 매핑과 일괄 차단은 app._enforce_menu_permissions에서 처리.
   · admin_required = 사용자 관리(users) 메뉴 '수정' 이상 (사용자 관리 화면 방어).
-- admin 계정은 비번 분실 대비 break-glass (매 부팅 시 .env APP_PASSWORD로 동기화).
+- admin 계정은 비번 분실 대비 break-glass. 부팅 시 동기화하지 않는다 — 분실 시
+  .env에 APP_PASSWORD_RESET=1을 넣고 재기동하면 1회 APP_PASSWORD로 되돌린다(models.ensure_admin_user force).
 
 5회 실패 시 5분 잠금은 audit_log를 카운트해서 처리.
 """

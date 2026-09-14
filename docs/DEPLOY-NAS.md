@@ -93,6 +93,8 @@ python -c "import secrets; print(secrets.token_hex(32))"
 로그인 계정은 첫 기동 시 `config.SEED_USERS`대로 자동 생성된다
 (어드민 + 상담사 4명 + 조회). **초기 비밀번호는 전원 `.env`의 `APP_PASSWORD`이므로,
 접속 직후 어드민이 `/admin/users`에서 개인별 비밀번호로 반드시 변경할 것.**
+바꾼 비밀번호는 배포(재기동)해도 유지된다. `admin` 비밀번호를 잊었을 때만 `.env`에
+`APP_PASSWORD_RESET=1`을 넣고 재배포 → 로그인 → 플래그를 지우고 다시 재배포한다.
 
 상담사 PC 브라우저에 이 주소를 즐겨찾기/시작페이지로 걸어두면 된다.
 

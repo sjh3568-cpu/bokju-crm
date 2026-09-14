@@ -78,7 +78,7 @@
 2. `partnerships.init_schema()` — `cooperation_*` 테이블
 3. `support_requests.init_schema()` — `support_requests`, `support_replies`
 4. `release_notes.publish_release_notes()` — 미게시 버전 공지 삽입 (`BEGIN IMMEDIATE`로 다중 프로세스 중복 방지)
-5. `config.SEED_USERS` 6계정 보장, `admin`은 매 부팅 시 `APP_PASSWORD`로 동기화
+5. `config.SEED_USERS` 6계정 보장(없을 때만 생성). `admin`도 없을 때만 생성 — `APP_PASSWORD_RESET=1`일 때만 `APP_PASSWORD`로 되돌림
 6. 백업 스레드 · IMAP 워커 기동
 
 ---
@@ -129,7 +129,7 @@
 - 로그인 5회 실패 시 5분 잠금
 - 아이디 기억 / 자동 로그인 쿠키(`AUTO_LOGIN_DAYS`, 기본 30일) — 비밀번호 변경·계정 비활성화·로그아웃 시 무효화
 - 비밀번호 초기화는 사용자가 요청(`password_reset_requests`) → 관리자가 승인·처리
-- `admin` break-glass 계정은 매 부팅 시 `.env`의 `APP_PASSWORD`로 재동기화
+- `admin` break-glass 계정은 부팅 시 재동기화하지 않는다(바꾼 비밀번호·표시명 유지). 분실 시 `.env` `APP_PASSWORD_RESET=1`로 1회 되돌린 뒤 플래그 제거
 
 ### 5.2 인가 (2단 방어)
 1. **일괄 차단** — `app._route_requirement(path, method)`가 경로 → 메뉴 → 필요 레벨을 결정하고, `app._enforce_menu_permissions`(before_request)가 API는 403, 화면은 403/되돌림 처리
@@ -244,7 +244,8 @@ python tools/excel_import.py ... --all                                    # 전 
 
 | 키 | 기본 | 설명 |
 |---|---|---|
-| `APP_PASSWORD` | — | admin break-glass 초기 비밀번호 (필수) |
+| `APP_PASSWORD` | — | admin·시드 계정 초기 비밀번호 (필수, 계정 생성 시에만 사용) |
+| `APP_PASSWORD_RESET` | — | `1`이면 다음 기동 때 `admin` 비밀번호·표시명·권한을 `APP_PASSWORD`/프리셋으로 1회 되돌림. 복구 후 지울 것 |
 | `SECRET_KEY` | — | Flask 세션 서명 키, 64바이트 랜덤 (필수) |
 | `PORT` | 8003 | cafe-helper 8001 / keyword-monitor 8002와 충돌 회피 |
 | `BOKJU_DB_PATH` | 코드 폴더 옆 `bokju.db` | 컨테이너는 `/data/bokju.db`. **SMB 경로 금지** |
