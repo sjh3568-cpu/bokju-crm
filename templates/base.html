@@ -42,9 +42,10 @@
                         <a href="/ward" {% if request.path.startswith('/ward') or request.path.startswith('/patients') %}class="active"{% endif %}><span class="nav-icon nav-icon-ward">🏥</span>재원 관리</a>
                         <button type="button" class="nav-menu-toggle" aria-label="재원관리 하위 메뉴" aria-expanded="false">▾</button>
                         <div class="nav-dropdown">
-                            <a href="/ward"><span>🏥</span><span><b>재원 현황</b><small>재원 환자·외진·퇴원 관리</small></span></a>
+                            <a href="/ward"><span>🏥</span><span><b>재원 현황</b><small>재원 환자·외진·입원 확정</small></span></a>
                             <a href="/ward?tab=away"><span>🚑</span><span><b>외진환자관리</b><small>전원·복귀 이력과 통계</small></span></a>
                             <a href="/ward?tab=waiting"><span>🛏️</span><span><b>입원 대기</b><small>병상 대기·연락 관리</small></span></a>
+                            <a href="/ward?tab=moves"><span>🔁</span><span><b>입원·퇴원 이력</b><small>기간별 입·퇴원 명부·엑셀</small></span></a>
                             <a href="/ward?tab=trend"><span>📈</span><span><b>회복기 비율 추이</b><small>일별·월별 변화 확인</small></span></a>
                             <a href="/ward?tab=blacklist"><span>⚠️</span><span><b>블랙리스트</b><small>지정 환자·사유 확인</small></span></a>
                             {% if current_user.role == 'admin' %}<a href="/ward?tab=quality"><span>🛡️</span><span><b>데이터·백업 점검</b><small>품질 오류·복구 상태</small></span></a>{% endif %}
@@ -83,7 +84,7 @@
                 </nav>
         <div class="sidebar-foot">
                 {# 계산기·할 일·분류체계 — 사이드바 레이아웃(≥1024px)에서는 JS가 우하단 플로팅 버튼을 여기로 옮겨 상시 펼침 #}
-                <div class="sidebar-tools" id="sidebar-tools" aria-label="도구"></div>{# 계산기·To-DO·분류체계 버튼이 스크립트로 이 안에 들어온다. 통합 달력은 대시보드 하위 메뉴 하나로만 #}
+                <div class="sidebar-tools" id="sidebar-tools" aria-label="도구"></div>{# 계산기·To-DO·분류체계·통화 녹음 버튼이 스크립트로 이 안에 들어온다. 통합 달력은 대시보드 하위 메뉴 하나로만 #}
                 <details class="user-tag account-menu"><summary data-initial="{{ (current_user.display_name or current_user.username or '?')[:1] }}">{{ current_user.display_name }}<small class="role-chip">{{ ROLE_LABELS.get(current_user.role, current_user.role) }}</small><span>⌄</span></summary><div><a href="{{ url_for('account_settings') }}"><b>⚙ 내 계정 설정</b><small>개인화·권한·비밀번호</small></a><a href="{{ url_for('account_settings') }}#permissions">권한 확인·요청</a><a href="/support/">개선 요청·문의</a><form action="/logout" method="post"><button type="submit">로그아웃</button></form></div></details>
         </div>
     </aside>
@@ -166,6 +167,11 @@
         </div>
     </div>
 
+    {# 통화 녹음 — 헬로비전 IP전화 녹음 사이트를 새 탭으로. 로그인은 CRM과 별개. #}
+    <a id="rec-fab" href="{{ call_recording_url }}" target="_blank" rel="noopener" title="통화 녹음 조회·다운로드 — 헬로비전 사이트가 새 탭으로 열립니다 (별도 로그인)">
+        <span class="rec-fab-icon">📞</span><span class="rec-fab-text">통화 녹음 ↗</span>
+    </a>
+
     {# KRPG 2.2 사업대상 KCD 코드 즉시 조회 #}
     <button type="button" id="krpg-fab" title="한국형 재활환자분류체계 조회 (Alt+K)">
         <span class="krpg-fab-icon">🔎</span><span class="krpg-fab-text">환자분류체계</span>
@@ -230,7 +236,10 @@
     .calc-modal-x { background:none; border:none; font-size:1.05rem; cursor:pointer;
         color:var(--text-light); padding:2px 4px; }
     #calc-frame { flex:1; width:100%; min-height:0; border:none; background:var(--bg, #f8fafc); }
-    #krpg-fab,#todo-fab,#calc-fab { width:48px; height:48px; padding:0;
+    #rec-fab { position:fixed; right:22px; bottom:190px; z-index:60; display:flex; align-items:center; gap:8px; padding:11px 17px;
+        border:none; border-radius:999px; cursor:pointer; color:#fff; text-decoration:none; font-size:.9rem; font-weight:700;
+        background:linear-gradient(120deg,rgba(120,72,150,.94),rgba(150,100,180,.88)); box-shadow:0 4px 14px rgba(0,0,0,.22); }
+    #rec-fab,#krpg-fab,#todo-fab,#calc-fab { width:48px; height:48px; padding:0;
         justify-content:center; gap:7px; font-size:.84rem; font-weight:750; overflow:hidden;
         opacity:.9; backdrop-filter:blur(5px); -webkit-backdrop-filter:blur(5px);
         border:1px solid rgba(255,255,255,.32); box-shadow:0 4px 14px rgba(15,23,42,.16);
@@ -238,37 +247,38 @@
     #krpg-fab { background:linear-gradient(120deg,rgba(55,91,151,.94),rgba(80,119,177,.88)); }
     #todo-fab { background:linear-gradient(120deg,rgba(61,99,158,.94),rgba(89,130,184,.88)); }
     #calc-fab { background:linear-gradient(120deg,rgba(35,91,59,.95),rgba(55,126,81,.88)); }
-    #krpg-fab:hover,#todo-fab:hover,#calc-fab:hover,
-    #krpg-fab:focus-visible,#todo-fab:focus-visible,#calc-fab:focus-visible { width:148px; justify-content:flex-start; padding:0 12px; opacity:1; transform:translateX(-2px);
+    #rec-fab:hover,#krpg-fab:hover,#todo-fab:hover,#calc-fab:hover,
+    #rec-fab:focus-visible,#krpg-fab:focus-visible,#todo-fab:focus-visible,#calc-fab:focus-visible { width:148px; justify-content:flex-start; padding:0 12px; opacity:1; transform:translateX(-2px);
         filter:none; box-shadow:0 7px 19px rgba(15,23,42,.24); }
     #calc-fab { bottom:22px; }
     #todo-fab { bottom:78px; }
     #krpg-fab { bottom:134px; }
-    #krpg-fab > span:first-child,#todo-fab > span:first-child,#calc-fab > span:first-child {
+    #rec-fab > span:first-child,#krpg-fab > span:first-child,#todo-fab > span:first-child,#calc-fab > span:first-child {
         width:22px; text-align:center; flex:0 0 22px; }
-    .krpg-fab-text,.todo-fab-text,.calc-fab-text { flex:1; max-width:0; opacity:0; overflow:hidden; text-align:center; white-space:nowrap; transition:max-width .2s ease,opacity .12s ease; }
-    #krpg-fab:hover .krpg-fab-text,#todo-fab:hover .todo-fab-text,#calc-fab:hover .calc-fab-text,
-    #krpg-fab:focus-visible .krpg-fab-text,#todo-fab:focus-visible .todo-fab-text,#calc-fab:focus-visible .calc-fab-text { max-width:105px; opacity:1; transition-delay:.04s; }
+    .rec-fab-text,.krpg-fab-text,.todo-fab-text,.calc-fab-text { flex:1; max-width:0; opacity:0; overflow:hidden; text-align:center; white-space:nowrap; transition:max-width .2s ease,opacity .12s ease; }
+    #rec-fab:hover .rec-fab-text,#krpg-fab:hover .krpg-fab-text,#todo-fab:hover .todo-fab-text,#calc-fab:hover .calc-fab-text,
+    #rec-fab:focus-visible .rec-fab-text,#krpg-fab:focus-visible .krpg-fab-text,#todo-fab:focus-visible .todo-fab-text,#calc-fab:focus-visible .calc-fab-text { max-width:105px; opacity:1; transition-delay:.04s; }
     .todo-fab-badge { position:absolute; right:-2px; top:-5px; }
     /* 좌측 제일 하단 도구 3줄 — 화면에 고정(fixed)이라 본문을 아무리 내려도 늘 보인다. 사이드바 폭(--sbw)을 따라간다. */
     #sidebar-tools { position:fixed; left:0; bottom:0; z-index:125; width:var(--sbw, 244px); box-sizing:border-box;
         display:grid; gap:4px; padding:8px 12px 12px; background:#fff; border-top:1px solid var(--border); border-right:1px solid var(--border); }
     @media (max-width:1023px) { #sidebar-tools { display:none; } }
-    /* 도구 3개(계산기·To-DO·분류체계 <button>)는 사이드바 메뉴와 같은 크기 */
+    /* 도구 4개(계산기·To-DO·분류체계 <button> + 통화 녹음 <a>)는 사이드바 메뉴와 같은 크기 */
     .calendar-tool-badge { margin-left:auto; min-width:18px; height:18px; line-height:18px; padding:0 6px; border-radius:9px; background:#0f8a7a; color:#fff; font-size:.68rem; font-weight:800; text-align:center; }
-    @media (min-width:1024px) { body.has-sidebar .sidebar { padding-bottom:140px; } }   /* 계정 메뉴가 도구 칸에 가려지지 않게 */
+    /* 도구 칸 실제 높이(패딩 20 + 버튼 4×~42 + 간격 12 ≈ 200px)보다 넉넉히 비워 계정 메뉴가 도구 칸에 붙거나 가려지지 않게 */
+    @media (min-width:1024px) { body.has-sidebar .sidebar { padding-bottom:222px; } }
     .sidebar-collapsed #sidebar-tools { padding:8px 8px 10px; }
-    #sidebar-tools > button { position:relative; right:auto; bottom:auto; width:100%; height:auto; min-height:40px; padding:8px 12px;
+    #sidebar-tools > button, #sidebar-tools > a { position:relative; right:auto; bottom:auto; width:100%; height:auto; min-height:40px; padding:8px 12px;
         justify-content:flex-start; gap:10px; border:1px solid var(--border); border-radius:10px; background:#f4f7f5; color:var(--text);
         font-family:inherit; font-size:.92rem; font-weight:650; letter-spacing:-.01em; line-height:1.2; opacity:1; transform:none; box-shadow:none; backdrop-filter:none; -webkit-backdrop-filter:none; transition:background .12s; filter:none; }
-    #sidebar-tools > button:hover, #sidebar-tools > button:focus-visible { width:100%; padding:8px 12px; justify-content:flex-start; transform:none;
+    #sidebar-tools > button:hover, #sidebar-tools > button:focus-visible, #sidebar-tools > a:hover, #sidebar-tools > a:focus-visible { width:100%; padding:8px 12px; justify-content:flex-start; transform:none;
         background:#e9efec; color:var(--text); box-shadow:none; filter:none; }
-    #sidebar-tools > button > span:first-child { width:22px; flex:0 0 22px; text-align:center; font-size:.95rem; }
-    #sidebar-tools .krpg-fab-text, #sidebar-tools .todo-fab-text, #sidebar-tools .calc-fab-text { flex:1; max-width:none; opacity:1; text-align:left; transition:none; }
+    #sidebar-tools > button > span:first-child, #sidebar-tools > a > span:first-child { width:22px; flex:0 0 22px; text-align:center; font-size:.95rem; }
+    #sidebar-tools .rec-fab-text, #sidebar-tools .krpg-fab-text, #sidebar-tools .todo-fab-text, #sidebar-tools .calc-fab-text { flex:1; max-width:none; opacity:1; text-align:left; transition:none; }
     #sidebar-tools .todo-fab-badge { position:static; margin-left:auto; }
-    .sidebar-collapsed #sidebar-tools > button { justify-content:center; padding:8px 0; }
-    .sidebar-collapsed #sidebar-tools > button:hover { justify-content:center; padding:8px 0; }
-    .sidebar-collapsed #sidebar-tools .krpg-fab-text, .sidebar-collapsed #sidebar-tools .todo-fab-text, .sidebar-collapsed #sidebar-tools .calc-fab-text { display:none; }
+    .sidebar-collapsed #sidebar-tools > button, .sidebar-collapsed #sidebar-tools > a { justify-content:center; padding:8px 0; }
+    .sidebar-collapsed #sidebar-tools > button:hover, .sidebar-collapsed #sidebar-tools > a:hover { justify-content:center; padding:8px 0; }
+    .sidebar-collapsed #sidebar-tools .rec-fab-text, .sidebar-collapsed #sidebar-tools .krpg-fab-text, .sidebar-collapsed #sidebar-tools .todo-fab-text, .sidebar-collapsed #sidebar-tools .calc-fab-text { display:none; }
     .sidebar-collapsed #sidebar-tools .todo-fab-badge { position:absolute; right:2px; top:2px; margin:0; }
     #todo-fab:hover .todo-fab-badge,#todo-fab:focus-visible .todo-fab-badge { right:8px; }
     @media (max-width:680px) {
@@ -555,7 +565,7 @@
         const tools=document.getElementById('sidebar-tools'), wide=window.matchMedia('(min-width:1024px)');
         function placeTools(){
             if(!tools)return;
-            const fabs=['calc-fab','todo-fab','krpg-fab'].map(id=>document.getElementById(id)).filter(Boolean);
+            const fabs=['calc-fab','todo-fab','krpg-fab','rec-fab'].map(id=>document.getElementById(id)).filter(Boolean);
             if(wide.matches){fabs.forEach(b=>{if(b.parentNode!==tools)tools.appendChild(b);});}
             else{fabs.forEach(b=>{if(b.parentNode===tools)document.body.appendChild(b);});}
         }
@@ -626,14 +636,21 @@
             closeNavMenus();
             accountMenu.open=true;
         });
-        accountMenu.addEventListener('pointerleave',e=>{if(e.pointerType==='mouse')closeAccountMenu();});
+        // 벗어나면 바로 닫지 않고 220ms 여유 — 항목 사이 틈이나 살짝 벗어난 움직임에 닫히지 않게
+        let leaveT=null;
+        accountMenu.addEventListener('pointerleave',e=>{if(e.pointerType!=='mouse')return;clearTimeout(leaveT);leaveT=setTimeout(closeAccountMenu,220);});
+        accountMenu.addEventListener('pointerenter',()=>clearTimeout(leaveT));
+        // 클릭은 '열기'로 고정 — 마우스를 올려 이미 열린 상태에서 클릭하면 닫히던 것을 막는다. 다시 클릭하면 닫힘.
+        let clickOpened=false;
         summary.addEventListener('click',e=>{
             e.preventDefault();
             e.stopPropagation();
             closeAll();
             closeNavMenus();
-            accountMenu.open=!accountMenu.open;
+            if(accountMenu.open&&clickOpened){accountMenu.open=false;clickOpened=false;}
+            else{accountMenu.open=true;clickOpened=true;}
         });
+        accountMenu.addEventListener('toggle',()=>{if(!accountMenu.open)clickOpened=false;});
         accountMenu.addEventListener('focusout',e=>{if(!accountMenu.contains(e.relatedTarget))closeAccountMenu();});
         accountMenu.addEventListener('keydown',e=>{if(e.key==='Escape'&&accountMenu.open)summary.focus();});
     }
