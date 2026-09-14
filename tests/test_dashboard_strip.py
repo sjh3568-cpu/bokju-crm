@@ -194,3 +194,34 @@ class DashboardDueQueueTests(DashboardStripTests):
                                    (self.today + timedelta(days=5)).isoformat())
         counts = self._dashboard_counts()
         self.assertEqual(counts["퇴원 예정 D-30"], 1)
+
+
+class BedCapacityConfigTests(unittest.TestCase):
+    """config의 병실별 병상 표가 병동 허가 병상과 어긋나면 대시보드 '병동별 재원'에 '미확인'이 뜬다.
+
+    2026-09-14 원무 확인: 5인실 205·206·207·303·304·305, 2인실 306·307·903·904·905,
+    1인실 502, 3인실 1207·1307, 나머지 4인실, 총 355병상.
+    """
+
+    def test_room_beds_sum_to_ward_capacity(self):
+        from config import ROOM_BED_CAPACITIES, WARD_BED_CAPACITIES
+        by_ward = {}
+        for room, cap in ROOM_BED_CAPACITIES.items():
+            n = int(room.rstrip("호"))
+            by_ward[f"{n // 100}병동"] = by_ward.get(f"{n // 100}병동", 0) + cap
+        for ward, cap in WARD_BED_CAPACITIES.items():
+            self.assertEqual(by_ward.get(ward), cap, f"{ward}: 병실 합 {by_ward.get(ward)} ≠ 허가 병상 {cap}")
+        self.assertEqual(set(by_ward), set(WARD_BED_CAPACITIES), "병동 목록이 서로 다름")
+        self.assertEqual(sum(WARD_BED_CAPACITIES.values()), 355)
+        self.assertEqual(sum(WARD_BED_CAPACITIES.values()), main.WARD_BED_CAPACITY)
+
+    def test_room_exceptions_match_confirmed_layout(self):
+        from config import ROOM_BED_CAPACITIES
+        expected = {"205호": 5, "206호": 5, "207호": 5, "303호": 5, "304호": 5, "305호": 5,
+                    "306호": 2, "307호": 2, "903호": 2, "904호": 2, "905호": 2,
+                    "502호": 1, "1207호": 3, "1307호": 3}
+        for room, cap in expected.items():
+            self.assertEqual(ROOM_BED_CAPACITIES.get(room), cap, room)
+        others = {r: c for r, c in ROOM_BED_CAPACITIES.items() if r not in expected}
+        self.assertTrue(all(c == 4 for c in others.values()),
+                        f"4인실이 아닌 예외 외 방: {[r for r, c in others.items() if c != 4]}")
