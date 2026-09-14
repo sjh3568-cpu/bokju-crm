@@ -4,22 +4,26 @@
 {% block title %}재원 관리 — 복주 상담실{% endblock %}
 {% block content %}
 {% macro bed(c) %}
-<div class="rm-bed {% if c.away %}rm-away{% endif %}"
+<div class="rm-bed {% if c.away %}rm-away {{ 'rm-dim' if c.away.days_out is none or c.away.days_out <= 7 else 'rm-away-long' }}{% endif %}"
      data-cid="{{ c.id or '' }}" data-name="{{ c.patient_name }}">
+    {# 1행 이름(성별/나이) · 관리태그 · 외진 표시 #}
     <div class="rm-bed-top">
         {% if c.id %}<a href="/consult/{{ c.id }}" class="rm-name">{{ c.patient_name }}</a>
         {% else %}<span class="rm-name">{{ c.patient_name }}</span>{% endif %}
-        <span class="rm-age muted-sm">{% if c.patient_age is not none %}{{ c.patient_age }}{% endif %}{% if c.gender == 'M' %}·남{% elif c.gender == 'F' %}·여{% endif %}</span>
+        <span class="rm-age muted-sm">({% if c.gender == 'M' %}남{% elif c.gender == 'F' %}여{% else %}-{% endif %}/{% if c.patient_age is not none %}{{ c.patient_age }}{% else %}-{% endif %})</span>
         {% for t in c.mgmt_tags %}<span class="wd-tag">{{ t }}</span>{% endfor %}
         {% if c.away %}
-        <span class="rm-away-tag" title="{{ c.away.event_type }}{% if c.away.hospital %} → {{ c.away.hospital }}{% endif %}">
+        <span class="rm-away-tag" title="{{ c.away.event_type }}{% if c.away.hospital %} → {{ c.away.hospital }}{% endif %}{% if c.away.days_out is not none and c.away.days_out > 7 %} · 1주일 넘김{% endif %}">
             🚑 외진{% if c.away.days_out is not none %} {{ c.away.days_out }}일차{% endif %}</span>
         {% endif %}
     </div>
-    <div class="rm-dx" title="주 {{ c.dx_primary|join(', ') }}{% if c.dx_secondary %} / 부 {{ c.dx_secondary|join(', ') }}{% endif %}">
+    {# 2행 주상병(발병일) #}
+    <div class="rm-dx" title="주 {{ c.dx_primary|join(', ') }}{% if c.dx_secondary %} / 부 {{ c.dx_secondary|join(', ') }}{% endif %}{% if c.onset_date %} · 발병 {{ c.onset_date|krdate }}{% endif %}">
         {% for org in c.organisms %}<span class="wd-org">{{ org }}</span>{% endfor %}
         {{ c.dx_primary[:2]|join(', ') if c.dx_primary else '병명 미기재' }}{% if c.dx_primary and c.dx_primary|length > 2 %} 외{% endif %}
+        {% if c.onset_date %}<span class="rm-onset">(발병 {{ c.onset_date|krdate_short }})</span>{% endif %}
     </div>
+    {# 3행 회복기 구간 D- · 연장 배지 #}
     <div class="rm-meta">
         <span class="rm-ph ph-{{ {'회복기':'rec','비회복기':'non','단일구간':'sgl'}.get(c.care_phase,'etc') }}">{{ c.care_phase }}</span>
         {% if c.phase_dday is not none %}
@@ -27,15 +31,20 @@
               title="{% if c.care_phase == '회복기' and c.phase_end_date %}회복기 종료 {{ c.phase_end_date|krdate }}{% endif %}">
             {% if c.phase_dday < 0 %}{{ -c.phase_dday }}일 초과{% else %}D-{{ c.phase_dday }}{% endif %}</span>
         {% endif %}
-        {% if c.ext_tier %}<span class="wd-ext t{{ c.ext_tier }}" title="{{ c.ext_label }}">{{ '연장1' if c.ext_tier == 1 else '연장2' }}</span>{% endif %}
-        {% if c.attending_doctor %}<span class="rm-doc">{{ c.attending_doctor }}</span>{% endif %}
+        {% if c.ext_tier %}<span class="wd-ext t{{ c.ext_tier }}" title="{{ c.ext_label }}">{{ '연장1회' if c.ext_tier == 1 else '연장2회' }}</span>{% endif %}
     </div>
+    {# 4행 주치의 · 보험유형 #}
+    <div class="rm-who">
+        <span class="rm-doc" title="주치의">{{ c.attending_doctor|doctor_short if c.attending_doctor else '주치의 미정' }}</span>
+        {% if c.insurance_type %}<span class="rm-ins" title="보험유형">{{ c.insurance_type }}</span>{% endif %}
+    </div>
+    {# 5행 입원일(D+) · 퇴원일(D-) #}
     <div class="rm-dates">
         <span title="입원일 — 재원 경과일에는 외진 기간도 포함됩니다">
-            입원 {{ c.admitted_on|krdate }}{% if c.stay_days is not none %} · <b>{{ c.stay_days }}일</b>{% endif %}</span>
+            입원 {{ c.admitted_on|krdate_short }}{% if c.stay_days is not none %} <b>D+{{ c.stay_days }}</b>{% endif %}</span>
         {% if c.discharge_due %}
         <span class="{% if c.discharge_dday is not none and c.discharge_dday <= 7 %}rm-urgent{% endif %}"
-              title="퇴원 예정일">퇴원 {{ c.discharge_due|krdate }}{% if c.discharge_dday is not none and c.discharge_dday <= 30 %} ({% if c.discharge_dday < 0 %}초과{% else %}D-{{ c.discharge_dday }}{% endif %}){% endif %}</span>
+              title="퇴원 예정일">퇴원 {{ c.discharge_due|krdate_short }}{% if c.discharge_dday is not none %} <b>{% if c.discharge_dday < 0 %}{{ -c.discharge_dday }}일 초과{% else %}D-{{ c.discharge_dday }}{% endif %}</b>{% endif %}</span>
         {% endif %}
     </div>
     {% if c.away_hist %}
@@ -344,13 +353,14 @@
     {% for w in room_view %}
     <div class="rm-ward">
         <div class="rm-ward-head">{{ w.ward }} <span class="wd-n">{{ w.n }}</span></div>
-        <div class="rm-grid">
-            {% for b in w.rooms %}
-            <div class="rm-room">
-                <div class="rm-room-head">
-                    <span class="rm-no">{{ b.room }}</span>
-                    <span class="rm-cap">{{ b.patients|length }}/{{ b.patients|length + b.empty }}</span>
-                </div>
+        {# 호실 한 줄 = 왼쪽 호실 번호, 오른쪽에 침상을 가로로 #}
+        {% for b in w.rooms %}
+        <div class="rm-row">
+            <div class="rm-row-head">
+                <span class="rm-no">{{ b.room|replace('호', '') }}</span>
+                <span class="rm-cap" title="재원/정원">{{ b.patients|length }}/{{ b.patients|length + b.empty }}</span>
+            </div>
+            <div class="rm-beds">
                 {% for c in b.patients %}
                 {{ bed(c) }}
                 {% endfor %}
@@ -819,6 +829,23 @@
 .rm-bed { background:#fff; border:1px solid var(--border); border-left:3px solid #16a34a;
     border-radius:6px; padding:6px 8px; display:flex; flex-direction:column; gap:3px; }
 .rm-bed.rm-away { border-left-color:#6366f1; background:#eef2ff; }
+/* 호실 한 줄(가로) — 침상이 왼쪽→오른쪽으로 놓인다. 5인실은 5칸, 1인실은 1칸. */
+.rm-row { display:flex; align-items:stretch; gap:8px; border:1px solid var(--border); border-radius:8px;
+          background:#f8fafc; padding:6px; margin-bottom:6px; }
+.rm-row-head { flex:0 0 52px; display:flex; flex-direction:column; justify-content:center; align-items:center;
+               gap:2px; border-right:1px solid var(--border); padding-right:6px; }
+.rm-beds { flex:1; display:flex; gap:6px; overflow-x:auto; }
+.rm-beds .rm-bed { flex:1 1 200px; min-width:190px; max-width:300px; }
+.rm-beds .rm-empty { display:flex; align-items:center; justify-content:center; min-width:110px; flex:0 1 150px; }
+/* 외진 중 — 1주일까지는 흐리게(자리는 비워 둔 상태), 1주일을 넘기면 다시 또렷하게 + 경고색 */
+.rm-bed.rm-dim { opacity:.45; filter:grayscale(.5); }
+.rm-bed.rm-dim:hover, .rm-bed.rm-dim:focus-within { opacity:1; filter:none; }
+.rm-bed.rm-away-long { border-left-color:#dc2626; background:#fff1f2; }
+.rm-bed.rm-away-long .rm-away-tag { background:#fee2e2; color:#b91c1c; }
+.rm-onset { font-size:0.92em; color:var(--text-light); }
+.rm-who { display:flex; align-items:center; gap:6px; font-size:0.74em; color:#475569; }
+.rm-ins { font-weight:600; padding:0 6px; border-radius:999px; background:#f1f5f9; color:#334155; }
+.rm-ins::before { content:'💳 '; }
 .rm-empty { border:1px dashed var(--border); border-left:1px dashed var(--border);
     color:var(--text-light); font-size:0.76em; text-align:center; padding:10px 8px; background:#fbfcfd; }
 .rm-bed-top { display:flex; align-items:baseline; gap:4px; flex-wrap:wrap; }
@@ -836,9 +863,9 @@
 .rm-dd { font-size:0.7em; font-weight:700; color:var(--text-light); }
 .rm-dd.warn { color:#9a3412; }
 .rm-dd.over { color:#b91c1c; }
-.rm-doc { margin-left:auto; font-size:0.7em; color:var(--text-light); }
+.rm-doc { font-size:1em; color:#334155; font-weight:600; }
 .rm-doc::before { content:'👨‍⚕️ '; }
-.rm-dates { display:flex; flex-direction:column; gap:1px; font-size:0.72em; color:var(--text-light); }
+.rm-dates { display:flex; flex-wrap:wrap; gap:1px 8px; font-size:0.72em; color:var(--text-light); }
 .rm-dates .rm-urgent { color:#b91c1c; font-weight:700; }
 .rm-hist { font-size:0.68em; color:#4338ca; background:#eef2ff; border-radius:4px; padding:1px 5px; }
 .rm-act { display:flex; gap:3px; flex-wrap:wrap; margin-top:2px; }

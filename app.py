@@ -52,6 +52,7 @@ from config import (
     DISEASES_CHECKLIST, DISEASES_GROUPS, GUARDIAN_RELATION_SUGGESTIONS,
     HEARING_OPTIONS, INFO_PROVIDED_OPTIONS,
     COUNSELORS, COUNSELORS_ACTIVE, DISEASES_LAYOUT, OTHERS_LAYOUT, ROOM_CAPACITY,
+    ROOM_BED_CAPACITIES,
     WARDS, MGMT_TAG_PRESETS,
     ROLE_LABELS, SEED_USERS,
     MENUS, MENU_KEYS, MENU_MAX_LEVEL, ROLE_PRESETS, role_preset,
@@ -579,6 +580,27 @@ def _krdate_wd_full(value):
             return value
     wd = "월화수목금토일"[value.weekday()]
     return f"{value.strftime('%Y-%m-%d')}({wd})"
+
+
+_DOCTOR_CODES = {}
+for _d in ATTENDING_DOCTORS:            # "IM1 정기천 원장" → {"정기천": "IM1"}
+    _parts = _d.split()
+    if len(_parts) >= 2:
+        _DOCTOR_CODES[_parts[1]] = _parts[0]
+
+
+@app.template_filter("doctor_short")
+def _doctor_short(value):
+    """주치의를 '정기천(IM1)'로 — 명부 값(이름만)과 상담 값('IM1 정기천 원장') 모두 받는다.
+    config.ATTENDING_DOCTORS에 없는 의사는 이름만."""
+    if not value:
+        return ""
+    name = str(value).strip()
+    parts = name.split()
+    if len(parts) >= 2 and parts[0] in _DOCTOR_CODES.values():
+        name = parts[1]
+    code = _DOCTOR_CODES.get(name)
+    return f"{name}({code})" if code else name
 
 
 @app.template_filter("krdate_short")
@@ -4624,6 +4646,9 @@ def ward_view():
         c["rehab_end_imported"] = ep.get("rehab_end_imported")
         c["onset_date"] = ep.get("onset_date")
         c["roster_diagnosis"] = ep.get("diagnosis_name")
+        # 보험유형도 명부(원무 환자유형)가 실제값 — 상담 시점 값은 보조.
+        if (ep.get("insurance_type") or "").strip():
+            c["insurance_type"] = ep["insurance_type"].strip()
     # 상담 없이 입원한 환자 — 명부에만 있다. 인원에서 빠지면 재원 수가 틀리므로
     # 회차가 들고 있는 값만으로 행을 만든다. 상담 id가 없어 화면에서 상담 상세와
     # 외진·퇴원 버튼은 뜨지 않는다(그 환자는 상담일지 자체가 없다).
@@ -4691,12 +4716,16 @@ def ward_view():
             continue
         ward = _dashboard_ward_label(room)
         rooms.setdefault(ward, {}).setdefault(room, []).append(c)
+    def _room_beds(r):
+        # 병실 정원은 병실별 병상 표(5인실·2인실·1인실 반영), 표에 없는 방은 기본 4.
+        key = r if r.endswith("호") else f"{r}호"
+        return ROOM_BED_CAPACITIES.get(key, ROOM_CAPACITY)
     room_view = []
     for ward in sorted(rooms, key=lambda w: (_room_sort_key(w), w)):
         beds = [
             {"room": r, "patients": sorted(rooms[ward][r],
                                            key=lambda c: c.get("patient_name") or ""),
-             "empty": max(0, max(ROOM_CAPACITY, len(rooms[ward][r])) - len(rooms[ward][r]))}
+             "empty": max(0, max(_room_beds(r), len(rooms[ward][r])) - len(rooms[ward][r]))}
             for r in sorted(rooms[ward], key=_room_sort_key)
         ]
         room_view.append({"ward": ward, "rooms": beds,
