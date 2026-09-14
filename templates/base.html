@@ -168,7 +168,10 @@
     </div>
 
     {# 통화 녹음 — 헬로비전 IP전화 녹음 사이트를 새 탭으로. 로그인은 CRM과 별개. #}
-    <a id="rec-fab" href="{{ call_recording_url }}" target="_blank" rel="noopener" title="통화 녹음 조회·다운로드 — 헬로비전 사이트가 새 탭으로 열립니다 (별도 로그인)">
+    {% set _rl = call_recording_login %}
+    <a id="rec-fab" href="{{ call_recording_url }}" target="_blank" rel="noopener"
+       {% if _rl %}data-rec-login="1" data-rec-id="{{ _rl.userid }}" data-rec-hash="{{ _rl.pwd_hash }}" title="통화 녹음 조회·다운로드 — 헬로비전 사이트에 자동 로그인해서 새 탭으로 엽니다"
+       {% else %}title="통화 녹음 조회·다운로드 — 헬로비전 사이트가 새 탭으로 열립니다 (별도 로그인)"{% endif %}>
         <span class="rec-fab-icon">📞</span><span class="rec-fab-text">통화 녹음 ↗</span>
     </a>
 
@@ -563,6 +566,24 @@
         });
         // 계산기·할 일·분류체계 — 사이드바 레이아웃에서는 좌측 하단(사이드바 발치)에 상시 펼침, 좁은 화면은 우하단 플로팅.
         const tools=document.getElementById('sidebar-tools'), wide=window.matchMedia('(min-width:1024px)');
+        // 통화 녹음 자동 로그인 — 헬로비전 로그인은 userid + SHA-256(비밀번호)를 POST하는 단순 폼이라
+        // 새 탭에 같은 요청을 대신 보내고(세션 쿠키가 그 탭에 심긴다), 잠시 뒤 녹음 목록 화면으로 넘긴다.
+        // 로그인이 안 되면 사이트가 스스로 로그인 화면을 보여 주므로 링크만 있을 때와 같아진다.
+        const recBtn=document.getElementById('rec-fab');
+        if(recBtn&&recBtn.dataset.recLogin){
+            recBtn.addEventListener('click',e=>{
+                e.preventDefault();
+                const base=recBtn.getAttribute('href').replace(/\/+$/,'');
+                const win=window.open('','crm-call-rec');
+                const f=document.createElement('form');
+                f.method='POST'; f.action=base+'/jsp/commons/proc_login.jsp'; f.target='crm-call-rec'; f.style.display='none';
+                [['userid',recBtn.dataset.recId],['userpwd',''],['pwdHash',recBtn.dataset.recHash]].forEach(([n,v])=>{
+                    const i=document.createElement('input'); i.type='hidden'; i.name=n; i.value=v; f.appendChild(i);
+                });
+                document.body.appendChild(f); f.submit(); f.remove();
+                setTimeout(()=>{ try{ win.location.href=base+'/jsp/rec/index.jsp'; }catch(_){ } },1500);
+            });
+        }
         function placeTools(){
             if(!tools)return;
             const fabs=['calc-fab','todo-fab','krpg-fab','rec-fab'].map(id=>document.getElementById(id)).filter(Boolean);

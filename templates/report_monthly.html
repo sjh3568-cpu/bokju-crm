@@ -132,6 +132,50 @@
     </div>
 </div>
 
+<!-- 재원 기간: 환자 유형별 평균 재원일 · 1년 이상(연장) 재원 -->
+{% set st = stay_section %}
+{% if st and st.total.n %}
+<div class="report-card">
+    <h3><span class="kpi-tag">재원 {{ st.total.n }}명 · 1년 이상 {{ st.total.over_1y }}명 ({{ st.total.over_pct }}%)</span> 재원 기간
+        <span class="muted" style="font-size:0.78em">({{ st.ref_date|krdate }} {{ '현재' if st.ref_is_today else '월말' }} · 원무 명부 기준 · 연장1회 = 입원 1년 초과, 연장2회 = 1년 6개월 초과)</span></h3>
+    <table class="report-tbl compact bd-tbl">
+        <thead><tr>
+            <th rowspan="2">환자 유형</th><th rowspan="2">재원</th><th rowspan="2">평균 재원일</th>
+            <th colspan="3">1년 이상 재원</th><th colspan="2">이달 퇴원</th>
+        </tr><tr class="bd-subhead"><th>명 (비율)</th><th>연장1회</th><th>연장2회</th><th>명</th><th>평균 재원일</th></tr></thead>
+        <tbody>
+            {% for r in st.residents %}
+            <tr>
+                <td>{{ r.type }}</td>
+                <td class="num"><strong>{{ r.n }}</strong></td>
+                <td class="num">{{ r.avg_days }}일</td>
+                <td class="num">{{ r.over_1y }} <span class="muted">({{ r.over_pct }}%)</span></td>
+                <td class="num">{{ r.ext1 }}</td>
+                <td class="num">{{ r.ext2 }}</td>
+                <td class="num">{{ r.dis_n }}</td>
+                <td class="num">{% if r.dis_avg_days is not none %}{{ r.dis_avg_days }}일{% else %}—{% endif %}</td>
+            </tr>
+            {% endfor %}
+            <tr class="total-row">
+                <td><strong>전체</strong></td>
+                <td class="num"><strong>{{ st.total.n }}</strong></td>
+                <td class="num"><strong>{{ st.total.avg_days }}일</strong></td>
+                <td class="num"><strong>{{ st.total.over_1y }}</strong> <span class="muted">({{ st.total.over_pct }}%)</span></td>
+                <td class="num">{{ st.total.ext1 }}</td>
+                <td class="num">{{ st.total.ext2 }}</td>
+                <td class="num">{{ st.total.dis_n }}</td>
+                <td class="num">{% if st.total.dis_avg_days is not none %}{{ st.total.dis_avg_days }}일{% else %}—{% endif %}</td>
+            </tr>
+        </tbody>
+    </table>
+    <p class="muted" style="font-size:0.8em; margin:6px 0 0">
+        1년 이상 재원 비율 전월 말 {{ st.prev_total.over_pct if st.prev_total.over_pct is not none else '—' }}% → 이번 달 {{ st.total.over_pct }}%
+        {% if st.over_pct_delta is not none %}<span class="mini-delta {{ 'up' if st.over_pct_delta > 0 else ('down' if st.over_pct_delta < 0 else '') }}">{{ '%+.1f'|format(st.over_pct_delta) }}%p</span>{% endif %}
+        · '구분 없음'은 명부에 수가구분이 안 실린 회차.
+    </p>
+</div>
+{% endif %}
+
 <!-- 직원소개 핵심 (상세는 직원소개 분석 화면) -->
 {% set sr = data.staff_referral %}
 {% if sr and sr.referrals %}

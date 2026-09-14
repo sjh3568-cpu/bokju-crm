@@ -38,7 +38,7 @@ from auth import (
     login_required, login_user, logout_user, menu_level,
 )
 from config import (
-    APP_VERSION, APP_DEVELOPER,
+    APP_VERSION, APP_DEVELOPER, CALL_RECORDING_URL,
     ACTIVITY_ACTIVE_OPTIONS, ACTIVITY_DIAPER_OPTIONS, ACTIVITY_OTHERS_OPTIONS,
     ACTIVITY_WHEELCHAIR_OPTIONS, ADMISSION_DOCS, ADMISSION_STATUSES,
     AUDIT_ACTION_LABELS, AUDIT_CATEGORIES, AUDIT_CATEGORY_OTHER,
@@ -383,6 +383,19 @@ def _is_safe_next_url(value):
     return not parsed.scheme and not parsed.netloc
 
 
+def _call_recording_login(user):
+    """사이드바 '통화 녹음' 자동 로그인 정보. .env의 CALL_RECORDING_ID/PASSWORD가 둘 다 있고
+    조회 전용(viewer)이 아닐 때만 {userid, pwd_hash}를 준다. 헬로비전 biz070 녹음 사이트는
+    비밀번호를 SHA-256(대문자 hex)로 보내므로 원문 대신 해시만 브라우저로 내려간다."""
+    if not user or user.get("role") == "viewer":
+        return None
+    uid = os.getenv("CALL_RECORDING_ID", "").strip()
+    pw = os.getenv("CALL_RECORDING_PASSWORD", "").strip()
+    if not uid or not pw:
+        return None
+    return {"userid": uid, "pwd_hash": hashlib.sha256(pw.encode("utf-8")).hexdigest().upper()}
+
+
 @app.context_processor
 def _inject_globals():
     _u = current_user()
@@ -444,6 +457,8 @@ def _inject_globals():
         "current_user": _u,
         "app_version": APP_VERSION,
         "app_developer": APP_DEVELOPER,
+        "call_recording_url": CALL_RECORDING_URL,
+        "call_recording_login": _call_recording_login(_u),
         "todo_badge": todo_badge,
         "calendar_badge": calendar_badge,
         "has_unread_required_notice": bool(pending_notice),
@@ -2918,6 +2933,7 @@ def report_monthly():
         "report_monthly.html",
         data=data,
         hospital_section=ha.monthly_section(year, month),
+        stay_section=models.stay_report(year, month),
         insight_enabled=bool(os.getenv("ANTHROPIC_API_KEY")),
     )
 

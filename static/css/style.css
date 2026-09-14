@@ -714,6 +714,21 @@ select,input,textarea { accent-color:var(--primary-light); }
 /* Login */
 .login-page { min-height: calc(100vh - 220px); display: flex; flex-direction: column;
     align-items: center; justify-content: center; padding: 40px 16px; gap: 18px; }
+/* 로그인 — 넓은 화면은 두 열: 왼쪽 패키지 상자+미션, 오른쪽 로그인 카드. 두 열을 한 덩어리로 가운데 정렬. */
+.login-hero { display: none; }
+@media (min-width: 1100px) {
+    .login-page { display: grid; grid-template-columns: minmax(360px, 460px) 380px; justify-content: center; align-items: center; column-gap: 64px; padding-block: 24px; }
+    .login-page > .login-card { grid-column: 2; }
+    .login-page > :not(.login-hero):not(.login-card) { grid-column: 1 / -1; }
+    .login-hero { grid-column: 1; grid-row: 1; display: flex; flex-direction: column; align-items: flex-start; width: 100%; }
+    .login-page > .login-card { grid-row: 1; }
+    .login-hero img { width: 100%; height: auto; max-width: 400px; display: block; margin: 0 0 2px 0;
+        filter: drop-shadow(0 26px 38px rgba(15,82,68,.28)); }
+    .login-hero-line { margin: 0 0 8px 14px; font-size: 1.6rem; line-height: 1.32; font-weight: 500; letter-spacing: -.02em; color: #24463f; }
+    .login-hero-line b { font-weight: 800; color: #0f6f62; }
+    .login-hero-sub { margin: 0 0 0 14px; font-size: .84rem; font-weight: 700; letter-spacing: .04em; color: #7f9a93; }
+}
+@media (min-width: 1400px) { .login-page { column-gap: 88px; } .login-hero img { max-width: 440px; } .login-hero-line { font-size: 1.75rem; } }
 .login-card { width: 100%; max-width: 380px; background: var(--card-bg);
     border: 1px solid var(--border); border-radius: 14px; padding: 32px 28px;
     box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08); }
@@ -1257,6 +1272,8 @@ body.has-sidebar.sidebar-collapsed { --sbw:70px; }
 .sidebar .account-menu summary > span { margin-left:auto; color:var(--text-light); }
 .sidebar .account-menu[open] summary, .sidebar .account-menu summary:hover { background:#f1f5f3; }
 .sidebar .account-menu > div { left:0; right:auto; top:auto; bottom:calc(100% + 8px); }
+/* 위로 펼쳐지므로 커서 다리(투명 띠)는 아래쪽 틈에 둔다 — 틈을 지날 때 pointerleave로 닫히던 문제 */
+.sidebar .account-menu > div::before { top:auto; bottom:-12px; height:12px; }
 .sidebar .role-chip { margin-left:auto; }
 
 /* 접힘 상태에서 마우스를 올리면 잠깐 펼쳐 보기(peek) — 본문은 70px 그대로 두고 메뉴만 위에 덮는다.
@@ -1346,7 +1363,7 @@ header.topbar { background:#f4f7f6; }   /* 검색창(흰색)이 구분되게 상
     .topbar .header-new-consult { position:static; padding:8px 12px; box-shadow:none; }
     .topbar .header-tools .help-tool-btn, .topbar #display-settings-btn { display:grid; }
 }
-@media print { .sidebar, .sidebar-backdrop, header.topbar, #calc-fab { display:none !important; } body.has-sidebar { display:block; } }
+@media print { .sidebar, .sidebar-backdrop, header.topbar, #calc-fab, #rec-fab { display:none !important; } body.has-sidebar { display:block; } }
 
 /* 재원 관리 — 외진 중 표는 한 줄로 (사유·보호자가 두 줄로 꺾이던 것) */
 .wd-away-tbl td { white-space:nowrap; }

@@ -6296,6 +6296,93 @@ def admission_spans():
              "consultation_id": owner.get(ep["id"])} for ep in episodes]
 
 
+def stay_report(year: int, month: int) -> dict:
+    """월간보고서 '재원 기간' — 환자 유형(명부 수가구분)별 평균 재원일과 1년 이상 재원 수·비율(2026-09-14 요청).
+
+    원무 명부 회차(roster_key) 기준. 기준일은 그 달 말일(진행 중인 달이면 오늘).
+      residents : 기준일 재원자 — 유형별 인원·평균 재원일·1년 이상(연장1회 1~1.5년 / 연장2회 1.5년~)
+      discharged: 그 달 퇴원자 — 유형별 인원·평균 재원일(입원~퇴원)
+      prev_total: 전월 말 재원자 1년 이상 비율(비교용)
+    유형은 회복기(S005)·비회복기(S006)·구분 없음(명부에 수가구분 미기재).
+    """
+    import calendar as _cal
+    first = date(year, month, 1)
+    last = date(year, month, _cal.monthrange(year, month)[1])
+    today = date.today()
+    ref = min(last, today)
+    prev_last = first - timedelta(days=1)
+    conn = get_db()
+    try:
+        eps = [dict(r) for r in conn.execute(
+            "SELECT admitted_at, discharged_at, care_type FROM admission_episodes "
+            "WHERE roster_key IS NOT NULL AND admitted_at IS NOT NULL AND admitted_at != ''")]
+    finally:
+        conn.close()
+
+    def _d(v):
+        try:
+            return date.fromisoformat(str(v)[:10]) if v else None
+        except ValueError:
+            return None
+
+    def phase(ct):
+        v = (ct or "").strip()
+        return "비회복기" if v.startswith("비회복") else "회복기" if v.startswith("회복") else "구분 없음"
+
+    ORDER = ("회복기", "비회복기", "구분 없음")
+
+    def residents_at(d):
+        out = []
+        for e in eps:
+            a, dc = _d(e["admitted_at"]), _d(e["discharged_at"])
+            if a and a <= d and (dc is None or dc > d):
+                out.append((phase(e["care_type"]), (d - a).days + 1))
+        return out
+
+    def summarize(items):
+        rows = {}
+        for ph, days in items:
+            r = rows.setdefault(ph, {"type": ph, "n": 0, "days": 0, "over_1y": 0, "ext1": 0, "ext2": 0})
+            r["n"] += 1; r["days"] += days
+            if days > 365:
+                r["over_1y"] += 1
+                if days <= 545:
+                    r["ext1"] += 1
+                else:
+                    r["ext2"] += 1
+        total = {"type": "전체", "n": 0, "days": 0, "over_1y": 0, "ext1": 0, "ext2": 0}
+        for r in rows.values():
+            for k in ("n", "days", "over_1y", "ext1", "ext2"):
+                total[k] += r[k]
+        for r in list(rows.values()) + [total]:
+            r["avg_days"] = round(r["days"] / r["n"]) if r["n"] else None
+            r["over_pct"] = round(r["over_1y"] / r["n"] * 100, 1) if r["n"] else None
+        ordered = [rows[k] for k in ORDER if k in rows]
+        return ordered, total
+
+    res_rows, res_total = summarize(residents_at(ref))
+    _, prev_total = summarize(residents_at(prev_last))
+    dis_items = []
+    for e in eps:
+        a, dc = _d(e["admitted_at"]), _d(e["discharged_at"])
+        if a and dc and first <= dc <= last:
+            dis_items.append((phase(e["care_type"]), (dc - a).days + 1))
+    dis_rows, dis_total = summarize(dis_items)
+    dis_by_type = {r["type"]: r for r in dis_rows}
+    for r in res_rows + [res_total]:
+        d = dis_total if r["type"] == "전체" else dis_by_type.get(r["type"])
+        r["dis_n"] = d["n"] if d else 0
+        r["dis_avg_days"] = d["avg_days"] if d else None
+    delta = (None if res_total["over_pct"] is None or prev_total["over_pct"] is None
+             else round(res_total["over_pct"] - prev_total["over_pct"], 1))
+    return {
+        "ref_date": ref.isoformat(), "ref_is_today": ref == today,
+        "residents": res_rows, "total": res_total,
+        "prev_total": prev_total, "over_pct_delta": delta,
+        "discharged_total": dis_total,
+    }
+
+
 AWAY_EVENT_TYPES = ("응급전원", "모병원 외래치료")
 
 

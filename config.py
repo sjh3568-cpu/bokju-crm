@@ -7,6 +7,10 @@
 APP_VERSION = "1.9.0"
 APP_DEVELOPER = "미래전략실 신재희"
 
+# 상담실 IP전화(LG헬로비전 biz070) 통화 녹음 조회 사이트. 사이드바 도구 모음에서 새 탭으로 연다.
+# 녹음 파일은 CRM에 저장하지 않고 이 사이트에서 직접 내려받는다(계정 별도).
+CALL_RECORDING_URL = "https://biz070rec.lghellovision.net/"
+
 # 보험유형 — 사용자 정의 10종
 INSURANCE_TYPES = [
     "건강보험",
