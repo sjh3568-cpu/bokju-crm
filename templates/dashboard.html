@@ -28,7 +28,8 @@
                 <td class="nowrap">{{ r.admission_display_date|krdate }}</td>
                 <td class="nowrap">{{ r.planned_admission_time or '-' }}</td>
                 <td class="nowrap dash-adm-state">
-                    {% if r.admission_bucket == 'completed' %}<span class="badge adm-completed">입원완료</span>
+                    {% if r.admission_kind == 'return' %}<span class="badge {% if r.admission_bucket == 'completed' %}adm-completed{% else %}adm-planned{% endif %} adm-return" title="{{ r.other_note }}">{{ r.admission_bucket_label }}</span>
+                    {% elif r.admission_bucket == 'completed' %}<span class="badge adm-completed">입원완료</span>
                     {% else %}<span class="badge adm-planned">입원예정</span>{% endif %}
                 </td>
                 <td class="nowrap">
@@ -50,7 +51,12 @@
                 <td class="nowrap">{{ r.attending_doctor or '-' }}</td>
                 <td class="dash-note" title="{{ r.other_note }}">{{ r.other_note or '-' }}</td>
                 <td class="nowrap dash-action-cell">
+                    {% if r.admission_kind == 'return' %}
                     {% if r.admission_bucket == 'planned' %}
+                    <button type="button" class="btn btn-primary btn-xs adm-return-btn"
+                            data-aevent="{{ r.away_event_id }}" data-name="{{ r.patient_name }}" title="오늘 외진 복귀 완료 — 입원 완료로 집계 (복귀 예정 때 적은 병실로 이동)">완료</button>
+                    {% else %}<span class="muted-sm">복귀 {{ r.returned_at|krdate }}</span>{% endif %}
+                    {% elif r.admission_bucket == 'planned' %}
                     <button type="button" class="btn btn-primary btn-xs adm-status-btn"
                             data-cid="{{ r.id }}" data-status="입원완료" title="입원완료로 변경">완료</button>
                     <button type="button" class="btn btn-secondary btn-xs adm-status-btn"
@@ -374,7 +380,7 @@
             <span class="l">오늘 입원 · 퇴원</span>
             {% set discharge_today_due = discharge_due|selectattr('watch.days_left', 'equalto', 0)|list|length %}
             <span class="v"><b class="num">{{ summary.admission_today or 0 }}</b><small>입원</small>{{ delta_chip(mx.admission.delta) }}<b class="num pair">{{ discharges_today|length }}<small class="c2">퇴원</small></b>{{ delta_chip(mx.discharge.delta) }}</span>
-            <span class="s" title="입원 예정=오늘 입원예정인데 아직 미완료 · 완료=오늘 입원완료 처리 · 지난주 같은 요일의 입원 수(▲▼ 배지의 비교 기준)">입원 예정 <b>{{ summary.admission_today_planned or 0 }}</b> · 완료 <b>{{ summary.admission_today_completed or 0 }}</b> · 지난주 {{ today_weekday }} <b>{{ mx.admission.last_week }}</b>{% if unassigned_planned %} · <em class="warn-text">병실 미배정 {{ unassigned_planned|length }}</em>{% endif %}</span>
+            <span class="s" title="입원 예정=오늘 입원예정(외진 복귀 예정 포함)인데 아직 미완료 · 완료=오늘 입원완료·외진 복귀 처리 · 지난주 같은 요일의 입원 수(▲▼ 배지의 비교 기준)">입원 예정 <b>{{ summary.admission_today_planned or 0 }}</b> · 완료 <b>{{ summary.admission_today_completed or 0 }}</b> · 지난주 {{ today_weekday }} <b>{{ mx.admission.last_week }}</b>{% if unassigned_planned %} · <em class="warn-text">병실 미배정 {{ unassigned_planned|length }}</em>{% endif %}</span>
             <span class="s" title="퇴원 예정=퇴원 예정일이 오늘인 재원 · 완료=명부상 오늘 퇴원 처리 · 지난주 같은 요일의 퇴원 수(▲▼ 배지의 비교 기준)">퇴원 예정 <b>{{ discharge_today_due }}</b> · 완료 <b>{{ discharges_today|length }}</b> · 지난주 {{ today_weekday }} <b>{{ mx.discharge.last_week }}</b></span>
         </a>
         <a class="kc" href="/consultations?from={{ mk.from }}&to={{ mk.to }}">
@@ -730,6 +736,7 @@
 .rh-no { background:#fee2e2; color:#b91c1c; }
 .adm-planned { background:#dbeafe; color:#1d4ed8; }
 .adm-completed { background:#dcfce7; color:#047857; }
+.adm-return { outline:1px dashed currentColor; outline-offset:-1px; }   /* 외진 복귀 — 상담 입원과 구분 */
 .dash-adm-state .muted-sm { display:block; margin-top:2px; }
 .badge-callback { background:#fef3c7; color:#92400e; }
 .hold-consult { background:#fef3c7; color:#92400e; }
@@ -977,6 +984,27 @@ document.querySelectorAll('.adm-status-btn').forEach(btn => {
             location.reload();
         } catch (e) {
             alert('처리 실패: ' + e.message);
+            btn.disabled = false;
+        }
+    });
+});
+
+// 외진 복귀 예정 행 — 오늘 복귀로 1클릭 처리 (재원 관리의 [↩ 복귀]와 같은 API)
+document.querySelectorAll('.adm-return-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        const today = new Date().toISOString().slice(0, 10);
+        if (!confirm(`${btn.dataset.name} 님 외진 복귀를 오늘(${today}) 완료 처리할까요? (입원 완료로 집계)`)) return;
+        btn.disabled = true;
+        try {
+            const r = await fetch(`/api/admission-event/${btn.dataset.aevent}/return`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ return_date: today }),
+            });
+            if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+            location.reload();
+        } catch (e) {
+            alert('복귀 처리 실패: ' + e.message);
             btn.disabled = false;
         }
     });

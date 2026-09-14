@@ -66,7 +66,7 @@ class AwayManagementTests(unittest.TestCase):
         page = self.client.get('/ward?tab=away')
         self.assertEqual(page.status_code, 200)
         html = page.get_data(as_text=True)
-        for label in ('외진환자관리', '퇴원일(전원일)', '테스트병명', '복귀 저장', '70', '&lt;script&gt;'):
+        for label in ('외진환자관리', '퇴원일(전원일)', '테스트병명', '복귀 예정 저장', '70', '&lt;script&gt;'):
             self.assertIn(label, html)
         self.assertNotIn('<script>사유</script>', html)
         with main.app.test_request_context('/ward?tab=away&away_status=returned&away_q=환자1'):
@@ -177,7 +177,7 @@ class AwayManagementTests(unittest.TestCase):
         self.login(1)
         html = self.client.get('/ward?tab=away').get_data(as_text=True)
         self.assertNotIn('id="away-register"', html)
-        self.assertNotIn('복귀 저장', html)
+        self.assertNotIn('복귀 예정 저장', html)
         self.assertEqual(self.client.post(url, json={}).status_code, 403)
         self.login(0)
         self.assertEqual(self.client.get('/ward?tab=away').status_code, 403)
@@ -284,6 +284,85 @@ class AwayManagementTests(unittest.TestCase):
         for query in ('away_number=0', 'away_age_min=-1', 'away_age_min=80&away_age_max=70',
                       'away_days_min=oops', 'away_gender=bad', 'away_dday_max=1.5'):
             self.assertEqual(self.client.get('/ward?tab=away&' + query).status_code, 400, query)
+
+    def _today_admission_counts(self):
+        s = models.dashboard_summary()['summary']
+        return s['admission_today_planned'], s['admission_today_completed'], s['admission_today']
+
+    def test_expected_return_counts_as_planned_then_completed_admission(self):
+        today = date.today().isoformat()
+        # 이 픽스처의 재원 상담엔 입원예정일이 없어 대시보드 '오늘 입원'은 0에서 시작한다.
+        self.assertEqual(self._today_admission_counts(), (0, 0, 0))
+        # 미복귀 외진(#3, 상담 2)에 복귀 예정일=오늘 → 입원 예정 1
+        r = self.client.post('/api/admission-event/3/expected-return', json={'expected_return_date': today})
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.assertEqual(self._today_admission_counts(), (1, 0, 1))
+        data = models.dashboard_summary()
+        row = next(x for x in data['admission_by_status']['planned'] if x.get('admission_kind') == 'return')
+        self.assertEqual((row['id'], row['away_event_id'], row['admission_bucket_label']), (2, 3, '복귀 예정'))
+        self.assertEqual(models.away_now([2])[0]['expected_return_date'], today)
+        # 재원 관리 [복귀 예정]은 병실·기타 사항을 미리 받아 두기만 한다 — 아직 병실 이동 없음
+        r = self.client.post('/api/admission-event/3/expected-return',
+                             json={'expected_return_date': today, 'return_room': '702호', 'return_note': '휠체어'})
+        self.assertEqual(r.status_code, 200, r.get_json())
+        ev = models.get_admission_event(3)
+        self.assertEqual((ev['return_room'], ev['return_note'], ev['returned_at']), ('702호', '휠체어', None))
+        self.assertIsNone(models.get_consultation(2)['room_number'])
+        # 대시보드 입원 처리 [완료] = 날짜 없이 /return → 오늘 복귀, 예정에서 빠지고 완료 1, 병실 이동
+        r = self.client.post('/api/admission-event/3/return', json={})
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.assertEqual(r.get_json()['return_date'], today)
+        self.assertEqual(self._today_admission_counts(), (0, 1, 1))
+        self.assertEqual(models.get_consultation(2)['room_number'], '702호')
+        self.assertEqual(models.get_admission_event(3)['return_note'], '휠체어')
+        # 복귀 처리된 뒤엔 예정일을 못 바꾼다
+        r = self.client.post('/api/admission-event/3/expected-return', json={'expected_return_date': today})
+        self.assertEqual(r.status_code, 400)
+        # 복귀 취소 → 다시 외진 중 + 복귀 예정(오늘) = 입원 예정 1, 완료 0. 병실·기타 사항은 유지
+        r = self.client.post('/api/admission-event/3/return/undo', json={'expected_return_date': today})
+        self.assertEqual(r.status_code, 200, r.get_json())
+        ev = models.get_admission_event(3)
+        self.assertEqual((ev['returned_at'], ev['return_outcome'], ev['expected_return_date'], ev['return_room']),
+                         (None, None, today, '702호'))
+        self.assertEqual(self._today_admission_counts(), (1, 0, 1))
+        self.assertEqual(self.client.post('/api/admission-event/3/return/undo', json={}).status_code, 400)  # 미복귀
+        # 다시 완료
+        self.assertEqual(self.client.post('/api/admission-event/3/return', json={}).status_code, 200)
+        self.assertEqual(self._today_admission_counts(), (0, 1, 1))
+        # 타 병원 전원으로 종결된 외진(#2, 상담 1)은 '완료'가 아니다
+        r = self.client.post('/api/admission-event/2/return',
+                             json={'return_date': today, 'return_outcome': '전원', 'return_hospital': '타병원'})
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.assertEqual(self._today_admission_counts(), (0, 1, 1))
+        self.assertEqual(self.client.post('/api/admission-event/2/return/undo', json={}).status_code, 400)  # 전원은 불가
+
+    def test_expected_return_validation_and_create(self):
+        # 외진일보다 빠른 복귀 예정일 거부
+        r = self.client.post('/api/admission-event/3/expected-return', json={'expected_return_date': '2026-02-01'})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('빠릅니다', r.get_json()['error'])
+        r = self.client.post('/api/admission-event/3/expected-return', json={'expected_return_date': '2026/02/09'})
+        self.assertEqual(r.status_code, 400)
+        # 외진이 아닌 '기타' 이벤트(#5)엔 복귀 예정일이 없다
+        r = self.client.post('/api/admission-event/5/expected-return', json={'expected_return_date': '2026-02-09'})
+        self.assertEqual(r.status_code, 404)
+        # 빈 값은 '미정'으로 되돌린다
+        self.client.post('/api/admission-event/3/expected-return', json={'expected_return_date': '2026-02-09'})
+        r = self.client.post('/api/admission-event/3/expected-return', json={'expected_return_date': ''})
+        self.assertEqual(r.status_code, 200)
+        self.assertIsNone(models.get_admission_event(3)['expected_return_date'])
+        # 새 외진 기록에 복귀 예정일을 함께 저장 (상담 3, 미복귀 없음)
+        with models.get_db() as conn:
+            conn.execute("INSERT INTO consultations (id, patient_id, consult_date, admission_status, actual_admission_date) "
+                         "VALUES (3, 1, '2026-04-01', '입원완료', '2026-04-01')")
+        tomorrow = (date.today() + timedelta(days=1)).isoformat()
+        r = self.client.post('/api/consult/3/admission-event', json={
+            'event_type': '모병원 외래치료', 'event_date': date.today().isoformat(),
+            'hospital': '모병원', 'memo': '외래', 'expected_return_date': tomorrow})
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.assertEqual(models.get_admission_event(r.get_json()['id'])['expected_return_date'], tomorrow)
+        self.assertEqual(self._today_admission_counts(), (0, 0, 0))   # 내일 예정이라 오늘엔 안 잡힌다
+        self.assertEqual(models.dashboard_summary()['summary']['admission_planned_week'], 1)
 
 
 if __name__ == '__main__':

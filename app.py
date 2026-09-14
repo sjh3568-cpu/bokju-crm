@@ -420,8 +420,13 @@ def _inject_globals():
         try:
             with closing(models.get_db()) as _db:
                 _today=date.today().isoformat()
-                command_metrics["admit"]=_db.execute("""SELECT COUNT(DISTINCT patient_id) FROM consultations
-                    WHERE COALESCE(actual_admission_date,admission_date)=? AND admission_status IN ('입원완료','퇴원완료')""",(_today,)).fetchone()[0]
+                # 오늘 실입원 + 오늘 외진 복귀(타 병원 전원 종결 제외) — 대시보드 '완료'와 같은 정의
+                command_metrics["admit"]=_db.execute("""SELECT COUNT(DISTINCT patient_id) FROM (
+                    SELECT patient_id FROM consultations
+                     WHERE COALESCE(actual_admission_date,admission_date)=? AND admission_status IN ('입원완료','퇴원완료')
+                    UNION SELECT c.patient_id FROM admission_events ae JOIN consultations c ON c.id=ae.consultation_id
+                     WHERE ae.event_type IN ('응급전원','모병원 외래치료') AND ae.returned_at=?
+                       AND COALESCE(ae.return_outcome,'복귀')='복귀')""",(_today,_today)).fetchone()[0]
                 command_metrics["discharge"]=_db.execute("SELECT COUNT(DISTINCT patient_id) FROM consultations WHERE discharge_date=?",(_today,)).fetchone()[0]
             command_metrics["pending"]=inbound_badge
         except Exception:
@@ -1272,6 +1277,8 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
     for r in data.get("admission_by_status", {}).get("planned", []):
         if r.get("admission_display_date") != today:
             continue
+        if r.get("admission_kind") == "return":
+            continue   # 외진 복귀 예정 — 입원시간·주치의 등 입원 준비 항목이 아니다
         missing = []
         if not (r.get("planned_admission_time") or "").strip():
             missing.append("입원시간")
@@ -5996,6 +6003,58 @@ def api_communication_delete(comm_id):
     return jsonify({"ok": True})
 
 
+def _valid_expected_return(value, event_date=None):
+    """외진 복귀 예정일 검증 → (날짜|None, 오류메시지|None). 빈 값은 '미정'."""
+    value = (value or "").strip()
+    if not value:
+        return None, None
+    try:
+        rd = datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        return None, "복귀 예정일 형식 오류 (YYYY-MM-DD)"
+    out = (event_date or "").strip()[:10]
+    if out:
+        try:
+            if rd < datetime.strptime(out, "%Y-%m-%d").date():
+                return None, f"복귀 예정일이 외진 나간 날({out})보다 빠릅니다."
+        except ValueError:
+            pass
+    return rd.isoformat(), None
+
+
+@app.route("/api/admission-event/<int:event_id>/expected-return", methods=["POST"])
+@login_required
+def api_admission_event_expected_return(event_id):
+    """외진 복귀 예정 — 재원 관리·외진 명부의 [복귀]. 대시보드 '오늘 입원' 카드에 '입원 예정'으로
+    잡히고, 실제로 돌아오면 대시보드 입원 처리 [완료](= /return)가 '입원 완료'로 넘긴다.
+    복귀 병실·기타 사항은 여기서 미리 받아 두고 [완료] 때 반영한다.
+    """
+    ev = models.get_admission_event(event_id)
+    if not ev or ev.get("event_type") not in models.AWAY_EVENT_TYPES:
+        return jsonify({"error": "외진·전원 기록이 아닙니다."}), 404
+    payload = request.get_json(silent=True) or {}
+    expected, err = _valid_expected_return(payload.get("expected_return_date"), ev.get("event_date"))
+    if err:
+        return jsonify({"error": err}), 400
+    return_room = payload.get("return_room")
+    return_note = payload.get("return_note")
+    if return_room is not None and len(return_room) > 50:
+        return jsonify({"error": "복귀 병실은 50자 이내로 입력하세요."}), 400
+    if return_note is not None and len(return_note) > 3000:
+        return jsonify({"error": "기타 사항은 3000자 이내로 입력하세요."}), 400
+    try:
+        cid = models.set_away_expected_return(event_id, expected,
+                                              return_room=return_room, return_note=return_note)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="update_admission_event", target_type="consultation", target_id=cid,
+        detail=f"외진 복귀 예정일 {expected or '미정'}", ip=request.remote_addr,
+    )
+    return jsonify({"ok": True, "expected_return_date": expected})
+
+
 @app.route("/api/consult/<int:cid>/admission-event", methods=["POST"])
 @login_required
 def api_admission_event_create(cid):
@@ -6017,6 +6076,7 @@ def api_admission_event_create(cid):
         return jsonify({"error": "이송 시각 형식 오류"}), 400
     con = models.get_consultation(cid)
     pid = con["patient_id"] if con else None
+    expected_return = None
     if event_type in models.AWAY_EVENT_TYPES:
         if models.open_away_event(cid):
             return jsonify({"error": "미복귀 기록이 있습니다. 먼저 복귀 처리하세요."}), 400
@@ -6025,6 +6085,9 @@ def api_admission_event_create(cid):
         admitted_on = (con.get("actual_admission_date") or con.get("admission_date") or "")[:10]
         if event_date and admitted_on and event_date < admitted_on:
             return jsonify({"error": "전원·외진일이 입원일보다 빠릅니다."}), 400
+        expected_return, err = _valid_expected_return(payload.get("expected_return_date"), event_date)
+        if err:
+            return jsonify({"error": err}), 400
     cur_stage = None
     if pid:
         p = models.get_patient(pid)
@@ -6056,6 +6119,7 @@ def api_admission_event_create(cid):
         memo=(payload.get("memo") or "").strip() or None,
         created_by=g.user.get("display_name"),
         stage_before=stage_before,
+        expected_return_date=expected_return,
     )
     # 외진은 단계를 바꾸지 않는다 — 병상을 유지한 일시 이탈이므로 '입원'에 그대로
     # 머물고, 미복귀 플래그(returned_at IS NULL)와 카드 배지로만 표시한다.
@@ -6096,10 +6160,11 @@ def api_admission_event_return(event_id):
                     return jsonify({"error": f"복귀일이 외진 나간 날({out})보다 빠릅니다."}), 400
             except ValueError:
                 pass
-    # 병실·기타 사항은 선택 입력이다 — 재원 현황 카드의 [↩ 복귀] 1클릭은
-    # 날짜만 보낸다. 병실을 안 주면 현재 병실을 그대로 둔다.
-    return_room = (payload.get("return_room") or "").strip()
-    return_note = (payload.get("return_note") or "").strip()
+    # 병실·기타 사항은 선택 입력이다 — 대시보드 입원 처리 [완료]·재원 현황의 1클릭은
+    # 날짜만 보내므로, 복귀 예정 때 미리 적어 둔 값이 있으면 그것을 쓴다. 둘 다 없으면
+    # 현재 병실을 그대로 둔다.
+    return_room = (payload.get("return_room") or ev.get("return_room") or "").strip()
+    return_note = (payload.get("return_note") or ev.get("return_note") or "").strip()
     if len(return_room) > 50:
         return jsonify({"error": "복귀 병실은 50자 이내로 입력하세요."}), 400
     if len(return_note) > 3000:
@@ -6139,6 +6204,30 @@ def api_admission_event_return(event_id):
     )
     return jsonify({"ok": True, "stage": back_to,
                     "return_date": return_date or date.today().isoformat()})
+
+
+@app.route("/api/admission-event/<int:event_id>/return/undo", methods=["POST"])
+@login_required
+def api_admission_event_return_undo(event_id):
+    """복귀 처리 되돌리기 — 다시 '외진 중'이 되고, 복귀 예정일을 주면 대시보드 입원 예정에 잡힌다."""
+    ev = models.get_admission_event(event_id)
+    if not ev or ev.get("event_type") not in models.AWAY_EVENT_TYPES:
+        return jsonify({"error": "외진·전원 기록이 아닙니다."}), 404
+    payload = request.get_json(silent=True) or {}
+    expected, err = _valid_expected_return(payload.get("expected_return_date"), ev.get("event_date"))
+    if err:
+        return jsonify({"error": err}), 400
+    try:
+        cid = models.undo_admission_event_return(event_id, expected)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="update_admission_event", target_type="consultation", target_id=cid,
+        detail=f"{ev.get('event_type')} 복귀 취소 → 외진 중 (복귀 예정 {expected or '미정'})",
+        ip=request.remote_addr,
+    )
+    return jsonify({"ok": True, "expected_return_date": expected})
 
 
 @app.route("/api/admission-event/<int:event_id>/details", methods=["POST"])

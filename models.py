@@ -699,6 +699,10 @@ def init_db():
         # 재입원 여부는 복귀와 별개다 — 퇴원 후 다시 들어온 건인지 원무 확인이
         # 필요해 '예/아니오/NULL(미확인)' 3상태로 둔다.
         "readmission": "TEXT",
+        # 복귀 예정일. 대시보드 '오늘 입원' 카드가 상담의 입원예정일과 같은 자리에서
+        # 센다 — 외진 나간 환자가 오늘 돌아오는 것도 병동 입장에선 오늘 받을 입원이다.
+        # 복귀 처리(returned_at)되면 그날의 '완료'로 옮겨 센다.
+        "expected_return_date": "DATE",
     })
     conn.execute("CREATE INDEX IF NOT EXISTS idx_admevent_episode ON admission_events(episode_id)")
     _migrate_pair_legacy_returns(conn)
@@ -3428,6 +3432,38 @@ def dashboard_summary(admission_lookup_from: str | None = None,
          admission_lookup_from, admission_lookup_to),
     ).fetchall()
 
+    # 외진 복귀(예정·완료) — 아래에서 admission_schedule에 상담 행과 같은 모양으로 합친다.
+    ph_away = ",".join("?" * len(AWAY_EVENT_TYPES))
+    range_lo = min(today, admission_lookup_from)
+    range_hi = max(week_until, admission_lookup_to)
+    return_rows = conn.execute(
+        f"""
+        SELECT c.id, c.consult_date, c.consult_time, c.counselor,
+               c.planned_admission_date, c.actual_admission_date, c.admission_date,
+               c.admission_status, c.attending_doctor, c.patient_age,
+               c.primary_diagnosis, c.secondary_diagnosis,
+               c.diseases, c.disease_detail, c.disease_onset, c.special_care,
+               c.special_mrsa_note, c.special_vre_note, c.special_cre_note,
+               COALESCE(NULLIF(ae.return_room, ''), c.room_number) AS room_number,
+               ae.id AS away_event_id, ae.event_type AS away_event_type,
+               ae.event_date AS away_event_date, ae.hospital AS away_hospital,
+               ae.expected_return_date, ae.returned_at, ae.return_outcome,
+               p.id AS patient_id, p.name AS patient_name, p.gender,
+               p.insurance_type, p.guardian_name, p.guardian_phone, p.blacklist
+        FROM admission_events ae
+        JOIN consultations c ON c.id = ae.consultation_id
+        JOIN patients p ON p.id = c.patient_id
+        WHERE ae.event_type IN ({ph_away})
+          AND ((ae.returned_at IS NULL
+                AND date(NULLIF(ae.expected_return_date, '')) BETWEEN date(?) AND date(?))
+               OR (ae.returned_at IS NOT NULL
+                   AND COALESCE(ae.return_outcome, '복귀') = '복귀'
+                   AND date(ae.returned_at) BETWEEN date(?) AND date(?)))
+        ORDER BY ae.id
+        """,
+        (*AWAY_EVENT_TYPES, range_lo, range_hi, range_lo, range_hi),
+    ).fetchall()
+
     hold_rows = conn.execute(
         """
         SELECT c.id, c.consult_date, c.consult_time, c.counselor,
@@ -3770,6 +3806,42 @@ def dashboard_summary(admission_lookup_from: str | None = None,
         d["ward"] = _ward_label(d.get("room_number"))
         admission_schedule.append(d)
 
+    # ── 외진 복귀도 '오늘 입원'으로 센다 ──
+    # 응급전원·모병원 외래로 나간 환자가 돌아오는 날은 병동 입장에서 오늘 받을
+    # 입원과 같다. 복귀 예정일(expected_return_date)은 상담의 입원예정일과 같은
+    # 자리에서 '예정'으로, 복귀 처리(returned_at, 전원 종결 제외)는 그날의
+    # '완료'로 센다. 행 모양은 상담 행과 맞추되 admission_kind='return'으로 구분해
+    # 입원 처리 버튼·입원준비 누락 검사 같은 상담 전용 동작에서는 뺀다.
+    for r in return_rows:
+        d = _deserialize_consultation(dict(r))
+        returned = bool(d.get("returned_at"))
+        display_date = (d.get("returned_at") if returned else d.get("expected_return_date")) or ""
+        if not _in_admission_window(display_date):
+            continue
+        d["admission_kind"] = "return"
+        d["admission_bucket"] = "completed" if returned else "planned"
+        d["admission_bucket_label"] = "외진 복귀" if returned else "복귀 예정"
+        d["admission_date_kind"] = "복귀" if returned else "복귀예정"
+        d["admission_display_date"] = display_date
+        d["day_label"] = _day_label(display_date)
+        d["planned_admission_time"] = None
+        d["admission_time"] = ""
+        d["admission_disease_summary"] = _admission_disease_summary(d)
+        d["other_note"] = " ".join(v for v in (
+            d.get("away_event_type") or "외진",
+            (d.get("away_event_date") or "")[5:].replace("-", "/"),
+            f"→ {d['away_hospital']}" if d.get("away_hospital") else "",
+        ) if v)
+        d["ward"] = _ward_label(d.get("room_number"))
+        admission_schedule.append(d)
+    if return_rows:
+        # 상담 행은 SQL이 (일자, 예정시각∨상담시각, id)로 정렬해 줬다. 복귀 행을 같은 규칙으로 끼워 넣는다.
+        admission_schedule.sort(key=lambda row: (
+            row.get("admission_display_date") or "",
+            row.get("planned_admission_time") or row.get("consult_time") or "",
+            row.get("id") or 0,
+        ))
+
     # 대시보드 KPI·업무 큐의 기존 15일 범위에는 과거 날짜 조회용 행이 섞이지 않게 분리한다.
     admission_window_schedule = [
         row for row in admission_schedule
@@ -3809,6 +3881,7 @@ def dashboard_summary(admission_lookup_from: str | None = None,
              or row.get("admission_bucket") == "completed")
         and (admission_lookup_scope == "all" or row.get("admission_bucket") == admission_lookup_scope)
         and (admission_lookup_scope != "planned"
+             or row.get("admission_kind") == "return"
              or row.get("admission_status") in ("입원예정", "입원대기"))
     ]
     admission_selected_groups = {
@@ -6194,7 +6267,7 @@ def list_away_records(*, date_from=None, date_to=None, event_type=None):
                    ae.id AS away_id, ae.event_type, ae.event_date,
                    ae.event_time, ae.hospital, ae.memo, ae.returned_at,
                    ae.return_room, ae.return_note, ae.readmission,
-                   ae.return_outcome, ae.return_hospital,
+                   ae.return_outcome, ae.return_hospital, ae.expected_return_date,
                    ep.admitted_at AS roster_admitted_at, ep.discharged_at AS roster_discharged_at,
                    CASE WHEN ae.event_date IS NOT NULL AND ae.event_date != ''
                         THEN ae.away_number END AS away_number
@@ -6237,16 +6310,16 @@ def away_record_stats(rows):
 def create_admission_event(*, consultation_id, event_type=None, event_date=None,
                            event_time=None,
                            hospital=None, memo=None, created_by=None,
-                           stage_before=None) -> int:
+                           stage_before=None, expected_return_date=None) -> int:
     episode_id = sync_admission_episode(consultation_id)
     conn = get_db()
     cur = conn.execute(
         """INSERT INTO admission_events
            (consultation_id, episode_id, event_type, event_date, event_time, hospital, memo, created_by,
-            stage_before)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            stage_before, expected_return_date)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (consultation_id, episode_id, event_type, event_date, event_time, hospital, memo, created_by,
-         stage_before),
+         stage_before, expected_return_date or None),
     )
     eid = cur.lastrowid
     conn.commit()
@@ -6398,6 +6471,64 @@ def away_history(consultation_ids):
                        "last_date": r["last_date"]} for r in rows}
 
 
+def set_away_expected_return(event_id, expected_return_date=None, *, return_room=None, return_note=None):
+    """외진 기록에 복귀 예정을 적는다 — 재원 관리·외진 명부의 [복귀]가 이것이다.
+
+    빈 예정일은 '미정'(NULL). 복귀 병실·기타 사항은 미리 받아 두기만 하고(None이면 그대로),
+    실제 병실 이동은 대시보드 입원 처리 [완료] = mark_admission_event_returned 때 한다.
+    복귀 처리 전에만 바꿀 수 있다.
+    """
+    conn = get_db()
+    try:
+        with conn:
+            row = conn.execute(
+                "SELECT consultation_id, event_type, returned_at FROM admission_events WHERE id = ?",
+                (event_id,)).fetchone()
+            if not row or row["event_type"] not in AWAY_EVENT_TYPES:
+                raise ValueError("외진·전원 기록이 아닙니다.")
+            if row["returned_at"]:
+                raise ValueError("이미 복귀 처리된 외진입니다.")
+            sets, vals = ["expected_return_date = ?"], [expected_return_date or None]
+            if return_room is not None:
+                sets.append("return_room = ?"); vals.append(return_room.strip() or None)
+            if return_note is not None:
+                sets.append("return_note = ?"); vals.append(return_note.strip() or None)
+            conn.execute(f"UPDATE admission_events SET {', '.join(sets)} WHERE id = ?",
+                         (*vals, event_id))
+            return row["consultation_id"]
+    finally:
+        conn.close()
+
+
+def undo_admission_event_return(event_id, expected_return_date=None):
+    """복귀 처리를 되돌려 다시 '외진 중(복귀 예정)'으로 만든다.
+
+    잘못 눌렀거나, 실제로는 아직 안 돌아왔는데 [완료]부터 찍은 경우용. 복귀 병실·기타
+    사항은 예정 정보로 남겨 두고 종결 표시(returned_at·returned_by·outcome)만 지운다.
+    이미 옮긴 병실은 되돌리지 않는다(어디로 되돌릴지 알 수 없다). 타 병원 전원은 명부
+    회차까지 닫혀 있어 여기서 되돌리지 않는다.
+    """
+    conn = get_db()
+    try:
+        with conn:
+            row = conn.execute(
+                "SELECT consultation_id, event_type, returned_at, return_outcome "
+                "FROM admission_events WHERE id = ?", (event_id,)).fetchone()
+            if not row or row["event_type"] not in AWAY_EVENT_TYPES:
+                raise ValueError("외진·전원 기록이 아닙니다.")
+            if not row["returned_at"]:
+                raise ValueError("아직 복귀 처리되지 않은 외진입니다.")
+            if (row["return_outcome"] or "복귀") == "전원":
+                raise ValueError("타 병원 전원으로 종결된 기록은 되돌릴 수 없습니다.")
+            conn.execute(
+                "UPDATE admission_events SET returned_at = NULL, returned_by = NULL, "
+                "return_outcome = NULL, return_hospital = NULL, expected_return_date = ? WHERE id = ?",
+                (expected_return_date or None, event_id))
+            return row["consultation_id"]
+    finally:
+        conn.close()
+
+
 def away_now(patient_ids=None):
     """현재 외진 중(미복귀) 환자 목록 — 나간 날짜·기관·경과일 포함.
     보드 배지와 '현재 외진 중' 패널이 같은 데이터를 쓴다.
@@ -6416,7 +6547,7 @@ def away_now(patient_ids=None):
         vals += list(patient_ids)
     rows = conn.execute(f"""
         SELECT ae.id, ae.event_type, ae.event_date, ae.event_time, ae.hospital, ae.memo,
-               ae.stage_before, ae.consultation_id,
+               ae.stage_before, ae.consultation_id, ae.expected_return_date,
                c.patient_id AS pid, COALESCE(NULLIF(ep.attending_doctor,''), c.attending_doctor) AS attending_doctor,
                COALESCE(NULLIF(ep.room_number,''), c.room_number) AS room_number,
                p.name AS pname, p.guardian_name, p.guardian_phone,

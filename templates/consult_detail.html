@@ -314,13 +314,15 @@
                     <td>{{ e.hospital or '' }}</td>
                     <td class="nowrap">
                         {% if not _away %}—
-                        {% elif e.returned_at %}<span class="ae-back-done">↩ {{ e.returned_at|krdate }}</span>
+                        {% elif e.returned_at %}<span class="ae-back-done">↩ {{ e.returned_at|krdate }}</span>{% if (e.return_outcome or '복귀') == '복귀' %} <button type="button" class="btn btn-secondary ae-undo" data-aevent="{{ e.id }}" title="복귀 처리를 되돌려 다시 외진 중(복귀 예정)으로">복귀 취소</button>{% endif %}
                         {% else %}
                         <span class="ae-back-cell">
+                            <input type="date" class="ae-exp-return" value="{{ e.expected_return_date or '' }}"
+                                   min="{{ e.event_date or '' }}" data-aevent="{{ e.id }}" title="복귀 예정일 — 바꾸면 바로 저장">
                             <input type="date" class="ae-back-date" value="{{ today_str }}"
                                    min="{{ e.event_date or '' }}" max="{{ today_str }}" title="복귀일">
                             <button type="button" class="btn btn-primary btn-sm ae-back" data-aevent="{{ e.id }}"
-                                    title="복귀일을 지정해 처리합니다">↩ 복귀</button>
+                                    title="실제 복귀일로 완료 처리 — 대시보드 입원 완료로 집계">↩ 복귀 완료</button>
                         </span>
                         {% endif %}
                     </td>
@@ -338,6 +340,7 @@
             {% for t in ADMISSION_EVENT_TYPES %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
         </select>
         <input type="date" id="ae-date" title="발생일">
+        <input type="date" id="ae-return" title="복귀 예정일 (외진·전원만, 선택) — 대시보드 오늘 입원 예정에 반영">
         <input type="text" id="ae-hospital" placeholder="의료기관 (선택)">
         <input type="text" id="ae-memo" placeholder="메모 (선택)">
         <button type="button" class="btn btn-primary btn-sm" id="ae-add-btn">+ 추가</button>
@@ -379,6 +382,7 @@ tr.ae-open { background:#fff7ed; }
         const payload = {
             event_type: document.getElementById('ae-type').value,
             event_date: document.getElementById('ae-date').value,
+            expected_return_date: document.getElementById('ae-return').value,
             hospital: document.getElementById('ae-hospital').value.trim(),
             memo: document.getElementById('ae-memo').value.trim(),
         };
@@ -412,6 +416,35 @@ tr.ae-open { background:#fff7ed; }
                 if (!r.ok) throw new Error(j.error || r.status);
                 location.reload();
             } catch (e) { btn.disabled = false; alert('복귀 처리 실패: ' + e.message); }
+        });
+    });
+    document.querySelectorAll('.ae-exp-return').forEach(input => {
+        input.addEventListener('change', async () => {
+            const prev = input.defaultValue;
+            try {
+                const r = await fetch(`/api/admission-event/${input.dataset.aevent}/expected-return`,
+                                      { method: 'POST', headers: {'content-type': 'application/json'},
+                                        body: JSON.stringify({ expected_return_date: input.value }) });
+                const j = await r.json();
+                if (!r.ok) throw new Error(j.error || r.status);
+                input.defaultValue = input.value;
+            } catch (e) { input.value = prev; alert('복귀 예정일 저장 실패: ' + e.message); }
+        });
+    });
+    document.querySelectorAll('.ae-undo').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const today = new Date().toISOString().slice(0, 10);
+            const expected = prompt('복귀 처리를 취소합니다. 복귀 예정일을 입력하세요 (비우면 미정)', today);
+            if (expected === null) return;
+            btn.disabled = true;
+            try {
+                const r = await fetch(`/api/admission-event/${btn.dataset.aevent}/return/undo`,
+                                      { method: 'POST', headers: {'content-type': 'application/json'},
+                                        body: JSON.stringify({ expected_return_date: expected.trim() }) });
+                const j = await r.json();
+                if (!r.ok) throw new Error(j.error || r.status);
+                location.reload();
+            } catch (e) { btn.disabled = false; alert('복귀 취소 실패: ' + e.message); }
         });
     });
     document.querySelectorAll('.ae-del').forEach(btn => {

@@ -63,9 +63,20 @@ def consult_admissions_by_date(dates):
                 FROM consultations
                 WHERE COALESCE(admission_status, '') NOT IN ('입원취소', '퇴원완료')
                 GROUP BY d HAVING d IN ({ph})""", dates).fetchall()
+        # 외진 복귀도 그날의 입원으로 센다 (복귀 처리됐으면 복귀일, 아니면 복귀 예정일).
+        # models.dashboard_summary의 admission_schedule과 같은 정의.
+        return_rows = conn.execute(
+            f"""SELECT date(COALESCE(NULLIF(returned_at, ''), NULLIF(expected_return_date, ''))) AS d,
+                       COUNT(*) AS n
+                FROM admission_events
+                WHERE event_type IN ('응급전원', '모병원 외래치료')
+                  AND (returned_at IS NULL OR COALESCE(return_outcome, '복귀') = '복귀')
+                GROUP BY d HAVING d IN ({ph})""", dates).fetchall()
     finally:
         conn.close()
     found = {r["d"]: r["n"] for r in rows}
+    for r in return_rows:
+        found[r["d"]] = found.get(r["d"], 0) + r["n"]
     return {d: found.get(d, 0) for d in dates}
 
 

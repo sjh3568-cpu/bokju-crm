@@ -68,6 +68,7 @@
         </select>
         <input type="date" class="wd-af-date" value="{{ today_str }}">
         <input type="time" class="wd-af-time">
+        <input type="date" class="wd-af-return" min="{{ today_str }}" title="복귀 예정일 (선택) — 대시보드 오늘 입원 예정에 반영">
         <input type="text" class="wd-af-hosp" placeholder="이송 기관">
         <input type="text" class="wd-af-reason" placeholder="이송 사유">
         <button type="button" class="btn btn-primary btn-xs wd-af-save">기록</button>
@@ -515,9 +516,11 @@
                     <td class="nowrap wd-act">
                         {% if c.away %}
                         <span class="wd-back-cell">
-                            <input type="date" class="wd-back-date" value="{{ today_str }}"
-                                   min="{{ c.away.event_date or '' }}" max="{{ today_str }}" title="복귀일">
-                            <button type="button" class="btn btn-primary btn-xs wd-back" data-aevent="{{ c.away.id }}">↩ 복귀</button>
+                            {% if c.away.expected_return_date %}<span class="wd-exp-badge" title="대시보드 입원 처리에서 [완료]하면 입원 완료로 집계">복귀 예정 {{ c.away.expected_return_date|krdate }}</span>{% endif %}
+                            <input type="date" class="wd-back-date" value="{{ c.away.expected_return_date or today_str }}"
+                                   min="{{ c.away.event_date or '' }}" title="복귀 예정일">
+                            <button type="button" class="btn {% if c.away.expected_return_date %}btn-secondary{% else %}btn-primary{% endif %} btn-xs wd-back" data-aevent="{{ c.away.id }}">{% if c.away.expected_return_date %}예정 변경{% else %}↩ 복귀 예정{% endif %}</button>
+                            {% if c.away.expected_return_date %}<button type="button" class="btn btn-primary btn-xs wd-back-done" data-aevent="{{ c.away.id }}" title="오늘 실제 복귀 — 입원 완료로 집계">완료</button>{% endif %}
                         </span>
                         {% elif c.id %}
                         <button type="button" class="btn btn-secondary btn-xs wd-away-btn" data-cid="{{ c.id }}" data-name="{{ c.patient_name }}">🚑 외진</button>
@@ -537,6 +540,7 @@
                             </select>
                             <input type="date" class="wd-af-date" value="{{ today_str }}">
                             <input type="time" class="wd-af-time">
+                            <input type="date" class="wd-af-return" min="{{ today_str }}" title="복귀 예정일 (선택) — 대시보드 오늘 입원 예정에 반영">
                             <input type="text" class="wd-af-hosp" placeholder="이송 기관">
                             <input type="text" class="wd-af-reason" placeholder="이송 사유">
                             <button type="button" class="btn btn-primary btn-xs wd-af-save">기록</button>
@@ -576,7 +580,7 @@
 <div class="card wd-sec" id="sec-away">
     <div class="wd-sec-head">
         <h3>🚑 외진 중 <span class="wd-n">{{ away|length }}</span></h3>
-        <span class="muted-sm">복귀 기록이 없는 전체 환자 — 전원·퇴원으로 재원 명부에서 빠진 환자도 포함 · 재원 인원과 별도 집계</span>
+        <span class="muted-sm">복귀 기록이 없는 전체 환자 — 전원·퇴원으로 재원 명부에서 빠진 환자도 포함 · 재원 인원과 별도 집계 · [복귀 예정]은 대시보드 오늘 입원 예정에, 실제 복귀는 대시보드 입원 처리 [완료]</span>
     </div>
     {% if away %}
     <div class="tbl-wrap">
@@ -600,9 +604,11 @@
                     <td>{{ a.event_type }}</td><td>{{ a.hospital or '-' }}</td><td class="wd-memo" title="{{ a.memo or '' }}">{{ a.memo or '-' }}</td>
                     <td class="nowrap">{{ c.guardian_name or '' }} {{ c.guardian_phone or '' }}</td>
                     <td class="nowrap wd-back-cell">
-                        <input type="date" class="wd-back-date" value="{{ today_str }}"
-                               min="{{ a.event_date or '' }}" max="{{ today_str }}" title="복귀일">
-                        <button type="button" class="btn btn-primary btn-xs wd-back" data-aevent="{{ a.id }}">↩ 복귀</button>
+                        {% if a.expected_return_date %}<span class="wd-exp-badge" title="대시보드 입원 처리에서 [완료]하면 입원 완료로 집계">복귀 예정 {{ a.expected_return_date|krdate }}</span>{% endif %}
+                        <input type="date" class="wd-back-date" value="{{ a.expected_return_date or today_str }}"
+                               min="{{ a.event_date or '' }}" title="복귀 예정일">
+                        <button type="button" class="btn {% if a.expected_return_date %}btn-secondary{% else %}btn-primary{% endif %} btn-xs wd-back" data-aevent="{{ a.id }}">{% if a.expected_return_date %}예정 변경{% else %}↩ 복귀 예정{% endif %}</button>
+                        {% if a.expected_return_date %}<button type="button" class="btn btn-primary btn-xs wd-back-done" data-aevent="{{ a.id }}" title="오늘 실제 복귀 — 입원 완료로 집계">완료</button>{% endif %}
                     </td>
                 </tr>
                 {% endfor %}
@@ -975,7 +981,8 @@
 .wd-dd.over { color:#b91c1c; }
 .wd-act { white-space:normal; }
 .wd-act>.btn,.wd-act>form,.wd-act>.wd-back-cell { margin:2px; vertical-align:middle; }
-.wd-back-cell { display:inline-flex; gap:4px; align-items:center; }
+.wd-back-cell { display:inline-flex; gap:4px; align-items:center; flex-wrap:wrap; }
+.wd-exp-badge { font-size:0.78em; font-weight:700; color:#1d4ed8; background:#dbeafe; padding:1px 7px; border-radius:999px; white-space:nowrap; }
 .wd-back-date { font-family:inherit; font-size:0.8em; padding:2px 5px;
     border:1px solid var(--border); border-radius:5px; }
 .wd-inline { display:flex; gap:5px; align-items:center; flex-wrap:wrap;
@@ -1215,7 +1222,8 @@
         const hospital=form.querySelector('.wd-af-hosp').value.trim(), reason=form.querySelector('.wd-af-reason').value.trim();
         if (!hospital || !reason) { alert('이송기관과 사유를 모두 입력하세요.'); return null; }
         return {event_type:form.querySelector('.wd-af-type').value,event_date:form.querySelector('.wd-af-date').value,
-            event_time:form.querySelector('.wd-af-time').value,hospital,memo:reason};
+            event_time:form.querySelector('.wd-af-time').value,
+            expected_return_date:(form.querySelector('.wd-af-return')||{}).value||'',hospital,memo:reason};
     };
     const saveDischarge = async (form, name) => {
         const destination=form.querySelector('.wd-dis-destination').value.trim(), reason=form.querySelector('.wd-dis-reason').value.trim();
@@ -1227,33 +1235,49 @@
             toast(`✓ ${name} 퇴원 처리 완료`,'success'); setTimeout(()=>location.reload(),400);
         } catch(e) { save.disabled=false; alert('퇴원 처리 실패: '+e.message); }
     };
-    // 외진 복귀 — 나가기 전 상태로 되돌린다
+    // 외진 [복귀 예정] — 외진 기록은 열어 둔 채 복귀 예정일(+병실·기타 사항)만 적는다.
+    // 대시보드 '오늘 입원' 카드에 입원 예정으로 잡히고, 실제 복귀는 대시보드 입원 처리
+    // [완료](또는 여기 [완료])가 returned_at을 찍어 입원 완료로 넘긴다.
+    // 외진 명부(tab=away)의 '타 병원 전원'만 예정 없이 바로 종결한다.
     document.querySelectorAll('.wd-back').forEach(btn => {
         btn.addEventListener('click', async () => {
-            // 같은 칸의 복귀일 입력을 함께 보낸다 (없으면 서버가 오늘로 처리)
             const cell = btn.closest('.wd-back-cell');
             const input = cell ? cell.querySelector('.wd-back-date') : null;
-            const body = input && input.value ? { return_date: input.value } : {};
-            // 외진 명부(tab=away)에만 있는 병실·기타 사항 칸. 재원 현황의
-            // 1클릭 복귀에는 없으므로 있을 때만 실어 보낸다.
             const room = cell ? cell.querySelector('.wd-back-room') : null;
             const note = cell ? cell.querySelector('.wd-back-note') : null;
-            if (room && room.value.trim()) body.return_room = room.value.trim();
-            if (note && note.value.trim()) body.return_note = note.value.trim();
-            // 외진 명부의 '복귀/타 병원 전원' 선택 — 전원이면 병원명이 필수
             const outcome = cell ? cell.querySelector('.wd-back-outcome') : null;
             const hospital = cell ? cell.querySelector('.wd-back-hospital') : null;
-            if (outcome && outcome.value === '전원') {
-                body.return_outcome = '전원';
-                if (!hospital || !hospital.value.trim()) { alert('전원 간 병원을 입력하세요.'); return; }
-                body.return_hospital = hospital.value.trim();
-            }
             btn.disabled = true;
             try {
-                const r = await api.post(`/api/admission-event/${btn.dataset.aevent}/return`, body);
-                toast(`✓ 복귀 처리 완료 (${r.return_date})`, 'success');
+                if (outcome && outcome.value === '전원') {
+                    const body = input && input.value ? { return_date: input.value } : {};
+                    body.return_outcome = '전원';
+                    if (!hospital || !hospital.value.trim()) { alert('전원 간 병원을 입력하세요.'); btn.disabled = false; return; }
+                    body.return_hospital = hospital.value.trim();
+                    if (note && note.value.trim()) body.return_note = note.value.trim();
+                    const r = await api.post(`/api/admission-event/${btn.dataset.aevent}/return`, body);
+                    toast(`✓ 타 병원 전원 처리 (${r.return_date})`, 'success');
+                } else {
+                    if (!input || !input.value) { alert('복귀 예정일을 입력하세요.'); btn.disabled = false; return; }
+                    const body = { expected_return_date: input.value };
+                    if (room) body.return_room = room.value.trim();
+                    if (note) body.return_note = note.value.trim();
+                    await api.post(`/api/admission-event/${btn.dataset.aevent}/expected-return`, body);
+                    toast(`복귀 예정 ${input.value} 저장 — 실제 복귀는 대시보드 입원 처리에서 [완료]`, 'success');
+                }
                 setTimeout(() => location.reload(), 400);
             } catch (e) { btn.disabled = false; alert('복귀 처리 실패: ' + e.message); }
+        });
+    });
+    // 외진 [완료] — 오늘 실제 복귀. 복귀 예정 때 적어 둔 병실·기타 사항은 서버가 이어받는다.
+    document.querySelectorAll('.wd-back-done').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            try {
+                const r = await api.post(`/api/admission-event/${btn.dataset.aevent}/return`, {});
+                toast(`✓ 복귀 완료 (${r.return_date}) — 오늘 입원 완료로 집계`, 'success');
+                setTimeout(() => location.reload(), 400);
+            } catch (e) { btn.disabled = false; alert('복귀 완료 실패: ' + e.message); }
         });
     });
 
