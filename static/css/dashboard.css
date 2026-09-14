@@ -201,9 +201,9 @@
 .page-dashboard .heat-foot { margin: 0; padding: 4px 18px 14px; font-size: .78rem; color: var(--dtext); }
 
 /* ── 탭·칩 등 기존 위젯 톤 맞춤 ── */
-.page-dashboard .dash-view-btn, .page-dashboard .dash-consult-btn, .page-dashboard .dash-discharge-btn, .page-dashboard .dash-inbound-btn, .page-dashboard .dash-callback-btn, .page-dashboard .dash-quick-group a, .page-dashboard .dash-status-btn {
+.page-dashboard .dash-view-btn, .page-dashboard .dash-consult-btn, .page-dashboard .dash-discharge-btn, .page-dashboard .dash-inbound-btn, .page-dashboard .dash-callback-btn, .page-dashboard .dash-status-btn {
     border: 1px solid var(--dborder); background: var(--dcard); color: var(--dmuted); border-radius: 8px; font-weight: 700; font-size: .76rem; }
-.page-dashboard .dash-view-btn.active, .page-dashboard .dash-consult-btn.active, .page-dashboard .dash-discharge-btn.active, .page-dashboard .dash-inbound-btn.active, .page-dashboard .dash-callback-btn.active, .page-dashboard .dash-quick-group a.active, .page-dashboard .dash-quick-today.active {
+.page-dashboard .dash-view-btn.active, .page-dashboard .dash-consult-btn.active, .page-dashboard .dash-discharge-btn.active, .page-dashboard .dash-inbound-btn.active, .page-dashboard .dash-callback-btn.active {
     background: var(--dtext); color: #fff; border-color: var(--dtext); }
 .page-dashboard .dash-chip { border-radius: 999px; }
 .page-dashboard .dash-group-title { color: var(--dmuted); }
@@ -263,8 +263,6 @@
 
 /* ── 입원 환자 현황 날짜 필터 — 우측 칼럼(~470px)에 맞춰 두 줄로 쌓고 안에서 줄바꿈 (가로 스크롤 원인이던 부분) ── */
 .page-dashboard .dash-admission-datebar { flex-direction: column; align-items: stretch; gap: 8px; margin: 6px 0 8px; padding: 8px 10px; }
-.page-dashboard .dash-admission-quick { flex-wrap: wrap; white-space: normal; overflow: visible; gap: 6px; }
-.page-dashboard .dash-quick-group { flex-wrap: wrap; }
 .page-dashboard .dash-admission-date-form { flex-wrap: wrap; gap: 6px; }
 .page-dashboard .dash-admission-date-form input { flex: 1 1 128px; min-width: 0; }
 .page-dashboard .dash-admission-date-form select { flex: 0 1 auto; min-width: 0; }

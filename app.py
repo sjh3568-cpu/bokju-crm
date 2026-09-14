@@ -2300,10 +2300,14 @@ def _dashboard_residents():
 def dashboard():
     today_d = date.today()
     legacy_admission_date = request.args.get("admission_date")
+    # 기본 조회 기간은 '이번 주(월~일)' — 빠른 조회 버튼 대신(2026-09-14 요청). 기간 입력으로 바꿀 수 있다.
+    week_mon = today_d - timedelta(days=today_d.weekday())
+    week_sun = week_mon + timedelta(days=6)
     admission_from = _valid_date(
-        request.args.get("admission_from") or legacy_admission_date, today_d.isoformat())
+        request.args.get("admission_from") or legacy_admission_date, week_mon.isoformat())
     admission_to = _valid_date(
-        request.args.get("admission_to") or legacy_admission_date, admission_from)
+        request.args.get("admission_to") or legacy_admission_date,
+        admission_from if (request.args.get("admission_from") or legacy_admission_date) else week_sun.isoformat())
     if admission_from > admission_to:
         admission_from, admission_to = admission_to, admission_from
     admission_scope = (request.args.get("admission_scope") or "all").strip()
@@ -2318,16 +2322,11 @@ def dashboard():
         "admission_lookup_from": admission_from,
         "admission_lookup_to": admission_to,
         "admission_lookup_scope": admission_scope,
-        "admission_lookup_label": (admission_date_label(admission_from)
-                                   if admission_from == admission_to else
-                                   f"{admission_date_label(admission_from)} ~ {admission_date_label(admission_to)}"),
-        "admission_quick_dates": [
-            {"group": "today", "label": "오늘", "from": today_d.isoformat(), "to": today_d.isoformat(), "scope": "all"},
-            {"group": "past", "label": "3일 이내", "from": (today_d - timedelta(days=3)).isoformat(), "to": today_d.isoformat(), "scope": "completed"},
-            {"group": "past", "label": "7일 이내", "from": (today_d - timedelta(days=7)).isoformat(), "to": today_d.isoformat(), "scope": "completed"},
-            {"group": "future", "label": "3일 이내", "from": today_d.isoformat(), "to": (today_d + timedelta(days=3)).isoformat(), "scope": "planned"},
-            {"group": "future", "label": "7일 이내", "from": today_d.isoformat(), "to": (today_d + timedelta(days=7)).isoformat(), "scope": "planned"},
-        ],
+        "admission_lookup_label": (
+            f"이번 주 {admission_date_label(admission_from)} ~ {admission_date_label(admission_to)}"
+            if (admission_from, admission_to) == (week_mon.isoformat(), week_sun.isoformat()) else
+            admission_date_label(admission_from) if admission_from == admission_to else
+            f"{admission_date_label(admission_from)} ~ {admission_date_label(admission_to)}"),
     })
     open_comms = models.inbox_open_communications()
     callbacks = models.inbox_callbacks()

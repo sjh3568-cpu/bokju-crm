@@ -14,7 +14,7 @@
     const sections = [
         { title: '자주 사용', items: [
             ['오늘', () => range(today, today)], ['전일', () => range(day(today, -1), day(today, -1))],
-            ['이번 주', () => range(monday, today)], ['지난주', () => range(lastMonday, day(lastMonday, 6))],
+            ['이번 주', () => range(monday, day(monday, 6))], ['지난주', () => range(lastMonday, day(lastMonday, 6))],
             ['이번 달', () => monthRange(year, month)], ['지난달', () => monthRange(year, month - 1)],
             ['올해', () => range(new Date(year, 0, 1, 12), new Date(year, 11, 31, 12))],
             ['전년도', () => range(new Date(year - 1, 0, 1, 12), new Date(year - 1, 11, 31, 12))],

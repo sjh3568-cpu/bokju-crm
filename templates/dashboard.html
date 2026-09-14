@@ -58,12 +58,12 @@
                 <td class="dash-note" title="{{ r.other_note or '' }}">{% if is_return %}{{ {'응급전원': '응급전원', '모병원 외래치료': '모병원 진료'}.get(r.away_event_type, r.away_event_type or '외진') }}{% else %}{{ r.other_note or '-' }}{% endif %}</td>
                 <td class="dash-action-cell">
                     {% if is_return and is_planned %}
-                    <select class="adm-action-sel" data-kind="return" data-aevent="{{ r.away_event_id }}" data-name="{{ r.patient_name }}" title="외진 복귀 처리 — 완료(오늘 복귀) / 취소(복귀 예정 취소). 날짜·병실 지정은 재원 관리 외진 중에서">
+                    <select class="adm-action-sel" data-kind="return" data-aevent="{{ r.away_event_id }}" data-name="{{ r.patient_name }}" title="외진 복귀 처리 — 복귀(오늘 복귀 완료) / 취소(복귀 예정 취소). 날짜·병실 지정은 재원 관리 외진 중에서">
                         <option value="">처리</option>
-                        <option value="복귀완료">완료</option>
+                        <option value="복귀완료">복귀</option>
                         <option value="예정취소">취소</option>
                     </select>
-                    {% elif is_return %}<span class="muted-sm" title="복귀 {{ r.returned_at|krdate }}">복귀 {{ r.returned_at|krdate_short }}</span>
+                    {% elif is_return %}<span class="adm-done adm-done-return" title="외진 복귀 완료 {{ r.returned_at|krdate }}">복귀</span>
                     {% elif is_planned %}
                     <select class="adm-action-sel" data-kind="status" data-cid="{{ r.id }}" data-name="{{ r.patient_name }}" title="입원 처리">
                         <option value="">처리</option>
@@ -71,7 +71,7 @@
                         <option value="입원보류">보류</option>
                         <option value="입원취소">취소</option>
                     </select>
-                    {% else %}<span class="muted-sm">-</span>{% endif %}
+                    {% else %}<span class="adm-done" title="입원완료{% if r.admission_display_date %} {{ r.admission_display_date|krdate }}{% endif %}">완료</span>{% endif %}
                 </td>
             </tr>
             {% endfor %}
@@ -440,12 +440,8 @@
         <span class="muted">{{ admission_lookup_label }} · {{ admission_lookup|length }}명</span>
     </div>
     <div class="dash-admission-datebar">
-        <div class="dash-admission-quick" aria-label="입원일 빠른 조회">
-            <div class="dash-quick-group past"><b>과거 입원</b>{% for quick in admission_quick_dates if quick.group == 'past' %}<a href="/?admission_from={{ quick.from }}&admission_to={{ quick.to }}&admission_scope={{ quick.scope }}#admission-schedule" class="{% if admission_lookup_from == quick.from and admission_lookup_to == quick.to and admission_lookup_scope == quick.scope %}active{% endif %}">{{ quick.label }}</a>{% endfor %}</div>
-            {% for quick in admission_quick_dates if quick.group == 'today' %}<a href="/?admission_from={{ quick.from }}&admission_to={{ quick.to }}&admission_scope={{ quick.scope }}#admission-schedule" class="dash-quick-today {% if admission_lookup_from == quick.from and admission_lookup_to == quick.to and admission_lookup_scope == quick.scope %}active{% endif %}">{{ quick.label }}</a>{% endfor %}
-            <div class="dash-quick-group future"><b>미래 예정</b>{% for quick in admission_quick_dates if quick.group == 'future' %}<a href="/?admission_from={{ quick.from }}&admission_to={{ quick.to }}&admission_scope={{ quick.scope }}#admission-schedule" class="{% if admission_lookup_from == quick.from and admission_lookup_to == quick.to and admission_lookup_scope == quick.scope %}active{% endif %}">{{ quick.label }}</a>{% endfor %}</div>
-        </div>
-        <form method="get" action="/" class="dash-admission-date-form">
+        {# 빠른 조회 버튼은 뺐다(2026-09-14) — 기본이 '이번 주(월~일)'이고, 기간은 아래 입력·빠른 달력으로 바꾼다 #}
+        <form method="get" action="/" class="dash-admission-date-form" id="admission-date-form">
             <label for="admission-from">기간</label>
             <input type="date" id="admission-from" name="admission_from" value="{{ admission_lookup_from }}">
             <span class="dash-date-sep">~</span>
@@ -681,16 +677,9 @@
 .dash-section-head h3 { margin-bottom:0; }
 .dash-admission-datebar { display:flex; align-items:center; justify-content:space-between; gap:10px;
     margin:10px 0; padding:9px 10px; border:1px solid #dce8e0; border-radius:9px; background:#f8fbf9; }
-.dash-admission-quick { display:flex; align-items:center; gap:5px; flex-wrap:nowrap; white-space:nowrap; overflow-x:auto; padding-bottom:1px; }
-.dash-quick-group { display:flex; align-items:center; flex:0 0 auto; gap:4px; padding:3px 5px; border:1px solid #dfe7e2; border-radius:10px; background:#fff; }
-.dash-quick-group > b { padding:0 4px; color:#718078; font-size:.68em; white-space:nowrap; }
-.dash-quick-group.future { border-color:#cfe0f1; background:#f7fbff; }
-.dash-quick-group.future > b { color:#42698c; }
-.dash-admission-quick a { padding:6px 10px; border:1px solid var(--border); border-radius:999px;
-    background:#fff; color:#475569; text-decoration:none; font-size:.8em; font-weight:750; }
-.dash-admission-quick .dash-quick-today { border-color:#9ecab0; color:#14532d; }
-.dash-admission-quick a:hover { border-color:var(--primary); color:var(--primary); }
-.dash-admission-quick a.active { border-color:var(--primary); background:var(--primary); color:#fff; }
+/* 처리 칸의 완료 표식 — 완료된 행도 목록에 남기고 '완료'/'복귀'로 보여준다(2026-09-14) */
+.dash-adm-tbl .adm-done { display:inline-block; padding:2px 8px; border-radius:999px; background:#dcfce7; color:#166534; font-size:.78em; font-weight:800; }
+.dash-adm-tbl .adm-done-return { background:#e0f2fe; color:#075985; }
 .dash-admission-date-form { display:flex; align-items:center; gap:6px; }
 .dash-admission-date-form label { color:var(--text-light); font-size:.76em; font-weight:700; white-space:nowrap; }
 .dash-admission-date-form input { padding:6px 8px; border:1px solid var(--border); border-radius:7px;
@@ -700,7 +689,7 @@
 .dash-adm-scope { display:inline-flex; margin-left:5px; padding:3px 7px; border-radius:999px;
     background:#dcfce7; color:#166534; font-size:.64em; vertical-align:middle; }
 .dash-date-sep{color:var(--text-light);font-size:.8em}
-@media(max-width:1040px){.dash-admission-datebar{align-items:flex-start;flex-direction:column}.dash-admission-quick{width:100%}.dash-admission-date-form{width:100%}}
+@media(max-width:1040px){.dash-admission-datebar{align-items:flex-start;flex-direction:column}.dash-admission-date-form{width:100%}}
 @media(max-width:760px){.dash-admission-date-form input{flex:1}}
 .dash-filter-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:4px 0 10px; }
 .dash-status-tabs, .dash-view-tabs, .dash-consult-tabs, .dash-discharge-tabs,
@@ -960,6 +949,20 @@ document.querySelectorAll('.discharge-interview-toggle').forEach(btn => {
         }
     });
 });
+
+// 입원 환자 현황 기간 — 빠른 달력 프리셋(오늘·지난주·이번 달…)을 고르면 바로 조회한다.
+// 프리셋은 스크립트로 change를 쏘므로 isTrusted=false, 사람이 직접 고른 날짜는 '조회' 버튼으로(두 칸을 다 고를 때까지 기다린다).
+// 구분(전체/입원예정만/실제 입원만) 셀렉트는 바로 조회.
+(() => {
+    const form = document.getElementById('admission-date-form');
+    if (!form) return;
+    let pending = false;
+    const submit = () => { if (pending) return; pending = true; form.requestSubmit ? form.requestSubmit() : form.submit(); };
+    form.querySelectorAll('input[type=date]').forEach(el => el.addEventListener('change', e => {
+        if (!e.isTrusted && form.admission_from.value && form.admission_to.value) submit();
+    }));
+    form.querySelector('select[name=admission_scope]')?.addEventListener('change', submit);
+})();
 
 // 입원예정 → 입원완료/입원취소/입원보류 변경 (당일 처리 케이스)
 // 입원 환자 현황 [처리] 드롭다운 — 버튼 3개 대신 한 칸. 아래 .adm-status-btn / .adm-return-btn 과 같은 API·확인 절차.
