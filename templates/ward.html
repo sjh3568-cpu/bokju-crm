@@ -83,11 +83,13 @@
     </div>
     {% if c.away %}
     <div class="rm-inline rm-inline-back wd-back-cell" hidden>
-        <span class="muted-sm">복귀일</span>
-        <input type="date" class="wd-back-date" value="{{ today_str }}"
-               min="{{ c.away.event_date or '' }}" max="{{ today_str }}">
-        <button type="button" class="btn btn-primary btn-xs wd-back" data-aevent="{{ c.away.id }}">확인</button>
-        <button type="button" class="btn btn-secondary btn-xs rm-back-cancel">취소</button>
+        <span class="muted-sm">복귀 예정일</span>
+        <input type="date" class="wd-back-date" value="{{ c.away.expected_return_date or today_str }}"
+               min="{{ c.away.event_date or '' }}">
+        <input type="text" class="wd-back-room" value="{{ c.away.return_room or c.room_number or '' }}" placeholder="복귀 병실" maxlength="50" size="8">
+        <button type="button" class="btn btn-primary btn-xs wd-back" data-aevent="{{ c.away.id }}">{% if c.away.expected_return_date %}예정 변경{% else %}복귀 예정 저장{% endif %}</button>
+        {% if c.away.expected_return_date %}<button type="button" class="btn btn-secondary btn-xs wd-back-clear" data-aevent="{{ c.away.id }}" data-name="{{ c.patient_name }}" title="잘못 누른 복귀 예정을 지운다 — 외진 중으로만 남는다">예정 취소</button>{% endif %}
+        <button type="button" class="btn btn-secondary btn-xs rm-back-cancel">닫기</button>
     </div>
     {% endif %}
     <div class="rm-inline rm-inline-move" hidden>
@@ -414,7 +416,7 @@
                 <span class="rm-no">{{ b.room|replace('호', '') }}</span>
                 <span class="rm-cap" title="재원/정원">{{ b.patients|length }}/{{ b.patients|length + b.empty }}</span>
             </div>
-            <div class="rm-beds">
+            <div class="rm-beds" style="--slots: {{ [4, b.patients|length + b.empty]|max }}">
                 {% for c in b.patients %}
                 {{ bed(c) }}
                 {% endfor %}
@@ -522,8 +524,9 @@
                             {% if c.away.expected_return_date %}<span class="wd-exp-badge" title="대시보드 입원 처리에서 [완료]하면 입원 완료로 집계">복귀 예정 {{ c.away.expected_return_date|krdate }}</span>{% endif %}
                             <input type="date" class="wd-back-date" value="{{ c.away.expected_return_date or today_str }}"
                                    min="{{ c.away.event_date or '' }}" title="복귀 예정일">
+                            <input type="text" class="wd-back-room" value="{{ c.away.return_room or c.room_number or '' }}" placeholder="복귀 병실" maxlength="50" size="7" title="복귀 병실">
                             <button type="button" class="btn {% if c.away.expected_return_date %}btn-secondary{% else %}btn-primary{% endif %} btn-xs wd-back" data-aevent="{{ c.away.id }}">{% if c.away.expected_return_date %}예정 변경{% else %}↩ 복귀 예정{% endif %}</button>
-                            {% if c.away.expected_return_date %}<button type="button" class="btn btn-primary btn-xs wd-back-done" data-aevent="{{ c.away.id }}" title="오늘 실제 복귀 — 입원 완료로 집계">완료</button>{% endif %}
+                            {% if c.away.expected_return_date %}<button type="button" class="btn btn-primary btn-xs wd-back-done" data-aevent="{{ c.away.id }}" title="오늘 실제 복귀 — 입원 완료로 집계">완료</button><button type="button" class="btn btn-secondary btn-xs wd-back-clear" data-aevent="{{ c.away.id }}" data-name="{{ c.patient_name }}" title="잘못 누른 복귀 예정을 지운다 — 외진 중으로만 남는다">예정 취소</button>{% endif %}
                         </span>
                         {% elif c.id %}
                         <button type="button" class="btn btn-secondary btn-xs wd-away-btn" data-cid="{{ c.id }}" data-name="{{ c.patient_name }}">🚑 외진</button>
@@ -610,8 +613,9 @@
                         {% if a.expected_return_date %}<span class="wd-exp-badge" title="대시보드 입원 처리에서 [완료]하면 입원 완료로 집계">복귀 예정 {{ a.expected_return_date|krdate }}</span>{% endif %}
                         <input type="date" class="wd-back-date" value="{{ a.expected_return_date or today_str }}"
                                min="{{ a.event_date or '' }}" title="복귀 예정일">
+                        <input type="text" class="wd-back-room" value="{{ a.return_room or c.room_number or '' }}" placeholder="복귀 병실" maxlength="50" size="7" title="복귀 병실">
                         <button type="button" class="btn {% if a.expected_return_date %}btn-secondary{% else %}btn-primary{% endif %} btn-xs wd-back" data-aevent="{{ a.id }}">{% if a.expected_return_date %}예정 변경{% else %}↩ 복귀 예정{% endif %}</button>
-                        {% if a.expected_return_date %}<button type="button" class="btn btn-primary btn-xs wd-back-done" data-aevent="{{ a.id }}" title="오늘 실제 복귀 — 입원 완료로 집계">완료</button>{% endif %}
+                        {% if a.expected_return_date %}<button type="button" class="btn btn-primary btn-xs wd-back-done" data-aevent="{{ a.id }}" title="오늘 실제 복귀 — 입원 완료로 집계">완료</button><button type="button" class="btn btn-secondary btn-xs wd-back-clear" data-aevent="{{ a.id }}" data-name="{{ c.patient_name }}" title="잘못 누른 복귀 예정을 지운다 — 외진 중으로만 남는다">예정 취소</button>{% endif %}
                     </td>
                 </tr>
                 {% endfor %}
@@ -923,9 +927,11 @@
           background:#f8fafc; padding:6px; margin-bottom:6px; }
 .rm-row-head { flex:0 0 52px; display:flex; flex-direction:column; justify-content:center; align-items:center;
                gap:2px; border-right:1px solid var(--border); padding-right:6px; }
-.rm-beds { flex:1; display:flex; gap:6px; overflow-x:auto; }
-.rm-beds .rm-bed { flex:1 1 200px; min-width:190px; max-width:300px; }
-.rm-beds .rm-empty { display:flex; align-items:center; justify-content:center; min-width:110px; flex:0 1 150px; }
+/* 침상 칸은 정원만큼 같은 크기로 고정(최소 4칸 격자) — 3명이 있어도 4칸, 빈 침상도 같은 크기의 빈 칸으로 남는다 */
+.rm-beds { flex:1; min-width:0; display:grid; grid-template-columns:repeat(var(--slots, 4), minmax(0, 1fr)); gap:6px; align-items:stretch; }
+.rm-beds .rm-bed { min-width:0; }
+.rm-beds .rm-empty { display:flex; align-items:center; justify-content:center; min-height:72px; color:var(--text-light); opacity:.55;
+                     font-size:0.78em; border:1px dashed var(--border); border-left:1px dashed var(--border); background:transparent; }
 /* 외진 중 — 1주일까지는 흐리게(자리는 비워 둔 상태), 1주일을 넘기면 다시 또렷하게 + 경고색 */
 .rm-bed.rm-dim { opacity:.45; filter:grayscale(.5); }
 .rm-bed.rm-dim:hover, .rm-bed.rm-dim:focus-within { opacity:1; filter:none; }
@@ -987,6 +993,7 @@
 .wd-act>.btn,.wd-act>form,.wd-act>.wd-back-cell { margin:2px; vertical-align:middle; }
 .wd-back-cell { display:inline-flex; gap:4px; align-items:center; flex-wrap:wrap; }
 .wd-exp-badge { font-size:0.78em; font-weight:700; color:#1d4ed8; background:#dbeafe; padding:1px 7px; border-radius:999px; white-space:nowrap; }
+.wd-back-room { font-family:inherit; font-size:0.8em; padding:2px 5px; width:82px; border:1px solid var(--border); border-radius:6px; }
 .wd-back-date { font-family:inherit; font-size:0.8em; padding:2px 5px;
     border:1px solid var(--border); border-radius:5px; }
 .wd-inline { display:flex; gap:5px; align-items:center; flex-wrap:wrap;
@@ -1280,6 +1287,18 @@
                 }
                 setTimeout(() => location.reload(), 400);
             } catch (e) { btn.disabled = false; alert('복귀 처리 실패: ' + e.message); }
+        });
+    });
+    // 외진 [예정 취소] — 잘못 누른 복귀 예정을 지운다(외진 중으로만 남고 대시보드 오늘 입원 예정에서 빠진다)
+    document.querySelectorAll('.wd-back-clear').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            if (!confirm(`${btn.dataset.name || ''} 복귀 예정을 취소할까요? (외진 중으로만 남습니다)`)) return;
+            btn.disabled = true;
+            try {
+                await api.post(`/api/admission-event/${btn.dataset.aevent}/expected-return`, { expected_return_date: '' });
+                toast('복귀 예정을 취소했습니다', 'success');
+                setTimeout(() => location.reload(), 400);
+            } catch (e) { btn.disabled = false; alert('예정 취소 실패: ' + e.message); }
         });
     });
     // 외진 [완료] — 오늘 실제 복귀. 복귀 예정 때 적어 둔 병실·기타 사항은 서버가 이어받는다.
