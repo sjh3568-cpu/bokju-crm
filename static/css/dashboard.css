@@ -269,8 +269,8 @@
 .page-dashboard .dash-admission-date-form .btn { flex: 0 0 auto; }
 
 /* ── 2×2 격자: 입원 환자 현황 · 병동별 재원 / 오늘 처리 필요 · 기한 임박 — 폭은 KPI 카드 2장, 높이는 네 칸 동일 ── */
-.page-dashboard .dash-grid2 { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); grid-auto-rows: auto; gap: 12px; margin-bottom: 12px; align-items: stretch; }
-/* 왼쪽(입원 환자 현황·오늘 처리 필요)은 10칸 표라 폭이 더 필요하고 오른쪽(병동별 재원·기한 임박)은 여유가 있어 1.4:1로 나눈다 */
+.page-dashboard .dash-grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-auto-rows: auto; gap: 12px; margin-bottom: 12px; align-items: stretch; }
+/* 좌우 카드 폭을 1:1로 동일하게 — 위(입원 환자 현황·병동별 재원)·아래(오늘 처리 필요·기한 임박) 모두 같은 폭 */
 /* grid-auto-rows:1fr이면 전체 폭으로 펼친 입원 환자 현황 행까지 아래 행 높이에 맞춰 늘어나 표 밑이 빈다.
    auto로 두어도 align-items:stretch가 같은 행의 두 카드는 같은 높이로 맞춘다. */
 .page-dashboard .dash-grid2 > .card { min-width: 0; display: flex; flex-direction: column; }
