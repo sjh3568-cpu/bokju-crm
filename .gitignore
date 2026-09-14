@@ -13,3 +13,6 @@ venv/
 .vscode/
 server.log
 *.bak
+
+# Claude Code 개인 설정 (PC 전용 NAS 배포 권한 — 공개 저장소에 올리지 않음)
+.claude/settings.local.json

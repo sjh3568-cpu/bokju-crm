@@ -531,12 +531,13 @@
         const openBtn=document.getElementById('sidebar-open'),collapseBtn=document.getElementById('sidebar-collapse');
         if(!side)return;
         const KEY='bokju:sidebar';
-        // 상담일지 폼(종이 양식 1:1, 넓음)은 처음 열 때 접힌 채로 시작한다 — 저장된 취향과 무관.
-        const formPage=/^\/consult\/(new|\d+\/edit)/.test(location.pathname);
+        // 상담목록(19열 표, 1440px 기준으로 폭이 빠듯함)만 처음 열 때 접힌 채로 시작한다 — 저장된 취향과 무관.
+        // 새 상담·상담 상세·수정은 다른 화면과 같이 사용자가 마지막에 둔 상태를 따른다 (2026-09-14, 상담일지에서 접히던 것 되돌림).
+        const wideListPage=/^\/consultations(\/|$)/.test(location.pathname);
         let stored=null;try{stored=localStorage.getItem(KEY);}catch(e){}
-        const collapsed=formPage?true:(stored==='collapsed');
+        const collapsed=wideListPage?true:(stored==='collapsed');
         body.classList.toggle('sidebar-collapsed',collapsed);
-        function setCollapsed(v,persist){body.classList.toggle('sidebar-collapsed',v);if(persist&&!formPage){try{localStorage.setItem(KEY,v?'collapsed':'open');}catch(e){}}}
+        function setCollapsed(v,persist){body.classList.toggle('sidebar-collapsed',v);if(persist&&!wideListPage){try{localStorage.setItem(KEY,v?'collapsed':'open');}catch(e){}}}
         collapseBtn?.addEventListener('click',()=>setCollapsed(!body.classList.contains('sidebar-collapsed'),true));
         // 계산기·할 일·분류체계 — 사이드바 레이아웃에서는 좌측 하단(사이드바 발치)에 상시 펼침, 좁은 화면은 우하단 플로팅.
         const tools=document.getElementById('sidebar-tools'), wide=window.matchMedia('(min-width:1024px)');
