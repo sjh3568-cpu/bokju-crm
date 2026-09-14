@@ -733,6 +733,24 @@ def init_db():
         "resolved_at": "DATETIME",
     })
     conn.execute("CREATE INDEX IF NOT EXISTS idx_comm_assignee ON communications(assigned_user_id, status)")
+    # 홈페이지(bokjurh.co.kr) 상담게시판 글 ↔ 인박스 communications 매핑 (homepage_board.py).
+    # idx = 홈페이지 게시판 글 PK. site_status는 목록의 '접수/답변완료', detail_ok=0이면
+    # 관리자 로그인 실패로 본문·연락처를 아직 못 가져온 상태(다음 주기 재시도).
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS homepage_posts (
+            idx INTEGER PRIMARY KEY,
+            board_no INTEGER,
+            comm_id INTEGER REFERENCES communications(id) ON DELETE SET NULL,
+            title TEXT,
+            site_status TEXT,
+            detail_ok INTEGER NOT NULL DEFAULT 0,
+            reg_date TEXT,
+            answered_by TEXT,
+            answered_at DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME
+        )""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_homepage_posts_comm ON homepage_posts(comm_id)")
     # 문자 게이트웨이 연동(2026-09-11) — 발송사 응답을 이력에 남긴다.
     _ensure_columns(conn, "sms_log", {
         "msg_type": "TEXT",          # SMS | LMS
@@ -6093,6 +6111,58 @@ def delete_communication(comm_id):
     conn.execute("DELETE FROM communications WHERE id = ?", (comm_id,))
     conn.commit()
     conn.close()
+
+
+# ─── 홈페이지 상담게시판 ↔ 인박스 매핑 (homepage_board.py) ───
+
+def homepage_post_known() -> dict[int, dict]:
+    """홈페이지 글 idx → {comm_id, site_status, detail_ok, comm_status}. 폴링 시 신규·상태변화 판별용."""
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT h.idx, h.comm_id, h.site_status, h.detail_ok, h.board_no, c.status AS comm_status
+           FROM homepage_posts h LEFT JOIN communications c ON c.id = h.comm_id"""
+    ).fetchall()
+    conn.close()
+    return {int(r["idx"]): dict(r) for r in rows}
+
+
+def homepage_post_upsert(idx: int, **fields) -> None:
+    valid = {k: v for k, v in fields.items()
+             if k in ("board_no", "comm_id", "title", "site_status", "detail_ok",
+                      "reg_date", "answered_by", "answered_at")}
+    conn = get_db()
+    exists = conn.execute("SELECT 1 FROM homepage_posts WHERE idx = ?", (idx,)).fetchone()
+    if exists:
+        if valid:
+            sets = ", ".join(f"{k} = ?" for k in valid)
+            conn.execute(f"UPDATE homepage_posts SET {sets}, updated_at = CURRENT_TIMESTAMP WHERE idx = ?",
+                         list(valid.values()) + [idx])
+    else:
+        cols = ["idx"] + list(valid)
+        conn.execute(f"INSERT INTO homepage_posts ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})",
+                     [idx] + list(valid.values()))
+    conn.commit()
+    conn.close()
+
+
+def homepage_post_by_comm(comm_id: int) -> dict | None:
+    conn = get_db()
+    row = conn.execute("SELECT * FROM homepage_posts WHERE comm_id = ?", (comm_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def homepage_post_map(comm_ids) -> dict[int, dict]:
+    """대시보드 인박스 행에 '답변' 버튼을 붙이기 위한 comm_id → 게시글 정보."""
+    ids = [int(i) for i in comm_ids if i]
+    if not ids:
+        return {}
+    conn = get_db()
+    rows = conn.execute(
+        f"SELECT * FROM homepage_posts WHERE comm_id IN ({', '.join('?' * len(ids))})", ids
+    ).fetchall()
+    conn.close()
+    return {int(r["comm_id"]): dict(r) for r in rows}
 
 
 # ─── 입원 중 이벤트 (응급전원·모병원 외래치료 등) ───

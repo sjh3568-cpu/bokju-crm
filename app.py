@@ -116,6 +116,7 @@ import support_requests
 app.register_blueprint(partnerships.bp)
 app.register_blueprint(support_requests.bp)
 import transport
+import homepage_board
 app.register_blueprint(transport.bp)
 import ward_moves
 app.register_blueprint(ward_moves.bp)
@@ -190,6 +191,11 @@ def initialize():
         homepage_inbox.start_worker()
     except Exception:
         pass
+    # 홈페이지 상담게시판(bokjurh.co.kr) 폴링 — 새 글 → 인박스, 인박스 '답변' → 게시판 등록
+    try:
+        homepage_board.start_worker()
+    except Exception:
+        app.logger.exception("홈페이지 상담게시판 연동을 시작하지 못했습니다")
 
 
 @app.before_request
@@ -234,6 +240,7 @@ _CREATE_PATHS = (
     "/api/sms/send",         # 문자 발송
     "/api/sms/template",     # 문자 템플릿 추가/저장
     "/api/communication",    # 커뮤니케이션(인바운드) 기록
+    "/api/homepage-board",   # 홈페이지 상담게시판 답변 등록
 )
 
 
@@ -285,7 +292,8 @@ def _route_requirement(path: str, method: str):
 
     # ── 문자 / 커뮤니케이션 ──
     if path.startswith("/sms") or path.startswith("/api/sms") \
-            or path.startswith("/api/communication") or path.startswith("/api/webhook"):
+            or path.startswith("/api/communication") or path.startswith("/api/webhook") \
+            or path.startswith("/api/homepage-board"):
         if not is_write:
             return "sms", PERM_VIEW
         return "sms", PERM_CREATE               # 발송·템플릿·기록 = 생성
@@ -1275,7 +1283,8 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
             f"/consult/new?comm_id={m.get('id')}" if m.get("id") else "/consultations",
             0 if tone == "danger" else 15 if tone == "warn" else 45,
             age_days=int(hours // 24),
-            action={"type": "comm", "id": m.get("id")} if m.get("id") else None,
+            action={"type": "comm", "id": m.get("id"),
+                    "homepage_idx": m.get("homepage_idx")} if m.get("id") else None,
         )
 
     for r in callbacks:
@@ -2346,6 +2355,11 @@ def dashboard():
             f"{admission_date_label(admission_from)} ~ {admission_date_label(admission_to)}"),
     })
     open_comms = models.inbox_open_communications()
+    # 홈페이지 상담게시판에서 온 문의는 인박스에서 바로 '답변'할 수 있게 게시글 idx를 붙인다.
+    hp_posts = models.homepage_post_map([m.get("id") for m in open_comms])
+    for m in open_comms:
+        hp = hp_posts.get(m.get("id"))
+        m["homepage_idx"] = hp["idx"] if hp else None
     callbacks = models.inbox_callbacks()
 
     # 입원예정 상태인데 planned_admission_date가 비어 있는 상담 — 액션큐에 표시.
@@ -6079,6 +6093,43 @@ def api_communication_done(comm_id):
         return jsonify({"error": "not found"}), 404
     models.update_communication(comm_id, status="done")
     return jsonify({"ok": True})
+
+
+@app.route("/api/homepage-board/<int:comm_id>")
+@login_required
+def api_homepage_board_get(comm_id):
+    """인박스 '답변' 대화상자용 — 원문 + 기본 답변 문안 + 홈페이지 관리자 링크."""
+    comm = models.get_communication(comm_id)
+    post = models.homepage_post_by_comm(comm_id)
+    if not comm or not post:
+        return jsonify({"error": "홈페이지 게시판 글과 연결되지 않은 문의입니다."}), 404
+    return jsonify({
+        "comm_id": comm_id, "idx": post["idx"], "board_no": post.get("board_no"),
+        "title": post.get("title") or "", "site_status": post.get("site_status") or "",
+        "summary": comm.get("summary") or "", "body": comm.get("body") or "",
+        "contact": comm.get("contact") or "", "occurred_at": comm.get("occurred_at") or comm.get("created_at") or "",
+        "admin_url": homepage_board.admin_view_url(post["idx"]),
+        "admin_ready": homepage_board.admin_configured(),
+        "reply_title": homepage_board.REPLY_DEFAULT_TITLE,
+        "reply_body": homepage_board.REPLY_DEFAULT_BODY,
+    })
+
+
+@app.route("/api/homepage-board/<int:comm_id>/reply", methods=["POST"])
+@login_required
+def api_homepage_board_reply(comm_id):
+    """CRM 인박스에서 쓴 답변을 홈페이지 상담게시판에 등록하고 인박스를 완료 처리."""
+    data = request.get_json(silent=True) or {}
+    title = (data.get("title") or "").strip()[:100]
+    body = (data.get("body") or "").strip()[:4000]
+    try:
+        after = homepage_board.reply_to_post(comm_id, title, body, g.user["username"])
+    except homepage_board.BoardError as e:
+        return jsonify({"error": str(e)}), 502
+    except Exception:
+        app.logger.exception("홈페이지 답변 등록 중 예외 (comm=%s)", comm_id)
+        return jsonify({"error": "홈페이지 답변 등록 중 오류가 났습니다. 홈페이지 관리자에서 직접 올려주세요."}), 500
+    return jsonify({"ok": True, "answer_date": after.get("answer_date") or ""})
 
 
 @app.route("/api/communication/<int:comm_id>", methods=["DELETE"])

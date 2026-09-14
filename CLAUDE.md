@@ -60,6 +60,7 @@ static/js/         common.js, form.js (자동완성, 시군구→시도, 010 포
 serve.py           운영 진입점 — waitress WSGI (개발용 app.run 대체)
 backup.py          자동 백업 — 기동 시 1회 + 매일 03시, 보관기간 경과분 정리
 homepage_inbox.py  홈페이지 문의 메일 브릿지 — IMAP 폴링 → communications(웹문의/in) 자동등록
+homepage_board.py  홈페이지 상담게시판(bokjurh.co.kr) 연동 — 공개 목록 폴링 → 인박스, 인박스 '답변' → 관리자 화면에 답변 등록
 Dockerfile         NAS Container Manager 배포용 이미지
 docker-compose.yml NAS 프로젝트 정의 (볼륨·재시작·헬스체크)
 bokju.db           SQLite (gitignore)
@@ -256,6 +257,20 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
   서버 코드를 못 건드리는 빌더는 웹훅 푸시가 불가하므로, 빌더의 '새 문의 관리자 메일 알림'을
   전용 메일함으로 받아 사내망 워커가 IMAP 폴링(`.env` IMAP_*)해 communications(웹문의/in)로 등록.
   아웃바운드 구조라 외부 포트 개방 불필요(역프록시보다 안전). 설정 없으면 조용히 비활성.
+- **홈페이지 상담게시판 직접 연동 (2026-09-15)** ([homepage_board.py](homepage_board.py)) — 병원 홈페이지
+  bokjurh.co.kr는 제작사 자체 PHP(카페24 호스팅)라 API·메일 알림이 없다. 공개 목록
+  `/sub/07_community/guide_01`(번호·제목·접수/답변완료·가린 이름·날짜)을 3분마다 읽어 새 글을
+  communications(웹문의/in, created_by=홈페이지 게시판)로 등록하고, `.env`의 `HOMEPAGE_ADMIN_ID/PW`로
+  관리자(`/adm/sub/counsel/counselV.php`)에 로그인해 이름·연락처·본문을 채운다(글은 비밀글이라 공개
+  화면에선 못 읽음). 매핑은 `homepage_posts`(idx↔comm_id, site_status, detail_ok). 대시보드 인박스의
+  **✎ 답변** 버튼 → `/api/homepage-board/<comm_id>`(원문+기본 문안) → `/reply`(POST) →
+  `AdminSession.reply()`가 `counselU.php`의 `group_idx/answer_idx`를 읽어 `counselUP.php`에 multipart로
+  올리고 상세 화면에 답변이 붙었는지 확인한 뒤 인박스 완료. 홈페이지 관리자에서 누가 직접 답변해
+  '답변완료'가 되면 다음 폴링에서 인박스도 자동 완료. 관리자 로그인이 깨져도 새 글 감지·알림은
+  공개 목록만으로 계속 된다(본문은 다음 주기에 보충). 최초 기동 시 이미 답변완료인 과거 글은
+  인박스에 쌓지 않고 매핑만 남긴다. 권한은 커뮤니케이션과 동일(sms 조회/등록). `HOMEPAGE_BOARD_ENABLED=0`로 끔.
+  화면 구조가 바뀌면 `parse_public_list/parse_admin_view/parse_admin_update_form`만 고치면 된다
+  (tests/test_homepage_board.py가 합성 HTML로 검증).
 - **인바운드 알림** — 새 문의(홈페이지·카카오)가 들어오면 로그인한 상담사 브라우저가
   `/api/inbound/alerts`를 폴링(1분)해 화면 토스트 + 브라우저 알림 + 상단 '대시보드' 배지로 통지.
   `models.open_inbound_count()` = 전역 배지, `_dashboard_inbound_bucket`로 채널 분류. 상담사가
