@@ -6321,6 +6321,52 @@ def api_admission_event_details(event_id):
     return jsonify({"ok": True})
 
 
+@app.route("/api/admission-event/<int:event_id>/update", methods=["POST"])
+@login_required
+def api_admission_event_update(event_id):
+    """입원 중 이벤트 내용 수정 — 상담 상세 표의 [수정]. 발생일·시각·의료기관·메모만 받는다.
+    유형은 못 바꾼다(외진 판정·복귀 흐름이 유형에 걸려 있다 — 틀렸으면 삭제 후 다시 등록)."""
+    ev = models.get_admission_event(event_id)
+    if not ev:
+        return jsonify({"error": "not found"}), 404
+    payload = request.get_json(silent=True) or {}
+    event_date = (payload.get("event_date") or "").strip() or None
+    if event_date:
+        try:
+            ed = datetime.strptime(event_date, "%Y-%m-%d").date()
+        except ValueError:
+            return jsonify({"error": "발생일 형식 오류 (YYYY-MM-DD)"}), 400
+        if ev.get("event_type") in models.AWAY_EVENT_TYPES:
+            if ed > date.today():
+                return jsonify({"error": "전원·외진일은 미래일 수 없습니다."}), 400
+            back = (ev.get("returned_at") or "")[:10]
+            if back and back < event_date:
+                return jsonify({"error": f"복귀일({back})보다 늦은 날짜로는 바꿀 수 없습니다."}), 400
+            exp = (ev.get("expected_return_date") or "")[:10]
+            if exp and exp < event_date:
+                return jsonify({"error": f"복귀 예정일({exp})보다 늦은 날짜로는 바꿀 수 없습니다."}), 400
+    event_time = _valid_time(payload.get("event_time"))
+    if payload.get("event_time") and not event_time:
+        return jsonify({"error": "이송 시각 형식 오류"}), 400
+    hospital = (payload.get("hospital") or "").strip()
+    memo = (payload.get("memo") or "").strip()
+    if len(hospital) > 200:
+        return jsonify({"error": "의료기관은 200자 이내로 입력하세요."}), 400
+    if len(memo) > 3000:
+        return jsonify({"error": "메모는 3000자 이내로 입력하세요."}), 400
+    try:
+        cid = models.update_admission_event(event_id, event_date=event_date, event_time=event_time,
+                                            hospital=hospital or None, memo=memo or None)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="update_admission_event", target_type="consultation", target_id=cid,
+        detail=f"{ev.get('event_type') or '이벤트'} 내용 수정 ({event_date or '일자 없음'})", ip=request.remote_addr,
+    )
+    return jsonify({"ok": True})
+
+
 @app.route("/api/admission-event/<int:event_id>", methods=["DELETE"])
 @login_required
 def api_admission_event_delete(event_id):

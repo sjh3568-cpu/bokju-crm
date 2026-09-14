@@ -327,7 +327,21 @@
                         {% endif %}
                     </td>
                     <td>{{ e.memo or '' }}</td>
-                    <td class="nowrap"><button type="button" class="btn btn-secondary ae-del" data-aevent="{{ e.id }}">삭제</button></td>
+                    <td class="nowrap"><button type="button" class="btn btn-secondary ae-edit" data-aevent="{{ e.id }}" title="발생일·시각·의료기관·메모 수정">수정</button> <button type="button" class="btn btn-secondary ae-del" data-aevent="{{ e.id }}">삭제</button></td>
+                </tr>
+                {# 한 줄 편집 행 — [수정]으로 펼친다. 유형은 바꾸지 않는다(외진 판정·복귀 흐름이 유형에 걸려 있음) #}
+                <tr class="ae-edit-row" hidden data-aevent="{{ e.id }}">
+                    <td colspan="6">
+                        <div class="ae-edit-line">
+                            <span class="ae-type ae-{{ {'응급전원':'emerg','모병원 외래치료':'visit','복귀':'back'}.get(e.event_type,'etc') }}">{{ e.event_type or '' }}</span>
+                            <label>발생일 <input type="date" class="ae-e-date" value="{{ e.event_date or '' }}"{% if _away %} max="{{ today_str }}"{% endif %}></label>
+                            <label>시각 <input type="time" class="ae-e-time" value="{{ (e.event_time or '')[:5] }}"></label>
+                            <label>의료기관 <input type="text" class="ae-e-hospital" value="{{ e.hospital or '' }}" maxlength="200" placeholder="이송·진료 기관"></label>
+                            <label class="ae-e-memo-l">메모 <input type="text" class="ae-e-memo" value="{{ e.memo or '' }}" maxlength="3000" placeholder="사유·경과 등"></label>
+                            <button type="button" class="btn btn-primary btn-sm ae-save" data-aevent="{{ e.id }}">저장</button>
+                            <button type="button" class="btn btn-secondary btn-sm ae-edit-cancel">취소</button>
+                        </div>
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -354,6 +368,14 @@
 .ae-type.ae-emerg { background:#fee2e2; color:#b91c1c; }
 .ae-type.ae-visit { background:#dbeafe; color:#1e40af; }
 .ae-type.ae-back  { background:#dcfce7; color:#166534; }
+.ae-edit-row[hidden] { display:none; }
+.ae-edit-row td { background:#f8fafc; padding:8px 10px; }
+.ae-edit-line { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; font-size:0.86em; }
+.ae-edit-line label { display:inline-flex; align-items:center; gap:4px; color:var(--text-light); white-space:nowrap; }
+.ae-edit-line input { padding:3px 6px; font:inherit; font-size:0.92em; border:1px solid var(--border); border-radius:6px; }
+.ae-edit-line .ae-e-hospital { width:180px; }
+.ae-edit-line .ae-e-memo-l { flex:1 1 260px; }
+.ae-edit-line .ae-e-memo { flex:1; min-width:180px; }
 .ae-type.ae-etc   { background:#f1f5f9; color:#475569; }
 /* 아직 복귀 기록이 없는 외진 — 행 자체를 눈에 띄게 */
 tr.ae-open { background:#fff7ed; }
@@ -445,6 +467,36 @@ tr.ae-open { background:#fff7ed; }
                 if (!r.ok) throw new Error(j.error || r.status);
                 location.reload();
             } catch (e) { btn.disabled = false; alert('복귀 취소 실패: ' + e.message); }
+        });
+    });
+    // [수정] — 같은 행 아래 한 줄 편집 행을 펼친다 / [저장] → /update / [취소]
+    document.querySelectorAll('.ae-edit').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const row = btn.closest('tr').nextElementSibling;
+            if (!row || !row.classList.contains('ae-edit-row')) return;
+            row.hidden = !row.hidden;
+            if (!row.hidden) row.querySelector('.ae-e-date')?.focus();
+        });
+    });
+    document.querySelectorAll('.ae-edit-cancel').forEach(btn => {
+        btn.addEventListener('click', () => { btn.closest('tr').hidden = true; });
+    });
+    document.querySelectorAll('.ae-save').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const row = btn.closest('tr');
+            const body = {
+                event_date: row.querySelector('.ae-e-date').value,
+                event_time: row.querySelector('.ae-e-time').value,
+                hospital: row.querySelector('.ae-e-hospital').value.trim(),
+                memo: row.querySelector('.ae-e-memo').value.trim(),
+            };
+            btn.disabled = true;
+            try {
+                const r = await fetch(`/api/admission-event/${btn.dataset.aevent}/update`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+                location.reload();
+            } catch (e) { alert('수정 실패: ' + e.message); btn.disabled = false; }
         });
     });
     document.querySelectorAll('.ae-del').forEach(btn => {

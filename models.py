@@ -6364,6 +6364,24 @@ def get_admission_event(event_id):
     return dict(row) if row else None
 
 
+def update_admission_event(event_id, *, event_date=None, event_time=None, hospital=None, memo=None):
+    """입원 중 이벤트 내용 수정(발생일·시각·의료기관·메모). 유형·복귀 상태는 여기서 바꾸지 않는다 —
+    외진 판정·복귀 흐름이 event_type / returned_at에 걸려 있어 그쪽 API(/return, /expected-return)로만 다룬다.
+    반환: consultation_id (감사 로그용)."""
+    conn = get_db()
+    row = conn.execute("SELECT consultation_id FROM admission_events WHERE id = ?", (event_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise ValueError("이벤트를 찾을 수 없습니다.")
+    conn.execute(
+        "UPDATE admission_events SET event_date = ?, event_time = ?, hospital = ?, memo = ? WHERE id = ?",
+        (event_date or None, event_time or None, hospital or None, memo or None, event_id),
+    )
+    conn.commit()
+    conn.close()
+    return row["consultation_id"]
+
+
 def delete_admission_event(event_id):
     conn = get_db()
     conn.execute("DELETE FROM admission_events WHERE id = ?", (event_id,))
