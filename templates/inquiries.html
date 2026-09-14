@@ -51,10 +51,12 @@
 
 {# ── 기간 집계 — 문의 → 상담 깔때기 ── #}
 <div class="iq-cards">
+    {# 왼쪽=아직 안 된 것 → 오른쪽=목표에 가까운 것. 문의 = 미처리 + 처리완료 + 상담등록 #}
     <div class="iq-card"><div class="iq-k">문의</div><div class="iq-v">{{ summary.total }}<small>건</small></div><div class="iq-s">{{ f.date_from }} ~ {{ f.date_to }}</div></div>
     <div class="iq-card iq-warn"><div class="iq-k">미처리</div><div class="iq-v">{{ summary.open }}<small>건</small></div><div class="iq-s">전화·답변 대기</div></div>
-    <div class="iq-card iq-good"><div class="iq-k">상담 등록</div><div class="iq-v">{{ summary.converted }}<small>건</small></div><div class="iq-s">전환율 {{ summary.rate }}%</div></div>
-    <div class="iq-card"><div class="iq-k">처리 완료(상담 미등록)</div><div class="iq-v">{{ summary.done_only }}<small>건</small></div><div class="iq-s">답변만 하고 끝난 문의 포함</div></div>
+    <div class="iq-card"><div class="iq-k">처리 완료 · 상담 미등록</div><div class="iq-v">{{ summary.done_only }}<small>건</small></div><div class="iq-s">답변만 하고 끝난 문의 포함</div></div>
+    <div class="iq-card iq-good"><div class="iq-k">상담 등록</div><div class="iq-v">{{ summary.converted }}<small>건</small></div><div class="iq-s">상담 전환율 {{ summary.rate }}% <span class="muted">(문의 대비)</span></div></div>
+    <div class="iq-card iq-good"><div class="iq-k">입원 완료</div><div class="iq-v">{{ summary.admitted }}<small>건</small></div><div class="iq-s">문의 대비 {{ summary.admit_rate }}% · 상담 대비 {{ summary.admit_rate_consult }}%{% if summary.admission_pending %}<br>입원예정 {{ summary.admission_pending }}건{% endif %}<br><span class="muted">입원은 문의보다 늦게 확정됩니다</span></div></div>
     <div class="iq-card"><div class="iq-k">평균 처리 시간</div><div class="iq-v">{% if summary.avg_hours is not none %}{{ summary.avg_hours }}<small>시간</small>{% else %}-{% endif %}</div><div class="iq-s">접수 → 처리 완료</div></div>
 </div>
 
@@ -62,12 +64,12 @@
     <div class="card">
         <h2 class="iq-h2">채널별 <span class="muted-sm">선택 기간</span></h2>
         <div class="tbl-wrap"><table class="tbl tbl-compact">
-            <thead><tr><th>채널</th><th class="r">문의</th><th class="r">미처리</th><th class="r">상담 등록</th><th class="r">전환율</th><th class="r">홈페이지 답변</th><th class="r">평균 처리</th></tr></thead>
+            <thead><tr><th>채널</th><th class="r">문의</th><th class="r">미처리</th><th class="r">처리완료</th><th class="r">상담 등록</th><th class="r">상담 전환</th><th class="r">입원</th><th class="r">입원 전환</th><th class="r">평균 처리</th></tr></thead>
             <tbody>
             {% for ch, b in summary.by_channel.items() %}
-            <tr><td>{{ channel_labels.get(ch, ch) }}</td><td class="r">{{ b.total }}</td><td class="r">{{ b.open }}</td><td class="r">{{ b.converted }}</td><td class="r">{{ b.rate }}%</td><td class="r">{{ b.answered }}</td><td class="r">{% if b.avg_hours is not none %}{{ b.avg_hours }}h{% else %}-{% endif %}</td></tr>
+            <tr><td>{{ channel_labels.get(ch, ch) }}</td><td class="r">{{ b.total }}</td><td class="r">{{ b.open }}</td><td class="r">{{ b.done_only }}</td><td class="r">{{ b.converted }}</td><td class="r">{{ b.rate }}%</td><td class="r">{{ b.admitted }}</td><td class="r">{{ b.admit_rate }}%</td><td class="r">{% if b.avg_hours is not none %}{{ b.avg_hours }}h{% else %}-{% endif %}</td></tr>
             {% else %}
-            <tr><td colspan="7" class="muted">선택 기간에 문의가 없습니다.</td></tr>
+            <tr><td colspan="9" class="muted">선택 기간에 문의가 없습니다.</td></tr>
             {% endfor %}
             </tbody>
         </table></div>
@@ -75,7 +77,7 @@
     <div class="card">
         <h2 class="iq-h2">월별 유입 <span class="muted-sm">최근 12개월 · 필터 무관</span></h2>
         <div class="tbl-wrap"><table class="tbl tbl-compact iq-monthly">
-            <thead><tr><th>월</th><th>문의</th><th class="r">건수</th><th class="r">상담 등록</th></tr></thead>
+            <thead><tr><th>월</th><th>문의</th><th class="r">건수</th><th class="r">상담 등록</th><th class="r">입원</th></tr></thead>
             <tbody>
             {% for m in monthly %}
             <tr>
@@ -86,6 +88,7 @@
                 </td>
                 <td class="r">{{ m.total }}</td>
                 <td class="r">{{ m.converted }}</td>
+                <td class="r">{{ m.admitted }}</td>
             </tr>
             {% endfor %}
             </tbody>
@@ -111,7 +114,7 @@
             <td class="iq-body"><div class="iq-sum">{{ r.summary or '' }}</div>{% if r.body %}<div class="iq-txt" title="{{ r.body }}">{{ r.body }}</div>{% endif %}</td>
             <td class="nowrap"><span class="iq-stage s-{{ r.stage }}">{{ r.stage }}</span></td>
             <td class="muted-sm">
-                {% if r.consultation_id %}<a href="/consult/{{ r.consultation_id }}">상담 #{{ r.consultation_id }}</a> · {{ r.consult_date or '' }}{% if r.counselor %} · {{ r.counselor }}{% endif %}{% if r.admission_status %}<br>{{ r.admission_status }}{% elif r.consult_result %}<br>{{ r.consult_result }}{% endif %}
+                {% if r.consultation_id %}<a href="/consult/{{ r.consultation_id }}">상담 #{{ r.consultation_id }}</a> · {{ r.consult_date or '' }}{% if r.counselor %} · {{ r.counselor }}{% endif %}{% if r.admitted %}<br><b class="iq-admit">입원완료</b>{% elif r.admission_status %}<br>{{ r.admission_status }}{% elif r.consult_result %}<br>{{ r.consult_result }}{% endif %}
                 {% elif r.stage == '처리완료' %}완료 {{ (r.resolved_local or '')[:16] }}{% endif %}
                 {% if r.answered %}<br>답변 {{ (r.answered_at or '')[:16] }}{% if r.answered_by %} · {{ r.answered_by }}{% endif %}{% elif r.homepage_idx and r.site_status == '답변완료' %}<br>홈페이지 답변완료{% endif %}
             </td>
@@ -141,19 +144,22 @@
 .filter-bar .field input,.filter-bar .field select{padding:3px 6px;font-size:.85em;border:1px solid var(--border);border-radius:4px;font-family:inherit}
 .filter-bar .date-range{display:flex;gap:4px;align-items:center;overflow:visible}.filter-bar .date-range input{width:145px}
 .iq-list .dash-action-cell a.btn-primary{color:#fff}   /* 표 안 링크 색이 버튼 글자색을 덮지 않게 */
-.iq-cards{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:12px 0}
+.iq-cards{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin:12px 0}
 .iq-card{border:1px solid var(--border);border-radius:12px;background:#fff;padding:12px 14px}
 .iq-card .iq-k{font-size:.78rem;font-weight:800;color:#5b6d63}.iq-card .iq-v{font-size:1.6rem;font-weight:850;letter-spacing:-.03em;color:#17251e;line-height:1.15}
-.iq-card .iq-v small{font-size:.8rem;font-weight:700;margin-left:2px;color:#6b7c72}.iq-card .iq-s{font-size:.74rem;color:#7a8a80;margin-top:2px}
+.iq-card .iq-v small{font-size:.8rem;font-weight:700;margin-left:2px;color:#6b7c72}.iq-card .iq-s{font-size:.74rem;color:#7a8a80;margin-top:2px;line-height:1.4}
 .iq-card.iq-warn .iq-v{color:#b45309}.iq-card.iq-good .iq-v{color:#15803d}
 .iq-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;align-items:start}
 .iq-h2{font-size:.98rem;margin:0 0 8px}.iq-h2 .muted-sm{font-weight:600}
 .tbl td.r,.tbl th.r{text-align:right}
+.iq-grid .tbl th,.iq-grid .tbl td{white-space:nowrap;padding-inline:8px}   /* 9열 표에서 '홈페이지'가 세로로 깨지지 않게 */
 .iq-bar-cell{width:45%}.iq-bar{height:12px;border-radius:6px;background:linear-gradient(90deg,#14b8a6,#0f766e);min-width:2px}
 .iq-list .iq-body{max-width:420px}.iq-sum{font-weight:700;font-size:.9em}.iq-txt{color:#5b6d63;font-size:.82em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:420px}
 .iq-stage{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.76em;font-weight:800}
 .iq-stage.s-미처리{background:#fef3c7;color:#92400e}.iq-stage.s-상담등록{background:#dcfce7;color:#166534}.iq-stage.s-처리완료{background:#e5e7eb;color:#374151}
+.iq-admit{color:#15803d}
 .iq-tel{font-size:.85em;text-decoration:none;color:var(--primary);font-weight:700}
+@media(max-width:1300px){.iq-cards{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:1100px){.iq-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.iq-grid{grid-template-columns:1fr}}
 </style>
 <script>

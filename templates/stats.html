@@ -106,6 +106,7 @@
 .consult-heat .c.u{background:#f1f3f5;color:var(--text-light)}
 .consult-heat .c.tot{background:transparent;font-weight:800;color:var(--text-light);height:22px}
 .consult-heat-note{margin:8px 0 0}
+#inbound-funnel td.r,#inbound-funnel th.r{text-align:right}
 </style>
 
 <div class="section-heading priority"><b>3</b><span>질환별 상담·입원 성과</span><small>질환군별 상담 건수, 입원 건수와 전환율</small></div>
@@ -127,6 +128,15 @@
             <div><span>경로 그룹 분포 · 항목을 선택하세요</span><div class="chart-box"><canvas id="chart-referral-type"></canvas></div></div>
             <div><span id="referral-detail-label">세부 경로 입원 전환율</span><div class="chart-box"><canvas id="chart-referral-performance"></canvas></div></div>
         </div>
+    </div>
+    <div class="card chart-card chart-card-wide print-primary" id="inbound-funnel-card">
+        <h3>채널 문의 → 상담 → 입원 <small>홈페이지·카카오톡 문의가 실제 상담·입원으로 이어진 비율 · <a href="/consultations/inquiries">문의 내역</a></small></h3>
+        {# 상담·입원 총계와 경쟁하는 숫자가 아니라 '채널 문의에서 이어진' 부분집합. 입원은 문의보다 늦게 확정되므로 최근 기간은 낮게 보인다. #}
+        <div class="tbl-wrap"><table class="tbl tbl-compact" id="inbound-funnel">
+            <thead><tr><th>채널</th><th class="r">문의</th><th class="r">상담 등록</th><th class="r">상담 전환</th><th class="r">입원 완료</th><th class="r">입원 전환(문의 대비)</th><th class="r">입원 전환(상담 대비)</th></tr></thead>
+            <tbody><tr><td colspan="7" class="muted">불러오는 중…</td></tr></tbody>
+        </table></div>
+        <p class="muted" style="font-size:.78em;margin:6px 0 0">문의 중 상담일지로 등록된 건이 '상담 등록', 그 상담이 입원완료된 건이 '입원 완료'입니다. 입원은 문의 후 몇 주 뒤에 확정되므로 이번 달만 보면 낮게 나옵니다.</p>
     </div>
 </div>
 
@@ -875,6 +885,17 @@
         makeDoughnut('chart-referral-type', referralItems, renderReferralDetail);
         if (referralItems.length) renderReferralDetail(referralItems[0].label);
         else makeRateBar('chart-referral-performance', [], '#16a34a');
+
+        // 채널 문의 → 상담 → 입원 깔때기 (채널별 + 합계)
+        const funnel = d.inbound_funnel || { channels: [], total: null };
+        const fBody = document.querySelector('#inbound-funnel tbody');
+        if (fBody) {
+            const esc = v => String(v ?? '').replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+            const row = (label, b, bold) => `<tr${bold ? ' style="font-weight:800"' : ''}><td>${esc(label)}</td><td class="r">${b.total}</td><td class="r">${b.converted}</td><td class="r">${b.rate}%</td><td class="r">${b.admitted}</td><td class="r">${b.admit_rate}%</td><td class="r">${b.admit_rate_consult}%</td></tr>`;
+            const rows = (funnel.channels || []).map(c => row(c.label, c, false));
+            if (rows.length && funnel.total) rows.push(row('합계', funnel.total, true));
+            fBody.innerHTML = rows.length ? rows.join('') : '<tr><td colspan="7" class="muted">선택 기간에 채널 문의가 없습니다.</td></tr>';
+        }
 
         const diseaseItems = (d.by_disease_group_performance || []).map(x => ({label:x.label, count:x.total}));
         const diseaseMap = d.by_disease_performance_by_group || {};

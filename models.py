@@ -6161,6 +6161,10 @@ def inquiry_rows(*, date_from=None, date_to=None, channel="", stage="", q="", li
         d["stage"] = _inquiry_stage(d)
         d["when"] = (d.get("occurred_at") or d.get("created_local") or "")[:16]
         d["answered"] = bool(d.get("answered_at"))
+        # 입원 여부 — 연결된 상담일지의 입원 진행. 퇴원해도 '입원완료' 표시는 유지되므로 과거 문의도 정확하다.
+        st = (d.get("admission_status") or "").strip()
+        d["admitted"] = st in ("입원완료", "퇴원완료")
+        d["admission_pending"] = st == "입원예정"
         out.append(d)
     if stage:
         out = [d for d in out if d["stage"] == stage]
@@ -6181,6 +6185,7 @@ def inquiry_summary(rows: list[dict]) -> dict:
                     hours.append(max(0.0, (b - a).total_seconds() / 3600))
                 except ValueError:
                     pass
+        admitted = sum(1 for r in items if r.get("admitted"))
         return {
             "total": n,
             "open": sum(1 for r in items if r["stage"] == "미처리"),
@@ -6188,6 +6193,10 @@ def inquiry_summary(rows: list[dict]) -> dict:
             "done_only": sum(1 for r in items if r["stage"] == "처리완료"),
             "answered": sum(1 for r in items if r.get("answered")),
             "rate": round(conv * 100 / n) if n else 0,
+            "admitted": admitted,
+            "admission_pending": sum(1 for r in items if r.get("admission_pending")),
+            "admit_rate": round(admitted * 100 / n) if n else 0,            # 문의 대비 — 채널의 최종 성과
+            "admit_rate_consult": round(admitted * 100 / conv) if conv else 0,   # 상담 대비 — 상담 품질
             "avg_hours": round(sum(hours) / len(hours), 1) if hours else None,
         }
     by_channel = {}
@@ -6203,8 +6212,9 @@ def inquiry_monthly(months: int = 12) -> list[dict]:
         """SELECT substr(COALESCE(m.occurred_at, datetime(m.created_at,'localtime')),1,7) AS ym,
                   COALESCE(m.channel,'기타') AS channel,
                   COUNT(*) AS n,
-                  SUM(CASE WHEN m.consultation_id IS NOT NULL THEN 1 ELSE 0 END) AS converted
-           FROM communications m
+                  SUM(CASE WHEN m.consultation_id IS NOT NULL THEN 1 ELSE 0 END) AS converted,
+                  SUM(CASE WHEN c.admission_status IN ('입원완료','퇴원완료') THEN 1 ELSE 0 END) AS admitted
+           FROM communications m LEFT JOIN consultations c ON c.id = m.consultation_id
            WHERE (m.direction = 'in' OR m.direction IS NULL)
              AND COALESCE(m.occurred_at, datetime(m.created_at,'localtime')) >= date('now','localtime','start of month', ?)
            GROUP BY ym, channel ORDER BY ym""", (f"-{max(0, months - 1)} months",)).fetchall()
@@ -6215,14 +6225,26 @@ def inquiry_monthly(months: int = 12) -> list[dict]:
         y, mo = today.year, today.month - i
         while mo <= 0:
             y -= 1; mo += 12
-        by_month[f"{y:04d}-{mo:02d}"] = {"ym": f"{y:04d}-{mo:02d}", "total": 0, "converted": 0, "channels": {}}
+        by_month[f"{y:04d}-{mo:02d}"] = {"ym": f"{y:04d}-{mo:02d}", "total": 0, "converted": 0, "admitted": 0, "channels": {}}
     for r in rows:
         m = by_month.get(r["ym"])
         if not m:
             continue
-        m["total"] += r["n"]; m["converted"] += r["converted"]
+        m["total"] += r["n"]; m["converted"] += r["converted"]; m["admitted"] += r["admitted"]
         m["channels"][r["channel"]] = r["n"]
     return list(by_month.values())
+
+
+def inbound_funnel(date_from=None, date_to=None) -> dict:
+    """통계 화면용 — 기간 내 채널 문의 → 상담 → 입원 깔때기(채널별 + 전체).
+    상담·입원 총계와 경쟁하는 숫자가 아니라 '채널 문의에서 이어진' 부분집합이다."""
+    rows = inquiry_rows(date_from=date_from, date_to=date_to, limit=100000)
+    summary = inquiry_summary(rows)
+    labels = {"웹문의": "홈페이지", "카카오": "카카오톡"}
+    channels = [{"channel": ch, "label": labels.get(ch, ch), **b}
+                for ch, b in sorted(summary["by_channel"].items(), key=lambda kv: -kv[1]["total"])]
+    total = {k: v for k, v in summary.items() if k != "by_channel"}
+    return {"channels": channels, "total": total}
 
 
 # ─── 홈페이지 상담게시판 ↔ 인박스 매핑 (homepage_board.py) ───

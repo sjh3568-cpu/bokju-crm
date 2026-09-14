@@ -76,6 +76,29 @@ class InquiryTests(unittest.TestCase):
         self.assertEqual(s["rate"], 33)
         self.assertEqual(s["by_channel"]["웹문의"]["total"], 2)
         self.assertEqual(s["by_channel"]["카카오"]["converted"], 1)
+        # 입원 — 연결 상담이 입원예정이면 아직 0, 입원완료로 바뀌면 1 (문의 대비 33%, 상담 대비 100%)
+        self.assertEqual((s["admitted"], s["admission_pending"]), (0, 1))
+        conn = models.get_db(); conn.execute("UPDATE consultations SET admission_status='입원완료'"); conn.commit(); conn.close()
+        s = models.inquiry_summary(models.inquiry_rows())
+        self.assertEqual((s["admitted"], s["admit_rate"], s["admit_rate_consult"]), (1, 33, 100))
+        self.assertEqual(s["by_channel"]["카카오"]["admitted"], 1)
+        self.assertEqual(models.inquiry_monthly(12)[-1]["admitted"], 1)
+        # 퇴원해도 입원완료로 센다
+        conn = models.get_db(); conn.execute("UPDATE consultations SET admission_status='퇴원완료'"); conn.commit(); conn.close()
+        self.assertEqual(models.inquiry_summary(models.inquiry_rows())["admitted"], 1)
+
+    def test_stats_json_includes_inbound_funnel(self):
+        conn = models.get_db(); conn.execute("UPDATE consultations SET admission_status='입원완료'"); conn.commit(); conn.close()
+        r = self.client.get('/api/stats.json?preset=this_month')
+        self.assertEqual(r.status_code, 200)
+        f = r.get_json()["inbound_funnel"]
+        self.assertEqual(f["total"]["total"], 3)
+        self.assertEqual(f["total"]["admitted"], 1)
+        by = {c["label"]: c for c in f["channels"]}
+        self.assertEqual(by["홈페이지"]["total"], 2)
+        self.assertEqual((by["카카오톡"]["converted"], by["카카오톡"]["admitted"], by["카카오톡"]["admit_rate_consult"]), (1, 1, 100))
+        html = self.client.get('/stats').get_data(as_text=True)
+        self.assertIn('id="inbound-funnel"', html)
 
     def test_monthly_trend_has_12_months_and_counts_this_month(self):
         m = models.inquiry_monthly(12)
@@ -95,7 +118,8 @@ class InquiryTests(unittest.TestCase):
         self.assertIn(f'href="/consult/new?comm_id={self.c_open}"', html)
         self.assertIn('id="hp-reply-dialog"', html)
         self.assertIn('tel:010-1111-2222', html)
-        self.assertIn('전환율 33%', html)
+        self.assertIn('상담 전환율 33%', html)
+        self.assertIn('입원 완료', html)
         # 단계 필터
         html2 = self.client.get('/consultations/inquiries?stage=상담등록').get_data(as_text=True)
         self.assertIn('상담 #', html2)

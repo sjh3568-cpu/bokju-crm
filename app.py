@@ -2869,6 +2869,8 @@ def stats_view():
 def api_stats():
     _, date_from, date_to = _stats_period_from_request()
     data = models.aggregate_stats(date_from, date_to)
+    # 채널 문의(홈페이지·카카오톡) → 상담 → 입원 깔때기 — 유입경로 섹션 옆에 표시
+    data["inbound_funnel"] = models.inbound_funnel(date_from, date_to)
     return jsonify(data)
 
 
