@@ -4931,18 +4931,6 @@ def ward_view():
         trend_summary = _trend_summary(daily_ratio_trend, monthly_ratio_trend)
         trend_flow = _trend_flow(trend_insight, admitted, today_d)
 
-    # 최근 퇴원도 명부 기준이다 — 상담의 '퇴원완료' 상태로는 한 건도 안 잡힌다.
-    # 상담이 붙은 회차는 그 상담의 퇴원 사유·담당자를 함께 싣는다.
-    discharged = models.recent_discharges(limit=100)
-    con_by_episode = {sp["episode_id"]: trend_rows.get(sp["consultation_id"])
-                      for sp in spans if sp["consultation_id"]}
-    for d in discharged:
-        con = con_by_episode.get(d["episode_id"]) or {}
-        d["id"] = con.get("id")
-        d["discharge_date"] = d["discharged_at"][:10]
-        d["discharge_destination"] = con.get("discharge_destination")
-        d["discharge_reason"] = con.get("discharge_reason")
-        d["counselor"] = con.get("counselor")
     doctor_options = sorted({c.get("attending_doctor") for c in rows
                              if (c.get("attending_doctor") or "").strip()})
 
@@ -5009,7 +4997,6 @@ def ward_view():
         trend_month_count=len(monthly_ratio_trend), trend_insight=trend_insight,
         trend_flow=trend_flow,
         trend_summary=trend_summary,
-        discharged=discharged,
         subtab=subtab, away_report=away_report, away_candidates=admitted, moves=moves_report,
         blacklisted=blacklisted,
         bed_waiting=bed_waiting,

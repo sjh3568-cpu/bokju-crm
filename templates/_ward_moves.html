@@ -4,11 +4,17 @@
     <div class="wd-sec-head"><h2>입원·퇴원 이력</h2><span class="muted-sm">원무 명부 기준 실제 입원일·퇴원일 · 기간 {{ f.date_from|krdate }} ~ {{ f.date_to|krdate }} ({{ s.days }}일)</span></div>
 </section>
 <div class="wd-kpi mv-kpi">
-    <div class="wd-k"><span class="wd-k-n">{{ s.admissions }}<small>명</small></span><span class="wd-k-l">입원</span></div>
-    <div class="wd-k"><span class="wd-k-n">{{ s.discharges }}<small>명</small></span><span class="wd-k-l">퇴원</span></div>
-    <div class="wd-k {% if s.net < 0 %}warn{% endif %}"><span class="wd-k-n">{{ '%+d'|format(s.net) }}<small>명</small></span><span class="wd-k-l">순증감 (입원 − 퇴원)</span></div>
-    <div class="wd-k"><span class="wd-k-n">{% if s.avg_stay is not none %}{{ s.avg_stay }}<small>일</small>{% else %}-{% endif %}</span><span class="wd-k-l">퇴원자 평균 재원일{% if s.long_stay %}<span class="mv-k-sub">1년 이상 재원 후 퇴원 {{ s.long_stay }}명</span>{% endif %}</span></div>
-    <div class="wd-k mv-k-wide"><span class="wd-k-l">입원 수가 구분</span><span class="mv-care">{% for label, n in s.care_in %}<b>{{ label }}</b> {{ n }}{% if not loop.last %} · {% endif %}{% else %}-{% endfor %}</span></div>
+    <div class="wd-k mv-k-in"><span class="wd-k-n"><i class="mv-k-ico">▲</i>{{ s.admissions }}<small>명</small></span><span class="wd-k-l">입원 <span class="mv-k-sub">기간 내 입원한 환자</span></span></div>
+    <div class="wd-k mv-k-out"><span class="wd-k-n"><i class="mv-k-ico">▼</i>{{ s.discharges }}<small>명</small></span><span class="wd-k-l">퇴원 <span class="mv-k-sub">기간 내 퇴원한 환자</span></span></div>
+    <div class="wd-k mv-k-net {% if s.net > 0 %}plus{% elif s.net < 0 %}minus{% else %}flat{% endif %}"><span class="wd-k-n">{{ '%+d'|format(s.net) }}<small>명</small></span><span class="wd-k-l">순증감 <span class="mv-k-sub">입원 {{ s.admissions }} − 퇴원 {{ s.discharges }} = 재원 {% if s.net > 0 %}증가{% elif s.net < 0 %}감소{% else %}변동 없음{% endif %}</span></span></div>
+    <div class="wd-k mv-k-stay"><span class="wd-k-n">{% if s.avg_stay is not none %}{{ s.avg_stay }}<small>일</small>{% else %}-{% endif %}</span><span class="wd-k-l">퇴원자 평균 재원일 <span class="mv-k-sub">{% if s.long_stay %}1년 이상 재원 후 퇴원 <b class="mv-long">{{ s.long_stay }}명</b>{% elif s.discharges %}퇴원 {{ s.discharges }}명 기준{% else %}기간 내 퇴원 없음{% endif %}</span></span></div>
+    <div class="wd-k mv-k-care">
+        <div class="mv-care-grid">
+            {% for c in s.care_cells %}<div class="mv-care-cell mv-care-{{ c.cls }}{% if not c.n %} zero{% endif %}"><span class="mv-care-lbl"><i></i>{{ c.label }}</span><span class="mv-care-num">{{ c.n }}<small>명</small></span></div>{% endfor %}
+        </div>
+        <div class="mv-care-bar" aria-hidden="true">{% for c in s.care_cells if c.n %}<i class="mv-care-{{ c.cls }}" style="flex:{{ c.n }}" title="{{ c.label }} {{ c.n }}명 ({{ c.pct }}%)"></i>{% endfor %}</div>
+        <span class="wd-k-l mv-care-foot">입원 수가 구분 <span class="mv-k-sub">· 입원 {{ s.admissions }}명 기준</span></span>
+    </div>
 </div>
 
 <section class="card wd-sec">
@@ -16,7 +22,7 @@
         <h3>명부 <span class="wd-n">{{ moves.rows|length }}건</span></h3>
         <div class="mv-toolbar-right">
             <div class="mv-kind" role="group" aria-label="구분">
-                {% for k, label in moves.kinds.items() %}<a href="{{ url_for('ward_view', **dict(request.args.to_dict(), tab='moves', kind=k)) }}" class="{% if f.kind == k %}on{% endif %}">{{ label }}</a>{% endfor %}
+                {% for k, label in moves.kinds.items() %}<a href="{{ url_for('ward_view', **dict(request.args.to_dict(), tab='moves', kind=k)) }}" class="mv-kind-{{ k or 'all' }} {% if f.kind == k %}on{% endif %}">{{ label }}</a>{% endfor %}
             </div>
             <a class="btn btn-secondary btn-sm" href="{{ url_for('ward_moves.moves_xlsx', **request.args.to_dict()) }}" title="현재 필터 그대로 엑셀 저장">⬇ 엑셀</a>
         </div>
@@ -25,8 +31,8 @@
         <input type="hidden" name="tab" value="moves"><input type="hidden" name="kind" value="{{ f.kind }}">
         <div class="mv-filter-row">
             <span class="mv-range"><input type="date" name="date_from" value="{{ f.date_from }}" aria-label="시작일"><i>~</i><input type="date" name="date_to" value="{{ f.date_to }}" aria-label="종료일"></span>
-            <select name="doctor" aria-label="주치의"><option value="">주치의 전체</option>{% for d in moves.options.doctors %}<option {% if f.doctor == d %}selected{% endif %}>{{ d }}</option>{% endfor %}</select>
             <select name="ward" aria-label="병동"><option value="">병동 전체</option>{% for w in moves.options.wards %}<option {% if f.ward == w %}selected{% endif %}>{{ w }}</option>{% endfor %}</select>
+            <select name="doctor" aria-label="주치의"><option value="">주치의 전체</option>{% for d in moves.options.doctors %}<option {% if f.doctor == d %}selected{% endif %}>{{ d }}</option>{% endfor %}</select>
             <select name="care" aria-label="수가 구분"><option value="">수가 전체</option>{% for c in moves.options.cares %}<option {% if f.care == c %}selected{% endif %}>{{ c }}</option>{% endfor %}</select>
             <select name="counselor" aria-label="담당 상담사"><option value="">담당 전체</option>{% for c in moves.options.counselors %}<option {% if f.counselor == c %}selected{% endif %}>{{ c }}</option>{% endfor %}</select>
             <input name="destination" value="{{ f.destination }}" placeholder="퇴원 장소 (귀가·전원·요양원…)" size="16">
@@ -36,50 +42,95 @@
             <a class="btn btn-secondary btn-sm" href="/ward?tab=moves">초기화</a>
         </div>
     </form>
-    <div class="tbl-wrap">
+    <div class="tbl-wrap mv-wrap">
         <table class="tbl wd-tbl mv-tbl">
-            <thead><tr><th>날짜</th><th>구분</th><th>환자</th><th>병동·호실</th><th>주치의</th><th>수가</th><th>진단</th><th>입원일</th><th>재원일수</th><th>퇴원 장소</th><th>퇴원 사유</th><th>담당</th></tr></thead>
+            <colgroup>
+                <col class="c-no"><col class="c-date"><col class="c-kind"><col class="c-pt"><col class="c-room"><col class="c-doc"><col class="c-care"><col class="c-dx">
+                <col class="c-adm"><col class="c-dis"><col class="c-stay"><col class="c-dest"><col class="c-reason"><col class="c-who">
+            </colgroup>
+            <thead><tr><th>연번</th><th>날짜</th><th>구분</th><th>환자 (성별/나이)</th><th>호실</th><th>주치의</th><th>수가</th><th>진단</th><th>입원일</th><th>퇴원일</th><th>재원일수</th><th>퇴원 장소</th><th>퇴원 사유</th><th>담당</th></tr></thead>
             <tbody>
             {% for r in moves.rows %}
             <tr class="mv-{{ r.kind }}">
-                <td class="nowrap">{{ r.date|krdate_wd }}</td>
-                <td class="nowrap"><span class="mv-badge mv-badge-{{ r.kind }}">{{ moves.kinds[r.kind] }}</span></td>
-                <td class="nowrap">{% if r.consultation_id %}<a href="/consult/{{ r.consultation_id }}">{{ r.patient_name }}</a>{% else %}<a href="/patients/{{ r.patient_id }}">{{ r.patient_name }}</a>{% endif %} <span class="muted-sm">{% if r.age is not none %}{{ r.age }}세{% endif %}{% if r.gender == 'M' %}·남{% elif r.gender == 'F' %}·여{% endif %}</span></td>
-                <td class="nowrap">{{ r.ward or '' }}{% if r.ward and r.room %} · {% endif %}{{ r.room or '' }}{% if not r.ward and not r.room %}-{% endif %}</td>
-                <td class="nowrap">{{ r.doctor or '-' }}</td>
-                <td class="nowrap">{{ r.care or '-' }}</td>
-                <td class="mv-ell" title="{{ r.dx }}">{{ r.dx or '-' }}</td>
-                <td class="nowrap muted-sm">{{ r.admitted_at|krdate if r.admitted_at else '-' }}</td>
-                <td class="nowrap">{% if r.kind == 'out' and r.stay_days %}<b>{{ r.stay_days }}</b>일{% elif r.stay_days %}<span class="muted-sm">{{ r.stay_days }}일째</span>{% else %}-{% endif %}</td>
-                <td class="mv-ell">{% if r.kind == 'out' %}{{ r.destination or '-' }}{% else %}<span class="muted-sm">—</span>{% endif %}</td>
-                <td class="mv-ell" title="{{ r.reason }}">{% if r.kind == 'out' %}{{ r.reason or '-' }}{% else %}<span class="muted-sm">—</span>{% endif %}</td>
-                <td class="nowrap">{{ r.counselor or '-' }}</td>
+                <td class="mv-no">{{ loop.index }}</td>
+                <td class="mv-date">{{ r.date|krdate_wd_full }}</td>
+                <td><span class="mv-badge mv-badge-{{ r.kind }}">{{ moves.kinds[r.kind] }}</span></td>
+                <td class="mv-pt" title="{{ r.patient_name }}{% if r.gender or r.age is not none %} ({% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% endif %}{% if r.gender and r.age is not none %}/{% endif %}{% if r.age is not none %}{{ r.age }}{% endif %}){% endif %}">{% if r.consultation_id %}<a href="/consult/{{ r.consultation_id }}">{{ r.patient_name }}</a>{% else %}<a href="/patients/{{ r.patient_id }}">{{ r.patient_name }}</a>{% endif %}{% if r.gender or r.age is not none %} <span class="muted-sm">({% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% endif %}{% if r.gender and r.age is not none %}/{% endif %}{% if r.age is not none %}{{ r.age }}{% endif %})</span>{% endif %}</td>
+                <td title="{{ r.ward }}{% if r.ward and r.room %} {% endif %}{{ r.room }}">{{ r.room or '-' }}</td>
+                <td title="{{ r.doctor }}">{{ r.doctor or '-' }}</td>
+                <td>{% if r.care %}<span class="mv-care-tag mv-care-{% if r.care == '회복기' %}rec{% elif r.care == '비회복기' %}non{% else %}etc{% endif %}">{{ r.care }}</span>{% else %}-{% endif %}</td>
+                <td title="{{ r.dx }}">{{ r.dx or '-' }}</td>
+                <td class="mv-date {% if r.kind == 'in' %}mv-hl{% endif %}">{{ r.admitted_at|krdate if r.admitted_at else '-' }}</td>
+                <td class="mv-date {% if r.kind == 'out' %}mv-hl{% endif %}">{% if r.discharged_at %}{{ r.discharged_at|krdate }}{% else %}<span class="muted-sm">재원 중</span>{% endif %}</td>
+                <td>{% if r.kind == 'out' and r.stay_days %}<b>{{ r.stay_days }}</b>일{% elif r.stay_days %}<span class="muted-sm">{{ r.stay_days }}일째</span>{% else %}-{% endif %}</td>
+                <td title="{{ r.destination }}">{% if r.kind == 'out' %}{{ r.destination or '-' }}{% else %}<span class="muted-sm">—</span>{% endif %}</td>
+                <td title="{{ r.reason }}">{% if r.kind == 'out' %}{{ r.reason or '-' }}{% else %}<span class="muted-sm">—</span>{% endif %}</td>
+                <td title="{{ r.counselor }}">{{ r.counselor or '-' }}</td>
             </tr>
-            {% else %}<tr><td colspan="12" class="empty">이 기간에 {{ moves.kinds[f.kind] }} 기록이 없습니다.</td></tr>{% endfor %}
+            {% else %}<tr><td colspan="14" class="empty">이 기간에 {{ moves.kinds[f.kind] }} 기록이 없습니다.</td></tr>{% endfor %}
             </tbody>
         </table>
     </div>
 </section>
 <style>
-.mv-kpi{grid-template-columns:repeat(5,minmax(0,1fr))}
-.mv-k-wide .mv-care{font-size:.9em;color:#334155;margin-top:2px}
-.mv-k-sub{display:block;font-size:.78em;color:#64748b;font-weight:600}
-/* 툴바·필터 — 외진환자관리 탭과 같은 모양(그쪽 CSS는 그 탭에만 실려 있어 여기서 다시 정의) */
+/* 상단 카드 — 입원(초록)·퇴원(파랑)·순증감(±에 따라)·평균 재원일·수가 구성 */
+.wd-kpi.mv-kpi{grid-template-columns:repeat(4,minmax(0,1fr)) minmax(0,1.5fr)}
+.mv-kpi .wd-k-l{white-space:normal}
+.mv-k-sub{display:block;font-size:.82em;color:#64748b;font-weight:600;margin-top:2px}
+.mv-k-ico{font-style:normal;font-size:.55em;vertical-align:middle;margin-right:4px;position:relative;top:-3px}
+.mv-k-in{background:#f0fdf4;border-color:#86efac}.mv-k-in .wd-k-n{color:#15803d}
+.mv-k-out{background:#eff6ff;border-color:#93c5fd}.mv-k-out .wd-k-n{color:#1d4ed8}
+.mv-k-net.plus{background:#f0fdf4;border-color:#86efac}.mv-k-net.plus .wd-k-n{color:#15803d}
+.mv-k-net.minus{background:#fff7ed;border-color:#fdba74}.mv-k-net.minus .wd-k-n{color:#c2410c}
+.mv-k-net.flat .wd-k-n{color:#475569}
+.mv-k-stay .wd-k-n{color:#334155}.mv-long{color:#c2410c}
+/* 수가 구분 카드 — 글자(구분)와 숫자를 위아래로 나누고, 구분마다 색점·색 숫자 */
+.mv-k-care{gap:6px}
+.mv-care-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));gap:4px}
+.mv-care-foot{margin-top:2px}.mv-care-foot .mv-k-sub{display:inline;margin:0}
+.mv-care-cell{display:flex;flex-direction:column;gap:1px;padding:4px 6px;border-radius:8px;background:#f8fafc;border:1px solid #e2e8f0;min-width:0}
+.mv-care-lbl{display:flex;align-items:center;gap:4px;font-size:.72em;font-weight:700;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mv-care-lbl i{flex:0 0 7px;width:7px;height:7px;border-radius:50%;background:#94a3b8}
+.mv-care-num{font-size:1.35em;font-weight:800;line-height:1.1;color:#334155;font-variant-numeric:tabular-nums}
+.mv-care-num small{font-size:.55em;font-weight:700;color:#64748b;margin-left:1px}
+.mv-care-cell.mv-care-rec{background:#f0fdfa;border-color:#99f6e4}.mv-care-rec .mv-care-lbl i{background:#0d9488}.mv-care-rec .mv-care-num{color:#0f766e}
+.mv-care-cell.mv-care-non{background:#fffbeb;border-color:#fde68a}.mv-care-non .mv-care-lbl i{background:#d97706}.mv-care-non .mv-care-num{color:#b45309}
+.mv-care-cell.mv-care-etc{background:#f5f3ff;border-color:#ddd6fe}.mv-care-etc .mv-care-lbl i{background:#7c3aed}.mv-care-etc .mv-care-num{color:#6d28d9}
+.mv-care-cell.mv-care-none .mv-care-lbl i{background:#94a3b8}.mv-care-none .mv-care-num{color:#64748b}
+.mv-care-cell.zero{opacity:.55}
+.mv-care-bar{display:flex;height:5px;border-radius:999px;overflow:hidden;background:#e2e8f0;gap:1px}
+.mv-care-bar i{display:block;min-width:2px}
+.mv-care-bar i.mv-care-rec{background:#14b8a6}.mv-care-bar i.mv-care-non{background:#f59e0b}.mv-care-bar i.mv-care-etc{background:#8b5cf6}.mv-care-bar i.mv-care-none{background:#94a3b8}
+/* 표 안의 수가 태그 */
+.mv-care-tag.mv-care-rec{background:#ccfbf1;color:#0f766e}.mv-care-tag.mv-care-non{background:#fef3c7;color:#b45309}.mv-care-tag.mv-care-etc{background:#ede9fe;color:#6d28d9}
+/* 툴바·필터 — 외진 환자 탭과 같은 모양(그쪽 CSS는 그 탭에만 실려 있어 여기서 다시 정의) */
 .mv-toolbar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
 .mv-toolbar h3{margin:0}.mv-toolbar-right{display:flex;align-items:center;gap:8px}
 .mv-kind{display:inline-flex;border:1px solid var(--border);border-radius:999px;overflow:hidden;background:#fff}
 .mv-kind a{padding:5px 14px;font-size:.85em;font-weight:700;color:#475569;text-decoration:none}
 .mv-kind a.on{background:var(--primary);color:#fff}
+.mv-kind a.mv-kind-in.on{background:#15803d}.mv-kind a.mv-kind-out.on{background:#1d4ed8}
 .mv-filter{margin:6px 0 10px}
 .mv-filter-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 .mv-filter-row input,.mv-filter-row select{padding:5px 7px;border:1px solid var(--border);border-radius:6px;font:inherit;font-size:.88em;background:#fff}
 .mv-range{display:inline-flex;align-items:center;gap:3px}.mv-range i{font-style:normal;color:#94a3b8}
 .mv-q{flex:1 1 160px;min-width:130px}
-/* 표 — 한 줄 유지, 긴 글은 말줄임 */
-.mv-tbl th,.mv-tbl td{white-space:nowrap;font-size:.84em;padding:6px 8px}
-.mv-tbl td.mv-ell{max-width:220px;overflow:hidden;text-overflow:ellipsis}
-.mv-badge{display:inline-block;padding:1px 8px;border-radius:6px;font-size:.92em;font-weight:800;white-space:nowrap}
-.mv-badge-in{background:#dcfce7;color:#166534}.mv-badge-out{background:#e2e8f0;color:#334155}
-.mv-tbl tr.mv-in td:first-child{border-left:3px solid #22c55e}.mv-tbl tr.mv-out td:first-child{border-left:3px solid #94a3b8}
-@media (max-width:900px){.mv-kpi{grid-template-columns:repeat(2,minmax(0,1fr))}}
+/* 표 — 가로 스크롤 없이 한 화면: 열 너비 고정, 긴 글은 말줄임(마우스를 올리면 전체) */
+.mv-wrap{overflow:visible}
+.mv-tbl{table-layout:fixed;width:100%}
+.wd-tbl.mv-tbl th,.wd-tbl.mv-tbl td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.76em;padding:6px 4px}
+.mv-tbl td.mv-no{color:#94a3b8;text-align:right;font-variant-numeric:tabular-nums}
+.mv-tbl td.mv-date{font-variant-numeric:tabular-nums}
+.mv-tbl td.mv-hl{font-weight:700;color:#0f172a}
+.mv-tbl td.mv-pt a{font-weight:700}
+.mv-tbl col.c-no{width:40px}.mv-tbl col.c-date{width:104px}.mv-tbl col.c-kind{width:46px}.mv-tbl col.c-pt{width:100px}
+.mv-tbl col.c-room{width:58px}.mv-tbl col.c-doc{width:48px}.mv-tbl col.c-care{width:64px}.mv-tbl col.c-dx{width:150px}
+.mv-tbl col.c-adm{width:94px}.mv-tbl col.c-dis{width:94px}.mv-tbl col.c-stay{width:58px}.mv-tbl col.c-who{width:48px}
+/* 진단·퇴원 장소·퇴원 사유는 남는 폭을 나눠 가진다 */
+.mv-badge{display:inline-block;padding:1px 7px;border-radius:6px;font-size:.92em;font-weight:800;white-space:nowrap}
+.mv-badge-in{background:#dcfce7;color:#166534}.mv-badge-out{background:#dbeafe;color:#1e40af}
+.mv-care-tag{display:inline-block;padding:0 6px;border-radius:5px;font-size:.92em;font-weight:700}
+.mv-tbl tr.mv-in td:first-child{border-left:3px solid #22c55e}.mv-tbl tr.mv-out td:first-child{border-left:3px solid #3b82f6}
+@media (max-width:1100px){.mv-wrap{overflow-x:auto}.mv-tbl{table-layout:auto;min-width:1080px}}
+@media (max-width:900px){.wd-kpi.mv-kpi{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>

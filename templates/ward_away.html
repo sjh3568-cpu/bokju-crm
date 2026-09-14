@@ -3,7 +3,7 @@
 {% set can_edit = P.get('ward', 0) >= 2 %}
 {% set base_args = request.args.to_dict() %}
 <section class="card wd-sec away-head">
-    <div class="wd-sec-head"><h2>외진환자관리</h2><span class="muted-sm">전원·외래치료 기록과 복귀 현황</span></div>
+    <div class="wd-sec-head"><h2>외진 환자</h2><span class="muted-sm">전원·외래치료 기록과 복귀 현황</span></div>
 </section>
 <div class="wd-kpi away-kpi">
     <div class="wd-k"><span class="wd-k-n">{{ report.stats.patients }}<small>명</small></span><span class="wd-k-l">외진·전원 환자 · {{ report.stats.events }}건</span></div>

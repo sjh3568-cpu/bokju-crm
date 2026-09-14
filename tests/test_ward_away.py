@@ -66,7 +66,7 @@ class AwayManagementTests(unittest.TestCase):
         page = self.client.get('/ward?tab=away')
         self.assertEqual(page.status_code, 200)
         html = page.get_data(as_text=True)
-        for label in ('외진환자관리', '퇴원일(전원일)', '테스트병명', '복귀 예정 저장', '70', '&lt;script&gt;'):
+        for label in ('외진 환자', '퇴원일(전원일)', '테스트병명', '복귀 예정 저장', '70', '&lt;script&gt;'):
             self.assertIn(label, html)
         self.assertNotIn('<script>사유</script>', html)
         with main.app.test_request_context('/ward?tab=away&away_status=returned&away_q=환자1'):

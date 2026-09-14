@@ -45,6 +45,7 @@ class WardMovesTests(unittest.TestCase):
         self.assertEqual((out['stay_days'], out['destination'], out['reason'], out['counselor'], out['care']), (112, '자택 귀가', '치료 종료', '박세연', '비회복기'))
         self.assertEqual((rep['summary']['admissions'], rep['summary']['discharges'], rep['summary']['net'], rep['summary']['avg_stay']), (1, 1, 0, 112.0))
         self.assertEqual(rep['options']['doctors'], ['이성범', '정기천'])
+        self.assertEqual([(c['label'], c['n']) for c in rep['summary']['care_cells']], [('회복기', 1), ('비회복기', 0), ('구분 없음', 0)])
         self.assertEqual([r['patient_name'] for r in ward_moves.report({'date_from': '2026-06-01', 'date_to': '2026-06-30', 'kind': 'in'})['rows']], ['입원자'])
         self.assertEqual([r['patient_name'] for r in ward_moves.report({'date_from': '2026-06-01', 'date_to': '2026-06-30', 'doctor': '정기천'})['rows']], ['퇴원자'])
         self.assertEqual([r['patient_name'] for r in ward_moves.report({'date_from': '2026-06-01', 'date_to': '2026-06-30', 'destination': '귀가'})['rows']], ['퇴원자'])
@@ -60,6 +61,13 @@ class WardMovesTests(unittest.TestCase):
         page = self.c.get('/ward?tab=moves&date_from=2026-06-01&date_to=2026-06-30').get_data(as_text=True)
         self.assertIn('입원·퇴원 이력', page); self.assertIn('퇴원자', page); self.assertIn('자택 귀가', page); self.assertIn('순증감', page)
         self.assertNotIn('오래전', page)
+        # 표: 연번·연도 붙은 날짜·환자 (성별/나이)·호실만·퇴원일 열
+        self.assertIn('<th>연번</th><th>날짜</th>', page); self.assertIn('<th>퇴원일</th>', page)
+        self.assertIn('<td class="mv-no">1</td>', page); self.assertIn('2026-06-20(토)', page)
+        self.assertIn('(여/86)', page); self.assertIn('>502</td>', page); self.assertNotIn('5병동 · 502', page)
+        self.assertIn('재원 중', page)   # 입원 행의 퇴원일
+        self.assertIn('<option value="">병동 전체</option>', page)
+        self.assertEqual([r['patient_name'] for r in ward_moves.report({'date_from': '2026-06-01', 'date_to': '2026-06-30', 'ward': '5병동'})['rows']], ['퇴원자'])
         status = self.c.get('/ward').get_data(as_text=True)
         self.assertIn('href="/ward?tab=moves"', status)
         self.assertNotIn('<th>보호자</th>', status.split('id="sec-away"')[1].split('</table>')[0])   # 외진 중 표에서 보호자 열 제거

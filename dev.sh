@@ -32,6 +32,7 @@ done
 
 sleep 2
 echo "서버를 켰습니다 (코드 수정 시 자동 반영)."
-echo "  이 PC에서:   http://127.0.0.1:${PORT}"
-echo "  브라우저 주소: http://${WSL_IP}:${PORT}"
+echo "  브라우저 주소: http://localhost:${PORT}   ← 이 주소로 여세요"
+echo "  (http://${WSL_IP}:${PORT} 도 열리지만, 크롬이 IP 주소 사이트를 '안전하지 않음'으로 보고"
+echo "   엑셀·CSV 다운로드를 '안전하지 않은 다운로드 링크'로 실패시킵니다. localhost는 예외라 정상 저장됩니다.)"
 echo "  로그:         tail -f server.log"

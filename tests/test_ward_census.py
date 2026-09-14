@@ -80,8 +80,8 @@ class WardCensusTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
         self.assertIn('<span class="wd-k-n">2</span>', html)  # 총 입원 환자 = 2
-        # 재원 목록은 '최근 퇴원환자 관리' 앞까지다 — 퇴원자는 그 아래에만 나와야 한다
-        roster = html.split('id="sec-discharged"')[0]
+        # 재원 목록은 '입원일 미확정' 앞까지다 — 퇴원자는 재원 현황에 나오지 않는다(입원·퇴원 이력 탭으로 이동)
+        roster = html.split('id="sec-pending"')[0]
         self.assertIn("재원환자", roster)
         self.assertIn("명부환자", roster)
         self.assertNotIn("이미퇴원한사람", roster)   # 명부가 퇴원이라 재원에서 빠진다
@@ -117,8 +117,12 @@ class WardCensusTests(unittest.TestCase):
         rows = models.recent_discharges()
         self.assertEqual([(r["patient_name"], r["discharged_at"]) for r in rows],
                          [("이미퇴원한사람", "2024-05-01")])
+        # 재원 현황에는 '최근 퇴원' 카드가 없다 — 퇴원 조회는 입원·퇴원 이력 탭
         html = self.client.get("/ward?view=list").get_data(as_text=True)
-        self.assertIn("최근 퇴원 <span class=\"wd-n\">1</span>", html)
+        self.assertNotIn("최근 퇴원", html)
+        self.assertNotIn("이미퇴원한사람", html)
+        moves = self.client.get("/ward?tab=moves&kind=out&date_from=2024-05-01&date_to=2024-05-31").get_data(as_text=True)
+        self.assertIn("이미퇴원한사람", moves)
 
     def test_ratio_trend_denominator_is_the_roster_census(self):
         """추이도 회차로 복원한다. 상담 기준이면 퇴원이 안 빠져 인원이 불어나기만 했다."""

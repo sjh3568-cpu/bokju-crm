@@ -139,10 +139,23 @@ def _match(r: dict, f: dict) -> bool:
     if f["reason"] and f["reason"].casefold() not in (r["reason"] or "").casefold():
         return False
     if f["q"]:
-        hay = " ".join(str(r.get(k) or "") for k in ("patient_name", "dx", "room", "destination", "reason", "doctor")).casefold()
+        hay = " ".join(str(r.get(k) or "") for k in ("patient_name", "dx", "ward", "room", "destination", "reason", "doctor")).casefold()
         if f["q"].casefold() not in hay:
             return False
     return True
+
+
+def _care_cells(care_in: dict, total: int) -> list[dict]:
+    """수가 구분 카드용 — 회복기·비회복기는 0이어도 항상 앞에, 그 외 값·구분 없음은 뒤에."""
+    order = [("회복기", "rec"), ("비회복기", "non")]
+    cells = [{"label": l, "n": care_in.get(l, 0), "cls": c} for l, c in order]
+    for label in sorted(care_in):
+        if label not in ("회복기", "비회복기", "구분 없음"):
+            cells.append({"label": label, "n": care_in[label], "cls": "etc"})
+    cells.append({"label": "구분 없음", "n": care_in.get("구분 없음", 0), "cls": "none"})
+    for c in cells:
+        c["pct"] = round(c["n"] * 100 / total) if total else 0
+    return cells
 
 
 def report(args) -> dict:
@@ -160,6 +173,7 @@ def report(args) -> dict:
         "avg_stay": round(sum(stays) / len(stays), 1) if stays else None,
         "long_stay": sum(1 for s in stays if s >= 365),
         "care_in": sorted(care_in.items(), key=lambda kv: -kv[1]),
+        "care_cells": _care_cells(care_in, len(ins)),
         "days": (date.fromisoformat(f["date_to"]) - date.fromisoformat(f["date_from"])).days + 1,
     }
     def opts(key):
@@ -178,10 +192,10 @@ def moves_xlsx():
     from openpyxl.utils import get_column_letter
     rep = report(request.args)
     wb = Workbook(); ws = wb.active; ws.title = "입원·퇴원 이력"
-    headers = ["날짜", "구분", "환자", "성별", "나이", "병동", "호실", "주치의", "수가", "진단", "입원일", "퇴원일", "재원일수", "퇴원 장소", "퇴원 사유", "담당 상담사"]
+    headers = ["연번", "날짜", "구분", "환자", "성별", "나이", "병동", "호실", "주치의", "수가", "진단", "입원일", "퇴원일", "재원일수", "퇴원 장소", "퇴원 사유", "담당 상담사"]
     ws.append(headers)
-    for r in rep["rows"]:
-        ws.append([r["date"], KINDS[r["kind"]], r["patient_name"], {"M": "남", "F": "여"}.get(r["gender"], ""),
+    for i, r in enumerate(rep["rows"], 1):
+        ws.append([i, r["date"], KINDS[r["kind"]], r["patient_name"], {"M": "남", "F": "여"}.get(r["gender"], ""),
                    r["age"] if r["age"] is not None else "", r["ward"], r["room"], r["doctor"], r["care"], r["dx"],
                    r["admitted_at"], r["discharged_at"], r["stay_days"] or "", r["destination"], r["reason"], r["counselor"]])
     for i, h in enumerate(headers, 1):
