@@ -205,8 +205,13 @@
         {% endif %}
     </div>
 {% if trend_flow %}{% set tf = trend_flow %}
-    <div class="wd-flow {% if tf.ok %}ok{% else %}warn{% endif %}">
-        <div class="wd-sec-head"><h3>📅 입·퇴원 D-30 반영 추이</h3><span class="muted-sm">입원예정 상담 + 퇴원 예정 D-30 + 회복기 종료 · 오늘부터 {{ tf.horizon }}일</span></div>
+    <details class="wd-flow {% if tf.ok %}ok{% else %}warn{% endif %}" id="wd-flow-details">
+        <summary class="wd-flow-summary">
+            <span class="wd-flow-title">📅 입·퇴원 D-30 반영 추이</span>
+            <span class="wd-flow-brief">{{ tf.horizon }}일 후 예상 <b>{{ tf.end.ratio|pct2 }}%</b> · 입원 {{ tf.sum.in_total }} · 퇴원 {{ tf.sum.out_total }} · 종료 {{ tf.sum.rec_end }}{% if tf.cross %} · <b class="wd-insight-cross">{{ tf.cross.label }} 40% 아래</b>{% endif %}</span>
+            <span class="muted-sm wd-flow-hint">펼치기 ▾</span>
+        </summary>
+        <p class="muted-sm wd-flow-desc">입원예정 상담 + 퇴원 예정 D-30 + 회복기 종료 · 오늘부터 {{ tf.horizon }}일</p>
         <div class="wd-kpi wd-trend-kpi wd-flow-kpi">
             <div class="wd-k"><span class="wd-k-n">{{ tf.sum.in_total }}<small>명</small></span><span class="wd-k-l">입원 예정 <small>회복기 {{ tf.sum.in_rec }} · 비회복기 {{ tf.sum.in_non }}{% if tf.sum.in_unknown %} · 미판정 {{ tf.sum.in_unknown }}{% endif %}</small></span></div>
             <div class="wd-k"><span class="wd-k-n">{{ tf.sum.out_total }}<small>명</small></span><span class="wd-k-l">퇴원 예정 D-30 <small>회복기 {{ tf.sum.out_rec }} · 비회복기 {{ tf.sum.out_non }}{% if tf.sum.out_unknown %} · 미판정 {{ tf.sum.out_unknown }}{% endif %}</small></span></div>
@@ -254,7 +259,7 @@
                 {% endif %}
             </div>
         </div>
-    </div>
+    </details>
 {% endif %}
 {% else %}
     <p class="muted-sm">오늘 기준 회복기 판정이 가능한 재원 환자가 없어 40% 기준선 인사이트를 낼 수 없습니다. 원무 입퇴원 명부를 올리면 표시됩니다.</p>
@@ -838,7 +843,14 @@
 .wd-chart-legend i.line { width:16px; height:3px; border-radius:2px; }
 .wd-flow { border:1px solid #e2e8f0; border-left:4px solid #0ea5e9; border-radius:8px; background:#f0f9ff; padding:10px 14px; margin:0 0 12px; }
 .wd-flow.warn { border-left-color:#f59e0b; background:#fffbeb; }
-.wd-flow .wd-sec-head { margin-bottom:6px; }
+.wd-flow > summary { list-style:none; cursor:pointer; display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 12px; }
+.wd-flow > summary::-webkit-details-marker { display:none; }
+.wd-flow-title { font-weight:700; font-size:1.02em; color:#0f172a; }
+.wd-flow-brief { font-size:.85em; color:#334155; }
+.wd-flow-brief b { color:#0369a1; }
+.wd-flow.warn .wd-flow-brief b { color:#b45309; }
+.wd-flow-hint { margin-left:auto; }
+.wd-flow-desc { margin:4px 0 8px; }
 .wd-flow-kpi { margin:0 0 10px; }
 .wd-flow-grid { grid-template-columns:1fr; }
 .wd-flow-kpi .wd-k-l { white-space:normal; overflow:visible; text-overflow:clip; }
@@ -1091,11 +1103,14 @@
         for (let v=0; v<=cTop; v+=step) el('text',{x:right+6,y:yc(v)+4,'text-anchor':'start',fill:'#94a3b8','font-size':11},v+'명');
         const bw = Math.max(1, Math.min(28, slot*0.7));
         if (flow) {
+            // 있는 막대만 날짜 중앙에 모아 그린다 — 3칸 고정 배치면 막대 하나짜리 날은 날짜 라벨에서 비껴 보인다.
             const gw = bw/3;
             data.forEach((d,i) => {
-                [[d.in_total,'#34d399'],[d.out_total,'#fb923c'],[d.rec_end,'#fbbf24']].forEach(([v,color],j) => {
-                    if (!v) return; const h=(bottom-top)*v/cTop;
-                    el('rect',{x:x(i)-bw/2+gw*j,y:bottom-h,width:gw,height:h,fill:color,rx:1});
+                const bars = [[d.in_total,'#34d399'],[d.out_total,'#fb923c'],[d.rec_end,'#fbbf24']].filter(([v]) => v);
+                const start = x(i) - gw*bars.length/2;
+                bars.forEach(([v,color],j) => {
+                    const h=(bottom-top)*v/cTop;
+                    el('rect',{x:start+gw*j,y:bottom-h,width:gw,height:h,fill:color,rx:1});
                 });
             });
         } else {
@@ -1112,6 +1127,9 @@
         const lineColor = forecast ? '#0ea5e9' : '#16a34a';
         el('polyline',{points:data.map((d,i)=>`${x(i)},${y(d.ratio)}`).join(' '),fill:'none',stroke:lineColor,'stroke-width':3,'stroke-linecap':'round','stroke-linejoin':'round','stroke-dasharray':forecast?'8 5':''});
         const labelEvery = Math.max(1,Math.ceil(n/10));
+        // 마지막 날짜는 항상 적되, 바로 앞 정기 라벨이 너무 가까우면 그쪽을 건너뛴다.
+        const showLabel = i => i===n-1 || (i%labelEvery===0 && (n-1-i) >= labelEvery/2);
+        el('line',{x1:left,y1:bottom,x2:right,y2:bottom,stroke:'#cbd5e1','stroke-width':1});
         data.forEach((d,i) => {
             const dot=el('circle',{cx:x(i),cy:y(d.ratio),r:3.5,fill:'#fff',stroke:forecast?'#0369a1':'#15803d','stroke-width':2});
             const title=document.createElementNS(NS,'title');
@@ -1120,12 +1138,23 @@
                 ? `${d.date}: 예상 ${pct}% (회복기 ${d.recovery}/${d.known}명) · 입원 ${d.in_total} · 퇴원 ${d.out_total} · 회복기 종료 ${d.rec_end}`
                 : `${d.date}: ${pct}% (회복기 ${d.recovery}/${d.known}명 · 재원 ${d.total}명)`;
             dot.appendChild(title);
-            if (i%labelEvery===0 || i===n-1) {
+            if (showLabel(i)) {
+                el('line',{x1:x(i),y1:bottom,x2:x(i),y2:bottom+5,stroke:'#94a3b8','stroke-width':1});
                 el('text',{x:x(i),y:242,'text-anchor':'middle',fill:'#64748b','font-size':11},d.label);
                 el('text',{x:x(i),y:y(d.ratio)-7,'text-anchor':'middle',fill:forecast?'#0369a1':'#166534','font-size':10,'font-weight':700},pct+'%');
             }
         });
     });
+
+    // 입·퇴원 D-30 섹션 — 평상시 접어 두고, 펼친 상태는 이 브라우저에 기억한다
+    const flowDetails = document.getElementById('wd-flow-details');
+    if (flowDetails) {
+        try { if (localStorage.getItem('wd-flow-open') === '1') flowDetails.open = true; } catch (e) {}
+        const hint = flowDetails.querySelector('.wd-flow-hint');
+        const sync = () => { if (hint) hint.textContent = flowDetails.open ? '접기 ▴' : '펼치기 ▾'; };
+        flowDetails.addEventListener('toggle', () => { try { localStorage.setItem('wd-flow-open', flowDetails.open ? '1' : '0'); } catch (e) {} sync(); });
+        sync();
+    }
 
     // 가정 계산기 — 회복기/비회복기 입·퇴원 인원을 넣으면 비율을 바로 보여준다
     const whatif = document.querySelector('.wd-whatif');
