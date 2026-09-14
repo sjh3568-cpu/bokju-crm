@@ -1259,6 +1259,14 @@ body.has-sidebar.sidebar-collapsed { --sbw:70px; }
 .sidebar .account-menu > div { left:0; right:auto; top:auto; bottom:calc(100% + 8px); }
 .sidebar .role-chip { margin-left:auto; }
 
+/* 접힘 상태에서 마우스를 올리면 잠깐 펼쳐 보기(peek) — 본문은 70px 그대로 두고 메뉴만 위에 덮는다.
+   본문을 밀지 않으므로 상담목록 표가 출렁이지 않는다. 접힘 규칙은 body 클래스가 .sidebar-collapsed → .sidebar-peek 로
+   바뀌는 것으로 자연히 풀리고, 여기서는 폭·겹침만 정한다. */
+body.has-sidebar.sidebar-peek { --sbw:70px; }
+.sidebar-peek .sidebar { position:fixed; left:0; top:0; width:244px; height:100vh; z-index:300; box-shadow:10px 0 28px rgba(15,23,42,.14); }
+.sidebar-peek .sidebar-collapse { transform:rotate(180deg); }   /* 논리상 아직 접힘 — ⟩ = 고정(계속 펼침) */
+.sidebar-peek #sidebar-tools { width:244px; }
+
 /* 접힘(아이콘만) — 데스크톱 */
 .sidebar-collapsed .sidebar { padding:12px 8px 14px; }
 .sidebar-collapsed .sidebar .logo span, .sidebar-collapsed .sidebar-head .logo { padding:4px 0; }

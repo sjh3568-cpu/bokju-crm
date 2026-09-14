@@ -538,7 +538,19 @@
         const collapsed=wideListPage?true:(stored==='collapsed');
         body.classList.toggle('sidebar-collapsed',collapsed);
         function setCollapsed(v,persist){body.classList.toggle('sidebar-collapsed',v);if(persist&&!wideListPage){try{localStorage.setItem(KEY,v?'collapsed':'open');}catch(e){}}}
-        collapseBtn?.addEventListener('click',()=>setCollapsed(!body.classList.contains('sidebar-collapsed'),true));
+        // ── hover 펼쳐 보기(peek): 접힌 채로 커서가 사이드바에 150ms 머물면 본문 위로 덮어 펼치고, 떠나면 바로 접는다.
+        // 스쳐 지나갈 때 튀어나오지 않게 지연을 두고, 접을 때는 지연 없이. 데스크톱(hover 가능)에서만. ⟨ 버튼은 그대로 '고정'.
+        const canHover=window.matchMedia('(min-width:1024px) and (hover:hover)');
+        let peekTimer=null;
+        const peeking=()=>body.classList.contains('sidebar-peek');
+        function startPeek(){peekTimer=null;if(!canHover.matches||!body.classList.contains('sidebar-collapsed'))return;body.classList.remove('sidebar-collapsed');body.classList.add('sidebar-peek');collapseBtn?.setAttribute('title','메뉴 고정 (계속 펼쳐 두기)');}
+        function endPeek(){clearTimeout(peekTimer);peekTimer=null;if(!peeking())return;body.classList.remove('sidebar-peek');body.classList.add('sidebar-collapsed');collapseBtn?.setAttribute('title','메뉴 접기/펼치기');}
+        side.addEventListener('mouseenter',()=>{if(!body.classList.contains('sidebar-collapsed')||peeking())return;clearTimeout(peekTimer);peekTimer=setTimeout(startPeek,150);});
+        side.addEventListener('mouseleave',endPeek);
+        collapseBtn?.addEventListener('click',()=>{
+            if(peeking()){body.classList.remove('sidebar-peek');setCollapsed(false,true);collapseBtn.setAttribute('title','메뉴 접기/펼치기');return;}   // peek 중 ⟩ = 펼침 고정
+            setCollapsed(!body.classList.contains('sidebar-collapsed'),true);
+        });
         // 계산기·할 일·분류체계 — 사이드바 레이아웃에서는 좌측 하단(사이드바 발치)에 상시 펼침, 좁은 화면은 우하단 플로팅.
         const tools=document.getElementById('sidebar-tools'), wide=window.matchMedia('(min-width:1024px)');
         function placeTools(){
