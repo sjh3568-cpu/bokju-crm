@@ -2,16 +2,25 @@
 {# 여러 명이 띄워놓고 보는 현황 화면 — 30초마다 자동 새로고침 #}
 {% block body_attrs %} data-autorefresh="30"{% endblock %}
 {% macro admission_table(rows, limit=None) %}
-{# 대시보드 반 칸(≈760px)에 스크롤 없이 들어가야 해서 13개 항목을 8칸에 두 줄로 묶는다:
-   일시(일자/시간) · 상태 · 환자(이름/성별·나이·보험) · 병명/발병일 · 병실/회복기 · 담당(상담사/주치의) · 기타 · 처리 #}
+{# 대시보드 반 칸(1920px 화면 ≈755px)에 한 줄로. 13개 항목을 9칸에 넣는다:
+   일시 · 상태 · 환자(이름 성별/나이 보험약칭) · 병명 · 발병일 · 병실·회복기 · 담당(상담사·주치의) · 기타 · 처리
+   colgroup 폭 + table-layout:fixed 라 어떤 값이 와도 가로 스크롤이 생기지 않는다 — 병명·기타가 말줄임(전체는 툴팁).
+   1500px 이하(반 칸 ≈515px)에서는 CSS가 발병일·기타 열을 숨기고 <small>을 아래 줄로 내린다. #}
+{% set ins_abbr = {'건강보험': '건보', '의료급여': '급여', '보호1종': '보호1', '보호2종': '보호2',
+                   '차상위 1종': '차상1', '차상위 2종': '차상2', '장기요양': '장기', '암등록': '암'} %}
 <div class="tbl-wrap">
     <table class="tbl dash-table dash-adm-tbl"{% if limit %} data-limit="{{ limit }}"{% endif %}>
+        <colgroup>
+            <col class="c-when"><col class="c-state"><col class="c-who"><col class="c-dx"><col class="c-onset">
+            <col class="c-room"><col class="c-staff"><col class="c-note"><col class="c-act">
+        </colgroup>
         <thead>
             <tr>
                 <th>일시</th>
                 <th>상태</th>
                 <th>환자</th>
-                <th>병명 · 발병일</th>
+                <th>병명</th>
+                <th>발병일</th>
                 <th>병실 · 회복기</th>
                 <th>담당</th>
                 <th>기타</th>
@@ -22,37 +31,31 @@
             {% for r in rows %}
             {% set rec = r|recovery_status %}
             <tr>
-                <td class="nowrap dash-adm-when" title="{{ r.admission_display_date|krdate }}">
-                    <b>{{ r.admission_display_date|krdate_short_wd }}</b>
-                    <small>{{ r.planned_admission_time or '시간 미정' }}</small>
+                <td class="dash-adm-when" title="{{ r.admission_display_date|krdate }}{% if r.planned_admission_time %} {{ r.planned_admission_time }}{% endif %}">
+                    <b>{{ (r.admission_display_date|krdate_short_wd)[3:] }}</b><small>{{ r.planned_admission_time or '-' }}</small>
                 </td>
-                <td class="nowrap dash-adm-state">
-                    {% if r.admission_kind == 'return' %}<span class="badge {% if r.admission_bucket == 'completed' %}adm-completed{% else %}adm-planned{% endif %} adm-return" title="{{ r.other_note }}">{{ r.admission_bucket_label }}</span>
-                    {% elif r.admission_bucket == 'completed' %}<span class="badge adm-completed">입원완료</span>
-                    {% else %}<span class="badge adm-planned">입원예정</span>{% endif %}
+                <td class="dash-adm-state">
+                    {% if r.admission_kind == 'return' %}<span class="badge {% if r.admission_bucket == 'completed' %}adm-completed{% else %}adm-planned{% endif %} adm-return" title="{{ r.admission_bucket_label }}{% if r.other_note %} — {{ r.other_note }}{% endif %}">{{ r.admission_bucket_label }}</span>
+                    {% elif r.admission_bucket == 'completed' %}<span class="badge adm-completed" title="입원완료">완료</span>
+                    {% else %}<span class="badge adm-planned" title="입원예정">예정</span>{% endif %}
                 </td>
-                <td class="dash-adm-who">
-                    {% if r.blacklist %}<span class="bl-mark">블랙</span> {% endif %}
-                    <a href="/consult/{{ r.id }}">{{ r.patient_name }}</a>
-                    <small>{% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% else %}-{% endif %}/{% if r.patient_age is not none %}{{ r.patient_age }}{% else %}-{% endif %}{% if r.insurance_type %} · {{ r.insurance_type }}{% endif %}</small>
+                <td class="dash-adm-who" title="{{ r.patient_name }} ({% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% else %}-{% endif %}/{% if r.patient_age is not none %}{{ r.patient_age }}세{% else %}-{% endif %}){% if r.insurance_type %} · {{ r.insurance_type }}{% endif %}">
+                    {% if r.blacklist %}<span class="bl-mark">블랙</span> {% endif %}<a href="/consult/{{ r.id }}">{{ r.patient_name }}</a><small>{% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% else %}-{% endif %}/{% if r.patient_age is not none %}{{ r.patient_age }}{% else %}-{% endif %}{% if r.insurance_type %} <i class="dash-ins">{{ ins_abbr.get(r.insurance_type, r.insurance_type[:2]) }}</i>{% endif %}</small>
                 </td>
-                <td class="dash-adm-dx" title="{{ r.admission_disease_summary }}{% if r.disease_onset %} · 발병 {{ r.disease_onset }}{% endif %}">
-                    <span class="dash-dx">{{ r.admission_disease_summary or '-' }}</span>
-                    {% if r.disease_onset %}<small>발병 {{ r.disease_onset|krdate_short }}</small>{% endif %}
-                </td>
-                <td class="nowrap dash-adm-room">
+                <td class="dash-dx" title="{{ r.admission_disease_summary }}{% if r.disease_onset %} · 발병 {{ r.disease_onset }}{% endif %}">{{ r.admission_disease_summary or '-' }}</td>
+                <td class="dash-adm-onset" title="발병일">{{ r.disease_onset|krdate_short if r.disease_onset else '-' }}</td>
+                <td class="dash-adm-room">
                     <b>{{ r.room_number or '-' }}</b>
                     {% if rec.label == '회복기' %}<span class="badge rh-yes">회복기{% if rec.source == 'auto' %}*{% endif %}</span>
                     {% elif rec.label == '비회복기' %}<span class="badge rh-no">비회복기{% if rec.source == 'auto' %}*{% endif %}</span>
                     {% elif rec.label %}<span class="badge badge-pending">{{ rec.label }}</span>
-                    {% else %}<small class="muted">회복기 -</small>{% endif %}
+                    {% else %}<small class="muted">-</small>{% endif %}
                 </td>
-                <td class="nowrap dash-adm-staff" title="상담사 {{ r.counselor or '-' }} · 주치의 {{ r.attending_doctor or '-' }}">
-                    <span>{{ r.counselor or '-' }}</span>
-                    <small>{{ r.attending_doctor|doctor_short if r.attending_doctor else '-' }}</small>
+                <td class="dash-adm-staff" title="상담사 {{ r.counselor or '-' }} · 주치의 {{ r.attending_doctor or '-' }}">
+                    {{ r.counselor or '-' }}<small>{{ r.attending_doctor|doctor_short if r.attending_doctor else '-' }}</small>
                 </td>
-                <td class="dash-note" title="{{ r.other_note }}">{{ r.other_note or '-' }}</td>
-                <td class="nowrap dash-action-cell">
+                <td class="dash-note" title="{{ r.other_note or '기타 없음' }}">{% if r.other_note %}📝{% else %}-{% endif %}</td>
+                <td class="dash-action-cell">
                     {% if r.admission_kind == 'return' %}
                     {% if r.admission_bucket == 'planned' %}
                     <button type="button" class="btn btn-primary btn-xs adm-return-btn"
@@ -420,6 +423,7 @@
         </a>
         <a class="kc{% if ws.has_roster and not ws.recovery_ratio_ok %} crit{% endif %}" href="/ward?tab=trend">
             <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.2 15.9A10 10 0 1 1 8 2.8"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg></span>
+            {% if mx.ratio and mx.ratio.spark %}<svg data-spark="{{ mx.ratio.spark|join(',') }}" aria-hidden="true"><title>최근 7일 회복기 비율(%)</title></svg>{% endif %}
             <span class="l">회복기 비율</span>
             <span class="v"><b class="num">{% if ws.recovery_ratio is not none %}{{ ws.recovery_ratio|pct2 }}{% else %}–{% endif %}</b><small>%</small>{% if ws.recovery_ratio is not none %}{% if ws.recovery_ratio_ok %}<span class="d ok">✓ 기준 40%</span>{% else %}<span class="d dn">⚠ 40% 미만</span>{% endif %}{% endif %}</span>
             <span class="s">{% if ws.recovery is not none %}회복기 <b>{{ ws.recovery }}/{{ ws.admitted }}</b>{% if rp %} · 7일 후 <b>{{ rp.ratio|pct2 }}%</b>{% if rp.margin >= 0 %} · 여유 <b>{{ rp.margin }}명</b>{% endif %}{% endif %}{% else %}명부 필요 — 원무 입퇴원 명부를 올리면 표시됩니다{% endif %}</span>
@@ -492,7 +496,7 @@
                     <span class="beds">
                         {% if w.capacity %}{% if w.free <= 0 %}<b class="num full">만석</b>{% else %}<b class="num">가용 {{ w.free }}</b>{% endif %}{% endif %}
                         {% if w.rooms_known %}
-                            <i class="m">남 {{ w.free_m }}</i><i class="f">여 {{ w.free_f }}</i>{% if w.free_open %}<i class="o">빈방 {{ w.free_open }}</i>{% endif %}{% if w.free_unknown %}<i class="u">미확인 {{ w.free_unknown }}</i>{% endif %}{% if w.no_room %}<i class="u" title="명부에 병실이 없는 재원">병실 미기재 {{ w.no_room }}</i>{% endif %}
+                            <i class="m">남 {{ w.free_m }}</i><i class="f">여 {{ w.free_f }}</i>{% if w.free_open %}<i class="o" title="아무도 없는 병실 {{ w.free_rooms }}개 · 그 안의 병상 {{ w.free_open }}개 (남녀 무관)">빈 병실 {{ w.free_rooms }}<em>·{{ w.free_open }}병상</em></i>{% endif %}{% if w.free_unknown %}<i class="u">미확인 {{ w.free_unknown }}</i>{% endif %}{% if w.no_room %}<i class="u" title="명부에 병실이 없는 재원">병실 미기재 {{ w.no_room }}</i>{% endif %}
                         {% else %}
                             <em>재원 남 {{ w.male }} · 여 {{ w.female }}</em>
                         {% endif %}
@@ -525,11 +529,11 @@
 <div class="card" id="due-card">
             <div class="dash-section-head">
                 <h3>기한 임박 <small class="muted-sm">회복기→비회복기 전환 30일 전 · 보호자에게 치료시간·비용 변경 안내</small></h3>
-                <div class="due-tabs" role="tablist">
+            </div>
+            <div class="due-tabs aq-tabs due-tabs-row" role="tablist" aria-label="기한 임박 구분">
                     <button type="button" class="due-tab active" data-due="recovery" aria-pressed="true">회복기 전환 D-30 <b class="num">{{ summary.recovery_transition_due or 0 }}</b></button>
                     <button type="button" class="due-tab" data-due="discharge" aria-pressed="false">퇴원 예정 <b class="num">{{ summary.discharge_pending or 0 }}</b>{% if summary.discharge_mandatory %} <em>필수 {{ summary.discharge_mandatory }}</em>{% endif %}</button>
                 </div>
-            </div>
             <div class="due-panel active" data-due-panel="recovery">
 <div id="recovery-transition">
         {% if recovery_transition_due %}

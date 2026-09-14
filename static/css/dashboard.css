@@ -273,42 +273,55 @@
 .page-dashboard .dash-grid2 > .card > .dash-subsection .tbl-wrap { margin: 0; }
 .page-dashboard .dash-grid2 .dash-subhead strong { font-size: .9rem; }
 @media (max-width: 1100px) { .page-dashboard .dash-grid2 { grid-template-columns: 1fr; grid-auto-rows: auto; } }
-/* 입원 환자 현황 — 대시보드 반 칸(1920px 화면에서 ≈760px, 1440px에서 ≈540px)에 스크롤 없이.
-   13개 항목을 8칸에 두 줄로 묶었다(매크로 admission_table). 열: 1 일시 · 2 상태 · 3 환자 · 4 병명/발병일 ·
-   5 병실/회복기 · 6 담당 · 7 기타 · 8 처리. 병명·기타만 줄바꿈으로 양보하고 나머지는 한 줄 고정. */
-.page-dashboard .dash-adm-tbl { width: 100%; table-layout: auto; }
-.page-dashboard .dash-adm-tbl th, .page-dashboard .dash-adm-tbl td { padding: 5px 6px; font-size: .78rem; line-height: 1.25; vertical-align: middle; }
-.page-dashboard .dash-adm-tbl th { white-space: nowrap; }
-.page-dashboard .dash-adm-tbl td:first-child, .page-dashboard .dash-adm-tbl th:first-child { padding-left: 10px; }
-.page-dashboard .dash-adm-tbl td:last-child, .page-dashboard .dash-adm-tbl th:last-child { padding-right: 10px; }
-/* 두 줄 칸 — 위 줄이 주 정보, 아래 줄(small)이 보조 정보 */
-.page-dashboard .dash-adm-tbl td small { display: block; font-size: .86em; color: var(--dmuted); white-space: nowrap; }
+/* 입원 환자 현황 — 대시보드 반 칸(1920px 화면 ≈755px)에 한 줄로. 9칸, table-layout:fixed + colgroup 폭이라
+   어떤 값이 와도 가로 스크롤이 안 생긴다. 열: 1 일시 · 2 상태 · 3 환자 · 4 병명 · 5 발병일 · 6 병실/회복기 ·
+   7 담당 · 8 기타 · 9 처리. 병명·기타는 남는 폭을 나눠 쓰고 넘치면 말줄임(전체는 툴팁). */
+.page-dashboard .dash-adm-tbl { width: 100%; table-layout: fixed; }
+.page-dashboard .dash-adm-tbl col.c-when { width: 106px; }   /* '09.14(월) 10:30' */
+.page-dashboard .dash-adm-tbl col.c-state { width: 44px; }
+.page-dashboard .dash-adm-tbl col.c-who { width: 114px; }  /* '김영희 여/78 건보' */
+.page-dashboard .dash-adm-tbl col.c-onset { width: 58px; }
+.page-dashboard .dash-adm-tbl col.c-room { width: 102px; }   /* '1004호 비회복기' */
+.page-dashboard .dash-adm-tbl col.c-staff { width: 102px; } /* '김민 이성범(RM1)' */
+.page-dashboard .dash-adm-tbl col.c-note { width: 30px; }   /* 기타는 메모 아이콘만(내용은 툴팁) — 남는 폭은 병명에 */
+.page-dashboard .dash-adm-tbl col.c-act { width: 108px; }
+.page-dashboard .dash-adm-tbl th, .page-dashboard .dash-adm-tbl td { padding: 6px 4px; font-size: .76rem; line-height: 1.3;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+.page-dashboard .dash-adm-tbl td:first-child, .page-dashboard .dash-adm-tbl th:first-child { padding-left: 8px; }
+.page-dashboard .dash-adm-tbl td:last-child, .page-dashboard .dash-adm-tbl th:last-child { padding-right: 8px; }
+/* 보조 정보(<small>)는 넓을 때 같은 줄에 붙고, 좁을 때 아래 줄로 내려간다 */
+.page-dashboard .dash-adm-tbl td small { font-size: .88em; color: var(--dmuted); margin-left: 4px; }
 .page-dashboard .dash-adm-tbl .dash-adm-when b { font-weight: 700; }
-.page-dashboard .dash-adm-tbl .dash-adm-who a { white-space: nowrap; }
-.page-dashboard .dash-adm-tbl .dash-adm-room .badge { display: inline-block; margin-top: 2px; }
-.page-dashboard .dash-adm-tbl .badge { padding: 1px 6px; font-size: .72rem; }
-/* 병명·기타: 폭이 모자라면 두 줄까지 접고 그 이상은 말줄임 (전체는 툴팁) */
-.page-dashboard .dash-adm-tbl .dash-dx, .page-dashboard .dash-adm-tbl .dash-note { max-width: none; white-space: normal;
-    overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
-.page-dashboard .dash-adm-tbl .dash-adm-dx { min-width: 96px; }
-.page-dashboard .dash-adm-tbl .dash-note { min-width: 60px; color: var(--dmuted); }
-/* 처리: 완료 / 취소·보류 — 좁으면 두 줄로 */
-.page-dashboard .dash-adm-tbl .dash-action-cell { white-space: normal; max-width: 92px; }
-.page-dashboard .dash-adm-tbl .dash-action-cell .btn-xs { padding: 2px 6px; margin: 0 2px 2px 0; }
+.page-dashboard .dash-adm-tbl .dash-ins { font-style: normal; font-size: .92em; padding: 0 4px; border-radius: 5px; background: var(--dgrid, #eef2f0); color: var(--dtext); }
+.page-dashboard .dash-adm-tbl .badge { padding: 1px 4px; font-size: .66rem; }
+.page-dashboard .dash-adm-tbl .dash-adm-room .badge { margin-left: 3px; }
+.page-dashboard .dash-adm-tbl .dash-dx { max-width: none; }
+.page-dashboard .dash-adm-tbl .dash-note { max-width: none; color: var(--dmuted); }
+.page-dashboard .dash-adm-tbl .dash-action-cell { display: flex; gap: 2px; align-items: center; }  /* 버튼 사이 공백 문자 제거 */
+.page-dashboard .dash-adm-tbl .dash-action-cell .btn-xs { padding: 1px 3px; font-size: .64rem; margin: 0; }
+.page-dashboard .dash-adm-tbl .dash-note { text-align: center; }
 @media (max-width: 1500px) {
-    /* 반 칸이 ≈515px까지 줄어드는 노트북(1440px) — 셀 3px·머리글 두 줄 허용·병명/기타 최소폭 축소로 맞춘다 */
+    /* 반 칸이 ≈515px인 노트북 — 발병일·기타 열은 숨기고(툴팁에 남음) 보조 정보를 아래 줄로, 버튼은 두 줄 */
+    .page-dashboard .dash-adm-tbl col.c-when { width: 62px; }
+    .page-dashboard .dash-adm-tbl col.c-state { width: 42px; }
+    .page-dashboard .dash-adm-tbl col.c-who { width: 84px; }
+    .page-dashboard .dash-adm-tbl col.c-onset, .page-dashboard .dash-adm-tbl col.c-note { width: 1px; }
+    .page-dashboard .dash-adm-tbl col.c-room { width: 66px; }
+    .page-dashboard .dash-adm-tbl col.c-staff { width: 78px; }
+    .page-dashboard .dash-adm-tbl col.c-act { width: 74px; }
+    /* display:none 이면 고정 레이아웃에서 뒤 칸들이 한 열씩 앞으로 밀려 col 폭이 어긋난다 → 폭 1px·내용만 감춘다 */
+    .page-dashboard .dash-adm-tbl th:nth-child(5), .page-dashboard .dash-adm-tbl td:nth-child(5),
+    .page-dashboard .dash-adm-tbl th:nth-child(8), .page-dashboard .dash-adm-tbl td:nth-child(8) { padding: 0; font-size: 0; color: transparent; }
     .page-dashboard .dash-adm-tbl th, .page-dashboard .dash-adm-tbl td { padding: 4px 3px; font-size: .72rem; }
-    .page-dashboard .dash-adm-tbl th { white-space: normal; line-height: 1.15; word-break: keep-all; }  /* '병실 ·' / '회복기'처럼 띄어쓰기에서만 줄바꿈 */
-    .page-dashboard .dash-adm-tbl td:first-child, .page-dashboard .dash-adm-tbl th:first-child { padding-left: 6px; }
-    .page-dashboard .dash-adm-tbl td:last-child, .page-dashboard .dash-adm-tbl th:last-child { padding-right: 6px; }
-    .page-dashboard .dash-adm-tbl .dash-adm-dx { min-width: 78px; }
-    .page-dashboard .dash-adm-tbl .dash-note { min-width: 40px; }
-    .page-dashboard .dash-adm-tbl td small { font-size: .84em; }
-    .page-dashboard .dash-adm-tbl .badge { padding: 1px 4px; font-size: .68rem; }
-    /* 처리 버튼 3개가 세로로 쌓이지 않게 — 두 개씩 두 줄 */
-    .page-dashboard .dash-adm-tbl .dash-action-cell { min-width: 72px; max-width: 84px; }  /* '취소 보류'가 한 줄에 들어갈 폭 */
-    .page-dashboard .dash-adm-tbl .dash-action-cell .btn-xs { padding: 1px 4px; font-size: .7rem; margin: 0 1px 2px 0; }
+    .page-dashboard .dash-adm-tbl th { white-space: normal; line-height: 1.15; word-break: keep-all; }
+    .page-dashboard .dash-adm-tbl td small { display: block; margin-left: 0; }
+    .page-dashboard .dash-adm-tbl .dash-adm-room .badge { display: inline-block; margin: 2px 0 0; }
+    .page-dashboard .dash-adm-tbl .dash-action-cell { white-space: normal; flex-wrap: wrap; }
+    .page-dashboard .dash-adm-tbl .dash-action-cell .btn-xs { padding: 1px 4px; margin: 0 1px 2px 0; }
 }
+/* 기한 임박 — 탭을 머리글 아래 줄에(오늘 처리 필요와 같은 구조). 카드 높이·표 시작 위치가 좌우 같아진다 */
+.page-dashboard .due-tabs-row { margin-left: 18px; }
+.page-dashboard .fl .beds .o em { font-style: normal; font-weight: 500; opacity: .8; }
 
 /* 오늘 처리 필요 — 기한 임박과 같은 표·탭 */
 .page-dashboard .aq-tabs { margin: 0 18px 8px; flex-wrap: wrap; border: 0; border-radius: 0; gap: 4px; }

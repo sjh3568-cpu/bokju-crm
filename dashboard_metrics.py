@@ -316,16 +316,19 @@ def ward_occupancy():
         item = {"ward": ward, "count": n, "capacity": cap, "pct": pct, "level": level, "bar": bar,
                 "free": (cap - n) if cap else None,
                 "male": v["male"], "female": v["female"],
-                "rooms_known": False, "free_m": None, "free_f": None, "free_open": None, "free_unknown": None, "no_room": 0}
+                "rooms_known": False, "free_m": None, "free_f": None, "free_open": None, "free_rooms": None, "free_unknown": None, "no_room": 0}
         rcaps = room_caps_by_ward.get(ward)
         if cap and rcaps:
-            free_m = free_f = free_open = 0
+            free_m = free_f = free_open = free_rooms = 0
             for room, rcap in rcaps.items():
                 occ = rooms.get((ward, room), {"M": 0, "F": 0, "U": 0})
                 used = occ["M"] + occ["F"] + occ["U"]
                 left = max(0, rcap - used)
                 if used == 0:
+                    # 빈 병실 — 화면에는 '병실 수'와 '그 안의 병상 수'를 같이 보여준다.
+                    # 병상 수만 '빈방 4'로 쓰면 방이 4개 비었다고 읽힌다(2026-09-14 사용자 지적).
                     free_open += left
+                    free_rooms += 1
                 elif occ["M"] and not occ["F"]:
                     free_m += left
                 elif occ["F"] and not occ["M"]:
@@ -334,7 +337,7 @@ def ward_occupancy():
             known_total = sum(rcaps.values())
             # 병실이 안 적힌 재원(명부 누락)은 어느 방인지 몰라 위 셈에 안 들어간다 — 따로 보여준다.
             in_rooms = sum(sum(v.values()) for k, v in rooms.items() if k[0] == ward)
-            item.update(rooms_known=True, free_m=free_m, free_f=free_f, free_open=free_open,
+            item.update(rooms_known=True, free_m=free_m, free_f=free_f, free_open=free_open, free_rooms=free_rooms,
                         free_unknown=max(0, cap - known_total), no_room=max(0, n - in_rooms))
         items.append(item)
     items.sort(key=lambda x: _ward_sort_key(x["ward"]))

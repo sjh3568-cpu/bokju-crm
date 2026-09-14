@@ -2455,6 +2455,7 @@ def dashboard():
     data["ward_strip"] = _ward_status_strip(census)
     # KPI 8장 — 지난주 같은 요일 비교·7일 스파크라인·병동별 재원·30일 입퇴원·요일 히트맵
     data["metrics"] = dashboard_metrics.kpi_metrics(today_d)
+    data["metrics"]["ratio"] = {"spark": _recovery_ratio_spark(data["metrics"]["spark_dates"])}
     data["month_kpi"] = dashboard_metrics.month_performance(today_d)
     data["ward_occupancy"] = dashboard_metrics.ward_occupancy()
     data["unassigned_planned"] = dashboard_metrics.unassigned_planned(2, today_d)
@@ -5395,6 +5396,38 @@ def _ward_matches_diagnosis(c, diagnosis):
     values = values + [c.get("lung_detail") or ""]
     return any(alias in "".join(str(value).split())
                for value in values for alias in aliases)
+
+
+_RATIO_SPARK_CACHE = {"key": None, "value": None}
+
+
+def _recovery_ratio_spark(dates):
+    """대시보드 '회복기 비율' 카드 스파크라인 — 날짜별 회복기 비율(%). 재원 관리 '회복기 비율 추이'의
+    일별 계산(_trend_span → 회차별 회복기 종료일)과 같은 규칙이라 두 화면 숫자가 맞는다.
+    상담 1만 건·회차 전체를 읽는 계산이라 5분 캐시 — 대시보드는 30초마다 새로고침된다."""
+    key = (tuple(dates), datetime.now().strftime("%Y%m%d%H%M")[:-1])   # 10분 단위 버킷 → 사실상 5~10분 캐시
+    if _RATIO_SPARK_CACHE["key"] == key:
+        return _RATIO_SPARK_CACHE["value"]
+    try:
+        trend_rows = {c["id"]: c for c in models.list_consultations(limit=10000)}
+        spans = [_trend_span(sp, trend_rows.get(sp["consultation_id"])) for sp in models.admission_spans()]
+    except Exception:
+        logger.exception("회복기 비율 스파크 계산 실패")
+        return []
+    out = []
+    for iso in dates:
+        d = date.fromisoformat(iso)
+        known = rec = 0
+        for admitted_iso, discharged_iso, is_known, rec_end in spans:
+            if admitted_iso > iso or (discharged_iso and discharged_iso <= iso):
+                continue
+            if is_known:
+                known += 1
+                if rec_end is not None and d <= rec_end:
+                    rec += 1
+        out.append(round(rec * 100 / known, 2) if known else 0)
+    _RATIO_SPARK_CACHE.update(key=key, value=out)
+    return out
 
 
 def _trend_span(span, con):
