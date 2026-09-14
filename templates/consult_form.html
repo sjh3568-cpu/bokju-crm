@@ -532,12 +532,12 @@
             filled.push('발병일');
         }
 
-        // ② 보험 → patient.insurance_type 라디오
+        // ② 보험 → patient.insurance_type[] 체크박스 (복수 선택이므로 기존 체크는 두고 추가만)
         if (insSelect.value && insSelect.value !== '산재') {
-            const insRadio = form.querySelector(`input[name="patient.insurance_type"][value="${insSelect.value}"]`);
-            if (insRadio) {
-                insRadio.checked = true;
-                insRadio.dispatchEvent(new Event('change', { bubbles: true }));
+            const insBox = form.querySelector(`input[name="patient.insurance_type[]"][value="${insSelect.value}"]`);
+            if (insBox && !insBox.checked) {
+                insBox.checked = true;
+                insBox.dispatchEvent(new Event('change', { bubbles: true }));
                 filled.push('보험');
             }
         }
@@ -990,11 +990,13 @@
     </script>
 
     <div class="field">
-        <label>보험유형</label>
+        <label>보험유형 <span class="muted-sm">(복수 선택 가능)</span></label>
+        {# 여러 개(예: 건강보험 + 장애)를 ', '로 이어 patients.insurance_type 한 칸에 저장한다. #}
+        {% set insurance_set = ((patient.insurance_type or '') if patient else '').split(', ') %}
         <div class="field-radio">
             {% for t in INSURANCE_TYPES %}
-            <label><input type="radio" name="patient.insurance_type" value="{{ t }}"
-                          {% if patient and patient.insurance_type == t %}checked{% endif %}> {{ t }}</label>
+            <label><input type="checkbox" name="patient.insurance_type[]" value="{{ t }}"
+                          {% if t in insurance_set %}checked{% endif %}> {{ t }}</label>
             {% endfor %}
         </div>
     </div>
@@ -1266,6 +1268,12 @@
                             {% endfor %}
                             <span class="dx-addon-paren">)</span>
                         </span>
+                    </span>
+                    {% elif it.kind == 'text' %}
+                    <span class="dx-item{% if it.stretch %} dx-stretch{% endif %}">
+                        <span class="dx-group-label">{{ it.label }}</span>
+                        <input type="text" class="dx-addon-input" name="consultation.{{ it.addon_field }}" placeholder="{{ it.placeholder }}"
+                               value="{{ consultation[it.addon_field] if is_edit and consultation[it.addon_field] else '' }}">
                     </span>
                     {% elif it.kind == 'rowbreak' %}
                     <div class="dx-rowbreak"></div>

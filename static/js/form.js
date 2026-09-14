@@ -524,6 +524,13 @@
         };
         Object.entries(map).forEach(([name, val]) => {
             if (val == null || val === '') return;
+            // 보험유형은 복수 체크박스(name[]) — ', '로 이어진 저장값을 각각 체크
+            const boxes = form.querySelectorAll(`[name="${name}[]"]`);
+            if (boxes.length) {
+                const vals = String(val).split(', ');
+                boxes.forEach(b => { if (vals.includes(b.value)) b.checked = true; });
+                return;
+            }
             const el = form.querySelector(`[name="${name}"]`);
             if (!el) return;
             if (el.type === 'radio') {

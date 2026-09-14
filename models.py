@@ -565,6 +565,8 @@ def init_db():
         # 양식 수기 입력란: 파킨슨 / 희귀성난치질환
         "parkinson_detail": "TEXT",
         "rare_disease_name": "TEXT",
+        # 양식 수기 입력란: 기저질환 기타 (체크 항목에 없는 것, 2026-09-14)
+        "chronic_other": "TEXT",
         # 양식 수기 입력란: 암 행 (부위/발병일/전이/통증/patch)
         "cancer_site": "TEXT",
         "cancer_onset": "TEXT",
@@ -2055,7 +2057,7 @@ CONSULT_FIELDS = (
     # 병명·기타(ARRANGE)
     "diseases", "arrange_items", "disease_detail",
     "memo_po", "memo_op",
-    "insulin_use", "parkinson_detail", "rare_disease_name",
+    "insulin_use", "parkinson_detail", "rare_disease_name", "chronic_other",
     "cancer_site", "cancer_onset", "cancer_metastasis", "cancer_pain", "cancer_patch",
     "hemorrhage_surgery", "infarction_site", "spinal_injury_level",
     "disease_onset",
@@ -2375,7 +2377,9 @@ def _build_consult_where(*, date_from=None, date_to=None, insurance=None, q=None
     if date_to:
         where.append("c.consult_date <= ?"); vals.append(date_to)
     if insurance:
-        where.append("p.insurance_type = ?"); vals.append(insurance)
+        # 보험유형은 복수 선택을 ', '로 이어 저장하므로 단일값이든 조합이든 포함 여부로 찾는다.
+        where.append("(', ' || COALESCE(p.insurance_type, '') || ', ') LIKE ?")
+        vals.append(f"%, {insurance}, %")
     if counselor:
         where.append("c.counselor = ?"); vals.append(counselor)
     if admission_status:
@@ -4178,11 +4182,13 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
 
     insurance_counts = {}
     for row in rows:
-        label = (row["insurance_type"] or "").strip()
-        if not label:
-            continue
-        normalized = "건강보험" if label in ("보험", "건강보험") else label
-        insurance_counts[normalized] = insurance_counts.get(normalized, 0) + 1
+        # 복수 선택(', ' 연결)은 각 유형에 1건씩 센다 — 합계가 환자 수보다 클 수 있다.
+        for label in (row["insurance_type"] or "").split(", "):
+            label = label.strip()
+            if not label:
+                continue
+            normalized = "건강보험" if label in ("보험", "건강보험") else label
+            insurance_counts[normalized] = insurance_counts.get(normalized, 0) + 1
 
     gender_counts = {
         "남": sum(1 for r in rows if (r["gender"] or "").strip() == "M"),

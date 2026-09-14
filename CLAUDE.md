@@ -97,7 +97,9 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
 **`patients`** — 환자 마스터 (이름+연락처 자동 매칭)
 - 신원: name, gender, residence_sido/sigungu, address_full
 - 보호자: guardian_name/relation/phone
-- 보험: insurance_type (보험/보호1종/보호2종/차상위 1·2종/자보/장애/암등록/장기요양/산정특례)
+- 보험: insurance_type (건강보험/의료급여/보호1종/보호2종/차상위 1·2종/자보/산재/장애/암등록/장기요양/산정특례).
+  **2026-09-14부터 복수 선택** — 폼은 체크박스(`patient.insurance_type[]`), 저장은 `', '`로 이어 한 칸에
+  (예: `건강보험, 장애`). 목록 필터는 포함 여부(`', '||값||', ' LIKE`), 통계는 유형별로 각각 1건. 정규화는 `app._insurance_text`.
 - family_info
 
 **`consultations`** — 상담 1건 (1환자 N상담)
@@ -108,7 +110,7 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
   - 활동: activity_active(JSON 능동 4종) + activity_diaper(유/무) + activity_wheelchair(스스로/도움) + activity_others(JSON 와상/에어매트리스)
   - caregiver_status, bed_type, patient_age
 - 병명 4그룹 (다중 체크 + 수기 입력):
-  - **기저질환**: 당뇨(인슐린:유/무) · 고혈압 · 파킨슨[상세] · 희귀성난치질환[질환명] · 치매(경/중/고) · 인지기능저하 · 이상행동(소리지름/폭력적) · 탈출 위험 · 암 + cancer_site/onset/metastasis/pain/patch
+  - **기저질환**: 당뇨(인슐린:유/무) · 고혈압 · 파킨슨[상세] · 희귀성난치질환[질환명] · 치매(경/중/고) · 인지기능저하 · 이상행동(소리지름/폭력적) · 탈출 위험 · 암 + cancer_site/onset/metastasis/pain/patch · **기타[chronic_other]**(자유 기재, `DISEASES_LAYOUT`의 `kind: text` — 병명 목록에 안 들어감)
   - **중추신경계** (1줄 stretch): 뇌출혈[수술] · 뇌경색[부위] · 척수손상[부위] · 뇌성마비 / 마비(사지/편마비좌/편마비우/하지)[상세=paralysis_detail]
   - **근골격계**: 대퇴부 · 고관절 · 골반 골절(단일/다발) · 하지 부위 절단(다음줄)
   - **비사용증후군**: 폐질환[상세] · 심장질환[상세] · 신생물[상세]
@@ -326,7 +328,7 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
 
 - **기준 화면 폭은 1440px**(사용자 노트북, 고해상도 2배 스케일). 레이아웃 검증은 1440×850으로 한다 — 1920에서 멀쩡해도 1440에서 잘리거나 두 줄로 꺾이면 안 된다.
 
-- **앱 셸**: `base.html`이 `body.has-sidebar > aside.sidebar + div.app-main(header.topbar + main + footer)` 구조. 주 메뉴는 사이드바(하위 메뉴는 ▾로 고정 펼침 + 마우스를 올리면 안쪽으로 펼침, 현재 그룹은 자동 펼침; '관리'도 같은 구조), 상단바는 옅은 바탕에 흰 검색창·오늘 현황·알림·화면설정·새 상담. 1024px 미만은 ☰ 서랍. 접기(아이콘만)는 `localStorage bokju:sidebar`, 상담일지 폼은 항상 접힌 채로 시작. `body.has-sidebar{height:auto}`가 없으면 `html,body{height:100%}` 때문에 사이드바 sticky가 안 붙는다.
+- **앱 셸**: `base.html`이 `body.has-sidebar > aside.sidebar + div.app-main(header.topbar + main + footer)` 구조. 주 메뉴는 사이드바(하위 메뉴는 ▾로 고정 펼침 + 마우스를 올리면 안쪽으로 펼침, 현재 그룹은 자동 펼침; '관리'도 같은 구조), 상단바는 옅은 바탕에 흰 검색창·오늘 현황·알림·화면설정·새 상담. 1024px 미만은 ☰ 서랍. 접기(아이콘만)는 `localStorage bokju:sidebar`, **상담목록(`/consultations`)만** 항상 접힌 채로 시작(2026-09-14; 상담일지 폼은 사용자 취향 유지). 접힌 채로 커서를 150ms 올리면 본문 위로 덮어 펼치는 hover peek(`body.sidebar-peek`), ⟨ 버튼이 고정. `body.has-sidebar{height:auto}`가 없으면 `html,body{height:100%}` 때문에 사이드바 sticky가 안 붙는다.
 - **좌측 하단 도구 칸** `#sidebar-tools`(`position:fixed`, 폭 `--sbw`): 통합 달력 링크(오늘 일정+ToDo 배지 `calendar_badge`) + 기간 계산기·To-DO·환자분류체계. ≥1024px에서 JS가 우하단 플로팅 버튼을 이 칸으로 옮기고, 좁은 화면은 플로팅으로 되돌린다. 사이드바엔 `padding-bottom:140px`로 자리 확보.
 - **대시보드**(`dashboard.html` + `static/css/dashboard.css`, 청록 포인트) — 내 담당 한 줄(청록 띠) → KPI 4장×2줄(오늘 상담·오늘 입원/퇴원·이번달 상담 유입·이번달 입원 성사+전환율 / 현재 재원·병상 가동률·외진 환자·회복기 비율; SVG 선 아이콘 배지, 설명은 핵심 숫자만 `<b>`) → **2×2 격자 `.dash-grid2`**(폭·높이 동일): 입원 환자 현황(+오늘 퇴원 하위 섹션) · 병동별 재원 / 오늘 처리 필요 · 기한 임박. 목록은 `data-limit="5"` + 더보기.
 - **오늘 처리 필요 vs 기한 임박**: 전자는 지금 손이 가야 하는 일(문의·재연락·보류·입원 준비 누락·운행·퇴원 예정일 초과)이고 구분 탭(`item.group`, 구분별 고정 색)이 있다. 후자는 앞으로 올 날짜 예고 — 회복기 전환 D-30(전환 전 0~30일만, 보호자에게 치료시간·비용 안내)과 퇴원 예정 D-30. 퇴원 예정일이 지난 재원은 전자(퇴원예정 탭)로 간다. 재원 목록은 `_dashboard_residents()`(명부 census 기준)를 같이 쓴다.

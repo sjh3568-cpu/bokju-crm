@@ -502,6 +502,7 @@ tr.ae-open { background:#fff7ed; }
         {% if c.insulin_use %}<dt>인슐린</dt><dd>{{ c.insulin_use }}</dd>{% endif %}
         {% if c.parkinson_detail %}<dt>파킨슨 상세</dt><dd>{{ c.parkinson_detail }}</dd>{% endif %}
         {% if c.rare_disease_name %}<dt>희귀성난치질환</dt><dd>{{ c.rare_disease_name }}</dd>{% endif %}
+        {% if c.chronic_other %}<dt>기저질환 기타</dt><dd>{{ c.chronic_other }}</dd>{% endif %}
         <dt>기타(ARRANGE)</dt><dd>{{ (c.arrange_items or [])|join(', ') or '-' }}</dd>
         {% set cancer_parts = [] %}
         {% if c.cancer_site %}{% set _ = cancer_parts.append('부위: ' ~ c.cancer_site) %}{% endif %}

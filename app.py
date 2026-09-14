@@ -3642,6 +3642,19 @@ def api_consult_draft_delete(draft_id):
         return jsonify({"error": "임시저장본을 찾을 수 없습니다."}), 404
     return jsonify({"ok": True})
 
+def _insurance_text(value):
+    """보험유형 입력 정규화 — 폼은 복수 체크박스라 리스트로 오고, 명부 적재·LLM은 문자열로 온다.
+    INSURANCE_TYPES 순서로 ', ' 이어 한 칸에 저장한다(표시·필터·통계가 모두 이 형태를 전제)."""
+    if isinstance(value, (list, tuple)):
+        picked = {str(v).strip() for v in value if str(v).strip()}
+        ordered = [t for t in INSURANCE_TYPES if t in picked]
+        ordered += sorted(v for v in picked if v not in INSURANCE_TYPES)   # 목록에 없는 옛 값도 버리지 않는다
+        return ", ".join(ordered) or None
+    if isinstance(value, str):
+        return value.strip() or None
+    return value
+
+
 @app.route("/api/consult", methods=["POST"])
 @login_required
 def api_consult_create():
@@ -3658,7 +3671,7 @@ def api_consult_create():
         address_full=p.get("address_full"),
         residence_sido=p.get("residence_sido"),
         residence_sigungu=p.get("residence_sigungu"),
-        insurance_type=p.get("insurance_type"),
+        insurance_type=_insurance_text(p.get("insurance_type")),
         guardian_name=p.get("guardian_name"),
         guardian_relation=p.get("guardian_relation"),
         family_info=p.get("family_info"),
@@ -3937,6 +3950,9 @@ def api_consult_update(cid):
         valid = {}
         for k, v in p.items():
             if k not in patient_cols:
+                continue
+            if k == "insurance_type":
+                valid[k] = _insurance_text(v)
                 continue
             valid[k] = (v.strip() or None) if isinstance(v, str) else v
         if valid:

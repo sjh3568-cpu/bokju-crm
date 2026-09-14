@@ -393,6 +393,10 @@ DISEASES_LAYOUT = {
         ]},
         {"kind": "checkbox", "value": "탈출 위험(escape)"},
         {"kind": "checkbox", "value": "암"},
+        # 체크 항목에 없는 기저질환을 글로 적는 칸 (2026-09-14). 병명 목록(diseases)에는 들어가지 않고
+        # consultations.chronic_other 컬럼에만 저장된다.
+        {"kind": "text", "label": "기타", "stretch": True,
+         "addon_field": "chronic_other", "placeholder": "체크 항목에 없는 기저질환을 적어주세요"},
     ],
     "중추신경계": [
         {"kind": "checkbox+text", "value": "뇌출혈", "stretch": True,
@@ -486,7 +490,7 @@ def _flatten_layout(layout):
             elif it["kind"] == "checkbox+group":
                 result.append(it["value"])
                 result.extend(s["value"] for s in it["items"])
-            elif it["kind"] == "rowbreak":
+            elif it["kind"] in ("rowbreak", "text"):   # 줄바꿈·자유 기재 칸은 병명 값이 없다
                 continue
             else:
                 result.append(it["value"])
@@ -498,7 +502,7 @@ DISEASES_GROUPS = {  # 호환용 (다른 코드가 이름만 참조할 수 있�
     name: [
         it.get("value") or it.get("label", "")
         for it in items
-        if it["kind"] != "rowbreak"
+        if it["kind"] not in ("rowbreak", "text")   # 자유 기재 칸은 병명이 아니다
     ]
     for name, items in DISEASES_LAYOUT.items()
 }
