@@ -7,7 +7,7 @@
         <thead>
             <tr>
                 <th>일자</th>
-                <th>도착 예정 시간</th>
+                <th>도착시간</th>
                 <th>상태</th>
                 <th>환자</th>
                 <th>보험</th>
@@ -18,14 +18,14 @@
                 <th>상담사</th>
                 <th>주치의</th>
                 <th>기타</th>
-                <th>입원 처리</th>
+                <th>처리</th>
             </tr>
         </thead>
         <tbody>
             {% for r in rows %}
             {% set rec = r|recovery_status %}
             <tr>
-                <td class="nowrap">{{ r.admission_display_date|krdate }}</td>
+                <td class="nowrap" title="{{ r.admission_display_date|krdate }}">{{ r.admission_display_date|krdate_short_wd }}</td>
                 <td class="nowrap">{{ r.planned_admission_time or '-' }}</td>
                 <td class="nowrap dash-adm-state">
                     {% if r.admission_kind == 'return' %}<span class="badge {% if r.admission_bucket == 'completed' %}adm-completed{% else %}adm-planned{% endif %} adm-return" title="{{ r.other_note }}">{{ r.admission_bucket_label }}</span>
