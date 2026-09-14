@@ -1266,6 +1266,8 @@ body.has-sidebar.sidebar-peek { --sbw:70px; }
 .sidebar-peek .sidebar { position:fixed; left:0; top:0; width:244px; height:100vh; z-index:300; box-shadow:10px 0 28px rgba(15,23,42,.14); }
 .sidebar-peek .sidebar-collapse { transform:rotate(180deg); }   /* 논리상 아직 접힘 — ⟩ = 고정(계속 펼침) */
 .sidebar-peek #sidebar-tools { width:244px; }
+/* peek 중 aside가 position:fixed 로 흐름에서 빠지면 .app-main 이 그리드 1열(70px)로 들어가 본문(상담목록 표)이 사라진다 → 2열에 고정 */
+.sidebar-peek .app-main { grid-column:2; }
 
 /* 접힘(아이콘만) — 데스크톱 */
 .sidebar-collapsed .sidebar { padding:12px 8px 14px; }

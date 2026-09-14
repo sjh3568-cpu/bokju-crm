@@ -149,6 +149,10 @@
 .page-dashboard .fl .beds i.u { color: var(--dfaint); }
 .page-dashboard .fl .beds em { font-style: normal; }
 .page-dashboard .fl > b { font-size: .88rem; font-weight: 800; }
+/* 병동 이름 아래 가동률(재원÷허가) — 막대 색과 같은 단계색 */
+.page-dashboard .fl > b .fl-pct { display: block; font-size: .72rem; font-weight: 800; color: var(--da); line-height: 1.1; margin-top: 1px; }
+.page-dashboard .fl.mid > b .fl-pct { color: var(--dwarn); }
+.page-dashboard .fl.full > b .fl-pct { color: var(--dcrit); }
 .page-dashboard .fl .bar { height: 14px; border-radius: 4px; background: var(--dgrid); position: relative; overflow: hidden; }
 .page-dashboard .fl .bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--da); }
 .page-dashboard .fl.mid .bar i { background: var(--dwarn); }

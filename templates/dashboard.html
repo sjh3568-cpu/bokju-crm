@@ -491,7 +491,7 @@
             <div class="floors">
                 {% for w in ward_occupancy %}
                 <a class="fl {{ w.level }}" href="/ward?ward={{ w.ward }}" title="{{ w.ward }} 재원 {{ w.count }}명 (남 {{ w.male }} · 여 {{ w.female }}){% if w.capacity %} / 허가 {{ w.capacity }} · {{ w.pct }}% · 가용 {{ w.free }} (허가 {{ w.capacity }} − 재원 {{ w.count }}){% endif %}">
-                    <b>{{ w.ward }}</b>
+                    <b>{{ w.ward }}{% if w.pct is not none %}<small class="fl-pct" title="병동 가동률 = 재원 ÷ 허가 병상">{{ w.pct|round|int }}%</small>{% endif %}</b>
                     <span class="bar"><i style="width:{{ w.bar }}%"></i></span>
                     <span class="n num"><b>{{ w.count }}</b>{% if w.capacity %}/{{ w.capacity }}{% else %}명{% endif %}</span>
                     <span class="beds">
