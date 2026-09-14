@@ -149,7 +149,9 @@
 .iq-card .iq-k{font-size:.78rem;font-weight:800;color:#5b6d63}.iq-card .iq-v{font-size:1.6rem;font-weight:850;letter-spacing:-.03em;color:#17251e;line-height:1.15}
 .iq-card .iq-v small{font-size:.8rem;font-weight:700;margin-left:2px;color:#6b7c72}.iq-card .iq-s{font-size:.74rem;color:#7a8a80;margin-top:2px;line-height:1.4}
 .iq-card.iq-warn .iq-v{color:#b45309}.iq-card.iq-good .iq-v{color:#15803d}
-.iq-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;align-items:start}
+.iq-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;align-items:stretch}
+.iq-grid > .card{margin-top:0;display:flex;flex-direction:column;min-height:0}   /* 전역 .card+.card 상단 여백 제거, 두 칸 높이 동일 */
+.iq-grid > .card > .tbl-wrap{flex:1;overflow:auto}
 .iq-h2{font-size:.98rem;margin:0 0 8px}.iq-h2 .muted-sm{font-weight:600}
 .tbl td.r,.tbl th.r{text-align:right}
 .iq-grid .tbl th,.iq-grid .tbl td{white-space:nowrap;padding-inline:8px}   /* 9열 표에서 '홈페이지'가 세로로 깨지지 않게 */
