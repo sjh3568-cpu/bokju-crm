@@ -6113,6 +6113,118 @@ def delete_communication(comm_id):
     conn.close()
 
 
+# ─── 채널 문의 내역 (/consultations/inquiries) ───
+# 문의(communications, 인바운드)는 상담의 앞단계 기록. 여기서는 '문의 → 상담 등록' 깔때기만 세고,
+# 상담·입원 통계는 상담일지(consultations) 하나만 기준으로 한다(같은 건을 두 번 세지 않기 위해).
+
+def _inquiry_stage(row: dict) -> str:
+    """미처리 / 상담등록 / 처리완료 — 행 하나의 단계."""
+    if row.get("consultation_id"):
+        return "상담등록"
+    if (row.get("status") or "open") == "done":
+        return "처리완료"
+    return "미처리"
+
+
+def inquiry_rows(*, date_from=None, date_to=None, channel="", stage="", q="", limit=2000) -> list[dict]:
+    """채널 문의 목록 — 환자·연결 상담·홈페이지 게시글(답변자·답변시각)까지 한 번에."""
+    where = ["(m.direction = 'in' OR m.direction IS NULL)"]
+    vals: list = []
+    if date_from:
+        where.append("date(COALESCE(m.occurred_at, datetime(m.created_at,'localtime'))) >= ?"); vals.append(date_from)
+    if date_to:
+        where.append("date(COALESCE(m.occurred_at, datetime(m.created_at,'localtime'))) <= ?"); vals.append(date_to)
+    if channel:
+        where.append("m.channel = ?"); vals.append(channel)
+    if q:
+        like = f"%{q.strip()}%"
+        where.append("(m.summary LIKE ? OR m.body LIKE ? OR m.contact LIKE ? OR p.name LIKE ?)")
+        vals += [like, like, like, like]
+    conn = get_db()
+    rows = conn.execute(
+        f"""SELECT m.*, datetime(m.created_at,'localtime') AS created_local,
+                   datetime(m.resolved_at,'localtime') AS resolved_local,
+                   p.name AS patient_name, p.blacklist,
+                   c.consult_date, c.counselor, c.consult_result, c.admission_status,
+                   h.idx AS homepage_idx, h.board_no, h.site_status, h.answered_by, h.answered_at
+            FROM communications m
+            LEFT JOIN patients p ON p.id = m.patient_id
+            LEFT JOIN consultations c ON c.id = m.consultation_id
+            LEFT JOIN homepage_posts h ON h.comm_id = m.id
+            WHERE {' AND '.join(where)}
+            ORDER BY COALESCE(m.occurred_at, datetime(m.created_at,'localtime')) DESC, m.id DESC
+            LIMIT ?""", [*vals, limit]).fetchall()
+    conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["stage"] = _inquiry_stage(d)
+        d["when"] = (d.get("occurred_at") or d.get("created_local") or "")[:16]
+        d["answered"] = bool(d.get("answered_at"))
+        out.append(d)
+    if stage:
+        out = [d for d in out if d["stage"] == stage]
+    return out
+
+
+def inquiry_summary(rows: list[dict]) -> dict:
+    """문의 목록 → 채널별·전체 집계. {total, open, converted, done_only, answered, rate, avg_hours, by_channel}"""
+    def bucket(items):
+        n = len(items)
+        conv = sum(1 for r in items if r["stage"] == "상담등록")
+        hours = []
+        for r in items:
+            if r["stage"] != "미처리" and r.get("resolved_local") and r.get("created_local"):
+                try:
+                    a = datetime.strptime(r["created_local"][:19], "%Y-%m-%d %H:%M:%S")
+                    b = datetime.strptime(r["resolved_local"][:19], "%Y-%m-%d %H:%M:%S")
+                    hours.append(max(0.0, (b - a).total_seconds() / 3600))
+                except ValueError:
+                    pass
+        return {
+            "total": n,
+            "open": sum(1 for r in items if r["stage"] == "미처리"),
+            "converted": conv,
+            "done_only": sum(1 for r in items if r["stage"] == "처리완료"),
+            "answered": sum(1 for r in items if r.get("answered")),
+            "rate": round(conv * 100 / n) if n else 0,
+            "avg_hours": round(sum(hours) / len(hours), 1) if hours else None,
+        }
+    by_channel = {}
+    for r in rows:
+        by_channel.setdefault(r.get("channel") or "기타", []).append(r)
+    return {**bucket(rows), "by_channel": {ch: bucket(items) for ch, items in by_channel.items()}}
+
+
+def inquiry_monthly(months: int = 12) -> list[dict]:
+    """최근 N개월 월별·채널별 문의 수와 상담 전환 수 (오래된 달부터)."""
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT substr(COALESCE(m.occurred_at, datetime(m.created_at,'localtime')),1,7) AS ym,
+                  COALESCE(m.channel,'기타') AS channel,
+                  COUNT(*) AS n,
+                  SUM(CASE WHEN m.consultation_id IS NOT NULL THEN 1 ELSE 0 END) AS converted
+           FROM communications m
+           WHERE (m.direction = 'in' OR m.direction IS NULL)
+             AND COALESCE(m.occurred_at, datetime(m.created_at,'localtime')) >= date('now','localtime','start of month', ?)
+           GROUP BY ym, channel ORDER BY ym""", (f"-{max(0, months - 1)} months",)).fetchall()
+    conn.close()
+    by_month: dict[str, dict] = {}
+    today = date.today()
+    for i in range(months - 1, -1, -1):
+        y, mo = today.year, today.month - i
+        while mo <= 0:
+            y -= 1; mo += 12
+        by_month[f"{y:04d}-{mo:02d}"] = {"ym": f"{y:04d}-{mo:02d}", "total": 0, "converted": 0, "channels": {}}
+    for r in rows:
+        m = by_month.get(r["ym"])
+        if not m:
+            continue
+        m["total"] += r["n"]; m["converted"] += r["converted"]
+        m["channels"][r["channel"]] = r["n"]
+    return list(by_month.values())
+
+
 # ─── 홈페이지 상담게시판 ↔ 인박스 매핑 (homepage_board.py) ───
 
 def homepage_post_known() -> dict[int, dict]:

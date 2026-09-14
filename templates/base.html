@@ -35,7 +35,14 @@
                     <a href="/consult/new" {% if request.path == '/consult/new' %}class="active"{% endif %}><span class="nav-icon nav-icon-new">✍️</span>새 상담</a>
                     {% endif %}
                     {% if P.get('consult',0) >= 1 %}
-                    <a href="/consultations" {% if request.path.startswith('/consultations') %}class="active"{% endif %}><span class="nav-icon nav-icon-list">📋</span>상담목록</a>
+                    <div class="nav-menu-group {% if request.path.startswith('/consultations') %}active{% endif %}">
+                        <a href="/consultations" {% if request.path.startswith('/consultations') %}class="active"{% endif %}><span class="nav-icon nav-icon-list">📋</span>상담목록</a>
+                        <button type="button" class="nav-menu-toggle" aria-label="상담목록 하위 메뉴" aria-expanded="false">▾</button>
+                        <div class="nav-dropdown">
+                            <a href="/consultations"><span>📋</span><span><b>상담목록</b><small>상담일지 검색·정렬·CSV</small></span></a>
+                            <a href="/consultations/inquiries"><span>📨</span><span><b>채널 문의 내역</b><small>홈페이지·카카오톡 문의 기록과 상담 전환</small></span></a>
+                        </div>
+                    </div>
                     {% endif %}
                     {% if P.get('ward',0) >= 1 %}
                     <div class="nav-menu-group {% if request.path.startswith('/ward') or request.path.startswith('/patients') %}active{% endif %}">

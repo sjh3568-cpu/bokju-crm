@@ -934,7 +934,7 @@ input.room-invalid { border-color:#ef4444 !important; box-shadow:0 0 0 2px rgba(
         <div class="field-radio">
             {% for ch in CONSULT_CHANNELS %}
             <label><input type="radio" name="consultation.consult_channel" value="{{ ch }}"
-                          {% if is_edit and consultation.consult_channel == ch %}checked{% endif %}> {{ ch }}</label>
+                          {% if (is_edit and consultation.consult_channel == ch) or (not is_edit and prefill and prefill.consult_channel == ch) %}checked{% endif %}> {{ ch }}</label>
             {% endfor %}
         </div>
     </div>

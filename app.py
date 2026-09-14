@@ -59,6 +59,7 @@ from config import (
     PERM_HIDDEN, PERM_VIEW, PERM_EDIT, PERM_CREATE,
     PERM_LEVELS, PERM_LEVEL_LABELS,
     INSURANCE_TYPES, OTHERS_CHECKLIST, REFERRAL_SOURCE_GROUPS, REFERRAL_TYPES,
+    INBOUND_CHANNEL_REFERRAL, INBOUND_CHANNEL_LABELS,
     STAFF_REFERRAL_ORGS, STAFF_REFERRAL_DEPTS,
     LIFECYCLE_STAGES, LIFECYCLE_EVENT_TYPES, LEGACY_STAGE_MAP, CARE_PHASES,
     SIDO_LIST, SIGUNGU_INDEX, SIGUNGU_LIST,
@@ -263,7 +264,7 @@ def _route_requirement(path: str, method: str):
         return "users", PERM_EDIT
 
     # ── 상담 ──
-    if (path == "/consultations.csv"):
+    if path in ("/consultations.csv", "/consultations/inquiries.csv"):
         return "consult", PERM_CREATE          # 내보내기 = 전체 권한
     if path == "/consult/new":
         return "consult", PERM_CREATE
@@ -3363,6 +3364,11 @@ def consult_new():
         comm = models.get_communication(comm_id)
         if comm and (comm.get("status") or "") != "done":
             inbox_comm = comm
+            # 채널 문의 → 유입경로(홈페이지/카카오톡 채널) 자동 체크 + 상담방법은 전화상담.
+            # 채널 문의가 상담·입원으로 얼마나 이어졌는지 상담 통계 유입경로에서 바로 비교하기 위해.
+            ref = INBOUND_CHANNEL_REFERRAL.get((comm.get("channel") or "").strip())
+            prefill_consult = {"referral_source_detail": [ref] if ref else [],
+                               "consult_channel": "전화상담"}
             if comm.get("patient_id"):
                 patient = models.get_patient(comm["patient_id"])
             else:
@@ -3545,6 +3551,70 @@ def api_quick_filters():
         ip=request.remote_addr,
     )
     return jsonify({"ok": True, "filters": models.list_quick_filters(include_inactive=True)})
+
+
+def _inquiry_filters():
+    """채널 문의 내역 필터 — 기간 기본값은 이번 달."""
+    today = date.today()
+    date_from = _valid_date(request.args.get("from")) or today.replace(day=1).isoformat()
+    date_to = _valid_date(request.args.get("to")) or today.isoformat()
+    if date_from > date_to:
+        date_from, date_to = date_to, date_from
+    channel = (request.args.get("channel") or "").strip()
+    if channel not in INBOUND_CHANNEL_LABELS:
+        channel = ""
+    stage = (request.args.get("stage") or "").strip()
+    if stage not in ("미처리", "상담등록", "처리완료"):
+        stage = ""
+    return {"date_from": date_from, "date_to": date_to, "channel": channel,
+            "stage": stage, "q": (request.args.get("q") or "").strip()[:100]}
+
+
+@app.route("/consultations/inquiries")
+@login_required
+def inquiry_list():
+    """채널 문의 내역 — 홈페이지·카카오톡 등으로 들어온 문의 전체 기록과 '문의 → 상담' 전환 집계.
+    미처리 큐(대시보드 오늘 처리 필요)와 달리 완료된 것도 남고 기간별로 본다.
+    상담·입원 통계는 여기서 내지 않는다 — 상담일지 하나만 기준(유입경로 항목으로 비교)."""
+    f = _inquiry_filters()
+    rows = models.inquiry_rows(date_from=f["date_from"], date_to=f["date_to"],
+                               channel=f["channel"], stage=f["stage"], q=f["q"])
+    all_rows = rows if not f["stage"] else models.inquiry_rows(
+        date_from=f["date_from"], date_to=f["date_to"], channel=f["channel"], q=f["q"])
+    summary = models.inquiry_summary(all_rows)
+    monthly = models.inquiry_monthly(12)
+    return render_template(
+        "inquiries.html", rows=rows, f=f, summary=summary, monthly=monthly,
+        channel_labels=INBOUND_CHANNEL_LABELS,
+        monthly_max=max([m["total"] for m in monthly] + [1]),
+        admin_ready=homepage_board.admin_configured(),
+    )
+
+
+@app.route("/consultations/inquiries.csv")
+@login_required
+def inquiry_csv():
+    f = _inquiry_filters()
+    rows = models.inquiry_rows(date_from=f["date_from"], date_to=f["date_to"],
+                               channel=f["channel"], stage=f["stage"], q=f["q"], limit=100000)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["일시", "채널", "환자", "연락처", "제목", "내용", "단계", "홈페이지 답변자", "답변 시각",
+                "처리 시각", "상담일", "상담자", "상담 결과", "입원 진행", "상담 번호"])
+    for r in rows:
+        w.writerow([
+            r.get("when") or "", INBOUND_CHANNEL_LABELS.get(r.get("channel"), r.get("channel") or ""),
+            r.get("patient_name") or "", r.get("contact") or "", r.get("summary") or "",
+            (r.get("body") or "").replace("\r", " ").replace("\n", " "), r.get("stage") or "",
+            r.get("answered_by") or "", (r.get("answered_at") or "")[:16], (r.get("resolved_local") or "")[:16],
+            r.get("consult_date") or "", r.get("counselor") or "", r.get("consult_result") or "",
+            r.get("admission_status") or "", r.get("consultation_id") or "",
+        ])
+    models.log_audit(user_id=g.user["id"], username=g.user["username"], action="export_csv",
+                     target_type="inquiries", detail=str(len(rows)), ip=request.remote_addr)
+    data = buf.getvalue().encode("utf-8-sig")
+    return send_file(io.BytesIO(data), mimetype="text/csv", as_attachment=True,
+                     download_name=f"inquiries_{f['date_from']}_{f['date_to']}.csv")
 
 
 @app.route("/consultations.csv")

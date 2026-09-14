@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block title %}채널 문의 내역 — 복주 상담실{% endblock %}
+{% block content %}
+{# 채널 문의 내역 — 홈페이지·카카오톡 등으로 들어온 문의의 전체 기록과 '문의 → 상담' 전환.
+   대시보드 '오늘 처리 필요'는 미처리만 보여주는 큐이고, 여기는 완료된 것까지 기간별로 남는다.
+   상담·입원 통계는 상담일지가 기준(유입경로 '홈페이지'·'카카오톡 채널' 항목으로 비교) — 여기서는 문의 깔때기만 센다. #}
+<div class="page-header">
+    <h1>채널 문의 내역</h1>
+    <div class="consult-head-actions">
+        <a class="btn btn-secondary btn-sm" href="/#action-queue">오늘 처리 필요 →</a>
+        <a class="btn btn-secondary btn-sm" href="/consultations/inquiries.csv?from={{ f.date_from }}&to={{ f.date_to }}&channel={{ f.channel }}&stage={{ f.stage }}&q={{ f.q|urlencode }}">CSV</a>
+    </div>
+</div>
+
+<form class="filter-bar iq-filter" method="get" action="/consultations/inquiries">
+    <div class="field">
+        <label>기간</label>
+        <div class="date-range">
+            <input type="date" name="from" value="{{ f.date_from }}">
+            <span class="dr-sep">~</span>
+            <input type="date" name="to" value="{{ f.date_to }}">
+        </div>
+    </div>
+    <div class="field">
+        <label>채널</label>
+        <select name="channel">
+            <option value="">전체</option>
+            {% for key, label in channel_labels.items() %}
+            <option value="{{ key }}" {% if f.channel == key %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field">
+        <label>단계</label>
+        <select name="stage">
+            <option value="">전체</option>
+            {% for st in ['미처리', '상담등록', '처리완료'] %}
+            <option value="{{ st }}" {% if f.stage == st %}selected{% endif %}>{{ st }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="field" style="flex:1; min-width:160px">
+        <label>키워드 (환자명·연락처·내용)</label>
+        <input type="text" name="q" value="{{ f.q }}" placeholder="키워드">
+    </div>
+    <div style="display:flex; gap:6px; align-self:flex-end">
+        <button class="btn btn-primary btn-sm" type="submit">검색</button>
+        <a class="btn btn-secondary btn-sm" href="/consultations/inquiries">이번 달</a>
+    </div>
+</form>
+
+{# ── 기간 집계 — 문의 → 상담 깔때기 ── #}
+<div class="iq-cards">
+    <div class="iq-card"><div class="iq-k">문의</div><div class="iq-v">{{ summary.total }}<small>건</small></div><div class="iq-s">{{ f.date_from }} ~ {{ f.date_to }}</div></div>
+    <div class="iq-card iq-warn"><div class="iq-k">미처리</div><div class="iq-v">{{ summary.open }}<small>건</small></div><div class="iq-s">전화·답변 대기</div></div>
+    <div class="iq-card iq-good"><div class="iq-k">상담 등록</div><div class="iq-v">{{ summary.converted }}<small>건</small></div><div class="iq-s">전환율 {{ summary.rate }}%</div></div>
+    <div class="iq-card"><div class="iq-k">처리 완료(상담 미등록)</div><div class="iq-v">{{ summary.done_only }}<small>건</small></div><div class="iq-s">답변만 하고 끝난 문의 포함</div></div>
+    <div class="iq-card"><div class="iq-k">평균 처리 시간</div><div class="iq-v">{% if summary.avg_hours is not none %}{{ summary.avg_hours }}<small>시간</small>{% else %}-{% endif %}</div><div class="iq-s">접수 → 처리 완료</div></div>
+</div>
+
+<div class="iq-grid">
+    <div class="card">
+        <h2 class="iq-h2">채널별 <span class="muted-sm">선택 기간</span></h2>
+        <div class="tbl-wrap"><table class="tbl tbl-compact">
+            <thead><tr><th>채널</th><th class="r">문의</th><th class="r">미처리</th><th class="r">상담 등록</th><th class="r">전환율</th><th class="r">홈페이지 답변</th><th class="r">평균 처리</th></tr></thead>
+            <tbody>
+            {% for ch, b in summary.by_channel.items() %}
+            <tr><td>{{ channel_labels.get(ch, ch) }}</td><td class="r">{{ b.total }}</td><td class="r">{{ b.open }}</td><td class="r">{{ b.converted }}</td><td class="r">{{ b.rate }}%</td><td class="r">{{ b.answered }}</td><td class="r">{% if b.avg_hours is not none %}{{ b.avg_hours }}h{% else %}-{% endif %}</td></tr>
+            {% else %}
+            <tr><td colspan="7" class="muted">선택 기간에 문의가 없습니다.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table></div>
+    </div>
+    <div class="card">
+        <h2 class="iq-h2">월별 유입 <span class="muted-sm">최근 12개월 · 필터 무관</span></h2>
+        <div class="tbl-wrap"><table class="tbl tbl-compact iq-monthly">
+            <thead><tr><th>월</th><th>문의</th><th class="r">건수</th><th class="r">상담 등록</th></tr></thead>
+            <tbody>
+            {% for m in monthly %}
+            <tr>
+                <td class="nowrap">{{ m.ym }}</td>
+                <td class="iq-bar-cell">
+                    {% if m.total %}<div class="iq-bar" style="width:{{ (m.total * 100 / monthly_max)|round|int }}%"
+                         title="{% for ch, n in m.channels.items() %}{{ channel_labels.get(ch, ch) }} {{ n }}건{% if not loop.last %} · {% endif %}{% endfor %}"></div>{% endif %}
+                </td>
+                <td class="r">{{ m.total }}</td>
+                <td class="r">{{ m.converted }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table></div>
+    </div>
+</div>
+
+{# ── 목록 ── #}
+<div class="card">
+    <h2 class="iq-h2">문의 목록 <span class="muted-sm">{{ rows|length }}건</span></h2>
+    <div class="tbl-wrap"><table class="tbl tbl-compact iq-list">
+        <thead><tr><th>일시</th><th>채널</th><th>환자 / 연락처</th><th>내용</th><th>단계</th><th>처리</th><th>액션</th></tr></thead>
+        <tbody>
+        {% for r in rows %}
+        <tr data-comm="{{ r.id }}" class="iq-{{ r.stage }}">
+            <td class="nowrap muted-sm">{{ r.when }}</td>
+            <td class="nowrap"><span class="badge badge-pending">{{ channel_labels.get(r.channel, r.channel or '기타') }}</span>{% if r.board_no %} <span class="muted-sm">#{{ r.board_no }}</span>{% endif %}</td>
+            <td class="nowrap">
+                {% if r.blacklist %}<span class="bl-mark" title="블랙리스트">⚠</span> {% endif %}
+                {% if r.patient_id %}<a href="/patients/{{ r.patient_id }}">{{ r.patient_name }}</a>{% else %}<span class="muted">미연결</span>{% endif %}
+                {% if r.contact %}<br><a href="tel:{{ r.contact }}" class="iq-tel">📞 {{ r.contact }}</a>{% endif %}
+            </td>
+            <td class="iq-body"><div class="iq-sum">{{ r.summary or '' }}</div>{% if r.body %}<div class="iq-txt" title="{{ r.body }}">{{ r.body }}</div>{% endif %}</td>
+            <td class="nowrap"><span class="iq-stage s-{{ r.stage }}">{{ r.stage }}</span></td>
+            <td class="muted-sm">
+                {% if r.consultation_id %}<a href="/consult/{{ r.consultation_id }}">상담 #{{ r.consultation_id }}</a> · {{ r.consult_date or '' }}{% if r.counselor %} · {{ r.counselor }}{% endif %}{% if r.admission_status %}<br>{{ r.admission_status }}{% elif r.consult_result %}<br>{{ r.consult_result }}{% endif %}
+                {% elif r.stage == '처리완료' %}완료 {{ (r.resolved_local or '')[:16] }}{% endif %}
+                {% if r.answered %}<br>답변 {{ (r.answered_at or '')[:16] }}{% if r.answered_by %} · {{ r.answered_by }}{% endif %}{% elif r.homepage_idx and r.site_status == '답변완료' %}<br>홈페이지 답변완료{% endif %}
+            </td>
+            <td class="nowrap dash-action-cell">
+                {% if r.stage == '미처리' %}
+                {% if r.homepage_idx %}<button type="button" class="btn btn-primary btn-xs ib-hp-reply" data-comm="{{ r.id }}" title="홈페이지 상담게시판에 답변을 올리고 완료 처리">✎ 답변</button>{% endif %}
+                <a class="btn {{ 'btn-secondary' if r.homepage_idx else 'btn-primary' }} btn-xs" href="/consult/new?comm_id={{ r.id }}">상담 등록</a>
+                <button type="button" class="btn btn-secondary btn-xs ib-done" data-comm="{{ r.id }}" title="상담 등록 없이 완료로 표시">완료</button>
+                {% elif r.homepage_idx and not r.consultation_id and admin_ready %}
+                <button type="button" class="btn btn-secondary btn-xs ib-hp-reply" data-comm="{{ r.id }}" title="답변 다시 쓰기(기존 답변을 덮어씀)">✎ 답변 수정</button>
+                {% endif %}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="muted">조건에 맞는 문의가 없습니다.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table></div>
+</div>
+
+{% include "_hp_reply_dialog.html" %}
+<style>
+/* 필터 바 — 상담목록(consult_list.html)에만 정의된 스타일이라 여기서도 같은 모양으로 */
+.filter-bar{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:flex-end;padding:8px 12px;overflow:visible}
+.filter-bar .field{display:flex;flex-direction:column;gap:2px;min-width:100px}
+.filter-bar .field label{font-size:.72em;color:var(--text-light)}
+.filter-bar .field input,.filter-bar .field select{padding:3px 6px;font-size:.85em;border:1px solid var(--border);border-radius:4px;font-family:inherit}
+.filter-bar .date-range{display:flex;gap:4px;align-items:center;overflow:visible}.filter-bar .date-range input{width:145px}
+.iq-list .dash-action-cell a.btn-primary{color:#fff}   /* 표 안 링크 색이 버튼 글자색을 덮지 않게 */
+.iq-cards{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:12px 0}
+.iq-card{border:1px solid var(--border);border-radius:12px;background:#fff;padding:12px 14px}
+.iq-card .iq-k{font-size:.78rem;font-weight:800;color:#5b6d63}.iq-card .iq-v{font-size:1.6rem;font-weight:850;letter-spacing:-.03em;color:#17251e;line-height:1.15}
+.iq-card .iq-v small{font-size:.8rem;font-weight:700;margin-left:2px;color:#6b7c72}.iq-card .iq-s{font-size:.74rem;color:#7a8a80;margin-top:2px}
+.iq-card.iq-warn .iq-v{color:#b45309}.iq-card.iq-good .iq-v{color:#15803d}
+.iq-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;align-items:start}
+.iq-h2{font-size:.98rem;margin:0 0 8px}.iq-h2 .muted-sm{font-weight:600}
+.tbl td.r,.tbl th.r{text-align:right}
+.iq-bar-cell{width:45%}.iq-bar{height:12px;border-radius:6px;background:linear-gradient(90deg,#14b8a6,#0f766e);min-width:2px}
+.iq-list .iq-body{max-width:420px}.iq-sum{font-weight:700;font-size:.9em}.iq-txt{color:#5b6d63;font-size:.82em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:420px}
+.iq-stage{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.76em;font-weight:800}
+.iq-stage.s-미처리{background:#fef3c7;color:#92400e}.iq-stage.s-상담등록{background:#dcfce7;color:#166534}.iq-stage.s-처리완료{background:#e5e7eb;color:#374151}
+.iq-tel{font-size:.85em;text-decoration:none;color:var(--primary);font-weight:700}
+@media(max-width:1100px){.iq-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.iq-grid{grid-template-columns:1fr}}
+</style>
+<script>
+// 완료(상담 등록 없이) — 대시보드와 같은 API. 처리 후 목록을 다시 읽어 단계·집계를 갱신한다.
+document.querySelectorAll('.iq-list .ib-done').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        if (!confirm('상담 등록 없이 완료로 표시할까요?')) return;
+        btn.disabled = true;
+        try {
+            const r = await fetch(`/api/communication/${btn.dataset.comm}/done`, { method: 'POST' });
+            if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+            location.reload();
+        } catch (e) { alert('처리 실패: ' + e.message); btn.disabled = false; }
+    });
+});
+// 홈페이지 답변 등록 성공 시 공용 대화상자는 행을 지우는데, 여기서는 단계가 바뀌므로 다시 읽는다.
+document.addEventListener('hp-reply-done', () => location.reload());
+</script>
+{% endblock %}

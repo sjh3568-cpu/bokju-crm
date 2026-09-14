@@ -79,6 +79,7 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
 | `GET /consult/new` `POST /api/consult` | 상담일지 등록 |
 | `GET /consult/<id>` `GET /consult/<id>/edit` `POST /api/consult/<id>` | 상세 / 수정 |
 | `GET /consultations` `GET /consultations.csv` | 목록 / CSV (admin) |
+| `GET /consultations/inquiries` (+`.csv`) | **채널 문의 내역** — 홈페이지·카카오톡 문의 전체 기록·기간별 '문의→상담' 전환 집계 (상담목록 하위 메뉴) |
 | `GET /patients/<id>` | 환자 상세 + 생애주기 타임라인 |
 | `GET /ward` | **재원 관리** — 외진 중 · 재원 환자 · 입원일 미확정 3섹션 |
 | `POST /api/consult/<id>/admit` | 입원일 확정 (이 시점부터 재원 명부 + D-day 시작) |
@@ -271,10 +272,20 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
   인박스에 쌓지 않고 매핑만 남긴다. 권한은 커뮤니케이션과 동일(sms 조회/등록). `HOMEPAGE_BOARD_ENABLED=0`로 끔.
   화면 구조가 바뀌면 `parse_public_list/parse_admin_view/parse_admin_update_form`만 고치면 된다
   (tests/test_homepage_board.py가 합성 HTML로 검증).
+- **채널 문의 내역 (2026-09-15)** `/consultations/inquiries` ([inquiries.html](templates/inquiries.html)) — 문의(communications
+  인바운드)의 전체 기록. 대시보드 '오늘 처리 필요'는 미처리만 보이는 큐라 완료하면 사라지므로, 완료·상담등록까지
+  포함해 기간·채널·단계(미처리/상담등록/처리완료)·키워드로 본다. 요약 카드(문의·미처리·상담 등록+전환율·처리
+  완료(상담 미등록)·평균 처리 시간), 채널별 표, 최근 12개월 월별 막대(필터 무관), 목록(전화 링크·✎ 답변·상담 등록·완료).
+  `models.inquiry_rows/inquiry_summary/inquiry_monthly`. 답변 대화상자는 `_hp_reply_dialog.html`로 대시보드와 공용.
+  **집계 원칙**: 여기서는 '문의 → 상담' 깔때기만 센다. 상담·입원 통계는 상담일지 하나만 기준(같은 건 이중 계산 금지).
+  문의에서 '상담 등록'으로 넘어가면 `INBOUND_CHANNEL_REFERRAL`(웹문의→홈페이지, 카카오→카카오톡 채널)로 유입경로가
+  자동 체크되고 상담방법은 전화상담으로 프리필 → 기존 통계 유입경로 차트에서 채널 문의의 상담·입원 전환이 그대로 비교된다.
+  원칙: 전화를 했으면 상담일지를 등록한다(그래야 '통화 완료'='상담등록'). 답변만 남긴 문의는 '처리완료'로 남는다.
 - **인바운드 알림** — 새 문의(홈페이지·카카오)가 들어오면 로그인한 상담사 브라우저가
   `/api/inbound/alerts`를 폴링(1분)해 화면 토스트 + 브라우저 알림 + 상단 '대시보드' 배지로 통지.
   `models.open_inbound_count()` = 전역 배지, `_dashboard_inbound_bucket`로 채널 분류. 상담사가
   홈페이지 관리자에 직접 들어가 확인하지 않아도 되게 하는 것이 목적.
+  시각 전엔 배지·알림·액션큐에서 빠지고(카드엔 🔁 재연락 배지로 남음), 시각이 되면
 - 인프라 의존 미구현: STT 자동 상담일지(NAS·음성캡처 확정 필요), 팩스 OCR, 인박스에서 카톡/문자 직접 회신(아웃바운드).
 
 ## 2026-05-23 상담일지 폼 개선 5종 (사용자 명시 요청)

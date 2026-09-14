@@ -1,0 +1,91 @@
+{# 홈페이지 상담게시판 답변 — 인박스에서 바로 쓰고 등록하면 homepage_board.py가 관리자 화면에 올린다 #}
+<dialog id="hp-reply-dialog" class="hp-reply-dialog">
+    <form method="dialog" class="hp-reply-form">
+        <div class="hp-reply-head">
+            <div><h3>홈페이지 상담게시판 답변</h3><p id="hp-reply-meta" class="muted-sm"></p></div>
+            <button type="button" id="hp-reply-close" aria-label="닫기">×</button>
+        </div>
+        <div class="hp-reply-body">
+            <div class="hp-reply-q">
+                <div class="hp-reply-label">문의 내용</div>
+                <pre id="hp-reply-question"></pre>
+                <a id="hp-reply-admin-link" href="#" target="_blank" rel="noopener" class="muted-sm">홈페이지 관리자에서 보기 ↗</a>
+            </div>
+            <label class="hp-reply-label" for="hp-reply-title">답변 제목</label>
+            <input type="text" id="hp-reply-title" class="form-control" maxlength="100">
+            <label class="hp-reply-label" for="hp-reply-text">답변 내용 <span class="muted-sm">(등록하면 홈페이지에 바로 게시됩니다)</span></label>
+            <textarea id="hp-reply-text" rows="9" maxlength="4000"></textarea>
+            <p id="hp-reply-warn" class="hp-reply-warn" hidden>홈페이지 관리자 계정이 설정되지 않아 등록할 수 없습니다. 홈페이지 관리자에서 직접 올려주세요.</p>
+        </div>
+        <div class="hp-reply-actions">
+            <button type="button" class="btn btn-secondary" id="hp-reply-cancel">취소</button>
+            <button type="button" class="btn btn-primary" id="hp-reply-submit">홈페이지에 답변 등록</button>
+        </div>
+    </form>
+</dialog>
+<style>
+.hp-reply-dialog{margin:auto;width:min(680px,calc(100vw - 28px));max-height:min(86vh,820px);padding:0;border:0;border-radius:16px;box-shadow:0 24px 70px rgba(15,23,42,.28)}
+.hp-reply-dialog::backdrop{background:rgba(15,23,42,.44);backdrop-filter:blur(2px)}
+.hp-reply-form{display:flex;flex-direction:column;max-height:min(86vh,820px)}
+.hp-reply-head{display:flex;justify-content:space-between;align-items:flex-start;padding:16px 20px 12px;border-bottom:1px solid #e3eae6}
+.hp-reply-head h3{margin:0;color:#173d29;font-size:1.02rem}.hp-reply-head p{margin:3px 0 0}
+.hp-reply-head button{border:0;background:transparent;color:#64748b;font-size:1.7rem;line-height:1;cursor:pointer}
+.hp-reply-body{padding:14px 20px;overflow:auto;display:grid;gap:6px}
+.hp-reply-label{font-size:.8rem;font-weight:800;color:#365b47;margin-top:6px}
+.hp-reply-q{border:1px solid #dce6e0;border-radius:10px;background:#f7fbf8;padding:10px 12px}
+.hp-reply-q pre{margin:4px 0 6px;white-space:pre-wrap;word-break:break-word;font:inherit;font-size:.88rem;line-height:1.55;max-height:200px;overflow:auto}
+.hp-reply-body input,.hp-reply-body textarea{width:100%;box-sizing:border-box;border:1px solid #cfdad3;border-radius:8px;padding:8px 10px;font:inherit;font-size:.92rem}
+.hp-reply-body textarea{resize:vertical;line-height:1.55}
+.hp-reply-warn{margin:4px 0 0;color:#b91c1c;font-size:.82rem;font-weight:700}
+.hp-reply-actions{display:flex;justify-content:flex-end;gap:8px;padding:12px 20px 16px;border-top:1px solid #e3eae6}
+</style>
+<script>
+(function(){
+    const dlg=document.getElementById('hp-reply-dialog'); if(!dlg) return;
+    const q=document.getElementById('hp-reply-question'), meta=document.getElementById('hp-reply-meta');
+    const title=document.getElementById('hp-reply-title'), text=document.getElementById('hp-reply-text');
+    const warn=document.getElementById('hp-reply-warn'), submit=document.getElementById('hp-reply-submit');
+    const adminLink=document.getElementById('hp-reply-admin-link');
+    let commId=null;
+    const close=()=>{ if(dlg.open) dlg.close(); };
+    document.getElementById('hp-reply-close').addEventListener('click',close);
+    document.getElementById('hp-reply-cancel').addEventListener('click',close);
+    dlg.addEventListener('click',e=>{ if(e.target===dlg) close(); });
+    document.querySelectorAll('.ib-hp-reply').forEach(btn=>{
+        btn.addEventListener('click',async()=>{
+            btn.disabled=true;
+            try{
+                const r=await fetch('/api/homepage-board/'+btn.dataset.comm);
+                const d=await r.json().catch(()=>({}));
+                if(!r.ok) throw new Error(d.error||r.status);
+                commId=d.comm_id;
+                meta.textContent=(d.board_no?'#'+d.board_no+' · ':'')+(d.title||'')+(d.contact?' · '+d.contact:'')+(d.occurred_at?' · '+String(d.occurred_at).slice(0,16):'');
+                q.textContent=d.body||d.summary||'(본문 없음)';
+                adminLink.href=d.admin_url||'#';
+                title.value=d.reply_title||''; text.value=d.reply_body||'';
+                warn.hidden=!!d.admin_ready; submit.disabled=!d.admin_ready;
+                dlg.showModal(); text.focus();
+            }catch(e){ alert('불러오기 실패: '+e.message); }
+            finally{ btn.disabled=false; }
+        });
+    });
+    submit.addEventListener('click',async()=>{
+        if(!commId) return;
+        if(!title.value.trim()){ alert('답변 제목을 입력하세요.'); title.focus(); return; }
+        if(!text.value.trim()){ alert('답변 내용을 입력하세요.'); text.focus(); return; }
+        if(!confirm('이 내용으로 홈페이지 상담게시판에 답변을 올릴까요?\n등록 즉시 보호자에게 공개됩니다.')) return;
+        submit.disabled=true; submit.textContent='등록 중…';
+        try{
+            const r=await fetch('/api/homepage-board/'+commId+'/reply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:title.value,body:text.value})});
+            const d=await r.json().catch(()=>({}));
+            if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
+            close();
+            document.querySelectorAll('.ib-hp-reply[data-comm="'+commId+'"]').forEach(b=>{ const tr=b.closest('tr, .dash-action-row'); if(tr) tr.remove(); });
+            document.dispatchEvent(new CustomEvent('hp-reply-done',{detail:{commId}}));   // 채널 문의 내역은 이걸 받아 목록을 다시 읽는다
+            if(window.toast) toast('홈페이지에 답변을 등록했습니다.','success'); else alert('홈페이지에 답변을 등록했습니다.');
+        }catch(e){
+            alert('답변 등록 실패: '+e.message+'\n\n홈페이지 관리자에서 직접 올려주세요.');
+        }finally{ submit.disabled=false; submit.textContent='홈페이지에 답변 등록'; }
+    });
+})();
+</script>
