@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>상담일지 — {{ c.patient_name }} (#{{ c.id }})</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+/* ─────────────────────────────────────────────────────────────────────
+   종이 상담일지(2025 수정본) 양식 그대로 A4 1장. 화면에서는 종이 모양으로 미리보기,
+   인쇄 시엔 toolbar만 빠진다. 글자가 넘치면 아래 스크립트가 글자 크기를 줄여 1장에 맞춘다.
+   ───────────────────────────────────────────────────────────────────── */
+@page { size: A4 portrait; margin: 8mm 9mm; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #e5e7eb; color: #111;
+  font-family: "Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
+.toolbar { position: sticky; top: 0; z-index: 5; display: flex; gap: 8px; align-items: center;
+  padding: 8px 14px; background: #1f5136; color: #fff; font-size: 13px; }
+.toolbar b { margin-right: auto; }
+.toolbar a, .toolbar button { font: inherit; padding: 5px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,.5);
+  background: rgba(255,255,255,.12); color: #fff; cursor: pointer; text-decoration: none; }
+.toolbar button.primary { background: #fff; color: #1f5136; font-weight: 700; }
+.sheet { width: 192mm; min-height: 281mm; margin: 12px auto; padding: 0; background: #fff;
+  box-shadow: 0 4px 24px rgba(0,0,0,.18); font-size: 8.6pt; line-height: 1.32; --fs: 8.6pt; font-size: var(--fs); }
+@media print {
+  html, body { background: #fff; }
+  .toolbar { display: none !important; }
+  .sheet { width: auto; min-height: 0; margin: 0; box-shadow: none; }
+}
+
+/* 머리글: 좌측 입원예정·주치의·호실 / 가운데 제목 / 날짜·상담자 */
+.head { display: grid; grid-template-columns: 52mm 1fr 52mm; align-items: start; margin-bottom: 2mm; }
+.head .meta { font-weight: 700; font-size: 1.02em; line-height: 1.75; white-space: nowrap; }
+.head .meta span { display: inline-block; min-width: 13mm; }
+.head .meta .v { font-weight: 700; color: #000; min-width: 0; text-decoration: underline; text-underline-offset: 2px; }
+.head h1 { margin: 2.5mm 0 1mm; text-align: center; font-size: 19pt; letter-spacing: .55em; font-weight: 800; }
+.head .when { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: baseline;
+  padding: 0 2mm 0 60mm; font-size: 1.02em; }
+.head .when .v { font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
+
+/* 표 */
+table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+table + table { margin-top: -1px; }
+th, td { border: 1px solid #222; padding: 1mm 1.6mm; vertical-align: middle; text-align: left; word-break: keep-all; overflow-wrap: anywhere; }
+th { font-weight: 600; text-align: center; background: #fff; letter-spacing: .04em; white-space: nowrap; padding-left: .8mm; padding-right: .8mm; }
+th.side { letter-spacing: .3em; }
+td.line2 { line-height: 1.55; }
+.v { font-weight: 700; }
+.muted { color: #555; }
+.ck { display: inline-block; width: 1.05em; text-align: center; font-size: 1.1em; line-height: 1; vertical-align: -1px; }
+.ck.on { color: #000; }
+.opt { display: inline-block; margin-right: 1.6mm; white-space: nowrap; }
+.opt.on { font-weight: 700; }
+.opt.round .ck::before { content: "○"; } .opt.round.on .ck::before { content: "●"; }
+.opt.round .ck { font-size: .95em; }
+.sub { color: #333; }
+.sub .v { font-weight: 700; }
+.wr { display: inline; }
+.note { display: block; margin-top: .4mm; color: #222; }
+.note .k { color: #555; margin-right: 1mm; }
+.dz .row { display: block; margin: .15mm 0; }
+.dz .row.grp::before { content: attr(data-g); display: inline-block; min-width: 13mm; color: #555; font-size: .92em; }
+.memo { display: block; margin-top: .6mm; padding-top: .5mm; border-top: 1px dashed #999; white-space: pre-wrap;
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; }
+.two { display: grid; grid-template-columns: 1fr 1fr; column-gap: 2mm; }
+.foot { margin-top: 1.5mm; display: flex; justify-content: space-between; font-size: .82em; color: #666; }
+</style>
+</head>
+<body>
+{# ───────── 헬퍼 매크로 ───────── #}
+{% macro ck(on) %}<span class="ck{% if on %} on{% endif %}">{% if on %}☑{% else %}☐{% endif %}</span>{% endmacro %}
+{% macro opt(on, label, extra='') %}<span class="opt{% if on %} on{% endif %}">{{ ck(on) }}{{ label }}{% if extra %}<span class="sub">{{ extra }}</span>{% endif %}</span>{% endmacro %}
+{% macro ropt(on, label) %}<span class="opt round{% if on %} on{% endif %}"><span class="ck"></span>{{ label }}</span>{% endmacro %}
+{% macro paren(label, val) %}({{ label }}: <span class="v">{{ val or '' }}</span>{% if not val %}&nbsp;&nbsp;&nbsp;&nbsp;{% endif %}){% endmacro %}
+
+{% set ins = (c.insurance_type or '').split(', ') %}
+{% set dz = c.diseases or [] %}
+{% set arr = c.arrange_items or [] %}
+{% set diet = c.diet_types or [] %}
+{% set wound = c.wound_care or [] %}
+{% set spc = c.special_care or [] %}
+{% set thr = c.therapy or [] %}
+{% set docs = c.documents_checklist or [] %}
+{% set trans = c.transport_method or [] %}
+{% set cost = c.cost_guidance or [] %}
+{% set info = c.info_provided or [] %}
+{% set hear = c.hearing_options or [] %}
+{% set act = c.activity_active or [] %}
+{% set acto = c.activity_others or [] %}
+{% set refs = c.referral_source_detail or [] %}
+{% set pd = c.planned_admission_date or '' %}
+{% set cd = c.consult_date or '' %}
+{% set ct = c.consult_time or '' %}
+
+<div class="toolbar">
+  <b>🖨 상담일지 인쇄 미리보기 — {{ c.patient_name }} (상담 #{{ c.id }})</b>
+  <a href="/consult/{{ c.id }}">← 상담 상세</a>
+  <a href="/consult/{{ c.id }}/edit">수정</a>
+  <button type="button" class="primary" onclick="window.print()">인쇄 (A4 1장)</button>
+</div>
+
+<div class="sheet" id="sheet">
+  <div class="head">
+    <div class="meta">
+      ■ <span>입원예정</span> : <span class="v">{% if pd %}{{ pd[5:7]|int }}월 {{ pd[8:10]|int }}일{% if c.planned_admission_time %} {{ c.planned_admission_time }}{% endif %}{% else %}&nbsp;&nbsp;&nbsp;&nbsp;월&nbsp;&nbsp;&nbsp;&nbsp;일{% endif %}</span><br>
+      ■ <span>주 치 의</span> : <span class="v">{{ c.attending_doctor or '' }}</span><br>
+      ■ <span>호&nbsp;&nbsp;&nbsp;실</span> : <span class="v">{{ c.room_number or '' }}</span>
+    </div>
+    <h1>&lt;상담일지&gt;</h1>
+    <div></div>
+    <div class="when">
+      <span>{{ cd[:4] or '&nbsp;&nbsp;&nbsp;&nbsp;' }} 년 <span class="v">{{ cd[5:7]|int if cd else '' }}</span> 월 <span class="v">{{ cd[8:10]|int if cd else '' }}</span> 일
+        <span class="v">{{ ct[:2]|int if ct else '' }}</span> 시 <span class="v">{{ ct[3:5]|int if ct else '' }}</span> 분</span>
+      <span>상담자: <span class="v">{{ c.counselor or '' }}</span></span>
+    </div>
+  </div>
+
+  {# ───────── 기본 정보 ───────── #}
+  <table>
+    <colgroup><col style="width:22mm"><col style="width:45mm"><col style="width:15mm"><col style="width:32mm"><col style="width:17mm"><col></colgroup>
+    <tr>
+      <th>환자명</th><td class="v">{{ c.patient_name }}</td>
+      <th>나 이</th><td class="v">{{ c.patient_age if c.patient_age is not none else '' }}{% if c.patient_age is not none %}세{% endif %}</td>
+      <th>성 별</th><td>{{ opt(c.gender == 'M', '남') }} {{ opt(c.gender == 'F', '여') }}</td>
+    </tr>
+    <tr>
+      <th>주 소</th><td colspan="3">{{ c.address_full or ((c.residence_sido or '') ~ ' ' ~ (c.residence_sigungu or ''))|trim }}</td>
+      <th style="letter-spacing:0">가족사항</th><td>{{ c.family_info or '' }}</td>
+    </tr>
+    <tr>
+      <th>상담자</th><td class="v">{{ c.guardian_name or '' }}</td>
+      <th>관 계</th><td>{{ c.guardian_relation or '' }}</td>
+      <th>연락처</th><td class="v">{{ c.guardian_phone or '010 -' }}</td>
+    </tr>
+    <tr>
+      <th>상담방법</th>
+      <td>{% for ch in CONSULT_CHANNELS %}{{ opt(c.consult_channel == ch, ch) }} {% endfor %}</td>
+      <th rowspan="2">보 험<br>유 형</th>
+      <td rowspan="2" colspan="3" class="line2">
+        {% for t in INSURANCE_TYPES %}{{ opt(t in ins, t) }}{% if loop.index == 6 %}<br>{% endif %}{% endfor %}
+      </td>
+    </tr>
+    <tr>
+      <th>입원경로</th>
+      <td>
+        {% for g, opts in REFERRAL_SOURCE_GROUPS.items() %}{% for o in opts %}{% if o in refs %}{{ opt(true, o) }}{% endif %}{% endfor %}{% endfor %}
+        {% if c.referral_online_note %}<span class="sub">{{ c.referral_online_note }}</span>{% endif %}
+        {% if c.referrer_person or c.referrer_institution or c.referrer_org or c.referrer_dept %}
+          <span class="sub">— {{ [c.referrer_org, c.referrer_dept, c.referrer_person, c.referrer_institution]|select|join(' · ') }}</span>{% endif %}
+        {% if c.referral_etc_note %}<span class="sub">{{ c.referral_etc_note }}</span>{% endif %}
+        {% if not refs and not c.referral_online_note and not c.referral_etc_note %}&nbsp;{% endif %}
+      </td>
+    </tr>
+  </table>
+
+  {# ───────── 환자 상태 ───────── #}
+  <table>
+    <colgroup><col style="width:22mm"><col style="width:17mm"><col></colgroup>
+    <tr>
+      <th class="side" rowspan="10">환 자<br>상 태</th>
+      <th>현 재</th>
+      <td>{{ opt(c.current_location_type == '집', '집') }}
+          {{ opt(c.current_location_type == '입원중', '입원중') }}{{ paren('병원', c.current_location_name or c.source_hospital) }}
+          {{ opt(c.current_location_type == '입소중', '입소중') }}{{ paren('요양원', c.current_nursing_name) }}</td>
+    </tr>
+    <tr>
+      <th>의 식</th>
+      <td>{% for o in CONSCIOUSNESS_MAIN_OPTIONS %}{{ opt(c.consciousness_main == o, o) }}{% endfor %}
+          {{ opt(c.conversation_level, '대화') }}(
+          {% for o in CONVERSATION_LEVEL_OPTIONS %}<span class="opt{% if c.conversation_level == o %} on{% endif %}" style="margin:0">{{ o }}</span>{% if not loop.last %} / {% endif %}{% endfor %})
+          &nbsp;{% for o in HEARING_OPTIONS %}<span class="opt{% if o in hear %} on{% endif %}" style="margin:0">{% if o in hear %}{{ ck(true) }}{% endif %}{{ o }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
+          {% if c.hearing_note %}<span class="sub"> — {{ c.hearing_note }}</span>{% endif %}</td>
+    </tr>
+    <tr>
+      <th>활 동</th>
+      <td class="line2">
+        {{ opt(act|length > 0, '능동(화장실 가능)') }} : {% for o in ACTIVITY_ACTIVE_OPTIONS %}<span class="opt{% if o in act %} on{% endif %}" style="margin:0">{% if o in act %}{{ ck(true) }}{% endif %}{{ o }}{% if o in ('지팡이','워커') %}사용{% endif %}</span>{% if not loop.last %}, {% endif %}{% endfor %}<br>
+        {{ opt(c.activity_diaper, '수동적') }}(기저귀사용: {% for o in ACTIVITY_DIAPER_OPTIONS %}<span class="opt{% if c.activity_diaper == o %} on{% endif %}" style="margin:0">{{ o }}</span>{% if not loop.last %} / {% endif %}{% endfor %})
+        &nbsp;{{ opt(c.activity_wheelchair, '휠체어') }}({% for o in ACTIVITY_WHEELCHAIR_OPTIONS %}<span class="opt{% if c.activity_wheelchair == o %} on{% endif %}" style="margin:0">{{ o }}</span>{% if not loop.last %}, {% endif %}{% endfor %})
+        &nbsp;{{ opt('와상' in acto, '와상') }} ( {{ opt('에어매트리스 안내' in acto, '에어매트리스안내') }})
+      </td>
+    </tr>
+    <tr>
+      <th>간병여부</th>
+      <td>{% for o in CAREGIVER_OPTIONS %}{{ opt(c.caregiver_status == o, o) }}{% endfor %}
+          <span style="display:inline-block; margin-left:14mm; letter-spacing:.12em">침대유무</span>&nbsp;
+          {% for o in BED_OPTIONS %}{{ opt(c.bed_type == o, o) }}{% endfor %}</td>
+    </tr>
+    <tr>
+      <th style="height:38mm">병<br><br>명</th>
+      <td class="dz line2" style="vertical-align:top">
+        <span class="row">
+          {{ opt('당뇨' in dz, '당뇨') }}(인슐린: {% for o in ('유','무') %}<span class="opt{% if c.insulin_use == o %} on{% endif %}" style="margin:0">{{ o }}</span>{% if not loop.last %}, {% endif %}{% endfor %})
+          {{ opt('고혈압' in dz, '고혈압') }}
+          {{ opt('파킨슨' in dz, '파킨슨', (': ' ~ c.parkinson_detail) if c.parkinson_detail else ':') }}
+          {{ opt('희귀성난치질환' in dz, '희귀성난치질환', (': ' ~ c.rare_disease_name) if c.rare_disease_name else '') }}
+        </span>
+        <span class="row">
+          {{ opt('치매-경도' in dz or '치매-중도' in dz or '치매-고도' in dz, '치매') }}({% for s in ('경도','중도','고도') %}<span class="opt{% if ('치매-' ~ s) in dz %} on{% endif %}" style="margin:0">{% if ('치매-' ~ s) in dz %}{{ ck(true) }}{% endif %}{{ s }}</span>{% if not loop.last %}, {% endif %}{% endfor %})
+          {{ opt('인지기능저하' in dz, '인지기능저하') }}
+          {{ opt('이상행동-소리지름' in dz or '이상행동-폭력적' in dz, '이상행동') }}({% for s in ('소리지름','폭력적') %}<span class="opt{% if ('이상행동-' ~ s) in dz %} on{% endif %}" style="margin:0">{% if ('이상행동-' ~ s) in dz %}{{ ck(true) }}{% endif %}{{ s }}</span>{% if not loop.last %}, {% endif %}{% endfor %})
+          {{ opt('탈출 위험(escape)' in dz, '탈출여부(escape 확인)') }}
+        </span>
+        <span class="row">
+          {{ opt('암' in dz, '암') }}-부위: <span class="v">{{ c.cancer_site or '' }}</span>&nbsp;&nbsp; 발병일: <span class="v">{{ c.cancer_onset or '' }}</span>&nbsp;&nbsp;
+          전이: <span class="v">{{ c.cancer_metastasis or '' }}</span>&nbsp;&nbsp; 통증: <span class="v">{{ c.cancer_pain or '' }}</span>&nbsp;&nbsp; patch사용: <span class="v">{{ c.cancer_patch or '' }}</span>
+          {% if c.chronic_other %}<span class="sub">&nbsp; 기타: <span class="v">{{ c.chronic_other }}</span></span>{% endif %}
+        </span>
+        <span class="row">
+          {{ opt('뇌출혈' in dz, '뇌출혈') }}(수술: <span class="v">{{ c.hemorrhage_surgery or '' }}</span>)
+          {{ opt('뇌경색' in dz, '뇌경색', (' ' ~ c.infarction_site) if c.infarction_site else '') }}
+          {{ opt('척수손상' in dz, '척수손상', (' ' ~ c.spinal_injury_level) if c.spinal_injury_level else '') }}
+          {{ opt('뇌성마비' in dz, '뇌성마비') }}
+          &nbsp;{{ opt(c.disease_onset, '발병일') }} : <span class="v">{{ c.disease_onset or '' }}</span>
+        </span>
+        <span class="row">
+          {{ opt('마비-사지마비' in dz or '마비-편마비 좌' in dz or '마비-편마비 우' in dz or '마비-하지마비' in dz, '마비') }}(
+          <span class="opt{% if '마비-사지마비' in dz %} on{% endif %}" style="margin:0">{% if '마비-사지마비' in dz %}{{ ck(true) }}{% endif %}사지마비</span>,
+          <span class="opt{% if '마비-편마비 좌' in dz or '마비-편마비 우' in dz %} on{% endif %}" style="margin:0">편마비: <span class="opt{% if '마비-편마비 좌' in dz %} on{% endif %}" style="margin:0">{% if '마비-편마비 좌' in dz %}{{ ck(true) }}{% endif %}좌</span> / <span class="opt{% if '마비-편마비 우' in dz %} on{% endif %}" style="margin:0">{% if '마비-편마비 우' in dz %}{{ ck(true) }}{% endif %}우</span></span>,
+          <span class="opt{% if '마비-하지마비' in dz %} on{% endif %}" style="margin:0">{% if '마비-하지마비' in dz %}{{ ck(true) }}{% endif %}하지마비</span>)
+          {% if c.paralysis_detail %}<span class="sub"> {{ c.paralysis_detail }}</span>{% endif %}
+        </span>
+        {% set msk = ['단일부위','고관절 골절','대퇴부 골절','골반 골절','다발부위','다발부위-고관절 골절','다발부위-대퇴부 골절','다발부위-골반 골절','골유합 지연','내고정술','전치환술','하지 부위 절단','양측슬관절치환술'] %}
+        {% set msk_on = [] %}{% for m in msk %}{% if m in dz %}{% set _ = msk_on.append(m) %}{% endif %}{% endfor %}
+        <span class="row grp" data-g="근골격계">
+          {{ opt('단일부위' in dz or '고관절 골절' in dz or '대퇴부 골절' in dz or '골반 골절' in dz, '단일부위') }}({% for s in ('고관절 골절','대퇴부 골절','골반 골절') %}<span class="opt{% if s in dz %} on{% endif %}" style="margin:0">{% if s in dz %}{{ ck(true) }}{% endif %}{{ s }}</span>{% if not loop.last %}, {% endif %}{% endfor %})
+          {{ opt('다발부위' in dz or '다발부위-고관절 골절' in dz or '다발부위-대퇴부 골절' in dz or '다발부위-골반 골절' in dz, '다발부위') }}({% for s in ('고관절 골절','대퇴부 골절','골반 골절') %}<span class="opt{% if ('다발부위-' ~ s) in dz %} on{% endif %}" style="margin:0">{% if ('다발부위-' ~ s) in dz %}{{ ck(true) }}{% endif %}{{ s }}</span>{% if not loop.last %}, {% endif %}{% endfor %})
+          {{ ropt('골유합 지연' in dz, '골유합지연') }}{{ ropt('내고정술' in dz, '내고정술') }}{{ ropt('전치환술' in dz, '전치환술') }}
+          {{ opt('하지 부위 절단' in dz, '하지 부위 절단') }}{{ opt('양측슬관절치환술' in dz, '양측슬관절치환술') }}
+        </span>
+        <span class="row grp" data-g="비사용증후군">
+          {{ opt('파킨슨(신규)' in dz, '파킨슨', (': ' ~ c.parkinson_new_detail) if c.parkinson_new_detail else '') }}
+          {{ opt('길랑바레증후군' in dz, '길랑바레증후군', (': ' ~ c.gbs_detail) if c.gbs_detail else '') }}
+          {{ opt('호흡질환' in dz, '호흡질환', (': ' ~ c.lung_detail) if c.lung_detail else '') }}
+          {{ opt('심장질환' in dz, '심장질환', (': ' ~ c.heart_detail) if c.heart_detail else '') }}
+          {{ opt('신생물' in dz, '신생물(암)', (': ' ~ c.neoplasm_detail) if c.neoplasm_detail else '') }}
+        </span>
+        <span class="row">
+          {{ opt(arr|length > 0, 'arrange') }}: DNR (<span class="opt{% if 'DNR(agree)' in arr %} on{% endif %}" style="margin:0">{% if 'DNR(agree)' in arr %}{{ ck(true) }}{% endif %}agree</span>/<span class="opt{% if 'DNR(consult)' in arr %} on{% endif %}" style="margin:0">{% if 'DNR(consult)' in arr %}{{ ck(true) }}{% endif %}consult</span>) &amp;
+          <span class="opt{% if 'hopeless 확인' in arr %} on{% endif %}" style="margin:0">{% if 'hopeless 확인' in arr %}{{ ck(true) }}{% endif %}hopeless 확인</span>
+          {% if c.primary_diagnosis %}<span class="sub">&nbsp;&nbsp; 진단명: <span class="v">{{ c.primary_diagnosis }}</span>{% if c.secondary_diagnosis %} / {{ c.secondary_diagnosis }}{% endif %}</span>{% endif %}
+        </span>
+        <span class="row">-PO: <span class="v">{{ c.memo_po or '' }}</span></span>
+        <span class="row">-OP: <span class="v">{{ c.memo_op or '' }}</span></span>
+        {% if c.disease_detail or c.note or c.needs_summary %}
+        <span class="memo">{{ [c.disease_detail, c.needs_summary, c.note]|select|join(' / ') }}</span>
+        {% endif %}
+      </td>
+    </tr>
+    <tr>
+      <th>입원목적</th>
+      <td class="v">{{ c.admission_purpose or '' }}{% if c.admission_purpose_category %}<span class="sub muted" style="font-weight:400"> ({{ c.admission_purpose_category }})</span>{% endif %}&nbsp;</td>
+    </tr>
+    <tr>
+      <th>식사종류</th>
+      <td>{{ opt('밥' in diet, '밥') }}{{ opt('죽' in diet, '죽') }}
+          {{ opt('미음-도움' in diet or '미음-스스로' in diet or '미음-틀니' in diet or '미음-다지기' in diet, '미음') }}-{% for s in ('도움','스스로','틀니','다지기') %}<span class="opt{% if ('미음-' ~ s) in diet %} on{% endif %}" style="margin:0">{% if ('미음-' ~ s) in diet %}{{ ck(true) }}{% endif %}{{ s }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
+          &nbsp;{{ opt('비강영양(L-tube)' in diet, '비강영양(L-tube)') }}{{ opt('위루술(PEG)' in diet, '위루술(PEG)') }}
+          {% if c.diet_note %}<span class="sub"> — {{ c.diet_note }}</span>{% endif %}</td>
+    </tr>
+    <tr>
+      <th>상처소독</th>
+      <td class="line2">
+        {% for o, f in WOUND_CARE_NOTE_FIELDS.items() %}{{ opt(o in wound, o, ('(' ~ c[f] ~ ')') if c[f] else '') }}{% if loop.index == 4 %}<br>{% endif %}{% endfor %}
+      </td>
+    </tr>
+    <tr>
+      <th>특수처치</th>
+      <td class="line2">
+        {% for o, f in SPECIAL_CARE_NOTE_FIELDS.items() %}{% if o == '산소요법' %}{{ opt(o in spc, o, '(' ~ (c[f] or '') ~ ' L/min)') }}{% elif o == 'MRSA' %}{{ opt(o in spc or 'VRE' in spc or 'CRE' in spc, '기타') }}({{ opt('MRSA' in spc, 'MRSA', ('(' ~ c[f] ~ ')') if c[f] else '') }}{% elif o in ('VRE', 'CRE') %}{{ opt(o in spc, o, ('(' ~ c[f] ~ ')') if c[f] else '') }}{% if o == 'CRE' %}){% endif %}{% else %}{{ opt(o in spc, o, ('(' ~ c[f] ~ ')') if c[f] else '') }}{% endif %}{% if loop.index == 6 %}<br>{% endif %}{% endfor %}
+      </td>
+    </tr>
+    <tr>
+      <th>검사·치료</th>
+      <td class="line2">
+        {{ opt(c.swallow_test, '연하검사') }}({% for o in ('유','무') %}<span class="opt{% if c.swallow_test == o %} on{% endif %}" style="margin:0">{{ o }}</span>{% if not loop.last %}, {% endif %}{% endfor %}) : 검사일 <span class="v">{{ c.swallow_test_dates or '(20&nbsp;&nbsp;,&nbsp;&nbsp;,&nbsp;&nbsp;) (20&nbsp;&nbsp;,&nbsp;&nbsp;,&nbsp;&nbsp;)'|safe }}</span>
+        &nbsp;{{ opt('언어치료' in thr, '언어치료') }}<br>
+        {{ opt('로봇치료' in thr, '로봇치료') }}
+        {{ opt('전문재활-QD' in thr or '전문재활-BID' in thr, '전문재활') }}: <span class="opt{% if '전문재활-QD' in thr %} on{% endif %}" style="margin:0">{% if '전문재활-QD' in thr %}{{ ck(true) }}{% endif %}QD</span> / <span class="opt{% if '전문재활-BID' in thr %} on{% endif %}" style="margin:0">{% if '전문재활-BID' in thr %}{{ ck(true) }}{% endif %}BID</span>
+        &nbsp;{{ opt('도수치료(비보험)' in thr, '도수치료(비보험)') }}
+      </td>
+    </tr>
+  </table>
+
+  {# ───────── 입원 시 확인 사항 ───────── #}
+  <table>
+    <colgroup><col style="width:22mm"><col></colgroup>
+    <tr>
+      <th class="side">입원<br>시<br>확인<br>사항</th>
+      <td class="line2">
+        <div class="two">
+          <div>
+            {{ opt(ADMISSION_DOCS[0] in docs, '의사소견서 및 처방전, MRI &amp; CT 촬영 CD준비, 신분증'|safe) }}<br>
+            {{ opt(ADMISSION_DOCS[1] in docs, '보호환자: 의료급여의뢰서') }}<br>
+            {{ opt(ADMISSION_DOCS[3] in docs, '자보환자: 지불보증서') }}<br>
+            {{ opt('보호자차량(self)' in trans, '보호자차량 (self)') }}<br>
+            {{ opt('앰뷸런스 이용' in trans, '앰블런스 이용') }} {{ opt('사설앰뷸 이용' in trans, '사설앰블 이용') }}
+          </div>
+          <div>
+            {{ opt(c.admission_period, '입원가능기간') }}: <span class="v">{{ c.admission_period or '' }}</span><br>
+            {{ opt(ADMISSION_DOCS[2] in docs, '연하검사 결과지(VFSS)') }}<br>
+            {{ opt(ADMISSION_DOCS[4] in docs, '심장초음파 결과지') }}<br>
+            {{ opt(ADMISSION_DOCS[5] in docs, '다제내성균 결과지') }}
+          </div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  {# ───────── 진료비 · 안내사항 ───────── #}
+  <table>
+    <colgroup><col style="width:22mm"><col style="width:85mm"><col style="width:17mm"><col></colgroup>
+    <tr>
+      <th class="side">진료비<br>입원수속</th>
+      <td class="line2">
+        {% for o in COST_GUIDANCE_OPTIONS %}{{ opt(o in cost, o ~ ' 안내') }}{% if not loop.last %}<br>{% endif %}{% endfor %}
+        {% if c.external_referral %}<br><span class="sub">타 기관 연계: {{ c.external_referral|join(', ') }}{% if c.external_referral_note %} — {{ c.external_referral_note }}{% endif %}</span>{% endif %}
+      </td>
+      <th>안 내<br>사 항</th>
+      <td class="line2">
+        {% for o in INFO_PROVIDED_OPTIONS %}{{ opt(o in info, o) }}{% if not loop.last %}<br>{% endif %}{% endfor %}
+      </td>
+    </tr>
+  </table>
+
+  <div class="foot">
+    <span>상담 #{{ c.id }} · {{ c.consult_result or '상담완료' }}{% if c.admission_status %} · {{ c.admission_status }}{% endif %}{% if c.source_hospital %} · 모병원 {{ c.source_hospital }}{% endif %}</span>
+    <span>복주회복병원 상담실 CRM · 출력 {{ printed_at }}</span>
+  </div>
+</div>
+
+<script>
+// A4 한 장 보장 — 본문이 인쇄 가능 높이(297-16mm ≈ 281mm)를 넘으면 글자 크기를 0.2pt씩 줄인다(최소 6.4pt).
+(function () {
+  const sheet = document.getElementById('sheet');
+  const limitPx = 281 * 96 / 25.4;      // mm → px (CSS 기준 96dpi)
+  let fs = 8.6;
+  function fits() { return sheet.scrollHeight <= limitPx; }
+  while (!fits() && fs > 6.4) { fs -= 0.2; sheet.style.setProperty('--fs', fs.toFixed(1) + 'pt'); }
+  if (new URLSearchParams(location.search).get('auto') === '1') {
+    setTimeout(() => window.print(), 250);
+  }
+})();
+</script>
+</body>
+</html>

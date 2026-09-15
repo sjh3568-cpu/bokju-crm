@@ -12,7 +12,7 @@
         <a href="/sms?cid={{ c.id }}" class="btn btn-secondary btn-sm">📩 문자 전송</a>
         <a href="/patients/{{ c.patient_id }}" class="btn btn-secondary btn-sm">환자 정보</a>
         <a href="/consult/{{ c.id }}/edit" class="btn btn-accent btn-sm">수정</a>
-        <button type="button" class="btn btn-primary btn-sm" onclick="window.print()">🖨 상담일지 인쇄</button>
+        <a href="/consult/{{ c.id }}/print?auto=1" target="_blank" class="btn btn-primary btn-sm" title="종이 상담일지 양식 그대로 A4 1장">🖨 상담일지 인쇄</a>
     </div>
 </div>
 

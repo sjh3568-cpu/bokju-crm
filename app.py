@@ -3431,6 +3431,35 @@ def consult_detail(cid):
                            LIFECYCLE_EVENT_TYPES=LIFECYCLE_EVENT_TYPES)
 
 
+@app.route("/consult/<int:cid>/print")
+@login_required
+def consult_print(cid):
+    """종이 상담일지(2025 수정본) 양식 그대로 A4 1장 인쇄용 화면(2026-09-15).
+    상세 페이지의 [상담일지 인쇄]가 새 탭으로 연다. ?auto=1이면 열리자마자 인쇄 대화상자."""
+    from config import (INSURANCE_TYPES, REFERRAL_SOURCE_GROUPS,
+                        WOUND_CARE_NOTE_FIELDS, SPECIAL_CARE_NOTE_FIELDS)
+    c = models.get_consultation(cid)
+    if not c:
+        abort(404)
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="view_consult", target_type="consultation", target_id=cid,
+        detail="print", ip=request.remote_addr,
+    )
+    return render_template(
+        "consult_print.html", c=c,
+        printed_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
+        INSURANCE_TYPES=INSURANCE_TYPES, REFERRAL_SOURCE_GROUPS=REFERRAL_SOURCE_GROUPS,
+        WOUND_CARE_NOTE_FIELDS=WOUND_CARE_NOTE_FIELDS, SPECIAL_CARE_NOTE_FIELDS=SPECIAL_CARE_NOTE_FIELDS,
+        CONSULT_CHANNELS=CONSULT_CHANNELS, CONSCIOUSNESS_MAIN_OPTIONS=CONSCIOUSNESS_MAIN_OPTIONS,
+        CONVERSATION_LEVEL_OPTIONS=CONVERSATION_LEVEL_OPTIONS, HEARING_OPTIONS=HEARING_OPTIONS,
+        ACTIVITY_ACTIVE_OPTIONS=ACTIVITY_ACTIVE_OPTIONS, ACTIVITY_DIAPER_OPTIONS=ACTIVITY_DIAPER_OPTIONS,
+        ACTIVITY_WHEELCHAIR_OPTIONS=ACTIVITY_WHEELCHAIR_OPTIONS, CAREGIVER_OPTIONS=CAREGIVER_OPTIONS,
+        BED_OPTIONS=BED_OPTIONS, ADMISSION_DOCS=ADMISSION_DOCS,
+        COST_GUIDANCE_OPTIONS=COST_GUIDANCE_OPTIONS, INFO_PROVIDED_OPTIONS=INFO_PROVIDED_OPTIONS,
+    )
+
+
 @app.route("/consult/<int:cid>/edit")
 @login_required
 def consult_edit(cid):
