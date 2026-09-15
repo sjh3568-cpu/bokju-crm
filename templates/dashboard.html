@@ -1190,7 +1190,7 @@ document.querySelectorAll('.due-tab').forEach(btn=>{
     svg.addEventListener('mouseleave',()=>tip.setAttribute('visibility','hidden'));
     }
     draw();
-    let rt;window.addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(draw,150);});
+    let rt;window.onresize=()=>{clearTimeout(rt);rt=setTimeout(draw,150);};   // 부분 갱신으로 스크립트가 다시 돌아도 한 번만 걸리게(대입형)
 })();
 /* 긴 목록은 10건까지만 — 더보기로 펼침 (table[data-limit]) */
 document.querySelectorAll('.page-dashboard [data-limit]').forEach(table=>{

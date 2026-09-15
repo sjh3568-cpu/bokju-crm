@@ -362,6 +362,32 @@ def _no_store(resp):
     resp.headers["Pragma"] = "no-cache"
     if getattr(g, "clear_remember_cookie", False):
         resp.delete_cookie(_REMEMBER_COOKIE, path="/", samesite="Lax")
+    return _gzip_response(resp)
+
+
+_GZIP_TYPES = ("text/html", "application/json", "text/css", "application/javascript", "text/javascript", "text/csv", "image/svg+xml")
+_GZIP_MIN_BYTES = 4096
+
+
+def _gzip_response(resp):
+    """텍스트 응답 gzip — 재원 관리(약 600KB)·상담목록(600KB)·대시보드(270KB)가 8~10배 줄어든다.
+    waitress 앞에 역프록시가 없어 앱이 직접 압축한다. 스트리밍(파일 전송)·작은 응답·이미 인코딩된 응답은 건너뛴다."""
+    try:
+        if resp.direct_passthrough or resp.status_code < 200 or resp.status_code >= 300 or resp.status_code == 204:
+            return resp
+        if "gzip" not in (request.headers.get("Accept-Encoding") or "").lower():
+            return resp
+        if resp.headers.get("Content-Encoding") or not (resp.mimetype or "").startswith(_GZIP_TYPES):
+            return resp
+        body = resp.get_data()
+        if len(body) < _GZIP_MIN_BYTES:
+            return resp
+        import gzip as _gz
+        resp.set_data(_gz.compress(body, compresslevel=5))
+        resp.headers["Content-Encoding"] = "gzip"
+        resp.headers.add("Vary", "Accept-Encoding")
+    except Exception:
+        app.logger.exception("응답 압축 실패 — 압축 없이 보냅니다")
     return resp
 
 
@@ -2228,7 +2254,7 @@ def _ward_status_strip(census=None):
     # 재원자 각각을 /ward와 같은 방식으로 회복기 판정한다. 상담이 붙은 회차는 그
     # 상담에 명부 값(수가구분·재활종료일)을 얹어서, 상담 없이 입원한 회차(orphans)는
     # 명부 값만으로 행을 만들어서 — 둘 다 _care_phase를 거친다.
-    trend_rows = {c["id"]: c for c in models.list_consultations(limit=10000)}
+    trend_rows = {c["id"]: c for c in models.list_consultations(ids=list(census["by_consultation"]), limit=10000)}
     recovery_n = total_n = 0
     for cid, ep in census["by_consultation"].items():
         base = trend_rows.get(cid)
@@ -2311,7 +2337,9 @@ def _dashboard_residents():
     """지금 재원 중인 상담(입원완료) 목록 — 원무 명부 census 기준. (census, residents)를 돌려준다.
     대시보드 기한 임박·오늘 처리 필요와 통합 달력(회복기 전환일)이 같은 목록을 쓴다."""
     census = models.current_admission_census()
-    admitted = models.list_consultations(admission_status="입원완료", limit=10000)
+    admitted = models.list_consultations(
+        admission_status="입원완료", limit=10000,
+        ids=list(census["by_consultation"]) if census["has_roster"] else None)   # 재원만 읽는다(전체 X)
     if census["has_roster"]:
         # census 재원만 남기고, 회복기·만료 계산이 /ward와 같아지도록 명부값
         # (실제 입원일·수가구분·재활종료일·발병일)을 상담에 얹는다.
@@ -4813,24 +4841,23 @@ def ward_view():
     # 않아 2024년 입원 환자가 아직 재원으로 잡히고, 올해 입원한 환자는 한 명도
     # 안 잡혔다. 회차 테이블은 원무 명부를 그대로 받은 것이라 사실과 같다.
     census = models.current_admission_census()
-    rows = models.list_consultations(q=db_q, q_scope="ward", limit=10000)
-    pending_pool = [c for c in rows
-                    if c.get("admission_status") == "입원완료"
-                    and not (c.get("discharge_date") or "").strip()
+    # 전체 상담 8천 건을 매번 읽지 않는다 — 입원 미확정 큐는 '입원완료' 상담만, 재원 명단은 census에 붙은 상담만.
+    pool = models.list_consultations(admission_status="입원완료", q=db_q, q_scope="ward", limit=10000)
+    pending_pool = [c for c in pool
+                    if not (c.get("discharge_date") or "").strip()
                     and not (c.get("actual_admission_date") or c.get("admission_date") or "").strip()
                     and c.get("patient_id") not in census["patients"]]
     if not census["has_roster"]:
         # 명부를 아직 안 올린 설치. 회차가 통째로 비어 있으면 재원 명단도 비므로
         # 옛 방식(상담의 입원완료·미퇴원)으로 돌아간다.
-        rows = [c for c in rows
-                if c.get("admission_status") == "입원완료"
-                and not (c.get("discharge_date") or "").strip()]
+        rows = [c for c in pool
+                if not (c.get("discharge_date") or "").strip()]
         pending_pool = [c for c in rows
                         if not (c.get("actual_admission_date") or c.get("admission_date") or "").strip()]
         rows = [c for c in rows
                 if (c.get("actual_admission_date") or c.get("admission_date") or "").strip()]
     else:
-        rows = [c for c in rows if c["id"] in census["by_consultation"]]
+        rows = models.list_consultations(ids=list(census["by_consultation"]), q=db_q, q_scope="ward", limit=10000)
     for c in rows:
         # 입원 사실은 명부 값으로 덮는다 — 상담에 적힌 입원일·병실은 상담 시점의
         # 예정값이라 실제와 어긋난다.
@@ -5010,8 +5037,9 @@ def ward_view():
     # 각 날짜의 재원 명부를 복원해 회복기 환자 비율을 계산한다.
     # 여기도 기준은 원무 명부다 — 상담의 입·퇴원일로 복원하면 퇴원일이 비어 있어
     # census가 날이 갈수록 불어나기만 한다. 회차는 어느 시점을 끊어도 실제와 맞는다.
-    trend_rows = {c["id"]: c for c in models.list_consultations(limit=10000)}
     spans = models.admission_spans()
+    trend_rows = {c["id"]: c for c in models.list_consultations(
+        ids=[sp["consultation_id"] for sp in spans if sp.get("consultation_id")], limit=100000)}
     # 상담이 안 붙은 회차는 진단·발병일을 몰라 회복기 판정을 못 한다. 과거로
     # 갈수록 연결률이 떨어져(전체 73%) 이들을 '비회복기'로 세면 비율이 실제보다
     # 낮게 나온다 — 40% 기준선을 보는 지표라 그 왜곡이 위험하다. 그래서 비율은
@@ -5134,8 +5162,10 @@ def ward_view():
     backup_status = backup.latest_status() if subtab == "quality" else None
     blacklisted = models.list_blacklisted_patients()
     away_report = _ward_away_report() if subtab == "away" else None
+    # partial=roster — 명단 본문만(지연 로딩). 접힌 첫 화면은 침상 카드 263장을 보내지 않는다.
+    partial = request.args.get("partial") == "roster"
     return render_template(
-        "ward.html", away=away, admitted=admitted_list,
+        "_ward_roster.html" if partial else "ward.html", away=away, admitted=admitted_list,
         room_view=room_view, unassigned=unassigned,
         view=view,
         pending=pending_recent, pending_old=pending_old, show_old=show_old,
@@ -5237,9 +5267,11 @@ def _ward_away_panel(events, doctor=None):
 def _ward_admitted_roster(q, doctor):
     """재원(입원완료·미퇴원·입원일 있음) 환자 목록 — 파생 필드 모두 부착. ward_view/CSV 공유."""
     census = models.current_admission_census()
-    rows = models.list_consultations(q=q, q_scope="ward", limit=10000)
     if census["has_roster"]:
-        rows = [c for c in rows if c["id"] in census["by_consultation"]]
+        rows = models.list_consultations(ids=list(census["by_consultation"]), q=q, q_scope="ward", limit=10000)
+    else:
+        rows = models.list_consultations(admission_status="입원완료", q=q, q_scope="ward", limit=10000)
+    if census["has_roster"]:
         for c in rows:
             ep = census["by_consultation"][c["id"]]
             c.update(actual_admission_date=ep["admitted_at"], discharge_date=None,
@@ -5593,8 +5625,10 @@ def _recovery_ratio_spark(dates):
     if _RATIO_SPARK_CACHE["key"] == key:
         return _RATIO_SPARK_CACHE["value"]
     try:
-        trend_rows = {c["id"]: c for c in models.list_consultations(limit=10000)}
-        spans = [_trend_span(sp, trend_rows.get(sp["consultation_id"])) for sp in models.admission_spans()]
+        raw_spans = models.admission_spans()
+        trend_rows = {c["id"]: c for c in models.list_consultations(
+            ids=[sp["consultation_id"] for sp in raw_spans if sp.get("consultation_id")], limit=100000)}
+        spans = [_trend_span(sp, trend_rows.get(sp["consultation_id"])) for sp in raw_spans]
     except Exception:
         logger.exception("회복기 비율 스파크 계산 실패")
         return []

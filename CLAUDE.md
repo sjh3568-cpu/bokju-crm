@@ -360,6 +360,26 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
 - `cooperation_agreements`: 기관별 업무협약서 메타데이터(문서명, 체결/만료, 상태, 상대 담당자, 문서 보관 위치, 비고). 파일 자체를 DB에 저장하지 않는다.
 - 상세자료 갱신: `.venv-linux/bin/python tools/import_cooperation_facility_details.py <2026.3 XLSX 폴더> --updated-at 2026-03`.
 
+## 2026-09-15 속도·크기 개선 (재원 관리·대시보드)
+
+- **상담 대량 조회는 ids로 끊는다** — `models.list_consultations(ids=[...])`(`_build_consult_where` `c.id IN`, 900개 초과 분할).
+  재원 관리·대시보드·회복기 추이·스파크라인이 요청마다 상담 8천 건 전체를 읽고 파이썬에서 거르던 것을
+  census(`by_consultation` 키)·회차 `consultation_id`만 읽게 바꿨다. 실측: 대시보드 299→119ms, 재원 393→136ms.
+  새 대량 조회를 짤 때 `list_consultations(limit=10000)`을 그대로 부르지 말 것.
+- **재원 명단 지연 로딩** — `/ward` 첫 화면은 명단(`#wd-roster-body`)이 접혀 있으므로 렌더하지 않고(`data-lazy`),
+  '명단 펼치기'에서 `/ward?partial=roster&<같은 쿼리>`로 [_ward_roster.html](templates/_ward_roster.html)만 받아 끼운다
+  (같은 `ward_view`가 partial 요청엔 그 템플릿만 돌려줌). 검색·필터·view가 있으면 예전처럼 즉시 렌더.
+  침상 카드 매크로는 [_ward_bed.html](templates/_ward_bed.html)로 분리(본문·부분 공용). 985KB→172KB(gzip 34KB).
+- **침상 카드 편집 폼 1벌** — 외진·퇴원·복귀·호실 폼을 카드 263장마다 넣지 않고 `#rm-editor-tpl`에서 클릭 시
+  복제(`ensureEditor`). 카드는 값만 `data-room/aevent/return-date/event-date/return-room`로 들고 있다.
+  명단 바인딩은 `bindRoster(root)` 함수 — 지연 로딩된 조각에 다시 걸 수 있게.
+- **부분 갱신** — `data-autorefresh` 페이지(대시보드·재원)는 30초마다 `location.reload()` 대신 같은 주소를 fetch해
+  `main.container`만 바꿔 끼우고 본문 인라인 스크립트를 다시 실행한다(base.html `partialRefresh`). 스크롤·'더보기'·
+  details 펼침·재원 명단 펼침(sessionStorage)이 유지되고 깜빡이지 않는다. 본문 스크립트는 IIFE·함수 선언만 두고,
+  `window.addEventListener`는 대입형(`window.onresize=`)으로 — 재실행 시 중복 등록 방지. 입력 중·모달 열림이면 건너뜀.
+- **gzip** — `app._gzip_response`(after_request)가 4KB 이상 text/html·json·css·js·csv를 압축(waitress 앞에 프록시가 없어
+  앱이 직접). 파일 전송(passthrough)·이미 인코딩된 응답은 제외. 회귀: tests/test_perf_lazy.py.
+
 ## 2026-09-13~14 대시보드 개편 · 좌측 사이드바
 
 - **기준 화면 폭은 1440px**(사용자 노트북, 고해상도 2배 스케일). 레이아웃 검증은 1440×850으로 한다 — 1920에서 멀쩡해도 1440에서 잘리거나 두 줄로 꺾이면 안 된다.

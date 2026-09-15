@@ -1,0 +1,178 @@
+{# 재원 명단 본문(병실 배치도 / 목록) — 기본은 접혀 있어 처음엔 렌더하지 않고, 펼칠 때 /ward?partial=roster 로 받아 끼운다.
+   ward.html이 roster_open일 때 include하고, 같은 라우트가 partial=roster 요청엔 이 파일만 돌려준다. #}
+{% from "_ward_bed.html" import bed with context %}
+    {% if admitted and view == 'room' %}
+    {# ── 병실 뷰 — 병동 → 호실 카드 → 침상 ── #}
+    {% for w in room_view %}
+    <div class="rm-ward">
+        <div class="rm-ward-head">{{ w.ward }} <span class="wd-n">{{ w.n }}</span></div>
+        {# 호실 한 줄 = 왼쪽 호실 번호, 오른쪽에 침상을 가로로 #}
+        {% for b in w.rooms %}
+        <div class="rm-row">
+            <div class="rm-row-head">
+                <span class="rm-no">{{ b.room|replace('호', '') }}</span>
+                <span class="rm-cap" title="재원/정원">{{ b.patients|length }}/{{ b.patients|length + b.empty }}</span>
+            </div>
+            <div class="rm-beds" style="--slots: {{ [4, b.patients|length + b.empty]|max }}">
+                {% for c in b.patients %}
+                {{ bed(c) }}
+                {% endfor %}
+                {% for _ in range(b.empty) %}
+                <div class="rm-bed rm-empty">빈 침상</div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endfor %}
+    {% if unassigned %}
+    <div class="rm-ward rm-unassigned">
+        <div class="rm-ward-head">호실 미지정 <span class="wd-n">{{ unassigned|length }}</span>
+            <span class="muted-sm">— 호실을 입력하면 위 병실 배치도에 자리를 잡습니다</span>
+        </div>
+        <div class="rm-grid">
+            {% for c in unassigned %}
+            <div class="rm-room rm-room-solo">
+                {{ bed(c) }}
+                {% if c.id %}<div class="rm-assign" data-cid="{{ c.id }}">
+                    <input type="text" class="rm-room-in" placeholder="호실 (예: 502)" size="8">
+                    <button type="button" class="btn btn-primary btn-xs rm-room-save">호실 지정</button>
+                </div>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    {% elif admitted %}
+    <div class="tbl-wrap wd-roster-scroll">
+        <table class="tbl wd-tbl">
+            <thead><tr>
+                <th><a class="wd-th-sort {% if sort == 'room' %}on{% endif %}" href="{{ url_with(view='list', sort='room', dir=('desc' if sort == 'room' and sort_dir == 'asc' else 'asc')) }}#sec-ward">호실 {% if sort == 'room' %}{{ '▲' if sort_dir == 'asc' else '▼' }}{% else %}⇅{% endif %}</a></th>
+                <th><a class="wd-th-sort {% if sort == 'name' %}on{% endif %}" href="{{ url_with(view='list', sort='name', dir=('desc' if sort == 'name' and sort_dir == 'asc' else 'asc')) }}#sec-ward">환자 {% if sort == 'name' %}{{ '▲' if sort_dir == 'asc' else '▼' }}{% else %}⇅{% endif %}</a></th>
+                <th>주치의</th><th>주 진단 · 부 진단</th>
+                <th><a class="wd-th-sort {% if sort == 'admission' %}on{% endif %}" href="{{ url_with(view='list', sort='admission', dir=('asc' if sort == 'admission' and sort_dir == 'desc' else 'desc')) }}#sec-ward">입원일 {% if sort == 'admission' %}{{ '과거순 ▲' if sort_dir == 'asc' else '최근순 ▼' }}{% else %}⇅{% endif %}</a></th>
+                <th><a class="wd-th-sort {% if sort == 'stay' %}on{% endif %}" href="{{ url_with(view='list', sort='stay', dir=('asc' if sort == 'stay' and sort_dir == 'desc' else 'desc')) }}#sec-ward">재원 {% if sort == 'stay' %}{{ '▲' if sort_dir == 'asc' else '▼' }}{% else %}⇅{% endif %}</a></th>
+                <th><a class="wd-th-sort {% if sort == 'dday' %}on{% endif %}" href="{{ url_with(view='list', sort='dday', dir=('desc' if sort == 'dday' and sort_dir == 'asc' else 'asc')) }}#sec-ward">수가 구간 {% if sort == 'dday' %}{{ '▲' if sort_dir == 'asc' else '▼' }}{% else %}⇅{% endif %}</a></th>
+                <th><a class="wd-th-sort {% if sort == 'discharge' %}on{% endif %}" href="{{ url_with(view='list', sort='discharge', dir=('asc' if sort == 'discharge' and sort_dir == 'desc' else 'desc')) }}#sec-ward">퇴원 예정 {% if sort == 'discharge' %}{{ '과거순 ▲' if sort_dir == 'asc' else '최근순 ▼' }}{% else %}⇅{% endif %}</a></th>
+                {% if filt in ('recdue','dis30') %}<th>안내 확인</th>{% endif %}<th>처리</th>
+            </tr></thead>
+            <tbody>
+                {% for c in admitted %}
+                <tr {% if c.away %}class="wd-away-row"{% endif %}>
+                    <td class="nowrap"><strong>{{ c.room_number or '—' }}</strong></td>
+                    <td class="nowrap">
+                        {% if c.away %}<span class="wd-mark">🚑</span>{% endif %}
+                        {% if c.id %}<a href="/consult/{{ c.id }}">{{ c.patient_name }}</a>
+                        {% else %}<strong>{{ c.patient_name }}</strong> <span class="wd-roster-only" title="원무 명부에는 있으나 상담일지가 없는 환자입니다. 상담을 등록하면 외진·퇴원 관리를 할 수 있습니다.">상담기록 없음</span>{% endif %}
+                        <span class="muted-sm">{% if c.patient_age is not none %}{{ c.patient_age }}{% endif %}{% if c.gender == 'M' %}·남{% elif c.gender == 'F' %}·여{% endif %}</span>
+                        {% for t in c.mgmt_tags %}<span class="wd-tag">{{ t }}</span>{% endfor %}
+                    </td>
+                    <td class="nowrap">{{ c.attending_doctor or '-' }}</td>
+                    <td class="wd-dx" title="주 {{ c.dx_primary|join(', ') }}{% if c.dx_secondary %} / 부 {{ c.dx_secondary|join(', ') }}{% endif %}">
+                        <div class="wd-dx-main">
+                            {% for org in c.organisms %}<span class="wd-org">{{ org }}</span>{% endfor %}
+                            {% if c.dx_primary %}{{ c.dx_primary[:2]|join(', ') }}{% if c.dx_primary|length > 2 %} 외{{ c.dx_primary|length - 2 }}{% endif %}
+                            {% else %}<span class="muted-sm">주진단 미기재</span>{% endif %}
+                        </div>
+                        {% if c.dx_secondary %}<div class="wd-dx-sub">부: {{ c.dx_secondary[:3]|join(', ') }}{% if c.dx_secondary|length > 3 %} 외{% endif %}</div>{% endif %}
+                    </td>
+                    <td class="nowrap">{{ c.admitted_on|krdate }}</td>
+                    <td class="nowrap">{% if c.stay_days is not none %}{{ c.stay_days }}일{% endif %}
+                        {% if c.stay_milestone_dday %}<div><span class="wd-dd {{ 'over' if c.stay_milestone_delta > 0 else 'warn' }}">{{ stay_periods[stay_period] }} {{ c.stay_milestone_dday }}</span></div><div class="wd-dx-sub">기준 {{ c.stay_milestone_date|krdate }}</div>{% endif %}
+                        {% if c.ext_tier %}<span class="wd-ext t{{ c.ext_tier }}"
+                            title="{{ c.ext_label }}{% if c.ext_cap_date %} · 진단 후 2년 한도 {{ c.ext_cap_date|krdate }}{% if c.ext_cap_left is not none %} (D-{{ c.ext_cap_left }}){% endif %}{% endif %}">
+                            {{ '연장1' if c.ext_tier == 1 else '연장2' }}</span>{% endif %}
+                        {% if c.away_hist %}<span class="muted-sm" title="외진 기간도 재원일에 포함됩니다">🚑{{ c.away_hist.count }}·{{ c.away_hist.days }}일</span>{% endif %}</td>
+                    <td class="nowrap">
+                        <span class="wd-ph ph-{{ {'회복기':'rec','비회복기':'non','단일구간':'sgl'}.get(c.care_phase,'etc') }}">{{ c.care_phase }}</span>
+                        {% if c.phase_dday is not none %}
+                        <span class="wd-dd {% if c.phase_dday < 0 %}over{% elif c.phase_dday <= 30 %}warn{% endif %}">
+                            {% if c.phase_dday < 0 %}{{ -c.phase_dday }}일 초과{% else %}D-{{ c.phase_dday }}{% endif %}</span>
+                        {% endif %}
+                        {% if c.phase_end_date %}<div class="wd-dx-sub" title="{{ '재활 종료일' if c.phase_end_kind == 'rehab' else ('회복기(S005) 종료일' if c.care_phase == '회복기' else '입원 만료일') }}">
+                            {% if c.phase_end_kind == 'rehab' %}재활 종료 {% elif c.care_phase == '회복기' %}회복기 종료 {% else %}만료 {% endif %}{{ c.phase_end_date|krdate }}</div>{% endif %}
+                    </td>
+                    <td class="nowrap">
+                        {% if c.discharge_due %}{{ c.discharge_due|krdate }}
+                        {% if c.discharge_dday is not none and c.discharge_dday <= 7 %}
+                        <span class="wd-dd {% if c.discharge_dday < 0 %}over{% else %}warn{% endif %}">
+                            {% if c.discharge_dday < 0 %}초과{% else %}D-{{ c.discharge_dday }}{% endif %}</span>
+                        {% endif %}
+                        {% else %}<span class="muted-sm">—</span>{% endif %}
+                    </td>
+                    {% if filt == 'recdue' %}
+                    <td class="nowrap wd-follow-cell">
+                        <button type="button" class="btn btn-xs wd-follow-toggle {% if c.recovery_call_at %}btn-secondary done{% else %}btn-primary{% endif %}"
+                                data-cid="{{ c.id }}" data-kind="recovery-call">
+                            {% if c.recovery_call_at %}✓ 보호자 안내 완료{% else %}보호자 재상담 확인{% endif %}</button>
+                        {% if c.recovery_call_at %}<small>{{ c.recovery_call_at[5:16] }} · {{ c.recovery_call_by or '-' }}</small>{% endif %}
+                    </td>
+                    {% elif filt == 'dis30' %}
+                    <td class="nowrap wd-follow-cell">
+                        <button type="button" class="btn btn-xs wd-follow-toggle {% if c.discharge_sms_at %}btn-secondary done{% else %}btn-primary{% endif %}"
+                                data-cid="{{ c.id }}" data-kind="discharge-sms">
+                            {% if c.discharge_sms_at %}✓ 퇴원 문자 완료{% else %}퇴원 문자 확인{% endif %}</button>
+                        {% if c.discharge_sms_at %}<small>{{ c.discharge_sms_at[5:16] }} · {{ c.discharge_sms_by or '-' }}</small>{% endif %}
+                    </td>
+                    {% endif %}
+                    <td class="nowrap wd-act">
+                        {% if c.away %}
+                        <span class="wd-back-cell">
+                            {% if c.away.expected_return_date %}<span class="wd-exp-badge" title="대시보드 입원 처리에서 [완료]하면 입원 완료로 집계">복귀 예정 {{ c.away.expected_return_date|krdate }}</span>{% endif %}
+                            <input type="date" class="wd-back-date" value="{{ c.away.expected_return_date or today_str }}"
+                                   min="{{ c.away.event_date or '' }}" title="복귀 예정일">
+                            <input type="text" class="wd-back-room" value="{{ c.away.return_room or c.room_number or '' }}" placeholder="복귀 병실" maxlength="50" size="7" title="복귀 병실">
+                            <button type="button" class="btn {% if c.away.expected_return_date %}btn-secondary{% else %}btn-primary{% endif %} btn-xs wd-back" data-aevent="{{ c.away.id }}">{% if c.away.expected_return_date %}예정 변경{% else %}↩ 복귀 예정{% endif %}</button>
+                            {% if c.away.expected_return_date %}<button type="button" class="btn btn-primary btn-xs wd-back-done" data-aevent="{{ c.away.id }}" title="오늘 실제 복귀 — 입원 완료로 집계">완료</button><button type="button" class="btn btn-secondary btn-xs wd-back-clear" data-aevent="{{ c.away.id }}" data-name="{{ c.patient_name }}" title="잘못 누른 복귀 예정을 지운다 — 외진 중으로만 남는다">예정 취소</button>{% endif %}
+                        </span>
+                        {% elif c.id %}
+                        <button type="button" class="btn btn-secondary btn-xs wd-away-btn" data-cid="{{ c.id }}" data-name="{{ c.patient_name }}">🚑 외진</button>
+                        <button type="button" class="btn btn-secondary btn-xs wd-dis" data-cid="{{ c.id }}" data-name="{{ c.patient_name }}">퇴원</button>
+                        {% else %}
+                        <a class="btn btn-secondary btn-xs" href="/consult/new?patient_id={{ c.patient_id }}">상담 등록</a>
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr class="wd-form-row" hidden>
+                    <td colspan="{% if filt in ('recdue','dis30') %}10{% else %}9{% endif %}">
+                        <div class="wd-inline wd-inline-away" data-cid="{{ c.id }}">
+                            <span class="muted-sm">🚑 {{ c.patient_name }} 외진</span>
+                            <select class="wd-af-type">
+                                <option value="응급전원">응급전원</option>
+                                <option value="모병원 외래치료">모병원 외래치료</option>
+                            </select>
+                            <input type="date" class="wd-af-date" value="{{ today_str }}">
+                            <input type="time" class="wd-af-time">
+                            <input type="date" class="wd-af-return" min="{{ today_str }}" title="복귀 예정일 (선택) — 대시보드 오늘 입원 예정에 반영">
+                            <input type="text" class="wd-af-hosp" placeholder="이송 기관">
+                            <input type="text" class="wd-af-reason" placeholder="이송 사유">
+                            <button type="button" class="btn btn-primary btn-xs wd-af-save">기록</button>
+                            <button type="button" class="btn btn-secondary btn-xs wd-af-cancel">취소</button>
+                        </div>
+                        <div class="wd-inline wd-inline-discharge" data-cid="{{ c.id }}" hidden>
+                            <span class="muted-sm">🚪 {{ c.patient_name }} 퇴원</span>
+                            <input type="date" class="wd-dis-date" value="{{ today_str }}">
+                            <input type="text" class="wd-dis-destination" placeholder="퇴원 기관·장소">
+                            <input type="text" class="wd-dis-reason" placeholder="퇴원 사유">
+                            <button type="button" class="btn btn-primary btn-xs wd-dis-save">퇴원 처리</button>
+                            <button type="button" class="btn btn-secondary btn-xs wd-dis-cancel">취소</button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if total_pages > 1 %}<nav class="wd-pagination" aria-label="재원 목록 페이지">
+      <a class="btn btn-secondary btn-xs {% if page <= 1 %}disabled{% endif %}" href="{{ url_with(page=page-1) }}#sec-ward">이전</a>
+      <span>{{ page }} / {{ total_pages }} 페이지 · 총 {{ total_filtered }}명</span>
+      <a class="btn btn-secondary btn-xs {% if page >= total_pages %}disabled{% endif %}" href="{{ url_with(page=page+1) }}#sec-ward">다음</a>
+    </nav>{% endif %}
+    {% else %}
+    <div class="empty">
+        {% if filt_label %}‘{{ filt_label }}’에 해당하는 재원 환자가 없습니다.
+        <a href="/ward{% if doctor %}?doctor={{ doctor|urlencode }}{% endif %}#sec-ward">전체 보기</a>
+        {% else %}재원 중으로 확정된 환자가 없습니다.
+        {% if kpis.pending %}아래 <a href="#sec-pending">입원일 미확정 {{ kpis.pending }}명</a>에서 입원일을 확정하면 이곳에 올라옵니다.{% endif %}{% endif %}
+    </div>
+    {% endif %}

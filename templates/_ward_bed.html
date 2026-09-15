@@ -1,0 +1,62 @@
+{# 재원 관리 병실 배치도 침상 카드 — ward.html(본문)과 _ward_roster.html(지연 로딩 부분)이 같이 쓴다 #}
+{% macro bed(c) %}
+<div class="rm-bed {% if c.away %}rm-away {{ 'rm-dim' if c.away.days_out is none or c.away.days_out <= 7 else 'rm-away-long' }}{% endif %}"
+     data-cid="{{ c.id or '' }}" data-name="{{ c.patient_name }}" data-room="{{ c.room_number or '' }}"{% if c.away %} data-aevent="{{ c.away.id }}" data-event-date="{{ c.away.event_date or '' }}" data-return-date="{{ c.away.expected_return_date or '' }}" data-return-room="{{ c.away.return_room or c.room_number or '' }}"{% endif %}>
+    {# 1행 이름(성별/나이) · 관리태그 · 외진 표시 #}
+    <div class="rm-bed-top">
+        {% if c.id %}<a href="/consult/{{ c.id }}" class="rm-name">{{ c.patient_name }}</a>
+        {% else %}<span class="rm-name">{{ c.patient_name }}</span>{% endif %}
+        <span class="rm-age muted-sm">({% if c.gender == 'M' %}남{% elif c.gender == 'F' %}여{% else %}-{% endif %}/{% if c.patient_age is not none %}{{ c.patient_age }}{% else %}-{% endif %})</span>
+        {% for t in c.mgmt_tags %}<span class="wd-tag">{{ t }}</span>{% endfor %}
+        {% if c.away %}
+        <span class="rm-away-tag" title="{{ c.away.event_type }}{% if c.away.hospital %} → {{ c.away.hospital }}{% endif %}{% if c.away.days_out is not none and c.away.days_out > 7 %} · 1주일 넘김{% endif %}">
+            🚑 외진{% if c.away.days_out is not none %} {{ c.away.days_out }}일차{% endif %}</span>
+        {% endif %}
+    </div>
+    {# 2행 주상병(발병일) #}
+    <div class="rm-dx" title="주 {{ c.dx_primary|join(', ') }}{% if c.dx_secondary %} / 부 {{ c.dx_secondary|join(', ') }}{% endif %}{% if c.onset_date %} · 발병 {{ c.onset_date|krdate }}{% endif %}">
+        {% for org in c.organisms %}<span class="wd-org">{{ org }}</span>{% endfor %}
+        {{ c.dx_primary[:2]|join(', ') if c.dx_primary else '병명 미기재' }}{% if c.dx_primary and c.dx_primary|length > 2 %} 외{% endif %}
+        {% if c.onset_date %}<span class="rm-onset">(발병 {{ c.onset_date|krdate_short }})</span>{% endif %}
+    </div>
+    {# 3행 회복기 구간 D- · 연장 배지 #}
+    <div class="rm-meta">
+        <span class="rm-ph ph-{{ {'회복기':'rec','비회복기':'non','단일구간':'sgl'}.get(c.care_phase,'etc') }}">{{ c.care_phase }}</span>
+        {% if c.phase_dday is not none %}
+        <span class="rm-dd {% if c.phase_dday < 0 %}over{% elif c.phase_dday <= 30 %}warn{% endif %}"
+              title="{% if c.care_phase == '회복기' and c.phase_end_date %}회복기 종료 {{ c.phase_end_date|krdate }}{% endif %}">
+            {% if c.phase_dday < 0 %}{{ -c.phase_dday }}일 초과{% else %}D-{{ c.phase_dday }}{% endif %}</span>
+        {% endif %}
+        {% if c.ext_tier %}<span class="wd-ext t{{ c.ext_tier }}" title="{{ c.ext_label }}{% if c.ext_end_date %} · 이 단계 종료 {{ c.ext_end_date|krdate }}{% if c.ext_end_left is not none %} (D{{ '-' if c.ext_end_left >= 0 else '+' }}{{ c.ext_end_left|abs }}){% endif %}{% endif %} · 입원 {{ c.stay_days }}일째">{{ '연장1회' if c.ext_tier == 1 else '연장2회' }}</span>{% endif %}
+    </div>
+    {# 4행 주치의 · 보험유형 #}
+    <div class="rm-who">
+        <span class="rm-doc" title="주치의">{{ c.attending_doctor|doctor_short if c.attending_doctor else '주치의 미정' }}</span>
+        {% if c.insurance_type %}<span class="rm-ins" title="보험유형">{{ c.insurance_type }}</span>{% endif %}
+    </div>
+    {# 5행 입원일(D+) · 퇴원일(D-) #}
+    <div class="rm-dates">
+        <span title="입원일 — 재원 경과일에는 외진 기간도 포함됩니다">
+            입원 {{ c.admitted_on|krdate_short }}{% if c.stay_days is not none %} <b>D+{{ c.stay_days }}</b>{% endif %}</span>
+        {% if c.discharge_due %}
+        <span class="{% if c.discharge_dday is not none and c.discharge_dday <= 7 %}rm-urgent{% endif %}"
+              title="퇴원 예정일">퇴원 {{ c.discharge_due|krdate_short }}{% if c.discharge_dday is not none %} <b>{% if c.discharge_dday < 0 %}{{ -c.discharge_dday }}일 초과{% else %}D-{{ c.discharge_dday }}{% endif %}</b>{% endif %}</span>
+        {% endif %}
+    </div>
+    {% if c.away_hist %}
+    <div class="rm-hist" title="외진 기간도 재원 기간·수가 기간에 그대로 포함됩니다 (차감하지 않음)">
+        🚑 외진 {{ c.away_hist.count }}회 · 누적 {{ c.away_hist.days }}일{% if c.away_hist.last_date %} · 최근 {{ c.away_hist.last_date|krdate }}{% endif %}
+    </div>
+    {% endif %}
+    <div class="rm-act">
+        {% if c.away %}
+        <button type="button" class="btn btn-primary btn-xs rm-back-btn">↩ 복귀</button>
+        {% else %}
+        <button type="button" class="btn btn-secondary btn-xs rm-away-btn">🚑 외진</button>
+        <button type="button" class="btn btn-secondary btn-xs rm-dis">퇴원</button>
+        <button type="button" class="btn btn-secondary btn-xs rm-move">호실</button>
+        {% endif %}
+    </div>
+    {# 외진·퇴원·복귀·호실 편집 폼은 카드마다 넣지 않고(263장×2KB) #rm-editor-tpl에서 클릭 시 복제한다 #}
+</div>
+{% endmacro %}

@@ -2442,10 +2442,18 @@ def _build_consult_where(*, date_from=None, date_to=None, insurance=None, q=None
                          consult_channel=None, referral_type=None,
                          admission_type=None, consult_result=None, blacklist=None,
                          gender=None, age_min=None, age_max=None,
-                         guardian=None, hospital=None, q_scope=None,
+                         guardian=None, hospital=None, q_scope=None, ids=None,
                          stay_period=None):
     """list_consultations / count_consultations 공용 WHERE 절 빌더 → (where_sql, vals)."""
     where, vals = [], []
+    if ids is not None:
+        # 특정 상담만 (재원 명부 census에 붙은 상담 등). 전체 8천 건을 읽고 파이썬에서 거르던 것을
+        # SQL에서 끊는다 — 재원 관리·대시보드가 요청마다 전체를 역직렬화하던 비용을 없앤다.
+        id_list = [int(x) for x in ids]
+        if not id_list:
+            where.append("0")          # 빈 목록 = 결과 없음
+        else:
+            where.append(f"c.id IN ({','.join('?' * len(id_list))})"); vals.extend(id_list)
     if date_from:
         where.append("c.consult_date >= ?"); vals.append(date_from)
     if date_to:
@@ -2592,13 +2600,28 @@ def list_consultations(*, date_from=None, date_to=None,
                        admission_type=None, consult_result=None, blacklist=None,
                        gender=None, age_min=None, age_max=None,
                        guardian=None, hospital=None, q_scope=None,
-                       stay_period=None,
+                       stay_period=None, ids=None,
                        sort=None, sort_dir=None,
                        limit=200, offset=0):
     """상담 목록.
     검색·필터: 기간·보험·상담자·입원여부·병명그룹·검색어·성별·나이범위·보호자·모병원.
     정렬: sort(date/patient/residence/hospital/channel/status/counselor) + sort_dir(asc/desc).
     """
+    if ids is not None:
+        # SQLite 바인딩 한도(구버전 999)를 넘지 않도록 900개씩 나눠 읽는다. 호출처는 dict/정렬을 다시 하므로 순서 무관.
+        id_list = list({int(x) for x in ids})
+        if len(id_list) > 900:
+            out = []
+            for k in range(0, len(id_list), 900):
+                out += list_consultations(
+                    date_from=date_from, date_to=date_to, insurance=insurance, q=q, counselor=counselor,
+                    admission_status=admission_status, disease_group=disease_group, residence_sido=residence_sido,
+                    recovery=recovery, consult_channel=consult_channel, referral_type=referral_type,
+                    admission_type=admission_type, consult_result=consult_result, blacklist=blacklist,
+                    gender=gender, age_min=age_min, age_max=age_max, guardian=guardian, hospital=hospital,
+                    q_scope=q_scope, stay_period=stay_period, ids=id_list[k:k + 900],
+                    sort=sort, sort_dir=sort_dir, limit=limit, offset=0)
+            return out
     where_sql, vals = _build_consult_where(
         date_from=date_from, date_to=date_to, insurance=insurance, q=q,
         counselor=counselor, admission_status=admission_status,
@@ -2608,7 +2631,7 @@ def list_consultations(*, date_from=None, date_to=None,
         consult_result=consult_result, blacklist=blacklist,
         gender=gender, age_min=age_min, age_max=age_max,
         guardian=guardian, hospital=hospital, q_scope=q_scope,
-        stay_period=stay_period,
+        stay_period=stay_period, ids=ids,
     )
     sort_col = _SORT_COLUMNS.get(sort or "date", "c.consult_date")
     direction = "ASC" if str(sort_dir or "").lower() == "asc" else "DESC"

@@ -398,9 +398,44 @@
         return false;
     }
 
+    // 부분 갱신 — 전체 새로고침 대신 같은 주소를 fetch해 본문(main)만 바꿔 끼운다.
+    // 스크롤·펼침 상태가 유지되고 화면이 깜빡이지 않는다. 본문 안 인라인 스크립트는 다시 실행해
+    // 버튼 바인딩을 새 DOM에 다시 건다(모두 IIFE·함수 선언이라 재실행이 안전하다).
+    async function partialRefresh() {
+        const main = document.querySelector('main.container');
+        if (!main) { location.reload(); return; }
+        let html;
+        try {
+            const r = await fetch(location.href, { headers: { 'X-Requested-With': 'autorefresh' }, credentials: 'same-origin' });
+            if (!r.ok || !(r.headers.get('content-type') || '').includes('text/html')) { location.reload(); return; }
+            html = await r.text();
+        } catch (e) { return; }                                   // 일시적 네트워크 오류 — 다음 주기에
+        if (busy()) return;                                        // 받아오는 사이 입력을 시작했으면 건너뜀
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const next = doc.querySelector('main.container');
+        if (!next) { location.reload(); return; }
+        if (doc.querySelector('form[action="/login"]')) { location.reload(); return; }   // 세션 만료
+        // 펼쳐 둔 '더보기'·열어 둔 details 기억
+        const opened = [...main.querySelectorAll('.dash-more-btn')].map(b => b.textContent.startsWith('접기'));
+        const openDetails = [...main.querySelectorAll('details[open]')].map(d => d.id || d.querySelector('summary')?.textContent?.trim() || '');
+        main.replaceWith(next);
+        next.querySelectorAll('script').forEach(old => {
+            const sc = document.createElement('script');
+            [...old.attributes].forEach(a => sc.setAttribute(a.name, a.value));
+            sc.textContent = old.textContent;
+            old.replaceWith(sc);
+        });
+        next.querySelectorAll('.dash-more-btn').forEach((b, i) => { if (opened[i] && !b.textContent.startsWith('접기')) b.click(); });
+        next.querySelectorAll('details').forEach(d => {
+            const key = d.id || d.querySelector('summary')?.textContent?.trim() || '';
+            if (key && openDetails.includes(key)) d.open = true;
+        });
+        document.dispatchEvent(new CustomEvent('page:refreshed'));
+    }
+
     setInterval(function () {
         if (busy()) return;
-        location.reload();
+        partialRefresh();
     }, sec * 1000);
 })();
 </script>
