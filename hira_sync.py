@@ -119,6 +119,35 @@ def fetch_all(key: str, *, progress=None) -> list[dict]:
     return entries
 
 
+
+def lookup(key: str, q: str, limit: int = 20) -> list[dict]:
+    """이름으로 심평원에서 바로 찾기 — 상담일지에서 마스터에 없는 병원을 그 자리에서 등록할 때(2026-09-15).
+    yadmNm은 부분일치. 전국 목록을 다시 받는 게 아니라 한 번의 호출로 끝난다."""
+    q = (q or "").strip()
+    if not q or not key:
+        return []
+    url = f"{API_ENDPOINT}?{urlencode({'serviceKey': key, 'pageNo': 1, 'numOfRows': limit, '_type': 'json', 'yadmNm': q})}"
+    with urlopen(url, timeout=20) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    header = ((payload.get("response") or {}).get("header") or {})
+    if str(header.get("resultCode", "00")) not in ("00", "0"):
+        raise RuntimeError(f"API 오류 {header.get('resultCode')}: {header.get('resultMsg')}")
+    body = ((payload.get("response") or {}).get("body") or {})
+    items = (body.get("items") or {}).get("item") or []
+    if isinstance(items, dict):
+        items = [items]
+    return [e for e in (_entry(r) for r in items) if e["name"] and e["official_code"]]
+
+
+def register_one(entry: dict, *, source: str) -> str:
+    """병원 한 곳을 마스터(+요양기호가 있으면 협력기관 명부)에 넣고 저장된 이름을 돌려준다."""
+    name = models.canonical_hospital_name(entry.get("name")) or (entry.get("name") or "").strip()
+    models.upsert_source_hospitals([entry], source=source)
+    if entry.get("official_code"):
+        partnerships.import_facility_directory([entry], source="hira-api")
+    return name
+
+
 # ── 적재 ──
 
 # 협력기관 검색 명부에 넣는 종별. 치과의원·한의원·보건소·조산원까지 넣으면 4만→8만으로

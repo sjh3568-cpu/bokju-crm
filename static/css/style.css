@@ -1194,6 +1194,19 @@ body.ui-high-contrast a { text-decoration-thickness:1.5px; }
     box-shadow: 0 0 0 1px #dc2626 inset;
 }
 
+/* 마스터에 없는 병원 — 입력 칸 아래 해결 패널: 후보 선택 · 심평원에서 찾기 · 이름 그대로 등록 */
+.hosp-help {
+    margin-top: 4px; padding: 6px 8px; font-size: 0.85em; color: #7c4a06;
+    background: #fff8ec; border: 1px solid #f5c26b; border-left: 4px solid #e8912d; border-radius: 6px;
+}
+.hosp-help-head { margin: 2px 0 4px; }
+.hosp-help-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 0; border-top: 1px dashed #f0d9a8; }
+.hosp-help-row span { display: flex; flex-direction: column; min-width: 0; }
+.hosp-help-row b { color: #1f2937; }
+.hosp-help-row small { color: #6b7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hosp-help-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.hosp-help-lookup { margin-top: 4px; }
+
 /* 대시보드 follow-up 완료 마킹 — 행 채도 낮추고 ✓ 스탬프 노출 */
 tr.follow-up-done {
     background: #f0fdf4;

@@ -6944,6 +6944,53 @@ def api_ac_hospital():
     return jsonify(models.autocomplete_hospitals(q, limit=50))
 
 
+@app.route("/api/hospital/lookup")
+@login_required
+def api_hospital_lookup():
+    """상담일지에서 마스터에 없는 병원을 심평원에서 바로 찾기(2026-09-15).
+    기관협력 화면까지 가지 않고 그 자리에서 후보를 골라 등록한다."""
+    import hira_sync
+    q = (request.args.get("q") or "").strip()
+    key = hira_sync.service_key()
+    if not key:
+        return jsonify({"items": [], "configured": False})
+    if len(q) < 2:
+        return jsonify({"items": [], "configured": True})
+    try:
+        items = hira_sync.lookup(key, q)
+    except Exception as e:  # noqa: BLE001 — 외부 API 장애는 화면에 사유만 보여주고 폼은 막지 않는다
+        app.logger.warning("심평원 조회 실패 %r: %s", q, e)
+        return jsonify({"items": [], "configured": True, "error": "심평원 조회에 실패했습니다. 잠시 뒤 다시 시도하세요."}), 502
+    return jsonify({"items": items, "configured": True})
+
+
+@app.route("/api/hospital/register", methods=["POST"])
+@login_required
+def api_hospital_register():
+    """병원 한 곳을 마스터에 등록 — 심평원 후보(official_code 있음) 또는 입력한 이름 그대로(manual).
+    상담 작성 권한이 있으면 누구나. 감사 로그에 남긴다."""
+    import hira_sync
+    if menu_level(g.user, "consult") < PERM_EDIT:
+        return jsonify({"error": "상담 작성 권한이 필요합니다."}), 403
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if len(name) < 2 or len(name) > 100:
+        return jsonify({"error": "병원 이름을 2~100자로 입력하세요."}), 400
+    entry = {
+        "name": name,
+        "kind": (data.get("kind") or "").strip() or None,
+        "region": (data.get("region") or "").strip() or None,
+        "address": (data.get("address") or "").strip() or None,
+        "phone": (data.get("phone") or "").strip() or None,
+        "official_code": (data.get("official_code") or "").strip() or None,
+    }
+    source = "hira-lookup" if entry["official_code"] else "manual"
+    saved = hira_sync.register_one(entry, source=source)
+    models.log_audit(user_id=g.user["id"], username=g.user.get("username"), action="hospital_register",
+                     target_type="hospital", detail=f"{saved} ({source})", ip=request.remote_addr)
+    return jsonify({"ok": True, "name": saved, "source": source})
+
+
 @app.route("/api/autocomplete/nursing")
 @login_required
 def api_ac_nursing():

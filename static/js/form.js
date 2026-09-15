@@ -482,6 +482,100 @@
         input.classList.remove('hosp-invalid');
         input.title = '';
         delete input.dataset.hospVerified;
+        hospHelpHide(input);
+    }
+
+    // ── 마스터에 없는 병원 — 입력 칸 바로 아래에서 해결 (2026-09-15) ──
+    // 기관협력 화면까지 가지 않고 [심평원에서 찾기]로 후보를 골라 등록하거나, 심평원에도 없으면 [이 이름으로 등록].
+    function hospHelpBox(input) {
+        if (input._hospHelp) return input._hospHelp;
+        const box = document.createElement('div');
+        box.className = 'hosp-help';
+        box.hidden = true;
+        // 자동완성 목록(.ac-list)이 input 바로 뒤에 absolute로 붙어 있으면 그 뒤에 둔다
+        const anchor = (input.nextElementSibling && input.nextElementSibling.classList.contains('ac-list')) ? input.nextElementSibling : input;
+        anchor.insertAdjacentElement('afterend', box);
+        input._hospHelp = box;
+        return box;
+    }
+    function hospHelpHide(input) { if (input._hospHelp) { input._hospHelp.hidden = true; input._hospHelp.innerHTML = ''; } }
+    function hospAccept(input, name) {
+        input.value = name;
+        markHospitalOfficial(input, name);
+        hospHelpHide(input);
+    }
+    function hospCandidateRow(input, it, onPick) {
+        const row = document.createElement('div');
+        row.className = 'hosp-help-row';
+        const meta = [it.kind, it.region, it.address].filter(Boolean).join(' · ');
+        row.innerHTML = `<span><b></b><small></small></span>`;
+        row.querySelector('b').textContent = it.name;
+        row.querySelector('small').textContent = meta;
+        const btn = document.createElement('button');
+        btn.type = 'button'; btn.className = 'btn btn-secondary btn-sm'; btn.textContent = '선택';
+        btn.addEventListener('click', () => onPick(it, btn));
+        row.appendChild(btn);
+        return row;
+    }
+    async function hospRegister(input, entry, btn) {
+        if (btn) btn.disabled = true;
+        try {
+            const res = await api.post('/api/hospital/register', entry);
+            hospAccept(input, res.name);
+            toast(entry.official_code ? `심평원 명부에서 등록했습니다: ${res.name}` : `입력한 이름으로 등록했습니다: ${res.name}`, 'success');
+        } catch (e) {
+            toast(`등록 실패: ${e.message}`, 'error');
+            if (btn) btn.disabled = false;
+        }
+    }
+    function hospHelpShow(input, raw, candidates, reason) {
+        const box = hospHelpBox(input);
+        box.innerHTML = '';
+        box.hidden = false;
+        const head = document.createElement('div');
+        head.className = 'hosp-help-head';
+        head.textContent = reason;
+        box.appendChild(head);
+        // 마스터 부분일치 후보가 있으면 그 자리에서 고른다(자동완성 목록으로 돌아갈 필요 없음)
+        (candidates || []).slice(0, 5).forEach(it => box.appendChild(hospCandidateRow(input, it, () => hospAccept(input, it.name))));
+        const actions = document.createElement('div');
+        actions.className = 'hosp-help-actions';
+        const lookupBtn = document.createElement('button');
+        lookupBtn.type = 'button'; lookupBtn.className = 'btn btn-primary btn-sm'; lookupBtn.textContent = '심평원에서 찾기';
+        lookupBtn.addEventListener('click', () => hospLookup(input, raw, lookupBtn));
+        const manualBtn = document.createElement('button');
+        manualBtn.type = 'button'; manualBtn.className = 'btn btn-secondary btn-sm'; manualBtn.textContent = `"${raw}" 이름 그대로 등록`;
+        manualBtn.addEventListener('click', () => {
+            if (!confirm(`"${raw}"을(를) 병원 마스터에 그대로 등록할까요?\n심평원 정식명과 다르면 통계에서 따로 집계될 수 있습니다. 먼저 [심평원에서 찾기]를 권합니다.`)) return;
+            hospRegister(input, { name: raw }, manualBtn);
+        });
+        actions.appendChild(lookupBtn); actions.appendChild(manualBtn);
+        box.appendChild(actions);
+    }
+    async function hospLookup(input, raw, btn) {
+        const box = hospHelpBox(input);
+        btn.disabled = true; btn.textContent = '심평원 조회 중…';
+        let res;
+        try {
+            const r = await fetch(`/api/hospital/lookup?q=${encodeURIComponent(raw)}`);
+            res = await r.json();
+        } catch (e) { res = { items: [], error: '조회 실패' }; }
+        btn.disabled = false; btn.textContent = '심평원에서 찾기';
+        let list = box.querySelector('.hosp-help-lookup');
+        if (!list) { list = document.createElement('div'); list.className = 'hosp-help-lookup'; box.insertBefore(list, box.querySelector('.hosp-help-actions')); }
+        list.innerHTML = '';
+        if (res.configured === false) {
+            list.textContent = '심평원 API 키가 설정되지 않아 조회할 수 없습니다. 관리자에게 알리거나 이름 그대로 등록하세요.';
+            return;
+        }
+        if (res.error) { list.textContent = res.error; return; }
+        if (!res.items || !res.items.length) {
+            list.textContent = `심평원 명부에 "${raw}"이(가) 없습니다. 검색어를 줄여 다시 찾거나(예: 대표 두세 글자), 이름 그대로 등록하세요.`;
+            return;
+        }
+        const title = document.createElement('div'); title.className = 'hosp-help-head'; title.textContent = `심평원 명부 ${res.items.length}곳 — 맞는 곳을 선택하면 바로 등록됩니다`;
+        list.appendChild(title);
+        res.items.forEach(it => list.appendChild(hospCandidateRow(input, it, (item, b) => hospRegister(input, item, b))));
     }
     async function enforceHospitalOfficial(input) {
         const raw = (input.value || '').trim();
@@ -514,13 +608,18 @@
             return;
         }
         if (items.length > 1) {
-            markHospitalInvalid(input, '정식 명칭을 자동완성에서 선택하세요.');
+            markHospitalInvalid(input, '정식 명칭을 아래에서 선택하세요.');
+            if (acKind === 'hospital') hospHelpShow(input, raw, items, `"${raw}"와 비슷한 병원이 여러 곳입니다 — 맞는 곳을 선택하세요. 없으면 심평원에서 찾거나 그대로 등록할 수 있습니다.`);
             return;
         }
         const facLabel = acKind === 'nursing' ? '요양원' : '병원';
-        // 전국 명부(심평원 4만여 곳)가 아직 안 들어온 상태면 "없는 병원"이 아니라 "명부 미적재"가 원인이다(2026-09-15 서울아산병원 보고).
-        if (acKind === 'hospital' && (res.master_size || 0) < 1000) {
-            markHospitalInvalid(input, `전국 병원 명부가 아직 적재되지 않아 등록된 ${res.master_size}곳에서만 찾습니다. 관리자에게 기관협력 화면의 [지금 갱신]을 요청하세요.`);
+        if (acKind === 'hospital') {
+            // 전국 명부(심평원 4만여 곳)가 아직 안 들어온 상태면 "없는 병원"이 아니라 "명부 미적재"가 원인이다(2026-09-15 서울아산병원 보고).
+            const sparse = (res.master_size || 0) < 1000;
+            markHospitalInvalid(input, '마스터에 없는 병원입니다. 아래 버튼으로 바로 등록하세요.');
+            hospHelpShow(input, raw, [], sparse
+                ? `전국 병원 명부가 아직 적재되지 않아 등록된 ${res.master_size}곳에서만 찾습니다. [심평원에서 찾기]로 바로 등록할 수 있습니다.`
+                : `"${raw}"은(는) 병원 마스터에 없습니다. 심평원에서 찾아 정식명으로 등록하거나, 이름 그대로 등록하세요.`);
             return;
         }
         markHospitalInvalid(input, `마스터에 없는 ${facLabel}입니다. 정확한 이름을 입력하거나 관리자에게 등록을 요청하세요.`);
@@ -643,7 +742,7 @@
             if (!inp || !inp.value.trim()) continue;
             await enforceHospitalOfficial(inp);
             if (inp.classList.contains('hosp-invalid')) {
-                toast(`${label} 칸이 마스터에 없습니다. 정식 명칭을 자동완성에서 선택하세요.`, 'error');
+                toast(`${label} 칸이 마스터에 없습니다. 칸 아래에서 선택하거나 [심평원에서 찾기]로 등록하세요.`, 'error');
                 inp.focus();
                 btn.disabled = false; return;
             }
