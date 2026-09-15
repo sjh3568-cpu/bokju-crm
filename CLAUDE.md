@@ -251,6 +251,11 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
   대시보드 인박스(카카오채널/홈페이지 탭). 보안: `_webhook_guard`가 상수시간 토큰비교
   (`hmac.compare_digest`)·선택적 IP 화이트리스트(`WEBHOOK_ALLOW_IPS`)·16KB 크기제한·
   IP당 rate limit(60/분)·감사로그(식별정보 평문 미기록)를 일괄 처리.
+  - **EasyQR '빠른 전화상담 신청'**(카카오 '전화하기(상담 예약)' 버튼이 여는 walk.induk.ai.kr/Developer/EasyQR/consult.html,
+    직원 제작 PHP, NAS Web Station) → `consult.php`가 같은 NAS의 CRM `http://127.0.0.1:8003/api/webhook/homepage`로
+    서버-투-서버 전달(외부 노출 불필요). 웹훅은 `receipt_no`→제목 `#번호`, `available_time/address/patient_age`→
+    본문 라벨로 보존(`_HOMEPAGE_EXTRA_FIELDS`), 전화번호 `_norm_phone` 정규화. 절차·PHP 스니펫은 docs/WEBHOOKS.md §3-1.
+    회귀: tests/test_webhook_homepage.py. (2026-09-15 기준 consult.php 쪽 연결·NAS .env 토큰은 아직 미적용)
   - **역프록시 노출 원칙**: 외부로 여는 것은 `/api/webhook/*` 한 경로뿐, 나머지 CRM은 사내망 유지.
     홈페이지폼은 브라우저가 아니라 **홈페이지 서버가 서버-투-서버**로 호출(토큰 노출 금지).
     연동 규격·nginx allowlist 설정은 [docs/WEBHOOKS.md](docs/WEBHOOKS.md).
@@ -285,7 +290,12 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
   `/api/inbound/alerts`를 폴링(1분)해 화면 토스트 + 브라우저 알림 + 상단 '대시보드' 배지로 통지.
   `models.open_inbound_count()` = 전역 배지, `_dashboard_inbound_bucket`로 채널 분류. 상담사가
   홈페이지 관리자에 직접 들어가 확인하지 않아도 되게 하는 것이 목적.
+- **부재중 → 재연락 예약** (2026-09-15) — 인바운드 카드·액션큐 행의 `부재중` 버튼 →
+  `POST /api/communication/<id>/missed {follow_up_at}` → `status='waiting'` + `follow_up_at`,
+  body 끝에 `[부재중 N회 MM-DD HH:MM 담당자 → 재연락 …]` 한 줄 누적(`models.mark_communication_missed`).
   시각 전엔 배지·알림·액션큐에서 빠지고(카드엔 🔁 재연락 배지로 남음), 시각이 되면
+  `open_inbound_count`·`/api/inbound/alerts`(id `cb<id>@<시각>`으로 재통지, bucket 재연락)·
+  액션큐(종류 '재연락', meta '부재 N회')에 다시 올라온다. 회귀: tests/test_inbound_missed.py.
 - 인프라 의존 미구현: STT 자동 상담일지(NAS·음성캡처 확정 필요), 팩스 OCR, 인박스에서 카톡/문자 직접 회신(아웃바운드).
 
 ## 2026-05-23 상담일지 폼 개선 5종 (사용자 명시 요청)

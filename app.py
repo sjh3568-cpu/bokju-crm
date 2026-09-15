@@ -1275,12 +1275,23 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
         hours = ((datetime.now() - occurred).total_seconds() / 3600) if occurred else 0
         tone = "danger" if hours >= 24 else "warn" if hours >= 2 else "info"
         who = m.get("patient_name") or m.get("contact") or "미연결 문의"
+        kind = _dashboard_inbound_bucket(m)
+        meta = _dashboard_elapsed_label(occurred)
+        if m.get("status") == "waiting":
+            # 부재중 → 재연락 예약: 시각 전엔 처리 대상이 아니므로 큐에서 뺀다.
+            if not m.get("callback_due"):
+                continue
+            due = _dashboard_parse_datetime(m.get("follow_up_at"))
+            late_h = ((datetime.now() - due).total_seconds() / 3600) if due else 0
+            tone = "danger" if late_h >= 2 else "warn"
+            kind = "재연락"
+            meta = f"부재 {m.get('missed_count') or 1}회 · 재연락 {(m.get('follow_up_at') or '')[5:16]}"
         add(
-            _dashboard_inbound_bucket(m),
+            kind,
             tone,
             who,
             (m.get("summary") or m.get("body") or "")[:70],
-            _dashboard_elapsed_label(occurred),
+            meta,
             f"/consult/new?comm_id={m.get('id')}" if m.get("id") else "/consultations",
             0 if tone == "danger" else 15 if tone == "warn" else 45,
             age_days=int(hours // 24),
@@ -6209,6 +6220,34 @@ def api_communication_done(comm_id):
     return jsonify({"ok": True})
 
 
+@app.route("/api/communication/<int:comm_id>/missed", methods=["POST"])
+@login_required
+def api_communication_missed(comm_id):
+    """부재중 → 재연락 예약. 인바운드 문의에 전화했는데 안 받았을 때
+    status='waiting' + follow_up_at으로 돌리고, 시각이 되면 다시 알림·배지에 올라온다."""
+    comm = models.get_communication(comm_id)
+    if not comm:
+        return jsonify({"error": "not found"}), 404
+    if (comm.get("status") or "") == "done":
+        return jsonify({"error": "이미 완료된 문의입니다."}), 400
+    payload = request.get_json(silent=True) or {}
+    raw = (payload.get("follow_up_at") or "").strip().replace("T", " ")
+    try:
+        when = datetime.strptime(raw[:16], "%Y-%m-%d %H:%M")
+    except ValueError:
+        return jsonify({"error": "재연락 시각 형식 오류 (YYYY-MM-DD HH:MM)"}), 400
+    if when < datetime.now() - timedelta(minutes=5):
+        return jsonify({"error": "재연락 시각은 지금 이후여야 합니다."}), 400
+    follow_up_at = when.strftime("%Y-%m-%d %H:%M")
+    n = models.mark_communication_missed(comm_id, follow_up_at, by=g.user.get("display_name") or "")
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="missed_communication", target_type="communication", target_id=comm_id,
+        detail=f"부재 {n}회 → 재연락 {follow_up_at}", ip=request.remote_addr,
+    )
+    return jsonify({"ok": True, "missed_count": n, "follow_up_at": follow_up_at})
+
+
 @app.route("/api/homepage-board/<int:comm_id>")
 @login_required
 def api_homepage_board_get(comm_id):
@@ -6580,6 +6619,22 @@ def api_inbound_alerts():
     프론트가 localStorage로 '이미 본 id'를 관리하므로 서버는 현재 대기목록만 반환."""
     items = []
     for m in models.inbox_open_communications():
+        if m.get("status") == "waiting":
+            # 부재중 → 재연락 예약: 시각이 되기 전엔 조용히, 되면 새 알림으로(id를 시각과 묶어 재통지)
+            if not m.get("callback_due"):
+                continue
+            items.append({
+                "id": f"cb{m.get('id')}@{m.get('follow_up_at')}",
+                "channel": m.get("channel") or "기타",
+                "bucket": "재연락",
+                "title": f"🔁 재연락 시간 — {_dashboard_inbound_bucket(m)} 문의 (부재 {m.get('missed_count') or 1}회)",
+                "summary": (m.get("summary") or m.get("body") or "재연락")[:80],
+                "contact": m.get("contact") or "",
+                "patient_name": m.get("patient_name") or "",
+                "blacklist": bool(m.get("blacklist")),
+                "created_at": m.get("follow_up_at") or "",
+            })
+            continue
         items.append({
             "id": m.get("id"),
             "channel": m.get("channel") or "기타",
@@ -6590,7 +6645,7 @@ def api_inbound_alerts():
             "blacklist": bool(m.get("blacklist")),
             "created_at": m.get("occurred_at") or m.get("created_at") or "",
         })
-    count = len(items)                      # 배지는 미처리 문의 수만
+    count = len(items)                      # 배지는 미처리 문의 수만(신규 + 재연락 시각 도래)
     try:
         items += transport.assignment_alerts()   # 🚐 운행팀 배정 완료 — 토스트로만 알림
     except Exception:
@@ -6778,26 +6833,43 @@ def api_webhook_kakao_skill():
         "평일 09:00~17:30, 토 09:00~12:30 중 순차적으로 전화드리겠습니다. 감사합니다.")
 
 
+_HOMEPAGE_EXTRA_FIELDS = [
+    ("available_time", "연락가능시간"),
+    ("address", "거주지"),
+    ("patient_age", "환자나이"),
+]
+
+
 @app.route("/api/webhook/homepage", methods=["POST"])
 def api_webhook_homepage():
     """홈페이지 문의폼 인바운드 — .env HOMEPAGE_WEBHOOK_TOKEN으로 검증.
     홈페이지 서버가 문의 1건을 서버-투-서버로 POST한다(토큰은 브라우저에 노출 금지).
-    body(JSON): { name, phone, email?, subject?, message } — message 필수.
+    body(JSON): { name, phone, email?, subject?, message|content, receipt_no|id?,
+                  available_time?, address?, patient_age? } — message 필수.
     전화번호로 환자 자동 매칭, communications(채널=웹문의, 인바운드)로 기록."""
     payload, err = _webhook_guard("HOMEPAGE_WEBHOOK_TOKEN")
     if err:
         return err
     name = (payload.get("name") or "").strip()
-    phone = (payload.get("phone") or "").strip()
+    phone = _norm_phone((payload.get("phone") or "").strip())
     email = (payload.get("email") or "").strip()
     subject = (payload.get("subject") or "").strip()
     message = (payload.get("message") or payload.get("content") or "").strip()
     if not message:
         return jsonify({"error": "message 필수"}), 400
     pid = models.match_patient_by_phone(phone)
+    # EasyQR '빠른 전화상담 신청'(walk.induk.ai.kr consult.php)처럼 부가 항목을 함께 보내는
+    # 폼은 라벨을 붙여 본문에 보존한다. receipt_no(접수번호)는 제목에 붙여 홈페이지 쪽과 대조.
+    receipt = str(payload.get("receipt_no") or payload.get("id") or "").strip()
     head = subject or "홈페이지 문의"
+    if receipt:
+        head = f"{head} #{receipt}"
     summary = head + (f" · {name}" if name else "")
     body = message[:4000]
+    extras = [(label, str(payload.get(key) or "").strip()) for key, label in _HOMEPAGE_EXTRA_FIELDS]
+    extras = [(label, v) for label, v in extras if v]
+    if extras:
+        body = body + "\n\n" + "\n".join(f"[{label}] {v}" for label, v in extras)
     if email:
         body = f"{body}\n\n[이메일] {email}"
     comm_id = models.create_communication(

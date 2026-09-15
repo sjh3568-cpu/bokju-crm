@@ -7036,30 +7036,77 @@ def inbox_callbacks():
     return [_deserialize_consultation(dict(r)) for r in rows]
 
 
+# 부재중 → 재연락 예약: 인바운드 문의에 전화했는데 안 받으면 status='waiting' +
+# follow_up_at(재연락 시각)으로 돌린다. 이력은 body 끝에 한 줄씩 덧붙여 남긴다
+# (별도 테이블 없이 "부재 N회"를 셀 수 있게 접두어를 고정).
+_MISSED_PREFIX = "[부재중"
+
+
+def _missed_count(body: str) -> int:
+    return (body or "").count(_MISSED_PREFIX)
+
+
+def _callback_due(row: dict, now: str) -> bool:
+    return (row.get("status") == "waiting"
+            and bool(row.get("follow_up_at"))
+            and str(row["follow_up_at"])[:16] <= now)
+
+
+def mark_communication_missed(comm_id: int, follow_up_at: str, by: str = "") -> int:
+    """부재중 기록 + 재연락 예약. 반환값은 누적 부재 횟수."""
+    conn = get_db()
+    row = conn.execute("SELECT body FROM communications WHERE id = ?", (comm_id,)).fetchone()
+    if not row:
+        conn.close()
+        raise KeyError(comm_id)
+    n = _missed_count(row["body"]) + 1
+    stamp = datetime.now().strftime("%m-%d %H:%M")
+    note = f"{_MISSED_PREFIX} {n}회 {stamp}{(' ' + by) if by else ''} → 재연락 {follow_up_at[5:16]}]"
+    body = ((row["body"] or "").rstrip() + "\n" + note).strip()
+    conn.execute(
+        """UPDATE communications
+           SET status = 'waiting', follow_up_at = ?, body = ?,
+               resolved_at = NULL, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?""",
+        (follow_up_at, body, comm_id))
+    conn.commit()
+    conn.close()
+    return n
+
+
 def open_inbound_count():
-    """미처리 인바운드(status='open', 방향 in) 개수 — 전역 배지·알림용 경량 카운트."""
+    """미처리 인바운드 개수 — 전역 배지·알림용 경량 카운트.
+    status='open'(신규) + 재연락 시각이 지난 'waiting'(부재중 재연락)."""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
     conn = get_db()
     n = conn.execute(
-        "SELECT COUNT(*) FROM communications WHERE status='open' "
-        "AND (direction='in' OR direction IS NULL)").fetchone()[0]
+        """SELECT COUNT(*) FROM communications
+           WHERE (direction='in' OR direction IS NULL)
+             AND (status='open'
+                  OR (status='waiting' AND follow_up_at IS NOT NULL
+                      AND substr(follow_up_at, 1, 16) <= ?))""", (now,)).fetchone()[0]
     conn.close()
     return n
 
 
 def inbox_open_communications():
-    """미처리 인바운드 — status='open'인 커뮤니케이션.
+    """미처리 인바운드 — status='open'(신규) + 'waiting'(부재중 → 재연락 예약) 커뮤니케이션.
+    각 행에 callback_due(재연락 시각 도래)·missed_count(부재 횟수)를 붙인다.
     환자 미연결이라도 contact 전화번호로 블랙리스트 환자 매칭을 시도해
     임상 안전 경고(⚠)를 사전에 표시할 수 있게 한다."""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
     conn = get_db()
     rows = conn.execute(
         """SELECT m.*, p.name AS patient_name,
                   p.blacklist, p.blacklist_reason
            FROM communications m LEFT JOIN patients p ON p.id = m.patient_id
-           WHERE m.status = 'open'
+           WHERE m.status IN ('open', 'waiting')
            ORDER BY COALESCE(m.occurred_at, m.created_at) DESC""").fetchall()
     result = []
     for r in rows:
         d = dict(r)
+        d["callback_due"] = _callback_due(d, now)
+        d["missed_count"] = _missed_count(d.get("body"))
         # 환자 미연결 + contact(전화번호)가 있으면 보호자 전화 매칭으로 블랙리스트 사전 조회
         if not d.get("patient_id") and (d.get("contact") or "").strip():
             match = conn.execute(

@@ -212,7 +212,8 @@
     <tbody>
         {% for m in rows %}
         <tr data-comm="{{ m.id }}"{% if m.blacklist %} class="ib-row-bl"{% endif %}>
-            <td class="nowrap muted-sm">{{ (m.occurred_at or m.created_at or '')[:16] }}</td>
+            <td class="nowrap muted-sm">{{ (m.occurred_at or m.created_at or '')[:16] }}
+                {% if m.status == 'waiting' and m.follow_up_at %}<br><span class="badge {{ 'badge-callback-due' if m.callback_due else 'badge-callback' }}" title="부재중 {{ m.missed_count or 1 }}회 — 재연락 예약 {{ m.follow_up_at[:16] }}">🔁 {{ '재연락 시간' if m.callback_due else '재연락 ' ~ m.follow_up_at[5:16] }}</span>{% endif %}</td>
             <td class="nowrap"><span class="badge badge-pending">{{ m.channel or '기타' }}</span> {{ '↘' if m.direction == 'in' else '↗' }}</td>
             <td class="nowrap">
                 {% if m.blacklist %}<span class="bl-mark" title="블랙리스트{% if m.blacklist_reason %} — {{ m.blacklist_reason }}{% endif %}">⚠</span> {% endif %}
@@ -225,6 +226,7 @@
             <td class="nowrap dash-action-cell">
                 {% if m.homepage_idx %}<button type="button" class="btn btn-primary btn-xs ib-hp-reply" data-comm="{{ m.id }}" title="홈페이지 상담게시판에 답변을 올리고 완료 처리">✎ 답변</button>{% endif %}
                 <a class="btn {{ 'btn-secondary' if m.homepage_idx else 'btn-primary' }} btn-xs" href="/consult/new?comm_id={{ m.id }}">상담 등록</a>
+                <button class="btn btn-secondary btn-xs ib-missed" data-comm="{{ m.id }}" title="전화했는데 안 받음 — 재연락 시각을 잡아 두면 그때 다시 알림">부재중</button>
                 <button class="btn btn-secondary btn-xs ib-done" data-comm="{{ m.id }}" title="후속 처리 완료로 표시">완료</button>
                 <button class="btn btn-secondary btn-xs ib-del" data-comm="{{ m.id }}" title="삭제">삭제</button>
             </td>
@@ -289,6 +291,7 @@
         {% if item.action and item.action.type == 'comm' %}
         {% if item.action.homepage_idx %}<button type="button" class="btn btn-primary btn-xs ib-hp-reply" data-comm="{{ item.action.id }}" title="홈페이지 상담게시판에 답변을 올리고 완료 처리">✎ 답변</button>{% endif %}
         <a class="btn {{ 'btn-secondary' if item.action.homepage_idx else 'btn-primary' }} btn-xs" href="/consult/new?comm_id={{ item.action.id }}">상담 등록</a>
+        <button type="button" class="btn btn-secondary btn-xs ib-missed" data-comm="{{ item.action.id }}" title="전화했는데 안 받음 — 재연락 시각을 잡아 두면 그때 다시 알림">부재중</button>
         <button type="button" class="btn btn-secondary btn-xs ib-done" data-comm="{{ item.action.id }}" title="후속 처리 완료로 표시">완료</button>
         {% elif item.action and item.action.type == 'callback' %}
         <a class="btn btn-secondary btn-xs" href="/sms?cid={{ item.action.id }}">문자</a>
@@ -741,6 +744,10 @@
 .adm-return { outline:1px dashed currentColor; outline-offset:-1px; }   /* 외진 복귀 — 상담 입원과 구분 */
 .dash-adm-state .muted-sm { display:block; margin-top:2px; }
 .badge-callback { background:#fef3c7; color:#92400e; }
+.badge-callback-due { background:#fee2e2; color:#991b1b; font-weight:600; }
+/* 부재중 → 재연락 예약 팝오버 (인바운드 행 액션 칸 안에서 열림) */
+.ib-missed-pop { display:flex; flex-wrap:wrap; gap:4px; align-items:center; margin-top:4px; padding:6px; border:1px solid var(--border); border-radius:6px; background:var(--card, #fff); font-size:0.84em; }
+.ib-missed-pop select, .ib-missed-pop input { font-size:inherit; padding:3px 5px; }
 .hold-consult { background:#fef3c7; color:#92400e; }
 .hold-admission { background:#fee2e2; color:#b91c1c; }
 .btn-xs { padding:2px 8px; font-size:0.76em; }
@@ -903,6 +910,48 @@ document.querySelectorAll('.ib-del').forEach(btn => {
             alert('삭제 실패: ' + e.message);
             btn.disabled = false;
         }
+    });
+});
+// 미처리 인바운드 — 부재중 → 재연락 예약 (프리셋 or 직접 입력)
+document.querySelectorAll('.ib-missed').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const cell = btn.closest('.dash-action-cell'); if (!cell) return;
+        const existing = cell.querySelector('.ib-missed-pop'); if (existing) { existing.remove(); return; }
+        const pad = n => String(n).padStart(2, '0');
+        const fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        const at = (dayOffset, h, m) => { const d = new Date(); d.setDate(d.getDate()+dayOffset); d.setHours(h, m, 0, 0); return d; };
+        const plus = h => new Date(Date.now() + h*3600*1000);
+        const presets = [['1시간 후', plus(1)], ['3시간 후', plus(3)], ['오늘 14:00', at(0,14,0)], ['오늘 16:30', at(0,16,30)],
+                         ['내일 09:30', at(1,9,30)], ['내일 14:00', at(1,14,0)]].filter(p => p[1].getTime() > Date.now());
+        const pop = document.createElement('div'); pop.className = 'ib-missed-pop';
+        const sel = document.createElement('select');
+        presets.forEach(([label, d]) => { const o = document.createElement('option'); o.value = fmt(d); o.textContent = label; sel.append(o); });
+        const custom = document.createElement('option'); custom.value = ''; custom.textContent = '직접 입력'; sel.append(custom);
+        const input = document.createElement('input'); input.type = 'datetime-local'; input.hidden = true;
+        sel.addEventListener('change', () => { input.hidden = sel.value !== ''; if (!input.hidden) input.focus(); });
+        const save = document.createElement('button'); save.type = 'button'; save.className = 'btn btn-primary btn-xs'; save.textContent = '재연락 예약';
+        const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'btn btn-secondary btn-xs'; cancel.textContent = '취소';
+        cancel.addEventListener('click', () => pop.remove());
+        save.addEventListener('click', async () => {
+            const when = sel.value || (input.value || '').replace('T', ' ');
+            if (!when) { alert('재연락 시각을 선택하세요.'); return; }
+            save.disabled = true;
+            try {
+                const r = await fetch(`/api/communication/${btn.dataset.comm}/missed`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ follow_up_at: when }),
+                });
+                const d = await r.json().catch(() => ({}));
+                if (!r.ok) throw new Error(d.error || r.status);
+                if (window.toast) toast(`부재중 ${d.missed_count}회 · ${d.follow_up_at.slice(5)}에 다시 알립니다.`, 'info');
+                const tr = btn.closest('tr, .dash-action-row'); if (tr) tr.remove();
+            } catch (e) {
+                alert('처리 실패: ' + e.message);
+                save.disabled = false;
+            }
+        });
+        pop.append(sel, input, save, cancel);
+        cell.append(pop);
     });
 });
 // 재연락 완료 1-click — 상담 결과를 '상담완료'로 즉시 변경

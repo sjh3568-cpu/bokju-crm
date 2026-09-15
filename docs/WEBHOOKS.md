@@ -132,6 +132,45 @@ curl_exec($ch); curl_close($ch);
 // 홈페이지 DB에도 그대로 저장하고, 이 호출은 실패해도 무시(비동기/try 권장)
 ```
 
+### 3-1. EasyQR '빠른 전화상담 신청' (walk.induk.ai.kr/Developer/EasyQR/consult.php)
+
+카카오 채널의 **전화하기(상담 예약)** 버튼이 여는 페이지. 직원이 만든 PHP 페이지로,
+NAS Web Station에서 돌며 `api/consult.php`가 접수번호를 만들어 자체 저장한다.
+CRM도 같은 NAS의 Docker(8003)에 있으므로 **NAS 안에서 127.0.0.1로 호출**하면 된다 —
+외부 노출·Cloudflare 설정이 필요 없고, 토큰도 NAS 밖으로 나가지 않는다.
+
+CRM 쪽 준비: NAS의 CRM `.env`에 `HOMEPAGE_WEBHOOK_TOKEN=<임의 문자열>` 한 줄 추가 후 컨테이너 재시작.
+(생성 예: `openssl rand -hex 24`)
+
+`consult.php`에 **자체 저장이 끝난 뒤** 아래를 붙인다. `$row`는 저장한 값, `$id`는 접수번호.
+
+```php
+// ── 복주 CRM 인박스 전달 (실패해도 접수는 성공으로 처리) ──
+$crm = json_encode([
+  "subject"        => "빠른 전화상담 신청",
+  "receipt_no"     => $id,                       // 접수번호 → CRM 제목에 #번호로 표시
+  "name"           => $row["name"],
+  "phone"          => $row["phone"],
+  "available_time" => $row["available_time"],
+  "address"        => $row["address"],
+  "patient_age"    => $row["patient_age"],
+  "content"        => $row["content"],
+], JSON_UNESCAPED_UNICODE);
+$ch = curl_init("http://127.0.0.1:8003/api/webhook/homepage");   // NAS 안 CRM 컨테이너
+curl_setopt_array($ch, [
+  CURLOPT_POST => true, CURLOPT_POSTFIELDS => $crm, CURLOPT_RETURNTRANSFER => true,
+  CURLOPT_TIMEOUT => 3,
+  CURLOPT_HTTPHEADER => ["Content-Type: application/json",
+                         "X-Webhook-Token: " . CRM_TOKEN],       // .env의 HOMEPAGE_WEBHOOK_TOKEN과 동일
+]);
+@curl_exec($ch); @curl_close($ch);
+```
+- `CRM_TOKEN`은 소스에 직접 쓰지 말고 웹루트 밖 설정 파일이나 환경변수에서 읽는다.
+- 127.0.0.1이 안 되면(PHP가 별도 컨테이너에서 돌 때) NAS의 사내망 IP `http://<NAS IP>:8003`로.
+- CRM에는 채널 **웹문의**, 제목 `빠른 전화상담 신청 #19 · 홍길동`, 본문에 상담내용 + `[연락가능시간] [거주지] [환자나이]`
+  라벨로 보존되며, 대시보드 '홈페이지' 탭 + 실시간 알림 → 통화 → 상담 등록/부재중/완료로 이어진다.
+- 확인: NAS에서 `curl -X POST http://127.0.0.1:8003/api/webhook/homepage -H "X-Webhook-Token: <토큰>" -H "Content-Type: application/json" -d '{"name":"테스트","phone":"01000000000","content":"연동 테스트","receipt_no":0}'` → `{"ok":true,...}`
+
 ### 예시 (테스트 — curl)
 ```bash
 curl -X POST https://<도메인>/api/webhook/homepage \
