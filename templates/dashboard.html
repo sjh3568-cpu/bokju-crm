@@ -2,10 +2,12 @@
 {# 여러 명이 띄워놓고 보는 현황 화면 — 30초마다 자동 새로고침 #}
 {% block body_attrs %} data-autorefresh="30"{% endblock %}
 {% macro admission_table(rows, limit=None) %}
-{# 대시보드 반 칸(1920px 화면 ≈755px)에 한 줄로. 10칸:
-   일시 · 상태(신규/복귀 + 예정/완료) · 환자(이름 성별/나이 보험약칭) · 병명 · 발병일 · 병실·회복기 · 상담 · 주치의 · 기타 · 처리(드롭다운)
-   colgroup 폭 + table-layout:fixed 라 어떤 값이 와도 가로 스크롤이 생기지 않는다 — 병명·기타는 말줄임(전체는 툴팁).
-   1500px 이하(반 칸 ≈515px)에서는 CSS가 발병일·기타 열을 접고 <small>을 아래 줄로 내린다. #}
+{# 대시보드 반 칸(1920px 화면 ≈770px)에 두 줄 칸으로. 10칸:
+   일시(일자/시간) · 구분(신규/복귀 — 예정·완료 여부는 색과 처리 칸이 말한다) · 환자(이름/성별·나이·보험약칭) · 병명 · 발병일
+   · 병실/회복기 · 상담 · 주치의(이름/약어) · 기타 · 처리(예정=드롭다운, 완료=표식)
+   2026-09-15 사용자 요청: 보조 정보는 이름 아래 줄로 내려 열을 좁히고, 그만큼 병명·기타에 폭을 준다(전에는 20px로 눌려 안 보였다).
+   colgroup 폭 + table-layout:fixed 라 어떤 값이 와도 가로 스크롤이 생기지 않는다 — 병명·기타는 두 줄까지 접고 넘치면 말줄임(전체는 툴팁).
+   1500px 이하(반 칸 ≈515px)에서는 CSS가 발병일·기타 열을 접는다. #}
 {% set ins_abbr = {'건강보험': '건보', '의료급여': '급여', '보호1종': '보호1', '보호2종': '보호2',
                    '차상위 1종': '차상1', '차상위 2종': '차상2', '장기요양': '장기', '암등록': '암'} %}
 <div class="tbl-wrap">
@@ -17,11 +19,11 @@
         <thead>
             <tr>
                 <th>일시</th>
-                <th>상태</th>
+                <th>구분</th>
                 <th>환자</th>
                 <th>병명</th>
                 <th>발병일</th>
-                <th>병실 · 회복기</th>
+                <th>병실·회복기</th>
                 <th>상담</th>
                 <th>주치의</th>
                 <th>기타</th>
@@ -35,11 +37,11 @@
             {% set is_planned = r.admission_bucket == 'planned' %}
             <tr{% if r.admission_organisms %} class="has-organism" title="내성균 {{ r.admission_organisms|join(', ') }} — 격리·병실 배정 확인"{% endif %}>
                 <td class="dash-adm-when" title="{{ r.admission_display_date|krdate }}{% if r.planned_admission_time %} {{ r.planned_admission_time }}{% endif %}">
-                    <b>{{ (r.admission_display_date|krdate_short_wd)[3:] }}</b><small>{{ r.planned_admission_time or '-' }}</small>
+                    <b>{{ (r.admission_display_date|krdate_short_wd)[3:] }}</b><small>{{ r.planned_admission_time or ' ' }}</small>
                 </td>
                 <td class="dash-adm-state">
                     <span class="badge {% if is_planned %}adm-planned{% else %}adm-completed{% endif %}{% if is_return %} adm-return{% endif %}"
-                          title="{% if is_return %}외진 복귀{% if r.other_note %} — {{ r.other_note }}{% endif %}{% else %}신규 입원{% endif %} · {% if is_planned %}입원예정{% else %}입원완료{% endif %}">{{ '복귀' if is_return else '신규' }} {{ '예정' if is_planned else '완료' }}</span>
+                          title="{% if is_return %}외진 복귀{% if r.other_note %} — {{ r.other_note }}{% endif %}{% else %}신규 입원{% endif %} · {% if is_planned %}입원예정{% else %}입원완료{% endif %}">{{ '복귀' if is_return else '신규' }}</span>
                 </td>
                 <td class="dash-adm-who" title="{{ r.patient_name }} ({% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% else %}-{% endif %}/{% if r.patient_age is not none %}{{ r.patient_age }}세{% else %}-{% endif %}){% if r.insurance_type %} · {{ r.insurance_type }}{% endif %}">
                     {% if r.blacklist %}<span class="bl-mark">블랙</span> {% endif %}<a href="/consult/{{ r.id }}">{{ r.patient_name }}</a><small>{% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% else %}-{% endif %}/{% if r.patient_age is not none %}{{ r.patient_age }}{% else %}-{% endif %}{% if r.insurance_type %} <i class="dash-ins">{{ ins_abbr.get(r.insurance_type, r.insurance_type[:2]) }}</i>{% endif %}</small>
@@ -54,7 +56,8 @@
                     {% else %}<small class="muted">-</small>{% endif %}
                 </td>
                 <td class="dash-adm-cs" title="상담사 {{ r.counselor or '-' }}">{{ r.counselor or '-' }}</td>
-                <td class="dash-adm-doc" title="주치의 {{ r.attending_doctor or '-' }}">{{ r.attending_doctor|doctor_short if r.attending_doctor else '-' }}</td>
+                {% set doc_name, _sep, doc_code = (r.attending_doctor|doctor_short if r.attending_doctor else '').partition('(') %}
+                <td class="dash-adm-doc" title="주치의 {{ r.attending_doctor or '-' }}"><b>{{ doc_name or '-' }}</b>{% if doc_code %}<small>({{ doc_code }}</small>{% endif %}</td>
                 <td class="dash-note" title="{{ r.other_note or '' }}">{% if is_return %}{{ {'응급전원': '응급전원', '모병원 외래치료': '모병원 진료'}.get(r.away_event_type, r.away_event_type or '외진') }}{% else %}{{ r.other_note or '-' }}{% endif %}</td>
                 <td class="dash-action-cell">
                     {% if is_return and is_planned %}
