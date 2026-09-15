@@ -85,6 +85,16 @@
             <label>시간
                 <input type="time" id="planned-time" value="{{ c.planned_admission_time or '' }}">
             </label>
+            <label>주치의
+                <input type="text" id="planned-doctor" list="planned-doctor-options" value="{{ c.attending_doctor or '' }}"
+                       placeholder="선택 또는 직접 입력" autocomplete="off" style="width:150px">
+                <datalist id="planned-doctor-options">
+                    {% for d in ATTENDING_DOCTORS %}<option value="{{ d }}">{% endfor %}
+                </datalist>
+            </label>
+            <label>병실
+                <input type="text" id="planned-room" value="{{ c.room_number or '' }}" placeholder="예: 305호" style="width:90px">
+            </label>
         </div>
         <div class="status-hold-row {% if _status != '입원보류' %}hide{% endif %}">
             <input type="text" id="hold-reason" class="reason-detail" placeholder="입원보류 사유 (필수)"
@@ -133,7 +143,7 @@
 .status-chip.on { background:var(--primary); color:#fff; border-color:var(--primary); }
 .status-completed-row, .status-hold-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
 .status-completed-row label { font-size:0.85em; color:var(--text-light); display:flex; gap:6px; align-items:center; }
-.status-completed-row input[type=date] { padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-family:inherit; }
+.status-completed-row input[type=date], .status-completed-row input[type=time], .status-completed-row input[type=text] { padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:inherit; }
 .status-cancel-row { display:flex; flex-direction:column; gap:8px; }
 .cr-reason-row { display:flex; }
 .hide { display:none !important; }
@@ -187,6 +197,8 @@
     const plannedRow = card.querySelector('.status-planned-row');
     const plannedDate = card.querySelector('#planned-date');
     const plannedTime = card.querySelector('#planned-time');
+    const plannedDoctor = card.querySelector('#planned-doctor');
+    const plannedRoom = card.querySelector('#planned-room');
     const holdReason = card.querySelector('#hold-reason');
     const reasonRadios = card.querySelectorAll('input[name="rejection_reason"]');
     const reasonChips = card.querySelectorAll('.reason-chip');
@@ -236,6 +248,8 @@
                 // 입원예정을 고르면서 예정일·시간까지 한 번에 저장 — 수정 화면을 따로 열 필요 없게
                 body.planned_admission_date = (plannedDate && plannedDate.value) || '';
                 body.planned_admission_time = (plannedTime && plannedTime.value) || '';
+                body.attending_doctor = (plannedDoctor && plannedDoctor.value.trim()) || '';
+                body.room_number = (plannedRoom && plannedRoom.value.trim()) || '';
                 if (st === '입원예정' && !body.planned_admission_date) { alert('입원예정일을 입력하세요.'); return; }
             } else if (st === '입원보류') {
                 body.hold_reason = (holdReason && holdReason.value.trim()) || '';

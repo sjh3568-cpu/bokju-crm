@@ -2191,6 +2191,7 @@ def update_consultation(cid: int, **fields):
 _META_FIELDS = ("consult_result", "consult_result_reason",
                 "admission_status", "admission_date", "rejection_reason",
                 "planned_admission_date", "planned_admission_time",
+                "attending_doctor", "room_number",
                 "rejection_reason_detail", "hold_reason",
                 "discharge_due_date", "discharge_date",
                 "discharge_destination", "discharge_reason",

@@ -241,7 +241,7 @@
             {% set status = r.admission_status or '미정' %}
             {% set cresult = r.consult_result or '상담완료' %}
             {% set purpose = (r.admission_purpose or '').strip() %}
-            <tr data-cid="{{ r.id }}"{% if r.blacklist %} class="bl-row"{% endif %}>
+            <tr data-cid="{{ r.id }}" data-doctor="{{ r.attending_doctor or '' }}" data-room="{{ r.room_number or '' }}"{% if r.blacklist %} class="bl-row"{% endif %}>
                 <td class="check-col"><input type="checkbox" class="row-check" value="{{ r.id }}"></td>
                 <td class="date-cell">{{ r.consult_date|krdate_short_wd }}</td>
                 <td class="patient-cell">
@@ -969,6 +969,8 @@ body .container { max-width: none; padding: 0 12px; }
         '상담보류': 'cr-hold', '상담취소': 'cr-cancel',
     };
     // 사유 입력이 필수인 상담 결과 → 프롬프트 문구
+    // 입원예정 인라인 변경 때 주치의 prompt에 보여줄 선택지 안내
+    const DOCTOR_HINT = '선택지: ' + {{ ATTENDING_DOCTORS|tojson }}.join(' / ');
     const RESULT_REASON_PROMPT = {
         '재입원 상담': '재입원 사유 / 이전 입원 정보를 입력하세요 (필수)',
         '상담요청': '재연락 시기를 입력하세요 (필수)',
@@ -1063,10 +1065,19 @@ body .container { max-width: none; padding: 0 12px; }
                 if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d.trim())) { sel.value = old === '미정' ? '' : old; return; }
                 body.planned_admission_date = d.trim();
                 const t = prompt('입원예정 시간 (HH:MM, 없으면 비워두세요)', '');
-                if (t && t.trim()) {
+                if (t === null) { sel.value = old === '미정' ? '' : old; return; }
+                if (t.trim()) {
                     if (!/^\d{2}:\d{2}$/.test(t.trim())) { alert('시간은 HH:MM 형식으로 입력하세요.'); sel.value = old === '미정' ? '' : old; return; }
                     body.planned_admission_time = t.trim();
                 }
+                // 주치의·병실도 이어서(선택). 취소를 누르면 상태 변경 자체를 중단, 비워 두면 기존 값 유지
+                const row = sel.closest('tr');
+                const doc = prompt('주치의 (비워 두면 기존 값 유지)\n' + DOCTOR_HINT, (row && row.dataset.doctor) || '');
+                if (doc === null) { sel.value = old === '미정' ? '' : old; return; }
+                if (doc.trim()) body.attending_doctor = doc.trim();
+                const room = prompt('병실 (예: 305호 · 비워 두면 기존 값 유지)', (row && row.dataset.room) || '');
+                if (room === null) { sel.value = old === '미정' ? '' : old; return; }
+                if (room.trim()) body.room_number = room.trim();
             }
             await applyStatus(sel, body, newStatus || '미정', STATUS_CLASS);
         });

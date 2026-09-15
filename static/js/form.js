@@ -105,6 +105,9 @@
             li.addEventListener('mousedown', (e) => {
                 e.preventDefault(); // input blur 방지
                 input.value = li.textContent.trim();
+                // 목록에서 골라도 input 이벤트를 내보내야 ② 입원 진행의 미러 칸(data-mirror)이 따라온다
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
                 close();
                 input.focus();
             });
@@ -515,6 +518,11 @@
             return;
         }
         const facLabel = acKind === 'nursing' ? '요양원' : '병원';
+        // 전국 명부(심평원 4만여 곳)가 아직 안 들어온 상태면 "없는 병원"이 아니라 "명부 미적재"가 원인이다(2026-09-15 서울아산병원 보고).
+        if (acKind === 'hospital' && (res.master_size || 0) < 1000) {
+            markHospitalInvalid(input, `전국 병원 명부가 아직 적재되지 않아 등록된 ${res.master_size}곳에서만 찾습니다. 관리자에게 기관협력 화면의 [지금 갱신]을 요청하세요.`);
+            return;
+        }
         markHospitalInvalid(input, `마스터에 없는 ${facLabel}입니다. 정확한 이름을 입력하거나 관리자에게 등록을 요청하세요.`);
     }
 
@@ -946,30 +954,48 @@
         const src = form.querySelector(`[name="${mirror.dataset.mirror}"]`);
         if (!src) return;
         mirror.value = src.value;
-        mirror.addEventListener('input', () => { src.value = mirror.value; src.dispatchEvent(new Event('input', { bubbles: true })); src.dispatchEvent(new Event('change', { bubbles: true })); });
+        mirror.addEventListener('input', () => { src.value = mirror.value; src.dispatchEvent(new Event('input', { bubbles: true })); });
+        mirror.addEventListener('change', () => { src.value = mirror.value; src.dispatchEvent(new Event('change', { bubbles: true })); });
         src.addEventListener('input', () => { if (mirror.value !== src.value) mirror.value = src.value; });
+        src.addEventListener('change', () => { if (mirror.value !== src.value) mirror.value = src.value; });
     });
 
     // ─── 병실 배정 충돌 확인 — 재원 현황(명부)·다른 입원예정과 맞춰 보고 경고 ───
     (function() {
         const roomEl = form.querySelector('input[name="consultation.room_number"]');
         if (!roomEl) return;
-        const box = document.createElement('div');
-        box.className = 'room-conflict'; box.hidden = true;
-        roomEl.insertAdjacentElement('afterend', box);
+        // 경고 상자는 헤더 호실 칸 아래와 ② 입원 진행의 병실 미러 칸 아래 양쪽에 같은 내용으로
+        const boxes = [];
+        [roomEl, form.querySelector('[data-mirror="consultation.room_number"]')].filter(Boolean).forEach(el => {
+            const b = document.createElement('div');
+            b.className = 'room-conflict'; b.hidden = true;
+            el.insertAdjacentElement('afterend', b);
+            boxes.push(b);
+        });
+        const box = {
+            set hidden(v) { boxes.forEach(b => { b.hidden = v; }); },
+            set innerHTML(h) { boxes.forEach(b => { b.innerHTML = h; }); },
+            classList: {
+                toggle(c, on) { boxes.forEach(b => b.classList.toggle(c, on)); },
+                remove(c) { boxes.forEach(b => b.classList.remove(c)); },
+            },
+            addEventListener(ev, fn) { boxes.forEach(b => b.addEventListener(ev, fn)); },
+        };
         const cid = (location.pathname.match(/^\/consult\/(\d+)\/edit/) || [])[1];
         let seq = 0;
+        const mirrorRoom = form.querySelector('[data-mirror="consultation.room_number"]');
+        function setInvalid(on) { [roomEl, mirrorRoom].filter(Boolean).forEach(el => el.classList.toggle('room-invalid', on)); }
         async function check() {
             const room = roomEl.value.trim();
             const my = ++seq;
-            if (!room) { box.hidden = true; roomEl.classList.remove('room-invalid'); return; }
+            if (!room) { box.hidden = true; setInvalid(false); return; }
             const g = form.querySelector('input[name="patient.gender"]:checked');
             let res;
             try {
                 res = await api.get(`/api/room-status?room=${encodeURIComponent(room)}&gender=${g ? g.value : ''}${cid ? '&exclude=' + cid : ''}`);
             } catch (e) { return; }
             if (my !== seq) return;
-            if (!res.known) { box.hidden = true; roomEl.classList.remove('room-invalid'); return; }
+            if (!res.known) { box.hidden = true; setInvalid(false); return; }
             const who = res.residents.map(r => `${r.name}${r.gender === 'M' ? '(남)' : r.gender === 'F' ? '(여)' : ''}`).join(', ');
             const conflict = res.conflicts.length > 0;
             const reasons = res.conflicts.map(c => ({
@@ -983,13 +1009,18 @@
                   `<span class="room-conflict-actions"><button type="button" data-act="retry">병실 다시 정하기</button><button type="button" data-act="keep">조율 완료, 그대로 둠</button></span>`
                 : `<small>✓ ${res.room} 재원 ${res.used}/${res.capacity} · 빈 병상 ${res.free}${who ? ' · ' + who : ''}</small>`;
             box.classList.toggle('is-conflict', conflict);
-            roomEl.classList.toggle('room-invalid', conflict);
+            setInvalid(conflict);
             box.hidden = false;
         }
         box.addEventListener('click', e => {
             const b = e.target.closest('[data-act]'); if (!b) return;
-            if (b.dataset.act === 'retry') { roomEl.value = ''; box.hidden = true; roomEl.classList.remove('room-invalid'); roomEl.focus(); }
-            else { roomEl.classList.remove('room-invalid'); box.classList.remove('is-conflict'); box.innerHTML = `<small>조율 완료 — ${roomEl.value.trim()} 그대로 둡니다.</small>`; }
+            if (b.dataset.act === 'retry') {
+                roomEl.value = ''; roomEl.dispatchEvent(new Event('input', { bubbles: true }));   // 미러 칸도 비움
+                box.hidden = true; setInvalid(false);
+                const near = e.currentTarget.previousElementSibling;   // 누른 경고 바로 위의 칸에 포커스
+                (near && near.tagName === 'INPUT' ? near : roomEl).focus();
+            }
+            else { setInvalid(false); box.classList.remove('is-conflict'); box.innerHTML = `<small>조율 완료 — ${roomEl.value.trim()} 그대로 둡니다.</small>`; }
         });
         roomEl.addEventListener('change', check);
         form.querySelectorAll('input[name="patient.gender"]').forEach(r => r.addEventListener('change', () => { if (roomEl.value.trim()) check(); }));

@@ -4145,6 +4145,15 @@ def api_consult_status(cid):
                 if ptime and not re.fullmatch(r"\d{2}:\d{2}", ptime):
                     return jsonify({"error": "입원예정 시간 형식 오류(HH:MM)"}), 400
                 fields["planned_admission_time"] = ptime or None
+            # 주치의·병실도 같은 자리에서(2026-09-15). 키가 온 것만 반영, 빈값이면 비운다.
+            for key, label in (("attending_doctor", "주치의"), ("room_number", "병실")):
+                if key in payload:
+                    val = (payload.get(key) or "").strip()
+                    if len(val) > 60:
+                        return jsonify({"error": f"{label} 값이 너무 깁니다."}), 400
+                    fields[key] = val or None
+                    if val:
+                        audit.append(f"{label}:{val}")
         elif status == "입원보류":
             hold_reason = (payload.get("hold_reason") or "").strip()
             if not hold_reason:
