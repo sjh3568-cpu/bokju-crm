@@ -19,6 +19,7 @@ COPY *.py ./
 COPY templates/ ./templates/
 COPY static/ ./static/
 COPY tools/ ./tools/
+COPY views/ ./views/
 # KRPG 조회표(data/krpg_v22.json). app.py가 __file__ 옆 data/에서 읽으므로
 # /data 마운트 볼륨이 아니라 이미지 안 /app/data 에 있어야 한다.
 COPY data/ ./data/
