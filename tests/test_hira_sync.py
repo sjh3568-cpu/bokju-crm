@@ -135,3 +135,51 @@ class HiraSyncTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class HiraBootstrapTests(unittest.TestCase):
+    """2026-09-15: 운영 마스터가 13곳뿐인 채 일주일을 기다리던 문제 — 기동 시 바로 받는지, 상태 파일이 DB 옆에 가는지."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.db_patch = patch.object(models, 'DB_PATH', os.path.join(self.tmp.name, 't.db')); self.db_patch.start()
+        self.status_patch = patch.object(hira_sync, 'STATUS_PATH', hira_sync.Path(self.tmp.name) / 'status.json'); self.status_patch.start()
+        models.init_db(); coop.init_schema()
+
+    def tearDown(self):
+        self.status_patch.stop(); self.db_patch.stop(); self.tmp.cleanup()
+
+    def test_needs_bootstrap_until_first_successful_sync(self):
+        self.assertFalse(hira_sync.master_synced())
+        self.assertTrue(hira_sync.needs_bootstrap())          # 명부 없음 → 기동 즉시
+        rows = [{'ykiho': 'K1', 'yadmNm': '재단법인아산사회복지재단 서울아산병원', 'clCdNm': '상급종합', 'sidoCdNm': '서울', 'addr': 'a', 'telno': '1'}]
+        with patch.object(hira_sync, 'service_key', return_value='dummy'), patch.object(hira_sync.time, 'sleep'), \
+             patch.object(hira_sync, '_fetch_page', _fake_pages(rows, 10)):
+            out = hira_sync.run('startup')
+        self.assertTrue(out['ok']); self.assertGreaterEqual(out['master_total'], 1)   # init_db 기본 시드 13곳 + 1
+        self.assertTrue(hira_sync.master_synced())
+        self.assertFalse(hira_sync.needs_bootstrap())         # 성공 뒤엔 주간 스케줄만
+        # 상담일지 자동완성에서 통칭으로 정확일치
+        items = models.autocomplete_hospitals('서울아산병원')['items']
+        self.assertTrue(items and items[0]['exact'])
+        # 실패가 기록되면 다음 기동에 다시 시도
+        with patch.object(hira_sync, 'service_key', return_value='dummy'), \
+             patch.object(hira_sync, '_fetch_page', side_effect=RuntimeError('API 오류')):
+            hira_sync.run('weekly')
+        self.assertTrue(hira_sync.needs_bootstrap())
+        self.assertLessEqual(hira_sync._next_wait(hira_sync.status()), hira_sync.RETRY_AFTER_FAILURE)
+
+    def test_status_path_follows_db_volume(self):
+        with patch.dict(os.environ, {'BOKJU_DB_PATH': '/data/bokju.db'}, clear=False):
+            os.environ.pop('HIRA_SYNC_STATUS', None)
+            self.assertEqual(hira_sync._default_status_path().as_posix(), '/data/hira_sync_status.json')
+        with patch.dict(os.environ, {'HIRA_SYNC_STATUS': '/tmp/x.json'}, clear=False):
+            self.assertEqual(hira_sync._default_status_path().as_posix(), '/tmp/x.json')
+
+    def test_concurrent_run_is_skipped(self):
+        with hira_sync._run_lock:
+            self.assertTrue(hira_sync.is_running())
+            out = hira_sync.run('manual')
+            self.assertTrue(out.get('skipped'))
+            self.assertFalse(hira_sync.run_in_background('manual'))
+        self.assertFalse(hira_sync.is_running())

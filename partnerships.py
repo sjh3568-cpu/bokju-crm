@@ -473,7 +473,7 @@ def index():
         skipped_total=db.execute('SELECT COUNT(*) FROM cooperation_candidate_skips').fetchone()[0]
         unlinked_count=db.execute('SELECT COUNT(*) FROM cooperation_partners WHERE directory_id IS NULL').fetchone()[0]
     _audit('view_cooperation')
-    return render_template('partners.html',partners=selected,q=q,master_count=master_count,
+    return render_template('partners.html',partners=selected,q=q,master_count=master_count,hira=_hira_state(),
         master_kinds=master_kinds,master_regions=master_regions,
         partner_kinds=partner_kinds,partner_regions=partner_regions,
         reminders=reminders(),csrf=_csrf(),view=('feed' if request.args.get('view',user_prefs.get('partner_view','list'))=='feed' else 'list'),
@@ -516,6 +516,38 @@ def search():
         else:
             rows=db.execute("SELECT h.id,h.name,h.kind,h.region,h.address,h.phone,p.id partner_id FROM source_hospitals h LEFT JOIN cooperation_partners p ON p.hospital_id=h.id WHERE "+' AND '.join(conditions)+" ORDER BY h.name,h.id LIMIT 21 OFFSET ?",(*args,offset)).fetchall()
     return jsonify(items=[dict(r) for r in rows[:20]],more=len(rows)>20)
+
+
+def _hira_state():
+    """기관협력 화면에 보여줄 전국 명부(심평원) 갱신 상태.
+    2026-09-15: 운영 마스터가 13곳뿐인데 아무 화면에도 안 보여 상담사가 '서울아산병원이 없다'고 보고할 때까지 몰랐다."""
+    import hira_sync
+    last = hira_sync.status() or {}
+    return {
+        'synced': hira_sync.master_synced(),
+        'running': hira_sync.is_running(),
+        'configured': bool(hira_sync.service_key()),
+        'ok': last.get('ok') is True,
+        'at': (last.get('at') or '')[:16].replace('T', ' '),
+        'error': last.get('error') or '',
+        'master_total': last.get('master_total'),
+        'weekday': '월화수목금토일'[hira_sync.WEEKDAY], 'hour': hira_sync.HOUR,
+    }
+
+
+@bp.route('/partners/hira-sync',methods=['POST'])
+@login_required
+def hira_sync_now():
+    """[지금 갱신] — 전국 명부를 심평원 API에서 바로 받는다(백그라운드, 몇 분). 협력기관 편집 권한 + CSRF는 before_request가 검사."""
+    import hira_sync
+    if not hira_sync.service_key():
+        flash('HIRA_SERVICE_KEY가 설정되지 않아 갱신할 수 없습니다. 운영 .env에 키를 넣고 재기동하세요.','error')
+    elif hira_sync.run_in_background('manual'):
+        _audit('hira_sync_manual')
+        flash('전국 병원 명부 갱신을 시작했습니다. 몇 분 뒤 이 화면을 새로고침하면 결과가 표시됩니다.','success')
+    else:
+        flash('이미 갱신 중입니다. 잠시 뒤 새로고침하세요.','info')
+    return redirect(url_for('partners.index'))
 
 
 @bp.route('/partners/add',methods=['POST'])

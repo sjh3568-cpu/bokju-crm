@@ -16,6 +16,10 @@
   HIRA_SYNC_ENABLED=1       0이면 끔 (기본 1, 키가 없으면 어차피 조용히 건너뜀)
   HIRA_SYNC_WEEKDAY=0       0=월 … 6=일 (기본 월요일)
   HIRA_SYNC_HOUR=6          기본 06시 (백업 03시 뒤, 업무 시작 전)
+  HIRA_SYNC_STATUS=...      상태 파일 경로 (기본: DB 옆 hira_sync_status.json → 운영은 /data)
+
+기동 시 마스터에 심평원 명부가 한 건도 없거나 마지막 갱신이 실패였으면 30초 뒤 바로 한 번 받는다.
+그 뒤 매주. 실패하면 6시간 뒤 재시도. 기관협력 화면 상단에서 상태를 보고 [지금 갱신]도 할 수 있다.
 
 수동 실행:  python hira_sync.py            (기본 목록 + 상세, 지금 한 번)
             python hira_sync.py --details  (상세만 다시)
@@ -42,7 +46,24 @@ logger = logging.getLogger(__name__)
 
 API_ENDPOINT = "https://apis.data.go.kr/B551182/hospInfoServicev2/getHospBasisList"
 ROWS_PER_PAGE = 1000
-STATUS_PATH = Path(os.getenv("HIRA_SYNC_STATUS") or "./data/hira_sync_status.json")
+def _default_status_path() -> Path:
+    """상태 파일은 DB와 같은 폴더(운영: /data 볼륨)에 둔다.
+    2026-09-15 교훈: ./data/ 기본값은 컨테이너 안의 /app/data(이미지 계층)라 재빌드마다 사라지고
+    NAS 쪽에서도 보이지 않아, 갱신이 한 번도 안 돌았다는 사실을 아무도 알 수 없었다."""
+    env = os.getenv("HIRA_SYNC_STATUS")
+    if env:
+        return Path(env)
+    db_path = os.getenv("BOKJU_DB_PATH")
+    if db_path:
+        return Path(db_path).parent / "hira_sync_status.json"
+    return Path("./data/hira_sync_status.json")
+
+
+STATUS_PATH = _default_status_path()
+# 기동 직후 첫 갱신까지 기다리는 시간(초) — 앱이 다 뜬 뒤에 시작
+BOOTSTRAP_DELAY = int(os.getenv("HIRA_SYNC_BOOTSTRAP_DELAY", "30"))
+# 실패했을 때 다음 주까지 기다리지 않고 다시 시도하는 간격(초)
+RETRY_AFTER_FAILURE = 6 * 3600
 
 ENABLED = os.getenv("HIRA_SYNC_ENABLED", "1") == "1"
 WEEKDAY = int(os.getenv("HIRA_SYNC_WEEKDAY", "0"))
@@ -199,6 +220,14 @@ def sync_details(key: str, *, targets: dict[str, str] | None = None, progress=No
     return {"targets": len(targets), "updated": updated, "failed": failed[:20], "failed_count": len(failed)}
 
 
+def _master_total() -> int:
+    conn = models.get_db()
+    try:
+        return conn.execute("SELECT COUNT(*) FROM source_hospitals WHERE active=1").fetchone()[0]
+    finally:
+        conn.close()
+
+
 def _write_status(**fields):
     STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
     data = {"at": datetime.now().isoformat(timespec="seconds"), **fields}
@@ -213,8 +242,56 @@ def status() -> dict | None:
         return None
 
 
+def master_synced() -> bool:
+    """전국 명부(심평원 API)가 한 번이라도 마스터에 들어갔는가.
+    운영 DB는 개발 DB와 별개라 코드를 배포해도 명부는 따라오지 않는다 — DB에서 직접 확인한다."""
+    conn = models.get_db()
+    try:
+        n = conn.execute("SELECT COUNT(*) FROM source_hospitals WHERE source='hira-api'").fetchone()[0]
+    except Exception:  # noqa: BLE001 — 아직 스키마가 없으면 '안 됨'으로 본다
+        n = 0
+    finally:
+        conn.close()
+    return n > 0
+
+
+def needs_bootstrap() -> bool:
+    """기동 직후 바로 갱신해야 하는가 — 명부가 한 번도 안 들어갔거나 마지막 갱신이 실패했을 때.
+    매주 월요일 06시만 기다리면 키를 넣은 뒤 최대 일주일 동안 자동완성이 13곳짜리 마스터로 돈다(2026-09-15 실제 발생)."""
+    if not master_synced():
+        return True
+    last = status() or {}
+    return last.get("ok") is not True
+
+
+_run_lock = threading.Lock()
+
+
+def is_running() -> bool:
+    return _run_lock.locked()
+
+
 def run(reason: str = "manual") -> dict:
-    """한 번 갱신. 실패해도 예외를 밖으로 내지 않고 상태 파일에 남긴다(스케줄러가 죽지 않게)."""
+    """한 번 갱신. 실패해도 예외를 밖으로 내지 않고 상태 파일에 남긴다(스케줄러가 죽지 않게).
+    이미 도는 중이면 새로 시작하지 않는다(스케줄·기동·수동 버튼이 겹칠 수 있다)."""
+    if not _run_lock.acquire(blocking=False):
+        logger.info("심평원 갱신 건너뜀(%s) — 이미 실행 중", reason)
+        return {"ok": False, "reason": reason, "error": "이미 갱신 중", "skipped": True}
+    try:
+        return _run_locked(reason)
+    finally:
+        _run_lock.release()
+
+
+def run_in_background(reason: str = "manual") -> bool:
+    """수동 버튼용. 시작했으면 True, 이미 도는 중이면 False."""
+    if is_running():
+        return False
+    threading.Thread(target=run, args=(reason,), name="hira-sync-manual", daemon=True).start()
+    return True
+
+
+def _run_locked(reason: str) -> dict:
     key = service_key()
     if not key:
         logger.info("심평원 갱신 건너뜀 — HIRA_SERVICE_KEY 없음")
@@ -229,7 +306,7 @@ def run(reason: str = "manual") -> dict:
         took = round(time.time() - started, 1)
         logger.info("심평원 갱신 완료(%s) — 명부 %d, 마스터 %d, 상세 %d/%d곳, %.1f초",
                     reason, result["directory"], result["master"], detail["updated"], detail["targets"], took)
-        return _write_status(ok=True, reason=reason, seconds=took, **result)
+        return _write_status(ok=True, reason=reason, seconds=took, master_total=_master_total(), **result)
     except HTTPError as e:
         msg = e.read().decode("utf-8", "ignore")[:300]
         hint = " — 공공데이터포털에서 '병원정보서비스' 활용신청이 되어 있는지 확인" if "NOT_REGISTERED" in msg else ""
@@ -252,10 +329,23 @@ def _seconds_until_next_run() -> float:
     return (target - now).total_seconds()
 
 
+def _next_wait(last: dict | None) -> float:
+    """다음 실행까지 대기 — 평소엔 주간 시각, 마지막이 실패였으면 6시간 뒤 재시도(주간 시각이 더 이르면 그때)."""
+    weekly = _seconds_until_next_run()
+    if last and last.get("ok") is not True:
+        return min(weekly, RETRY_AFTER_FAILURE)
+    return weekly
+
+
 def _loop():
+    last = None
+    if needs_bootstrap():
+        logger.info("심평원 명부가 비어 있거나 마지막 갱신이 실패 — %d초 뒤 바로 갱신", BOOTSTRAP_DELAY)
+        threading.Event().wait(BOOTSTRAP_DELAY)
+        last = run("startup")
     while True:
-        threading.Event().wait(_seconds_until_next_run())
-        run("weekly")
+        threading.Event().wait(_next_wait(last))
+        last = run("weekly")
 
 
 def start_scheduler():
@@ -265,7 +355,8 @@ def start_scheduler():
         return
     t = threading.Thread(target=_loop, name="hira-sync-scheduler", daemon=True)
     t.start()
-    logger.info("심평원 자동 갱신 시작 — 매주 %s요일 %02d시", "월화수목금토일"[WEEKDAY], HOUR)
+    logger.info("심평원 자동 갱신 시작 — 매주 %s요일 %02d시 (명부 없으면 기동 직후 1회), 상태 파일 %s",
+                "월화수목금토일"[WEEKDAY], HOUR, STATUS_PATH)
 
 
 if __name__ == "__main__":

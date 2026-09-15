@@ -14,6 +14,15 @@
 <p id="institution-search-status" aria-live="polite"></p><div id="institution-results" class="coop-search-results"></div><button type="button" id="institution-more" class="btn btn-secondary" hidden>결과 더 보기</button>
 <form method="post" action="{{ url_for('partners.add') }}" id="institution-add-form" class="coop-selected" hidden><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="hospital"><input type="hidden" name="hospital_id"><strong id="institution-selected"></strong><p>이 기관을 협력기관으로 관리할까요?</p><button class="btn btn-primary">협력기관으로 추가</button><button type="button" id="institution-cancel" class="btn btn-secondary">선택 취소</button></form>
 <p class="muted">병원명·종별·주소 출처: <a href="https://opendata.hira.or.kr/op/opc/selectOpenData.do?sno=11925" target="_blank" rel="noopener">건강보험심사평가원 전국 병의원 및 약국 현황</a>. 원본 명단이 갱신되면 검색에 반영됩니다.</p>
+<div class="coop-hira-state{% if not hira.synced or (hira.error and not hira.running) %} warn{% endif %}">
+{% if hira.running %}⏳ 전국 병원 명부를 심평원에서 받는 중입니다. 몇 분 뒤 새로고침하세요.
+{% elif not hira.synced %}⚠️ <b>전국 병원 명부가 아직 적재되지 않았습니다.</b> 상담일지 모병원 자동완성이 직접 등록한 {{ master_count|int }}곳에서만 찾습니다(서울아산병원 등 미등록).{% if not hira.configured %} 운영 .env에 HIRA_SERVICE_KEY를 넣고 재기동하면 자동으로 받습니다.{% endif %}{% if hira.error %} 마지막 시도 실패: {{ hira.error }}{% endif %}
+{% elif hira.error %}⚠️ 마지막 갱신 실패({{ hira.at }}): {{ hira.error }} — 6시간마다 재시도합니다.
+{% else %}✅ 전국 명부 갱신 {{ hira.at }} · 마스터 {{ (hira.master_total or master_count)|int }}곳 · 매주 {{ hira.weekday }}요일 {{ '%02d'|format(hira.hour) }}시 자동
+{% endif %}
+{% if hira.configured and not hira.running %}<form method="post" action="{{ url_for('partners.hira_sync_now') }}" class="coop-hira-form"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-secondary btn-sm">지금 갱신</button></form>{% endif %}
+</div>
+<style>.coop-hira-state{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:.92em;color:#4b5563;margin-top:6px}.coop-hira-state.warn{background:#fff8ec;border:1px solid #f5c26b;border-left:4px solid #e8912d;color:#7c4a06;padding:8px 12px}.coop-hira-form{margin:0}</style>
 </section>
 <details class="card coop-section coop-manual-add" id="manual-institution"><summary>공공기관·복지기관 등 직접 등록</summary><p class="muted">의료기관 공식 명부에 없는 보건소, 행정기관, 복지관, 협회 등을 등록합니다.</p><form method="post" action="{{ url_for('partners.add_manual') }}" class="coop-form"><input type="hidden" name="csrf" value="{{ csrf }}"><label>기관명<input name="name" required maxlength="200" placeholder="예: 대구광역시 보건정책과"></label><label>기관 유형<select name="kind" required><option value="">선택</option>{% for k in ('공공기관','보건소','복지기관','행정기관','협회·단체','기타기관') %}<option>{{ k }}</option>{% endfor %}</select></label><label>지역<input name="region" maxlength="100" placeholder="예: 대구광역시"></label><label>주소<input name="address" maxlength="300"></label><label>연락처<input name="phone" maxlength="100"></label><button class="btn btn-primary">직접 등록</button></form></details>
 {% endif %}
