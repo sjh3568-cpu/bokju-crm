@@ -22,7 +22,7 @@
         <h3>명부 <span class="wd-n">{{ moves.rows|length }}건</span></h3>
         <div class="mv-toolbar-right">
             <div class="mv-kind" role="group" aria-label="구분">
-                {% for k, label in moves.kinds.items() %}<a href="{{ url_for('ward_view', **dict(request.args.to_dict(), tab='moves', kind=k)) }}" class="mv-kind-{{ k or 'all' }} {% if f.kind == k %}on{% endif %}">{{ label }}</a>{% endfor %}
+                {% for k, label in moves.kinds.items() %}<a href="{{ url_for('ward.ward_view', **dict(request.args.to_dict(), tab='moves', kind=k)) }}" class="mv-kind-{{ k or 'all' }} {% if f.kind == k %}on{% endif %}">{{ label }}</a>{% endfor %}
             </div>
             <a class="btn btn-secondary btn-sm" href="{{ url_for('ward_moves.moves_xlsx', **request.args.to_dict()) }}" title="현재 필터 그대로 엑셀 저장">⬇ 엑셀</a>
         </div>

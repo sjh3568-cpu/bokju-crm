@@ -102,7 +102,7 @@ def login_required(view):
             if request.path.startswith("/api/"):
                 abort(401)
             flash("로그인이 필요합니다.", "warn")
-            return redirect(url_for("login_view", next=request.path))
+            return redirect(url_for("account.login_view", next=request.path))
         g.user = user
         return view(*args, **kwargs)
     return wrapped
@@ -118,7 +118,7 @@ def menu_required(menu_key: str, min_level: int):
                 if request.path.startswith("/api/"):
                     abort(401)
                 flash("로그인이 필요합니다.", "warn")
-                return redirect(url_for("login_view", next=request.path))
+                return redirect(url_for("account.login_view", next=request.path))
             if menu_level(user, menu_key) < min_level:
                 abort(403)
             g.user = user

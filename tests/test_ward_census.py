@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import patch
 
 import app as main
+import views.ward as ward_views   # ward_view는 views/ward.py로 분리됨(2026-09-15) — render_template 패치 대상
 import models
 
 
@@ -397,10 +398,10 @@ class WardCensusTests(unittest.TestCase):
         with models.get_db() as conn:
             conn.execute("UPDATE admission_episodes SET care_type = '회복기재활' "
                          "WHERE patient_id = 1")
-        with patch.object(main, "render_template", return_value="") as render:
+        with patch.object(ward_views, "render_template", return_value="") as render:
             self.assertEqual(self.client.get("/ward?view=list&filt=recovery").status_code, 200)
             self.assertNotIn(1, [c["patient_id"] for c in render.call_args.kwargs["admitted"]])
-        with patch.object(main, "render_template", return_value="") as render:
+        with patch.object(ward_views, "render_template", return_value="") as render:
             self.client.get("/ward?view=list&filt=nonrecovery")
             patient = next(c for c in render.call_args.kwargs["admitted"] if c["patient_id"] == 1)
             self.assertEqual(patient["care_phase"], "비회복기")
@@ -432,7 +433,7 @@ class WardCensusTests(unittest.TestCase):
             conn.execute("UPDATE admission_episodes SET care_type='비회복기(S006)', "
                          "rehab_end_imported=1, rehab_end_date=NULL WHERE patient_id=3")
             conn.execute("UPDATE consultations SET diseases='[\"비사용증후군\"]' WHERE id=1")
-        with patch.object(main, "render_template", return_value="") as render:
+        with patch.object(ward_views, "render_template", return_value="") as render:
             self.client.get("/ward?view=list&filt=recovery")
             rows = render.call_args.kwargs["admitted"]
             self.assertEqual([c["patient_id"] for c in rows], [1])
@@ -467,7 +468,7 @@ class WardCensusTests(unittest.TestCase):
                          "VALUES(2,'응급전원','2024-05-01','확인병원','13:30')")
             conn.execute("INSERT INTO admission_events(consultation_id,event_type,event_date,returned_at) "
                          "VALUES(1,'응급전원','2026-08-03','2026-08-04')")
-        with patch.object(main, "render_template", return_value="") as render:
+        with patch.object(ward_views, "render_template", return_value="") as render:
             response = self.client.get("/ward?view=list")
             self.assertEqual(response.status_code, 200)
             ctx = render.call_args.kwargs

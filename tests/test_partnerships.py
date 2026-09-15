@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from unittest.mock import patch
 
 import app as main
+import views.inbound as inbound_views
 import models
 import partnerships as coop
 
@@ -223,6 +224,7 @@ class CooperationTests(unittest.TestCase):
     # 통합 인박스는 2026-09-10부터 INBOX_ENABLED=0으로 숨김. 라우트 자체는 남아 있어
     # 되살릴 때를 대비해 플래그를 켠 상태로 회귀 검증을 유지한다.
     @patch.object(main,'INBOX_ENABLED',True)
+    @patch.object(inbound_views,'INBOX_ENABLED',True)   # /inbox 라우트는 views/inbound.py로 분리됨 — 플래그 사본도 켠다
     def test_unified_inbox_create_filter_assign_and_complete(self):
         page=self.client.get('/inbox')
         self.assertEqual(page.status_code,200)

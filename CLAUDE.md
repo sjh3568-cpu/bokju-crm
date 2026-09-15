@@ -38,7 +38,7 @@ python serve.py            # 운영 — waitress, 0.0.0.0:8003 (NAS 컨테이너
 - **역할**(admin/staff/viewer)은 이제 '권한 프리셋' 이름일 뿐 (`config.ROLE_PRESETS`) —
   계정 생성/역할 변경 시 매트릭스 기본값을 채우고, 이후 `사용자 관리` 화면에서 메뉴별로 조정.
   기존 계정은 `permissions`가 비어 있으면 역할 프리셋으로 자동 판정(`models._hydrate_user`).
-- **판정**: `app._route_requirement(path, method)`가 경로→메뉴→필요레벨을 정하고,
+- **판정**: `app._route_requirement(path, method)`가 경로→메뉴→필요레벨을 정하고(경로 기준이라 Blueprint 분리와 무관),
   `app._enforce_menu_permissions`(before_request)가 일괄 차단(API 403 / 화면 403·되돌림).
   세부 라우트 방어로 `auth.admin_required`(=users 메뉴 수정↑)도 병용.
 - **UI 숨김**: `<body>`에 `cc-consult/cw-consult/cw-ward/cc-sms` 클래스를 권한에 따라 부여,
@@ -49,7 +49,24 @@ python serve.py            # 운영 — waitress, 0.0.0.0:8003 (NAS 컨테이너
 ## 구조
 
 ```
-app.py             Flask 진입점, 모든 라우트, API
+app.py             Flask 앱 생성·공통 훅(권한 판정·필독 공지·gzip)·컨텍스트 프로세서·템플릿 필터·공용 도메인 헬퍼
+                   (회복기/만료/퇴원 판정, 날짜 유틸) + 맨 아래에서 views/ Blueprint 등록. 라우트는 /api/global-search 하나만 남음
+views/             화면·API 라우트 Blueprint (2026-09-15 app.py 7,400줄에서 분리). 엔드포인트는 "모듈.함수" (url_for("main.dashboard"))
+  account.py       인증·계정 (login/logout/account/start-page/password-reset)      bp "account"
+  notices.py       공지사항                                                          bp "notices"
+  admin.py         사용자 관리·감사 로그·권한 요청                                     bp "admin"
+  main.py          대시보드(/), 통합 달력, 주간 현황, healthz, help                    bp "main"
+  todos.py         상담사 개인 To-Do                                                   bp "todos"
+  stats.py         통계·보고서                                                        bp "stats"
+  consult.py       상담일지 화면·목록·CSV·상담 CRUD API·결과/퇴원 워크플로·자동완성·기간계산기  bp "consult"
+  ward.py          재원 관리·생애주기·입원 확정·호실·태그·블랙리스트                     bp "ward"
+  inbound.py       옴니채널 인박스·홈페이지 게시판 답변·외진 이벤트 API·webhook          bp "inbound"
+  sms_views.py     문자 발송                                                          bp "sms"
+                   규칙: 공용 헬퍼는 app.py에 두고 `from app import …`(app.py가 맨 아래에서 views를 import하므로 순환 없음).
+                   views 모듈이 서로 쓰는 이름은 `from views.x import`(main→ward, consult→inbound·todos 방향만; 역방향 금지).
+                   app.py에 남은 코드나 tests가 쓰는 views 이름은 app.py 맨 아래 재수출 블록에 추가.
+                   `from app import X`는 값 복사라 tests에서 `patch.object(main, "X")`로는 views 코드에 안 먹는다 — views 모듈을 패치할 것
+                   (tests/test_ward_census.py의 render_template, test_partnerships.py의 INBOX_ENABLED 참고).
 models.py          SQLite 스키마 + 마이그레이션 (_ensure_columns) + JSON 직렬화
 auth.py            인증 + @login_required / @menu_required / @admin_required (계정별 메뉴 권한)
 config.py          상수 (보험·시도/시군구·병명 LAYOUT·입원경로 등)

@@ -92,7 +92,7 @@
         <div class="sidebar-foot">
                 {# 계산기·할 일·분류체계 — 사이드바 레이아웃(≥1024px)에서는 JS가 우하단 플로팅 버튼을 여기로 옮겨 상시 펼침 #}
                 <div class="sidebar-tools" id="sidebar-tools" aria-label="도구"></div>{# 계산기·To-DO·분류체계·통화 녹음 버튼이 스크립트로 이 안에 들어온다. 통합 달력은 대시보드 하위 메뉴 하나로만 #}
-                <details class="user-tag account-menu"><summary data-initial="{{ (current_user.display_name or current_user.username or '?')[:1] }}">{{ current_user.display_name }}<small class="role-chip">{{ ROLE_LABELS.get(current_user.role, current_user.role) }}</small><span>⌄</span></summary><div><a href="{{ url_for('account_settings') }}"><b>⚙ 내 계정 설정</b><small>개인화·권한·비밀번호</small></a><a href="{{ url_for('account_settings') }}#permissions">권한 확인·요청</a><a href="/support/">개선 요청·문의</a><form action="/logout" method="post"><button type="submit">로그아웃</button></form></div></details>
+                <details class="user-tag account-menu"><summary data-initial="{{ (current_user.display_name or current_user.username or '?')[:1] }}">{{ current_user.display_name }}<small class="role-chip">{{ ROLE_LABELS.get(current_user.role, current_user.role) }}</small><span>⌄</span></summary><div><a href="{{ url_for('account.account_settings') }}"><b>⚙ 내 계정 설정</b><small>개인화·권한·비밀번호</small></a><a href="{{ url_for('account.account_settings') }}#permissions">권한 확인·요청</a><a href="/support/">개선 요청·문의</a><form action="/logout" method="post"><button type="submit">로그아웃</button></form></div></details>
         </div>
     </aside>
     <div class="sidebar-backdrop" id="sidebar-backdrop" hidden></div>

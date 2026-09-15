@@ -71,11 +71,11 @@
     <div class="away-toolbar">
         <h3>외진·전원 명부 <span class="wd-n">{{ report.rows|length }}건</span></h3>
         <div class="away-toolbar-right">
-            <a class="btn btn-secondary btn-sm" href="{{ url_for('ward_away_xlsx', **base_args) }}" title="현재 필터 그대로 엑셀 저장">⬇ 엑셀</a>
+            <a class="btn btn-secondary btn-sm" href="{{ url_for('ward.ward_away_xlsx', **base_args) }}" title="현재 필터 그대로 엑셀 저장">⬇ 엑셀</a>
             {% if can_edit %}<button type="button" class="btn btn-primary btn-sm" id="away-register-open">＋ 기록 등록</button>{% endif %}
             <div class="away-view-toggle" role="group" aria-label="보기 방식">
-                <a href="{{ url_for('ward_view', **dict(base_args, tab='away', away_view='list')) }}" class="{% if report.view == 'list' %}on{% endif %}">☰ 목록형</a>
-                <a href="{{ url_for('ward_view', **dict(base_args, tab='away', away_view='feed')) }}" class="{% if report.view == 'feed' %}on{% endif %}">▤ 피드형</a>
+                <a href="{{ url_for('ward.ward_view', **dict(base_args, tab='away', away_view='list')) }}" class="{% if report.view == 'list' %}on{% endif %}">☰ 목록형</a>
+                <a href="{{ url_for('ward.ward_view', **dict(base_args, tab='away', away_view='feed')) }}" class="{% if report.view == 'feed' %}on{% endif %}">▤ 피드형</a>
             </div>
         </div>
     </div>
