@@ -16,3 +16,6 @@ server.log
 
 # Claude Code 개인 설정 (PC 전용 NAS 배포 권한 — 공개 저장소에 올리지 않음)
 .claude/settings.local.json
+
+# 심평원 명부 자동 갱신 상태(런타임 생성)
+data/hira_sync_status.json
