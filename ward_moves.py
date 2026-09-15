@@ -2,6 +2,8 @@
 
 원무 명부 회차(admission_episodes.roster_key)가 실제 입·퇴원일을 들고 있으므로 상담 상태가
 아니라 회차로 센다. 상담이 붙은 회차는 퇴원 장소·사유·담당 상담사·진단을 상담에서 가져온다.
+외진(응급전원·모병원 외래치료) 복귀는 그날의 입원으로 센다(2026-09-15) — 명부가 복귀일에
+새 회차를 열어 두었으면 그 회차 행으로, 아직 없으면 복귀 기록으로 '입원(복귀)' 행을 만든다.
 
   report(args)  → {filters, rows, summary, options}
   /ward/moves.xlsx  현재 필터 그대로 엑셀
@@ -72,7 +74,7 @@ def _load(d_from: str, d_to: str) -> list[dict]:
                       OR (e.discharged_at IS NOT NULL AND e.discharged_at != '' AND substr(e.discharged_at,1,10) BETWEEN ? AND ?))
                ORDER BY e.admitted_at DESC""", (d_from, d_to, d_from, d_to))]
         if not eps:
-            return []
+            return _return_rows(d_from, d_to, date.today())   # 명부 회차가 없어도 복귀 행은 낸다
         # 회차에 붙은 상담 — 퇴원 장소·사유·담당자·진단은 상담이 들고 있다
         owner = {sp["episode_id"]: sp["consultation_id"] for sp in models.admission_spans() if sp.get("consultation_id")}
         cids = sorted({owner[e["episode_id"]] for e in eps if e["episode_id"] in owner})
@@ -119,8 +121,34 @@ def _load(d_from: str, d_to: str) -> list[dict]:
             out.append({**base, "kind": "in", "date": adm.isoformat()})
         if dis and d_from <= dis.isoformat() <= d_to:
             out.append({**base, "kind": "out", "date": dis.isoformat()})
+    out.extend(_return_rows(d_from, d_to, today))
     out.sort(key=lambda r: (r["date"], r["kind"] == "in", r["patient_name"]), reverse=True)
     return out
+
+
+def _return_rows(d_from: str, d_to: str, today) -> list[dict]:
+    """명부 회차가 복귀일에 시작하지 않는 외진 복귀 → '입원(복귀)' 행. 명부에 있으면 _load가 이미 냈다."""
+    rows = []
+    for r in models.away_returns_as_admissions(d_from, d_to):
+        ret = _parse_date(r["returned_at"])
+        if not ret:
+            continue
+        age = r.get("patient_age")
+        if age is None and r.get("birth_year"):
+            age = today.year - int(r["birth_year"])
+        rows.append({
+            "episode_id": r.get("episode_id"), "consultation_id": r["consultation_id"], "patient_id": r["patient_id"],
+            "patient_name": r["patient_name"], "gender": r.get("gender"), "age": age,
+            "ward": r.get("ward") or "", "room": r.get("return_room") or r.get("ep_room") or r.get("c_room") or "",
+            "doctor": (r.get("ep_doctor") or r.get("c_doctor") or "").strip(),
+            "care": _care_label(r.get("care_type")), "dx": r.get("diagnosis_name") or r.get("primary_diagnosis") or "",
+            "admitted_at": ret.isoformat(), "discharged_at": "",
+            "counselor": (r.get("counselor") or "").strip(), "destination": "", "reason": "",
+            "stay_days": (today - ret).days + 1,
+            "kind": "in", "date": ret.isoformat(),
+            "is_return": True, "away_type": r.get("event_type") or "", "away_from": r.get("event_date") or "",
+        })
+    return rows
 
 
 def _match(r: dict, f: dict) -> bool:
@@ -195,7 +223,7 @@ def moves_xlsx():
     headers = ["연번", "날짜", "구분", "환자", "성별", "나이", "병동", "호실", "주치의", "수가", "진단", "입원일", "퇴원일", "재원일수", "퇴원 장소", "퇴원 사유", "담당 상담사"]
     ws.append(headers)
     for i, r in enumerate(rep["rows"], 1):
-        ws.append([i, r["date"], KINDS[r["kind"]], r["patient_name"], {"M": "남", "F": "여"}.get(r["gender"], ""),
+        ws.append([i, r["date"], "입원(복귀)" if r.get("is_return") else KINDS[r["kind"]], r["patient_name"], {"M": "남", "F": "여"}.get(r["gender"], ""),
                    r["age"] if r["age"] is not None else "", r["ward"], r["room"], r["doctor"], r["care"], r["dx"],
                    r["admitted_at"], r["discharged_at"], r["stay_days"] or "", r["destination"], r["reason"], r["counselor"]])
     for i, h in enumerate(headers, 1):

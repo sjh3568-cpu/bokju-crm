@@ -54,7 +54,7 @@
             <tr class="mv-{{ r.kind }}">
                 <td class="mv-no">{{ loop.index }}</td>
                 <td class="mv-date">{{ r.date|krdate_wd_full }}</td>
-                <td><span class="mv-badge mv-badge-{{ r.kind }}">{{ moves.kinds[r.kind] }}</span></td>
+                <td><span class="mv-badge mv-badge-{{ r.kind }}{% if r.is_return %} mv-badge-return{% endif %}"{% if r.is_return %} title="외진({{ r.away_type }}{% if r.away_from %} · {{ r.away_from|krdate }} 나감{% endif %}) 복귀 — 복귀일을 입원으로 센다"{% endif %}>{{ moves.kinds[r.kind] }}{% if r.is_return %}<small>복귀</small>{% endif %}</span></td>
                 <td class="mv-pt" title="{{ r.patient_name }}{% if r.gender or r.age is not none %} ({% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% endif %}{% if r.gender and r.age is not none %}/{% endif %}{% if r.age is not none %}{{ r.age }}{% endif %}){% endif %}">{% if r.consultation_id %}<a href="/consult/{{ r.consultation_id }}">{{ r.patient_name }}</a>{% else %}<a href="/patients/{{ r.patient_id }}">{{ r.patient_name }}</a>{% endif %}{% if r.gender or r.age is not none %} <span class="muted-sm">({% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% endif %}{% if r.gender and r.age is not none %}/{% endif %}{% if r.age is not none %}{{ r.age }}{% endif %})</span>{% endif %}</td>
                 <td title="{{ r.ward }}{% if r.ward and r.room %} {% endif %}{{ r.room }}">{{ r.room or '-' }}</td>
                 <td title="{{ r.doctor }}">{{ r.doctor or '-' }}</td>
@@ -129,6 +129,7 @@
 /* 진단·퇴원 장소·퇴원 사유는 남는 폭을 나눠 가진다 */
 .mv-badge{display:inline-block;padding:1px 7px;border-radius:6px;font-size:.92em;font-weight:800;white-space:nowrap}
 .mv-badge-in{background:#dcfce7;color:#166534}.mv-badge-out{background:#dbeafe;color:#1e40af}
+.mv-badge-return{outline:1px dashed #166534;outline-offset:-1px}.mv-badge-return small{font-size:.72em;font-weight:700;margin-left:3px;opacity:.85}
 .mv-care-tag{display:inline-block;padding:0 6px;border-radius:5px;font-size:.92em;font-weight:700}
 .mv-tbl tr.mv-in td:first-child{border-left:3px solid #22c55e}.mv-tbl tr.mv-out td:first-child{border-left:3px solid #3b82f6}
 @media (max-width:1100px){.mv-wrap{overflow-x:auto}.mv-tbl{table-layout:auto;min-width:1080px}}

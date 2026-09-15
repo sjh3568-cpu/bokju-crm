@@ -96,6 +96,24 @@ def _mark_migration_done(conn, key: str):
     )
 
 
+def _repair_roster_admitted_at(conn):
+    """roster_key(차트번호|입원일)의 입원일과 admitted_at이 다른 회차를 명부 값으로 되돌린다.
+
+    roster_key는 명부 입원일로 만들어지므로 둘은 항상 같아야 한다. 과거
+    sync_admission_episode()가 상담의 입원일로 덮어쓴 회차(외진 복귀 재입원이
+    첫 입원일로 되돌아간 건)를 고친다. 멱등이라 기동마다 돌아도 안전하다.
+    """
+    conn.execute(
+        """UPDATE admission_episodes
+              SET admitted_at = substr(roster_key, instr(roster_key, '|') + 1),
+                  updated_at = CURRENT_TIMESTAMP
+            WHERE roster_key IS NOT NULL AND instr(roster_key, '|') > 0
+              AND length(substr(roster_key, instr(roster_key, '|') + 1)) = 10
+              AND date(substr(roster_key, instr(roster_key, '|') + 1)) IS NOT NULL
+              AND COALESCE(admitted_at, '') != substr(roster_key, instr(roster_key, '|') + 1)"""
+    )
+
+
 def _migrate_legacy_stages(conn):
     """폐지된 생애주기 단계값(응급치료·회복기·비회복기) → '입원'으로 이관 (1회성).
     lifecycle_stage_changed_at은 건드리지 않는다 — 단계 진입일(재원 시작)이 곧
@@ -176,11 +194,16 @@ def _migrate_admission_episodes(conn):
                room_number, discharge_due_date, discharge_destination, discharge_reason)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(consultation_id) DO UPDATE SET
-              status=excluded.status, wait_started_at=excluded.wait_started_at,
+              -- 기동마다 도는 이관이라, 명부 회차(roster_key)의 실제 입·퇴원일·병실은 지킨다
+              -- (sync_admission_episode와 같은 이유 — 외진 복귀 재입원일이 첫 입원일로 되돌아감).
+              status=CASE WHEN admission_episodes.roster_key IS NOT NULL THEN admission_episodes.status ELSE excluded.status END,
+              wait_started_at=excluded.wait_started_at,
               planned_admission_date=excluded.planned_admission_date,
               planned_admission_time=excluded.planned_admission_time,
-              admitted_at=excluded.admitted_at, discharged_at=excluded.discharged_at,
-              room_number=excluded.room_number, discharge_due_date=excluded.discharge_due_date,
+              admitted_at=CASE WHEN admission_episodes.roster_key IS NOT NULL THEN admission_episodes.admitted_at ELSE excluded.admitted_at END,
+              discharged_at=CASE WHEN admission_episodes.roster_key IS NOT NULL THEN admission_episodes.discharged_at ELSE excluded.discharged_at END,
+              room_number=CASE WHEN admission_episodes.roster_key IS NOT NULL THEN admission_episodes.room_number ELSE excluded.room_number END,
+              discharge_due_date=excluded.discharge_due_date,
               discharge_destination=excluded.discharge_destination,
               discharge_reason=excluded.discharge_reason, updated_at=CURRENT_TIMESTAMP
         """, (pid, r["id"], episode_no,
@@ -901,6 +924,7 @@ def init_db():
                  "ON admission_episodes(roster_key) WHERE roster_key IS NOT NULL")
 
     _migrate_admission_episodes(conn)
+    _repair_roster_admitted_at(conn)   # 회차 이관 뒤에 — 명부 입원일이 최종 값이어야 한다
     _migrate_promote_undecided(conn)
 
     for name, icd10, category in DIAGNOSIS_SEED:
@@ -2258,11 +2282,17 @@ def sync_admission_episode(cid: int):
            room_number, discharge_due_date, discharge_destination, discharge_reason)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(consultation_id) DO UPDATE SET
-          status=excluded.status, wait_started_at=excluded.wait_started_at,
+          -- 원무 명부에서 온 회차(roster_key)는 실제 입·퇴원일과 병실이 명부가 사실이다.
+          -- 상담의 입원일로 덮으면 외진 복귀로 새로 열린 회차(예: 9/11 재입원)의 입원일이
+          -- 상담의 첫 입원일(8/10)로 되돌아가 입원 이력·이번주 입원에서 사라진다(2026-09-15).
+          status=CASE WHEN admission_episodes.roster_key IS NOT NULL THEN admission_episodes.status ELSE excluded.status END,
+          wait_started_at=excluded.wait_started_at,
           planned_admission_date=excluded.planned_admission_date,
           planned_admission_time=excluded.planned_admission_time,
-          admitted_at=excluded.admitted_at, discharged_at=excluded.discharged_at,
-          room_number=excluded.room_number, discharge_due_date=excluded.discharge_due_date,
+          admitted_at=CASE WHEN admission_episodes.roster_key IS NOT NULL THEN admission_episodes.admitted_at ELSE excluded.admitted_at END,
+          discharged_at=CASE WHEN admission_episodes.roster_key IS NOT NULL THEN admission_episodes.discharged_at ELSE excluded.discharged_at END,
+          room_number=CASE WHEN admission_episodes.roster_key IS NOT NULL THEN admission_episodes.room_number ELSE excluded.room_number END,
+          discharge_due_date=excluded.discharge_due_date,
           discharge_destination=excluded.discharge_destination,
           discharge_reason=excluded.discharge_reason, updated_at=CURRENT_TIMESTAMP
     """, (r["patient_id"], cid, episode_no,
@@ -2345,6 +2375,30 @@ def data_quality_report():
     """).fetchall()]
     result.append({"title": "중복 재원", "description": "한 환자에게 미퇴원 입원 회차가 둘 이상입니다.",
                    "count": len(dupes), "rows": dupes})
+    # 명부 회차의 입원일이 roster_key(차트번호|입원일)와 다르면 상담값이 덮어쓴 것이다.
+    # 기동 시 _repair_roster_admitted_at이 되돌리지만, 다시 생기면 여기서 바로 보인다(2026-09-15 박성락 건).
+    mismatch = [dict(r) for r in conn.execute("""
+        SELECT COALESCE(e.consultation_id, (SELECT MAX(id) FROM consultations WHERE patient_id = e.patient_id)) AS id,
+               e.patient_id, p.name AS patient_name, e.admitted_at AS consult_date,
+               '회차 입원일 ' || COALESCE(e.admitted_at, '없음') || ' ≠ 명부 ' || substr(e.roster_key, instr(e.roster_key, '|') + 1) AS admission_status
+        FROM admission_episodes e JOIN patients p ON p.id = e.patient_id
+        WHERE e.roster_key IS NOT NULL AND instr(e.roster_key, '|') > 0
+          AND COALESCE(e.admitted_at, '') != substr(e.roster_key, instr(e.roster_key, '|') + 1)
+        ORDER BY e.admitted_at DESC LIMIT 100""").fetchall()]
+    result.append({"title": "명부 회차 입원일 불일치",
+                   "description": "원무 명부 회차의 입원일이 명부 키와 다릅니다(상담 입원일로 덮인 흔적). 서버를 재시작하면 명부 값으로 자동 복구됩니다.",
+                   "count": len(mismatch), "rows": mismatch})
+    # 복귀 처리된 외진인데 명부에 복귀일 회차가 없는 건 — 입원·퇴원 이력·이번주 입원은
+    # 복귀 기록으로 이미 세고 있다. 명부를 다시 적재하면 회차 행으로 넘어간다.
+    no_roster = [dict(r) for r in conn.execute(f"""
+        SELECT c.id, c.patient_id, p.name AS patient_name, ae.returned_at AS consult_date,
+               ae.event_type || ' ' || COALESCE(ae.event_date, '') || ' → 복귀 ' || ae.returned_at AS admission_status
+        FROM admission_events ae JOIN consultations c ON c.id = ae.consultation_id JOIN patients p ON p.id = c.patient_id
+        WHERE {_AWAY_RETURN_NOT_IN_ROSTER}
+        ORDER BY ae.returned_at DESC LIMIT 100""").fetchall()]
+    result.append({"title": "외진 복귀 — 명부 회차 없음",
+                   "description": "복귀 처리했지만 원무 명부에 복귀일 입원 회차가 아직 없습니다. 입원 이력·이번주 입원에는 복귀 기록으로 세고 있으니, 명부를 적재하면 자동으로 회차 행으로 바뀝니다.",
+                   "count": len(no_roster), "rows": no_roster})
     conn.close()
     return {"total": sum(x["count"] for x in result), "checks": result,
             "episode_count": len(list_admission_episodes())}
@@ -6390,13 +6444,82 @@ def admission_flow_counts(week_from, week_to, month_from, month_to):
                 f"WHERE roster_key IS NOT NULL AND {col} IS NOT NULL AND {col} != '' "
                 f"AND date({col}) BETWEEN ? AND ?", (lo, hi)).fetchone()[0]
         return {
-            "week_in": _count("admitted_at", week_from, week_to),
+            "week_in": _count("admitted_at", week_from, week_to) + _away_return_count(conn, week_from, week_to),
             "week_out": _count("discharged_at", week_from, week_to),
-            "month_in": _count("admitted_at", month_from, month_to),
+            "month_in": _count("admitted_at", month_from, month_to) + _away_return_count(conn, month_from, month_to),
             "month_out": _count("discharged_at", month_from, month_to),
         }
     finally:
         conn.close()
+
+
+# 외진(응급전원·모병원 외래치료) 복귀는 병동 입장에서 그날의 입원이다(2026-09-15 사용자 요청).
+# 원무 명부는 보통 외진 나간 날 퇴원, 복귀한 날 새 회차로 적히므로 명부가 갱신되면
+# 회차만으로도 잡히지만, 명부가 아직 안 올라왔거나 회차를 나누지 않은 건은 빠진다.
+# 그래서 복귀 처리된 외진 중 '같은 환자의 명부 회차가 복귀일에 시작하지 않는' 건만
+# 더해 센다 — 명부에 이미 있으면 두 번 세지 않는다.
+_AWAY_RETURN_NOT_IN_ROSTER = """
+    ae.event_type IN ('응급전원', '모병원 외래치료')
+    AND ae.returned_at IS NOT NULL AND ae.returned_at != ''
+    AND COALESCE(ae.return_outcome, '복귀') = '복귀'
+    AND NOT EXISTS (SELECT 1 FROM admission_episodes e
+                     WHERE e.patient_id = c.patient_id AND e.roster_key IS NOT NULL
+                       AND date(e.admitted_at) = date(ae.returned_at))
+"""
+
+
+def _away_return_count(conn, lo, hi):
+    return conn.execute(
+        f"""SELECT COUNT(*) FROM admission_events ae
+             JOIN consultations c ON c.id = ae.consultation_id
+            WHERE {_AWAY_RETURN_NOT_IN_ROSTER} AND date(ae.returned_at) BETWEEN ? AND ?""",
+        (lo, hi)).fetchone()[0]
+
+
+def away_returns_by_date(dates):
+    """dates별 '명부 회차에 없는' 외진 복귀 건수 — 대시보드 명부 입원 KPI·30일 추이용."""
+    if not dates:
+        return {}
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            f"""SELECT date(ae.returned_at) AS d, COUNT(*) AS n FROM admission_events ae
+                 JOIN consultations c ON c.id = ae.consultation_id
+                WHERE {_AWAY_RETURN_NOT_IN_ROSTER} AND date(ae.returned_at) BETWEEN ? AND ?
+                GROUP BY d""", (min(dates), max(dates))).fetchall()
+    finally:
+        conn.close()
+    found = {r["d"]: r["n"] for r in rows}
+    return {d: found.get(d, 0) for d in dates}
+
+
+def away_returns_as_admissions(d_from, d_to):
+    """기간에 복귀한 외진 중 명부 회차가 따로 없는 건 — 입원·퇴원 이력의 '입원(복귀)' 행.
+
+    병실·병동·주치의·수가는 그 환자의 열린 명부 회차(있으면)에서, 없으면 상담에서 가져온다.
+    """
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            f"""SELECT ae.id AS event_id, ae.event_type, ae.event_date, ae.returned_at, ae.return_room,
+                       c.id AS consultation_id, c.patient_id, c.counselor, c.attending_doctor AS c_doctor,
+                       c.patient_age, c.primary_diagnosis, c.room_number AS c_room,
+                       p.name AS patient_name, p.gender, p.birth_year,
+                       e.id AS episode_id, e.admitted_at AS ep_admitted_at, e.ward, e.room_number AS ep_room,
+                       e.attending_doctor AS ep_doctor, e.care_type, e.diagnosis_name
+                  FROM admission_events ae
+                  JOIN consultations c ON c.id = ae.consultation_id
+                  JOIN patients p ON p.id = c.patient_id
+                  LEFT JOIN admission_episodes e ON e.id = (
+                       SELECT e2.id FROM admission_episodes e2
+                        WHERE e2.patient_id = c.patient_id AND e2.roster_key IS NOT NULL
+                          AND (e2.discharged_at IS NULL OR e2.discharged_at = '')
+                        ORDER BY e2.admitted_at DESC, e2.id DESC LIMIT 1)
+                 WHERE {_AWAY_RETURN_NOT_IN_ROSTER} AND date(ae.returned_at) BETWEEN ? AND ?
+                 ORDER BY ae.returned_at DESC, ae.id DESC""", (d_from, d_to)).fetchall()
+    finally:
+        conn.close()
+    return [dict(r) for r in rows]
 
 
 def close_roster_episode(episode_id, *, discharged_at, destination=None, reason=None):

@@ -12,7 +12,7 @@
 from datetime import date, timedelta
 
 from config import ROOM_BED_CAPACITIES, WARD_BED_CAPACITIES
-from models import AWAY_EVENT_TYPES, get_db
+from models import AWAY_EVENT_TYPES, away_returns_by_date, get_db
 
 ROSTER = "roster_key IS NOT NULL"
 
@@ -167,7 +167,7 @@ def consult_weekday_hour_matrix(date_from=None, date_to=None):
 # ── 입원·퇴원·재원 (원무 명부 회차) ───────────────────────────────────
 
 def admission_flow_by_date(dates):
-    """dates별 명부 입원·퇴원 건수."""
+    """dates별 명부 입원·퇴원 건수. 명부 회차에 없는 외진 복귀는 그날의 입원으로 더한다."""
     if not dates:
         return {}
     conn = get_db()
@@ -185,7 +185,8 @@ def admission_flow_by_date(dates):
         conn.close()
     i_map = {r["d"]: r["n"] for r in ins}
     o_map = {r["d"]: r["n"] for r in outs}
-    return {d: {"in": i_map.get(d, 0), "out": o_map.get(d, 0)} for d in dates}
+    returns = away_returns_by_date(dates)
+    return {d: {"in": i_map.get(d, 0) + returns.get(d, 0), "out": o_map.get(d, 0)} for d in dates}
 
 
 def census_by_date(dates):

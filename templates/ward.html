@@ -130,7 +130,7 @@
         <summary><span>{{ check.title }}</span><b class="{% if check.count %}bad{% else %}ok{% endif %}">{{ check.count }}건</b></summary>
         <p>{{ check.description }}</p>
         {% if check.rows %}<div class="tbl-wrap"><table class="tbl"><thead><tr><th>환자</th><th>상담일</th><th>상태</th><th>확인</th></tr></thead><tbody>
-        {% for row in check.rows %}<tr><td>{{ row.patient_name }}</td><td>{{ row.consult_date|krdate }}</td><td>{{ row.admission_status or '-' }}{% if row.duplicate_count %} · {{ row.duplicate_count }}회{% endif %}</td><td><a class="btn btn-secondary btn-xs" href="/consult/{{ row.id }}">수정</a></td></tr>{% endfor %}
+        {% for row in check.rows %}<tr><td>{{ row.patient_name }}</td><td>{{ row.consult_date|krdate }}</td><td>{{ row.admission_status or '-' }}{% if row.duplicate_count %} · {{ row.duplicate_count }}회{% endif %}</td><td>{% if row.id %}<a class="btn btn-secondary btn-xs" href="/consult/{{ row.id }}">수정</a>{% else %}<a class="btn btn-secondary btn-xs" href="/patients/{{ row.patient_id }}">환자</a>{% endif %}</td></tr>{% endfor %}
         </tbody></table></div>{% endif %}
         {% if check.truncated %}<p>최근 100건만 표시합니다. 나머지는 수정 후 순차적으로 나타납니다.</p>{% endif %}
       </details>
