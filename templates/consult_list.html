@@ -522,6 +522,35 @@ body .container { max-width: none; padding: 0 12px; }
     .tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:44px; }
 }
 
+/* 넓은 화면(1800px 이상, 사무실 FHD 모니터) — 2026-09-15 사용자 요청: 열 사이 빈 공간 줄이고 글자를 키우고 열 간격을 고르게.
+   기본 규칙은 연락처(8)·모병원(9)·유입경로(11)만 폭을 안 줘서 1920px에선 남는 500px 남짓을 그 세 열이 독차지해
+   다른 열은 빽빽하고 세 열만 휑했다. 여기선 19열 전부에 폭을 주면(합 약 1600px) table-layout:fixed가
+   남는 폭을 모든 열에 비례 배분하므로 열 간격이 고르게 벌어지고, 글자도 그 폭에 맞춰 한 단계 키운다. */
+@media (min-width: 1800px) {
+    .tbl-compact th, .tbl-compact td { padding:4px 3px; font-size:0.94em; line-height:1.35; }
+    .tbl-compact th { padding-top:7px; padding-bottom:7px; }
+    .tbl-compact th:nth-child(2),  .tbl-compact td:nth-child(2)  { width:94px; }  /* 상담일 */
+    .tbl-compact th:nth-child(3),  .tbl-compact td:nth-child(3)  { width:92px; }  /* 환자 */
+    .tbl-compact th:nth-child(4),  .tbl-compact td:nth-child(4),
+    .tbl-compact th:nth-child(5),  .tbl-compact td:nth-child(5)  { width:34px; }  /* 성별·나이 */
+    .tbl-compact th:nth-child(6),  .tbl-compact td:nth-child(6)  { width:88px; }  /* 거주지 */
+    .tbl-compact th:nth-child(7),  .tbl-compact td:nth-child(7)  { width:60px; }  /* 보험 */
+    .tbl-compact th:nth-child(8),  .tbl-compact td:nth-child(8)  { width:146px; } /* 관계자·연락처 */
+    .tbl-compact th:nth-child(9),  .tbl-compact td:nth-child(9)  { width:140px; } /* 모병원 */
+    .tbl-compact th:nth-child(10), .tbl-compact td:nth-child(10) { width:100px; } /* 병명 칩 */
+    .tbl-compact th:nth-child(11), .tbl-compact td:nth-child(11) { width:140px; } /* 유입경로 */
+    .tbl-compact th:nth-child(12), .tbl-compact td:nth-child(12) { width:46px; }  /* 상담방법 */
+    .tbl-compact th:nth-child(13), .tbl-compact td:nth-child(13) { width:80px; }  /* 회복기대상 */
+    .tbl-compact th:nth-child(14), .tbl-compact td:nth-child(14) { width:88px; }  /* 상담결과 */
+    .tbl-compact th:nth-child(15), .tbl-compact td:nth-child(15) { width:104px; } /* 입원진행 */
+    .tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:74px; }  /* 발병일 */
+    .tbl-compact th:nth-child(17), .tbl-compact td:nth-child(17) { width:86px; }  /* 입원완료일 */
+    .tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:128px; } /* 입원기간 만료일 */
+    .tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:56px; }  /* 상담자 */
+    .cf-in { font-size:0.9em; }
+    .cf-sm { font-size:0.84em; }
+}
+
 .check-col { width: 26px; text-align: center; padding: 2px !important; }
 .check-col input { cursor: pointer; }
 /* edit-col 제거됨 (수정은 환자명·상담일 클릭 → 상담 상세에서) */
