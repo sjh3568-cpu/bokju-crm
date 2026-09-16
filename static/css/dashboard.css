@@ -279,27 +279,50 @@
 /* grid-auto-rows:1fr이면 전체 폭으로 펼친 입원 환자 현황 행까지 아래 행 높이에 맞춰 늘어나 표 밑이 빈다.
    auto로 두어도 align-items:stretch가 같은 행의 두 카드는 같은 높이로 맞춘다. */
 .page-dashboard .dash-grid2 > .card { min-width: 0; display: flex; flex-direction: column; }
+/* 2026-09-16 A안: 입원 환자 현황은 대시보드의 중심 표라 첫 행 전체 폭. 병동별 재원은 KPI 아래 띠(#ward-strip)로 옮겼다. */
+.page-dashboard .dash-grid2 > #admission-schedule { grid-column: 1 / -1; }
+.page-dashboard #admission-schedule .dash-admission-date-form input { flex: 0 1 170px; }   /* 전체 폭에서 날짜칸이 늘어지지 않게 */
+
+/* 병동별 재원 띠 */
+.page-dashboard #ward-strip { margin-bottom: 12px; }
+.page-dashboard #ward-strip .dash-section-head { justify-content: flex-start; gap: 10px; flex-wrap: wrap; }
+.page-dashboard #ward-strip .ws-toggle { margin-left: auto; padding: 4px 10px; border: 1px solid var(--dborder); border-radius: 8px; background: var(--dcard); color: var(--dtext); font: 700 .78rem inherit; cursor: pointer; }
+.page-dashboard #ward-strip .ws-toggle:hover { border-color: var(--da); color: var(--da-ink); }
+.page-dashboard #ward-strip .ws-warn { padding: 3px 9px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: .74rem; font-weight: 800; text-decoration: none; }
+.page-dashboard .ws-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px 8px; padding: 2px 14px 12px; }
+.page-dashboard .ws { display: grid; grid-template-columns: auto 1fr auto; grid-template-rows: auto auto; gap: 3px 8px; align-items: center; padding: 7px 10px 6px; border: 1px solid var(--dborder); border-radius: 10px; background: var(--dcard2); color: var(--dtext); text-decoration: none; min-width: 0; }
+.page-dashboard .ws:hover { border-color: var(--da); }
+.page-dashboard .ws > b { font-size: .86rem; font-weight: 800; white-space: nowrap; }
+.page-dashboard .ws-bar { height: 9px; border-radius: 4px; background: var(--dgrid); position: relative; overflow: hidden; }
+.page-dashboard .ws-bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--da); }
+.page-dashboard .ws.mid .ws-bar i { background: var(--dwarn); }
+.page-dashboard .ws.full .ws-bar i { background: var(--dcrit); }
+.page-dashboard .ws.none .ws-bar i { background: var(--dh4); }
+.page-dashboard .ws-n { font-size: .78rem; color: var(--dmuted); white-space: nowrap; }
+.page-dashboard .ws-n b { color: var(--dtext); font-weight: 800; }
+.page-dashboard .ws-free { grid-column: 1 / -1; font-size: .7rem; color: var(--dmuted); line-height: 1.1; }
+.page-dashboard .ws.mid .ws-free { color: var(--dwarn); font-weight: 700; }
+.page-dashboard .ws.full .ws-free { color: var(--dcrit); font-weight: 800; }
+.page-dashboard .ws-detail { border-top: 1px dashed var(--dborder); padding-top: 6px; }
+.page-dashboard .ws-detail[hidden] { display: none; }
 .page-dashboard .dash-grid2 > .card > .tbl-wrap, .page-dashboard .dash-grid2 > .card > .aq-panel { min-height: 0; }
 .page-dashboard .dash-grid2 > .card > .dash-subsection { margin: 8px 18px 0; }
 .page-dashboard .dash-grid2 > .card > .dash-subsection .tbl-wrap { margin: 0; }
 .page-dashboard .dash-grid2 .dash-subhead strong { font-size: .9rem; }
 @media (max-width: 1100px) { .page-dashboard .dash-grid2 { grid-template-columns: 1fr; grid-auto-rows: auto; } }
-/* 입원 환자 현황 — 대시보드 반 칸(1920px 화면 ≈770px)에 두 줄 칸으로. 10칸, table-layout:fixed + colgroup 폭이라
-   어떤 값이 와도 가로 스크롤이 안 생긴다. 열: 1 일시 · 2 구분 · 3 환자 · 4 병명 · 5 발병일 · 6 병실/회복기 ·
-   7 상담 · 8 주치의 · 9 기타 · 10 처리.
-   2026-09-15: 시간·성별/나이/보험·회복기 배지·주치의 약어를 이름 아래 줄(<small>/줄바꿈)로 내려 고정폭 열을 좁혔고
-   (합 ≈540px), 남는 ≈230px를 병명·기타가 반씩 쓴다(두 줄까지 접고 넘치면 말줄임, 전체는 툴팁).
-   전에는 고정폭 합이 716px라 병명·기타가 20px로 눌려 보이지 않았다. */
+/* 입원 환자 현황 — 2026-09-16 A안부터 전체 폭(1920px 화면·사이드바 펼침 ≈1,650px). 11열, table-layout:fixed + colgroup 폭.
+   열: 1 일시 · 2 구분 · 3 환자 · 4 병명 · 5 발병일 · 6 병실/회복기 · 7 상담 · 8 주치의 · 9 유입경로/소개자 · 10 모병원/외진 · 11 처리.
+   고정폭 합 ≈700px, 남는 폭은 병명·유입경로·모병원이 나눠 갖는다(줄바꿈 허용, 전체 문구는 툴팁). */
 .page-dashboard .dash-adm-tbl { width: 100%; table-layout: fixed; }
-.page-dashboard .dash-adm-tbl col.c-when { width: 80px; }   /* '09.14(월)' / '10:30' */
-.page-dashboard .dash-adm-tbl col.c-state { width: 60px; }  /* '예정' / '완료' / '복귀' / '복귀예정' */
-.page-dashboard .dash-adm-tbl col.c-who { width: 98px; }    /* '김영희' / '여/78 건보' */
-.page-dashboard .dash-adm-tbl col.c-onset { width: 68px; }  /* '26.07.02' */
-.page-dashboard .dash-adm-tbl col.c-room { width: 78px; }   /* '1004호' / '비회복기' */
-.page-dashboard .dash-adm-tbl col.c-cs { width: 56px; }     /* 상담사 이름 */
-.page-dashboard .dash-adm-tbl col.c-doc { width: 62px; }    /* '이성범' / '(RM1)' */
-/* 병명(c-dx)·기타(c-note)는 폭을 안 정해 남는 폭을 반씩 나눈다 */
-.page-dashboard .dash-adm-tbl col.c-act { width: 62px; }    /* 처리 드롭다운 */
+.page-dashboard .dash-adm-tbl col.c-when { width: 84px; }   /* '09.14(월)' / '10:30' */
+.page-dashboard .dash-adm-tbl col.c-state { width: 64px; }  /* '예정' / '완료' / '복귀' / '복귀예정' */
+.page-dashboard .dash-adm-tbl col.c-who { width: 118px; }   /* '김영희' / '여/78 건보' + 재입원 배지 */
+.page-dashboard .dash-adm-tbl col.c-onset { width: 74px; }  /* '26.07.02' */
+.page-dashboard .dash-adm-tbl col.c-room { width: 92px; }   /* '1004호' / '비회복기' */
+.page-dashboard .dash-adm-tbl col.c-cs { width: 64px; }     /* 상담사 이름 */
+.page-dashboard .dash-adm-tbl col.c-doc { width: 72px; }    /* '이성범' / '(RM1)' */
+/* 병명(c-dx)·유입경로(c-ref)·모병원(c-note)은 폭을 안 정해 남는 폭을 나눈다 */
+.page-dashboard .dash-adm-tbl col.c-act { width: 72px; }    /* 처리 드롭다운 */
 .page-dashboard .dash-adm-tbl th, .page-dashboard .dash-adm-tbl td { padding: 6px 5px; font-size: .88rem; line-height: 1.25;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
 .page-dashboard .dash-adm-tbl th { font-size: .78rem; white-space: normal; line-height: 1.15; word-break: keep-all; }
@@ -320,6 +343,8 @@
 .page-dashboard .dash-adm-tbl .dash-dx, .page-dashboard .dash-adm-tbl .dash-note { max-width: none; white-space: normal; line-height: 1.25;
     word-break: keep-all; overflow-wrap: anywhere; }
 .page-dashboard .dash-adm-tbl .dash-note { color: var(--dmuted); }
+.page-dashboard .dash-adm-tbl .dash-adm-ref { white-space: normal; line-height: 1.25; word-break: keep-all; overflow-wrap: anywhere; }
+.page-dashboard .dash-adm-tbl .dash-adm-ref .ref-main { display: block; }
 /* 내성균(CRE·VRE 등) — 재원 관리의 .wd-org와 같은 빨간 배지 + 행 왼쪽 빨간 선 */
 .page-dashboard .dash-adm-tbl .dash-org { display: inline-block; margin-right: 4px; padding: 1px 6px; border-radius: 6px; background: #b91c1c; color: #fff; font-size: .72rem; font-weight: 800; letter-spacing: .02em; vertical-align: middle; }
 .page-dashboard .dash-adm-tbl tr.has-organism td:first-child { box-shadow: inset 3px 0 0 #b91c1c; }
@@ -327,21 +352,19 @@
     border: 1px solid var(--dborder); border-radius: 6px; background: #fff; color: var(--dtext); cursor: pointer; }
 .page-dashboard .dash-adm-tbl .adm-action-sel:disabled { opacity: .5; }
 @media (max-width: 1500px) {
-    /* 반 칸이 ≈515px인 노트북 — 발병일·기타 열은 접는다(툴팁에 남음) */
-    .page-dashboard .dash-adm-tbl col.c-when { width: 64px; }
-    .page-dashboard .dash-adm-tbl col.c-state { width: 44px; }
-    .page-dashboard .dash-adm-tbl col.c-who { width: 82px; }
-    .page-dashboard .dash-adm-tbl col.c-onset, .page-dashboard .dash-adm-tbl col.c-note { width: 1px; }
-    .page-dashboard .dash-adm-tbl col.c-room { width: 66px; }
-    .page-dashboard .dash-adm-tbl col.c-cs { width: 46px; }
-    .page-dashboard .dash-adm-tbl col.c-doc { width: 54px; }
-    .page-dashboard .dash-adm-tbl col.c-act { width: 56px; }
-    /* display:none 이면 고정 레이아웃에서 뒤 칸들이 한 열씩 앞으로 밀려 col 폭이 어긋난다 → 폭 1px·내용만 감춘다 */
-    .page-dashboard .dash-adm-tbl th:nth-child(5), .page-dashboard .dash-adm-tbl td:nth-child(5),
-    .page-dashboard .dash-adm-tbl th:nth-child(9), .page-dashboard .dash-adm-tbl td:nth-child(9) { padding: 0; font-size: 0; color: transparent; }
-    .page-dashboard .dash-adm-tbl th, .page-dashboard .dash-adm-tbl td { padding: 4px 3px; font-size: .74rem; }
-    .page-dashboard .dash-adm-tbl th { font-size: .68rem; }
-    .page-dashboard .dash-adm-tbl .adm-action-sel { font-size: .66rem; padding: 2px 0; }
+    /* 노트북(표 ≈1,250px) — 전체 폭이라 열을 접지 않고 글자만 한 단계 줄인다 */
+    .page-dashboard .dash-adm-tbl col.c-when { width: 74px; }
+    .page-dashboard .dash-adm-tbl col.c-state { width: 56px; }
+    .page-dashboard .dash-adm-tbl col.c-who { width: 100px; }
+    .page-dashboard .dash-adm-tbl col.c-onset { width: 66px; }
+    .page-dashboard .dash-adm-tbl col.c-room { width: 80px; }
+    .page-dashboard .dash-adm-tbl col.c-cs { width: 54px; }
+    .page-dashboard .dash-adm-tbl col.c-doc { width: 62px; }
+    .page-dashboard .dash-adm-tbl col.c-act { width: 62px; }
+    .page-dashboard .dash-adm-tbl th, .page-dashboard .dash-adm-tbl td { padding: 4px 4px; font-size: .78rem; }
+    .page-dashboard .dash-adm-tbl th { font-size: .7rem; }
+    .page-dashboard .dash-adm-tbl .adm-action-sel { font-size: .7rem; padding: 2px 0; }
+}
 }
 /* 카드 머리글 오른쪽 요약(입원 환자 현황 '날짜 · N명', 병동별 재원 '재원/허가/총 가용', 오늘 처리 필요 '긴급 N · 주의 N')은 진하게 */
 .page-dashboard #admission-schedule .dash-section-head > span.muted,

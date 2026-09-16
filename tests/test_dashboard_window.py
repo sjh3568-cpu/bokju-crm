@@ -47,10 +47,13 @@ class DashboardWindowTests(unittest.TestCase):
             for cid, pid, st, planned, actual in rows:
                 conn.execute("""INSERT INTO consultations (id, patient_id, consult_date, admission_status,
                                 planned_admission_date, actual_admission_date, attending_doctor, room_number, patient_age,
-                                source_hospital, current_location_type, admission_purpose, disease_detail)
-                                VALUES (?,?,?,?,?,?,'RM1 이성범 부장','301호',70,?,?,'회복기재활','뇌손상 / 뇌경색')""",
+                                source_hospital, current_location_type, admission_purpose, disease_detail,
+                                referral_source_type, referral_source_detail, referrer_person, referrer_institution)
+                                VALUES (?,?,?,?,?,?,'RM1 이성범 부장','301호',70,?,?,'회복기재활','뇌손상 / 뇌경색',
+                                        '["소개"]','["지인추천"]',?,?)""",
                              (cid, pid, d(-20), st, planned, actual,
-                              None if pid == 3 else "제천서울병원", "집" if pid == 3 else "입원중"))
+                              None if pid == 3 else "제천서울병원", "집" if pid == 3 else "입원중",
+                              "홍길동" if pid == 2 else None, "안동병원 사회사업실" if pid == 2 else None))
             # 4번: 20일 전 응급전원 → 오늘 복귀
             conn.execute("""INSERT INTO admission_events (consultation_id, event_type, event_date, hospital, returned_at, return_outcome, expected_return_date)
                             VALUES (4, '응급전원', ?, '안동병원', ?, '복귀', ?)""", (d(-20), d(0), d(0)))
@@ -91,6 +94,17 @@ class DashboardWindowTests(unittest.TestCase):
         html = self.client.get("/").get_data(as_text=True)
         self.assertIn("<th>모병원·외진</th>", html)
         self.assertNotIn("뇌손상 / 뇌경색", html)    # 병명과 중복되던 옛 메모는 더 이상 표에 없다
+
+    def test_layout_a_ward_strip_and_referral_column(self):
+        """A안: 병동별 재원은 KPI 아래 띠 + 전체 펼치기, 입원 환자 현황은 전체 폭에 유입경로·소개자 열."""
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertIn('id="ward-strip"', html)
+        self.assertIn('id="ward-detail-toggle"', html)
+        self.assertIn('id="ward-occupancy" class="ws-detail" hidden', html)
+        self.assertLess(html.index('id="ward-strip"'), html.index('id="admission-schedule"'))   # 띠가 표 위에
+        self.assertIn("<th>유입경로·소개자</th>", html)
+        self.assertIn("소개 (지인추천)", html)
+        self.assertIn("홍길동 · 안동병원 사회사업실", html)
 
     def test_week_in_counts_return_and_consultation_once(self):
         with main.app.test_request_context():
