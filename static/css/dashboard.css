@@ -295,7 +295,7 @@
 .page-dashboard .ws.full > b .ws-pct { color: var(--dcrit); }
 .page-dashboard .ws-free > b { color: var(--dtext); font-weight: 900; font-size: .8rem; }
 .page-dashboard .ws-free > b.full { color: var(--dcrit); }
-.page-dashboard #ward-strip .ws-legend { margin-left: auto; font-size: .72rem; color: var(--dmuted); white-space: nowrap; }
+.page-dashboard #ward-strip .ws-legend { padding: 0 14px 10px; font-size: .72rem; color: var(--dmuted); }   /* 카드 좌측 하단 */
 .page-dashboard #ward-strip .ws-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin: 0 3px 0 6px; vertical-align: -1px; background: var(--da); }
 .page-dashboard #ward-strip .ws-legend i.mid { background: var(--dwarn); }
 .page-dashboard #ward-strip .ws-legend i.full { background: var(--dcrit); }

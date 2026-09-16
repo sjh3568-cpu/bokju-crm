@@ -76,8 +76,10 @@ class CensusCrmCompletionTests(unittest.TestCase):
             strip = main._ward_status_strip()
         self.assertEqual((strip["admitted"], strip["roster_n"], strip["crm_n"]), (3, 2, 1))
         self.assertEqual(strip["week_in"], 1)
+        # 대시보드 KPI는 합계만 보여준다 — 출처 구분은 툴팁으로(2026-09-16 요청: 어차피 둘 다 입원완료)
         html = self.client.get("/").get_data(as_text=True)
-        self.assertIn("명부 2 + CRM 1", html)
+        self.assertNotIn("명부 2 + CRM 1", html)
+        self.assertIn("명부(입원", html)
         # 재원관리 명단·KPI에도 같은 숫자
         html = self.client.get("/ward").get_data(as_text=True)
         self.assertIn("명부 2 + CRM 1", html)
