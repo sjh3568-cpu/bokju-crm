@@ -306,7 +306,8 @@
 .page-dashboard .ws-free i.m { background: var(--dinfo-bg); color: var(--dinfo); }
 .page-dashboard .ws-free i.f { background: #fce7f0; color: #b83a6b; }
 .page-dashboard .ws-free i.o { background: var(--dcard2); color: var(--dmuted); border: 1px solid var(--dborder); }
-.page-dashboard .ws-row { grid-template-columns: repeat(auto-fit, minmax(178px, 1fr)); }
+/* 병동 9개가 1920px 화면(띠 ≈1,610px)에서 한 줄에 들어가는 최소 폭: 9×168 + 8×8 = 1,576px */
+.page-dashboard .ws-row { grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); }
 .page-dashboard .ws.mid .ws-free { color: var(--dwarn); font-weight: 700; }
 .page-dashboard .ws.full .ws-free { color: var(--dcrit); font-weight: 800; }
 .page-dashboard .ws-detail { border-top: 1px dashed var(--dborder); padding-top: 6px; }
