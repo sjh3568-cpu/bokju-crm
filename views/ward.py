@@ -656,6 +656,9 @@ def ward_view():
     # 전원으로 재원 명부에서 빠져도 미복귀 외진은 별도로 계속 표시한다.
     away = _ward_away_panel(away_records, doctor=doctor)
     away.sort(key=lambda c: -((c["away"].get("days_out")) or 0))
+    # '외진 중' 머리 배지 — 총 외진·복귀·미복귀 실인원(전 기간). 담당의 필터와 함께 좁힌다.
+    away_counts = (models.away_summary_counts(doctor=doctor)
+                   if subtab == "status" and request.args.get("partial") != "roster" else None)
 
     # ── 병실 뷰 — 병동 → 호실 → 침상 ──
     rooms, unassigned = {}, []
@@ -900,6 +903,7 @@ def ward_view():
         trend_flow=trend_flow,
         trend_summary=trend_summary,
         subtab=subtab, away_report=away_report, away_candidates=admitted, moves=moves_report,
+        away_counts=away_counts,
         blacklisted=blacklisted,
         bed_waiting=bed_waiting,
         room_f=room_f, gender_f=gender_f, dx_f=dx_f,

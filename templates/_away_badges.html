@@ -1,0 +1,7 @@
+{# 외진 배지 3종 — 총 외진·복귀·미복귀 실인원. 호출 전 away_badge_stats(models.away_record_stats 결과)를 set 한다. #}
+{% set s = away_badge_stats %}
+<span class="away-badges" role="group" aria-label="외진 인원 요약">
+    <span class="away-badge total" title="외진·전원 기록이 있는 환자(중복 없이)">총 외진 <b>{{ s.patients }}</b>명</span>
+    <span class="away-badge back" title="1회 이상 복귀한 환자 · 타 병원 전원으로 끝난 기록은 제외">복귀 <b>{{ s.returned_patients }}</b>명</span>
+    <span class="away-badge open {% if not s.open_patients %}zero{% endif %}" title="아직 복귀하지 않은 기록이 있는 환자">미복귀 <b>{{ s.open_patients }}</b>명</span>
+</span>

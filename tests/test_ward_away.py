@@ -62,6 +62,22 @@ class AwayManagementTests(unittest.TestCase):
         self.assertEqual(len(models.list_away_records(date_from='2026-02-01', date_to='2026-02-28')), 2)
         self.assertEqual(models.away_record_stats([])['patient_rate'], 0)
 
+    def test_away_badges_on_status_and_away_tabs(self):
+        """재원 현황 '외진 중'과 외진 환자 탭 머리에 총 외진·복귀·미복귀 배지가 같은 정의로 붙는다."""
+        counts = models.away_summary_counts()
+        self.assertEqual((counts['patients'], counts['returned_patients'], counts['open_patients']), (2, 2, 2))
+        for url in ('/ward', '/ward?tab=away'):
+            html = self.client.get(url).get_data(as_text=True)
+            self.assertIn('총 외진 <b>2</b>명', html, url)
+            self.assertIn('복귀 <b>2</b>명', html, url)
+            self.assertIn('미복귀 <b>2</b>명', html, url)
+        # 담당의 필터는 '외진 중' 배지도 함께 좁힌다.
+        with models.get_db() as conn:
+            conn.execute("UPDATE consultations SET attending_doctor='김의사' WHERE id=1")
+        self.assertEqual(models.away_summary_counts(doctor='김의사')['patients'], 1)
+        # 명단 부분 갱신(partial=roster)에서는 계산하지 않는다.
+        self.assertEqual(self.client.get('/ward?partial=roster').status_code, 200)
+
     def test_tab_render_filters_and_monthly_cohort(self):
         page = self.client.get('/ward?tab=away')
         self.assertEqual(page.status_code, 200)
