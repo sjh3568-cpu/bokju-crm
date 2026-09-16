@@ -1601,7 +1601,7 @@ input.room-invalid { border-color:#ef4444 !important; box-shadow:0 0 0 2px rgba(
                 <input type="time" class="boxed-input" data-mirror="consultation.planned_admission_time">
             </div>
             <div class="field" style="margin:0; flex:1 1 170px">
-                <label>주치의</label>
+                <label>주치의 <span class="req">*</span></label>
                 <input type="text" class="boxed-input" list="planned-doctor-options" data-mirror="consultation.attending_doctor"
                        placeholder="선택 또는 직접 입력" autocomplete="off">
                 <datalist id="planned-doctor-options">
@@ -1609,7 +1609,7 @@ input.room-invalid { border-color:#ef4444 !important; box-shadow:0 0 0 2px rgba(
                 </datalist>
             </div>
             <div class="field" style="margin:0; flex:0 1 120px">
-                <label>병실</label>
+                <label>병실 <span class="req">*</span></label>
                 <input type="text" class="boxed-input" data-mirror="consultation.room_number" placeholder="예: 305호">
             </div>
             <p class="muted" style="font-size:0.82em; margin:0 0 6px; line-height:1.5; flex-basis:100%">상단 헤더의 입원예정·주치의·호실 칸과 같은 값입니다. 예정일을 미지정으로 저장하면 대시보드 '할 일'에 "입원예정일 미지정"으로 뜹니다.</p>

@@ -621,11 +621,15 @@ def ward_view():
     away_by_pid = {a["pid"]: a for a in away_records}
     # 입원일 미확정(pending)은 상담 기준 그대로 둔다 — 데이터 점검 목록이다.
     admitted, pending = [], list(pending_pool)
+    # 재입원 표시 — 지금 입원보다 앞서 퇴원한 회차가 있으면 이전 입원·퇴원일을 함께(2026-09-16 요청)
+    prior_by_patient = models.prior_admissions_by_patient(c.get("patient_id") for c in rows)
     for c in rows:
         adm = (c.get("actual_admission_date") or c.get("admission_date") or "").strip()
         c["admitted_on"] = adm or None
         if not adm:
             continue
+        c["prior_stays"] = [s for s in prior_by_patient.get(c.get("patient_id"), [])
+                            if s["admitted_at"] < adm[:10]]
         c["away"] = _ward_current_away(c, away_by_pid)
         c["stay_days"] = _days_since(adm)
         c.update(_care_phase(c))

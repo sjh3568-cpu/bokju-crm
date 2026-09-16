@@ -376,12 +376,14 @@ def dashboard():
         m["homepage_idx"] = hp["idx"] if hp else None
     callbacks = models.inbox_callbacks()
 
-    # 입원예정 상태인데 planned_admission_date가 비어 있는 상담 — 액션큐에 표시.
+    # 입원예정인데 예정일·주치의·병실 중 하나라도 비어 있는 상담 — 액션큐에 표시(2026-09-16 규칙).
     planned_consults = models.list_consultations(admission_status="입원예정", limit=10000)
-    planned_missing_date = [
-        c for c in planned_consults
-        if not (c.get("planned_admission_date") or "").strip()
-    ]
+    planned_missing_date = []
+    for c in planned_consults:
+        miss = models.planned_admission_missing(c)
+        if miss:
+            c["planned_missing"] = miss
+            planned_missing_date.append(c)
 
     # 입원완료 환자 중 회복기→비회복기 전환 D-30, 퇴원예정 D-30.
     # 상담의 '입원완료'는 퇴원해도 안 바뀐다(discharge_date가 한 건도 없다). 그대로

@@ -1431,7 +1431,8 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
             "입원예정",
             "danger" if days >= 3 else "warn",
             r.get("patient_name") or "환자 미지정",
-            "입원예정일 미지정 — 상단 '입원예정 (월/일)' 칸을 채워주세요",
+            "입원예정 정보 미비 — " + "·".join(r.get("planned_missing") or ["입원예정일"])
+            + " 미지정. 상단 헤더의 입원예정·주치의·호실 칸을 채워주세요",
             meta,
             f"/consult/{r.get('id')}/edit" if r.get("id") else None,
             12 if days >= 3 else 32,

@@ -2321,6 +2321,69 @@ def list_admission_episodes(patient_id=None):
     return [dict(r) for r in rows]
 
 
+# 입원예정 상담에 반드시 있어야 하는 값 — 2026-09-16 사용자 규칙: "상담·재원 데이터는 제일 정확해야 한다.
+# 입원예정은 예정일·주치의·병실을 무조건 입력." 상태 API·상담일지 등록/수정·대시보드 점검 큐가 모두 이 한 곳을 쓴다.
+PLANNED_ADMISSION_REQUIRED = (("planned_admission_date", "입원예정일"),
+                              ("attending_doctor", "주치의"),
+                              ("room_number", "병실"))
+
+
+def planned_admission_missing(row):
+    """입원예정 상담에서 비어 있는 필수값 라벨 목록. 비어 있지 않으면 []."""
+    row = row or {}
+    return [label for key, label in PLANNED_ADMISSION_REQUIRED
+            if not str(row.get(key) or "").strip()]
+
+
+def has_closed_episode_on(patient_id, admitted_at):
+    """그 환자에게 admitted_at에 시작해 이미 퇴원한 입원 회차가 있는가 — 재입원 판별."""
+    if not (patient_id and admitted_at):
+        return False
+    conn = get_db()
+    try:
+        return bool(conn.execute(
+            """SELECT 1 FROM admission_episodes
+                WHERE patient_id = ? AND date(admitted_at) = date(?)
+                  AND discharged_at IS NOT NULL AND discharged_at != '' LIMIT 1""",
+            (patient_id, str(admitted_at)[:10])).fetchone())
+    finally:
+        conn.close()
+
+
+def prior_admissions_by_patient(patient_ids):
+    """환자별 지난 입원(퇴원한 회차) 목록 — 재입원 표시용. 최근 것부터.
+
+    원무 명부 회차(roster_key)가 사실이므로 우선하고, 같은 입원일에 CRM이 만든
+    회차가 따로 있으면 중복으로 보고 뺀다. 반환: {patient_id: [{admitted_at,
+    discharged_at, room_number, ward, source}]}
+    """
+    ids = [int(p) for p in set(patient_ids or []) if p]
+    if not ids:
+        return {}
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            f"""SELECT patient_id, admitted_at, discharged_at, room_number, ward, roster_key
+                  FROM admission_episodes
+                 WHERE patient_id IN ({",".join("?" * len(ids))})
+                   AND admitted_at IS NOT NULL AND admitted_at != ''
+                   AND discharged_at IS NOT NULL AND discharged_at != ''
+                 ORDER BY patient_id, date(admitted_at) DESC,
+                          CASE WHEN roster_key IS NULL THEN 1 ELSE 0 END""", ids).fetchall()
+    finally:
+        conn.close()
+    out = {}
+    for r in rows:
+        stays = out.setdefault(r["patient_id"], [])
+        day = str(r["admitted_at"])[:10]
+        if any(s["admitted_at"][:10] == day for s in stays):
+            continue   # 같은 입원일의 CRM 회차 — 명부 회차가 먼저 들어가 있다
+        stays.append({"admitted_at": day, "discharged_at": str(r["discharged_at"])[:10],
+                      "room_number": r["room_number"], "ward": r["ward"],
+                      "source": "명부" if r["roster_key"] else "CRM"})
+    return out
+
+
 def set_app_meta(key, value):
     conn = get_db()
     conn.execute("""INSERT INTO app_meta(key,value,updated_at) VALUES(?,?,CURRENT_TIMESTAMP)
@@ -3988,6 +4051,17 @@ def dashboard_summary(admission_lookup_from: str | None = None,
         ) if v)
         d["ward"] = _ward_label(d.get("room_number"))
         admission_schedule.append(d)
+
+    # 재입원 표시 — 이 입원보다 앞서 퇴원한 회차가 있으면 그 입원·퇴원일을 함께 보여준다
+    # (2026-09-16 요청: 재입원 환자는 기존 입원일과 신규 입원일을 다 파악할 수 있게).
+    prior_by_patient = prior_admissions_by_patient(
+        d.get("patient_id") for d in admission_schedule)
+    for d in admission_schedule:
+        cutoff = (d.get("admission_display_date") or "9999-12-31")[:10]
+        stays = [s for s in prior_by_patient.get(d.get("patient_id"), [])
+                 if s["admitted_at"] < cutoff]
+        d["prior_stays"] = stays
+        d["readmission"] = bool(stays)
     if return_rows:
         # 상담 행은 SQL이 (일자, 예정시각∨상담시각, id)로 정렬해 줬다. 복귀 행을 같은 규칙으로 끼워 넣는다.
         admission_schedule.sort(key=lambda row: (

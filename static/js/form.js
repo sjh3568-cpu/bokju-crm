@@ -730,6 +730,20 @@
                 btn.disabled = false; return;
             }
         }
+        // 상담 결과 ② 입원예정 — 예정일·주치의·병실 필수 (2026-09-16 규칙: 재원 데이터 정확성). 서버도 같은 규칙으로 막는다.
+        if (st === '입원예정') {
+            const need = [['consultation.planned_admission_date', '입원예정일'],
+                          ['consultation.attending_doctor', '주치의'],
+                          ['consultation.room_number', '병실']];
+            for (const [nm, label] of need) {
+                const inp = form.querySelector(`[name="${nm}"]`);
+                if (!inp || !inp.value.trim()) {
+                    toast(`입원예정에는 ${label}이(가) 필요합니다. 상단 헤더 칸을 채워주세요.`, 'error');
+                    if (inp) inp.focus();
+                    btn.disabled = false; return;
+                }
+            }
+        }
         // 병원·요양원 정식명 최종 강제 — 세 칸 모두 검증.
         // 자유 입력 후 blur 없이 바로 submit한 케이스 대응. 요양원은 마스터 비어 있으면 통과.
         const HOSP_FIELD_LABELS = {

@@ -251,6 +251,8 @@
                 body.attending_doctor = (plannedDoctor && plannedDoctor.value.trim()) || '';
                 body.room_number = (plannedRoom && plannedRoom.value.trim()) || '';
                 if (st === '입원예정' && !body.planned_admission_date) { alert('입원예정일을 입력하세요.'); return; }
+                if (st === '입원예정' && !body.attending_doctor) { alert('입원예정에는 주치의가 필요합니다.'); plannedDoctor && plannedDoctor.focus(); return; }
+                if (st === '입원예정' && !body.room_number) { alert('입원예정에는 병실이 필요합니다.'); plannedRoom && plannedRoom.focus(); return; }
             } else if (st === '입원보류') {
                 body.hold_reason = (holdReason && holdReason.value.trim()) || '';
                 if (!body.hold_reason) { alert('입원보류 사유를 입력하세요.'); return; }

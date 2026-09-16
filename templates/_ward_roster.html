@@ -63,7 +63,8 @@
                     <td class="nowrap">
                         {% if c.away %}<span class="wd-mark">🚑</span>{% endif %}
                         {% if c.id %}<a href="/consult/{{ c.id }}">{{ c.patient_name }}</a>
-                        {% else %}<strong>{{ c.patient_name }}</strong> <span class="wd-roster-only" title="원무 명부에는 있으나 상담일지가 없는 환자입니다. 상담을 등록하면 외진·퇴원 관리를 할 수 있습니다.">상담기록 없음</span>{% endif %}
+                        {% else %}<strong>{{ c.patient_name }}</strong>{% endif %}{% if c.prior_stays %} <span class="wd-readmit" title="재입원 — 이전 입원 {% for s in c.prior_stays %}{{ s.admitted_at|krdate_short }}~{{ s.discharged_at|krdate_short }}{% if s.room_number %} {{ s.room_number }}{% endif %}({{ s.source }}){% if not loop.last %} · {% endif %}{% endfor %}">재입원</span>{% endif %}{% if c.id %}
+                        {% else %} <span class="wd-roster-only" title="원무 명부에는 있으나 상담일지가 없는 환자입니다. 상담을 등록하면 외진·퇴원 관리를 할 수 있습니다.">상담기록 없음</span>{% endif %}
                         <span class="muted-sm">{% if c.patient_age is not none %}{{ c.patient_age }}{% endif %}{% if c.gender == 'M' %}·남{% elif c.gender == 'F' %}·여{% endif %}</span>
                         {% for t in c.mgmt_tags %}<span class="wd-tag">{{ t }}</span>{% endfor %}
                     </td>

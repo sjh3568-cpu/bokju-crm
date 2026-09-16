@@ -306,6 +306,8 @@
 .page-dashboard .dash-adm-tbl .dash-adm-who a { font-weight: 700; }
 .page-dashboard .dash-adm-tbl .dash-ins { font-style: normal; font-size: .95em; padding: 0 3px; border-radius: 5px; background: var(--dgrid, #eef2f0); color: var(--dtext); }
 .page-dashboard .dash-adm-tbl .badge { padding: 2px 5px; font-size: .74rem; }
+/* 재입원 — 이전 입원·퇴원일은 툴팁(마우스 올리면), 상세 화면의 '입원 회차 이력'에 전부 */
+.page-dashboard .dash-adm-tbl .adm-readmit { margin-left: 3px; padding: 1px 4px; font-size: .66rem; font-weight: 800; background: #fef3c7; color: #92400e; vertical-align: middle; cursor: help; }
 .page-dashboard .dash-adm-tbl .dash-adm-room .badge { display: inline-block; margin: 2px 0 0; line-height: 1.2; }
 /* 병명·기타 — 두 줄까지 보여주고 그 이상은 말줄임 */
 .page-dashboard .dash-adm-tbl .dash-dx, .page-dashboard .dash-adm-tbl .dash-note { max-width: none; white-space: normal;

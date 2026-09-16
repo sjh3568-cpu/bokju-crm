@@ -1070,14 +1070,14 @@ body .container { max-width: none; padding: 0 12px; }
                     if (!/^\d{2}:\d{2}$/.test(t.trim())) { alert('시간은 HH:MM 형식으로 입력하세요.'); sel.value = old === '미정' ? '' : old; return; }
                     body.planned_admission_time = t.trim();
                 }
-                // 주치의·병실도 이어서(선택). 취소를 누르면 상태 변경 자체를 중단, 비워 두면 기존 값 유지
+                // 주치의·병실은 필수(2026-09-16 규칙). 취소하거나 비우면 상태 변경 자체를 중단.
                 const row = sel.closest('tr');
-                const doc = prompt('주치의 (비워 두면 기존 값 유지)\n' + DOCTOR_HINT, (row && row.dataset.doctor) || '');
-                if (doc === null) { sel.value = old === '미정' ? '' : old; return; }
-                if (doc.trim()) body.attending_doctor = doc.trim();
-                const room = prompt('병실 (예: 305호 · 비워 두면 기존 값 유지)', (row && row.dataset.room) || '');
-                if (room === null) { sel.value = old === '미정' ? '' : old; return; }
-                if (room.trim()) body.room_number = room.trim();
+                const doc = prompt('주치의 (필수)\n' + DOCTOR_HINT, (row && row.dataset.doctor) || '');
+                if (doc === null || !doc.trim()) { if (doc !== null) alert('입원예정에는 주치의가 필요합니다.'); sel.value = old === '미정' ? '' : old; return; }
+                body.attending_doctor = doc.trim();
+                const room = prompt('병실 (필수 · 예: 305호)', (row && row.dataset.room) || '');
+                if (room === null || !room.trim()) { if (room !== null) alert('입원예정에는 병실이 필요합니다.'); sel.value = old === '미정' ? '' : old; return; }
+                body.room_number = room.trim();
             }
             await applyStatus(sel, body, newStatus || '미정', STATUS_CLASS);
         });

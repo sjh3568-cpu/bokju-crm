@@ -889,6 +889,10 @@ def api_consult_create():
     cfields = _consult_fields_from_payload(c)
     cfields.setdefault("consult_date", datetime.now().strftime("%Y-%m-%d"))
     cfields.setdefault("counselor", g.user.get("display_name"))
+    if cfields.get("admission_status") == "입원예정":
+        missing = models.planned_admission_missing(cfields)
+        if missing:
+            return jsonify({"error": _planned_missing_msg(missing)}), 400
     cid = models.create_consultation(patient_id=pid, **cfields)
     # 자동완성 ranking — 신규 등록 시 사용한 마스터 row의 use_count + 1.
     # update 시엔 안 함 (재저장으로 인플레이션 방지).
@@ -1164,6 +1168,13 @@ def api_consult_update(cid):
 
     c = payload.get("consultation") or {}
     update_fields = _consult_fields_from_payload(c)
+    # 입원예정으로 바꾸거나, 입원예정인 상담의 예정일·주치의·병실을 건드리는 저장은 셋 다 채워져 있어야 한다.
+    touched = {"admission_status", *(k for k, _ in models.PLANNED_ADMISSION_REQUIRED)} & set(update_fields)
+    merged = {**existing, **update_fields}
+    if touched and merged.get("admission_status") == "입원예정":
+        missing = models.planned_admission_missing(merged)
+        if missing:
+            return jsonify({"error": _planned_missing_msg(missing)}), 400
     if update_fields:
         models.update_consultation(cid, **update_fields)
         if "admission_status" in update_fields:
@@ -1178,6 +1189,10 @@ def api_consult_update(cid):
 
 
 # ───────────────────── API:결과(입원진행단계)변경 ─────────────────────
+
+def _planned_missing_msg(missing):
+    return "입원예정에는 입원예정일·주치의·병실이 모두 필요합니다. 누락: " + ", ".join(missing)
+
 
 @bp.route("/api/consult/<int:cid>/status", methods=["POST"])
 @login_required
@@ -1252,6 +1267,18 @@ def api_consult_status(cid):
                     fields[key] = val or None
                     if val:
                         audit.append(f"{label}:{val}")
+            if status == "입원예정":
+                merged = {**existing, **fields}
+                missing = models.planned_admission_missing(merged)
+                if missing:
+                    return jsonify({"error": _planned_missing_msg(missing)}), 400
+                # 재입원: 이전 입원(이미 퇴원한 회차)의 실제입원일이 상담에 남아 있으면 비운다.
+                # 남겨 두면 회차 상태가 '재원'으로 보이고, 완료 처리 전까지 옛 날짜가 화면·집계에 섞인다.
+                stale = (existing.get("actual_admission_date") or existing.get("admission_date") or "").strip()
+                if stale and models.has_closed_episode_on(existing["patient_id"], stale):
+                    fields["actual_admission_date"] = None
+                    fields["admission_date"] = None
+                    audit.append(f"이전 입원일 {stale} 초기화(재입원)")
         elif status == "입원보류":
             hold_reason = (payload.get("hold_reason") or "").strip()
             if not hold_reason:
