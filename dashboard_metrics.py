@@ -12,7 +12,7 @@
 from datetime import date, timedelta
 
 from config import ROOM_BED_CAPACITIES, WARD_BED_CAPACITIES
-from models import AWAY_EVENT_TYPES, away_returns_by_date, get_db
+from models import AWAY_EVENT_TYPES, active_reservations_by_room, away_returns_by_date, get_db
 
 ROSTER = "roster_key IS NOT NULL"
 
@@ -283,6 +283,12 @@ def room_status(room, *, gender=None, exclude_cid=None):
             if _norm_room(r["room_number"]) == key and r["id"] != exclude_cid]
     finally:
         conn.close()
+    # 병상 예약(사용 예정자)도 아직 입원 전이지만 자리를 잡아 둔 것 — 입원예정과 같은 무게로 센다.
+    for r in _reservations_in_room(key):
+        if r.get("consultation_id") and r["consultation_id"] == exclude_cid:
+            continue
+        planned.append({"id": None, "name": r["name"], "gender": r.get("gender"),
+                        "planned_admission_date": r.get("expected_date"), "admission_status": "병상 예약"})
     used = len(residents)
     genders = {g for g in (r.get("gender") for r in residents) if g in ("M", "F")}
     conflicts = []
@@ -306,8 +312,15 @@ def room_status(room, *, gender=None, exclude_cid=None):
     }
 
 
+def _reservations_in_room(key):
+    return active_reservations_by_room().get(key, [])
+
+
 def ward_occupancy():
     """병동별 재원·남/여·빈 병상 → 가동률·압박 단계.
+
+    병상 예약(bed_reservations, 사용 예정자)은 재원(count)에는 넣지 않지만 가용에서는 뺀다 —
+    입원 전이라 환자는 아니되 자리는 잡혀 있기 때문(2026-09-17). item['reserved']에 병동별 건수.
 
     허가 병상(config.WARD_BED_CAPACITIES)이 있는 병동은 재원 0명이어도 줄을 만든다.
     남/여 빈 병상은 병실별 병상 수(config.ROOM_BED_CAPACITIES)가 있어야 센다 —
@@ -341,6 +354,17 @@ def ward_occupancy():
             rooms.setdefault((r["ward"], _norm_room(r["room"])), {"M": 0, "F": 0, "U": 0})[r["gender"]] += r["n"]
     for w in WARD_BED_CAPACITIES:
         wards.setdefault(w, {"count": 0, "male": 0, "female": 0})
+    # 병상 예약 — 방의 성별 판정·빈자리 계산에 재원처럼 넣되, 재원 인원(count)에는 넣지 않는다.
+    reserved_by_ward = {}
+    for room, res in active_reservations_by_room().items():
+        w = next((k[0] for k in rooms if k[1] == room), None) or _ward_of_room(room)
+        if not w:
+            continue
+        occ = rooms.setdefault((w, room), {"M": 0, "F": 0, "U": 0})
+        for r in res:
+            occ[r["gender"] if r.get("gender") in ("M", "F") else "U"] += 1
+        reserved_by_ward[w] = reserved_by_ward.get(w, 0) + len(res)
+        wards.setdefault(w, {"count": 0, "male": 0, "female": 0})
     # 병실 병상 수를 병동별로 모은다 — 지금 비어 있는 방도 병동을 방 번호로 알아낸다.
     room_caps_by_ward = {}
     for room, cap in ROOM_BED_CAPACITIES.items():
@@ -360,8 +384,9 @@ def ward_occupancy():
         else:
             level = "full" if pct >= 95 else "mid" if pct >= 90 else "easy"
             bar = min(100, pct)
+        reserved = reserved_by_ward.get(ward, 0)
         item = {"ward": ward, "count": n, "capacity": cap, "pct": pct, "level": level, "bar": bar,
-                "free": (cap - n) if cap else None,
+                "free": (cap - n - reserved) if cap else None, "reserved": reserved,
                 "male": v["male"], "female": v["female"],
                 "rooms_known": False, "free_m": None, "free_f": None, "free_open": None, "free_rooms": None, "free_unknown": None, "no_room": 0}
         rcaps = room_caps_by_ward.get(ward)
@@ -383,7 +408,7 @@ def ward_occupancy():
                 # 남녀가 섞인 방(입력 오류)이나 성별 미상만 있는 방은 어느 쪽에도 넣지 않는다.
             known_total = sum(rcaps.values())
             # 병실이 안 적힌 재원(명부 누락)은 어느 방인지 몰라 위 셈에 안 들어간다 — 따로 보여준다.
-            in_rooms = sum(sum(v.values()) for k, v in rooms.items() if k[0] == ward)
+            in_rooms = sum(sum(v.values()) for k, v in rooms.items() if k[0] == ward) - reserved
             item.update(rooms_known=True, free_m=free_m, free_f=free_f, free_open=free_open, free_rooms=free_rooms,
                         free_unknown=max(0, cap - known_total), no_room=max(0, n - in_rooms))
         items.append(item)

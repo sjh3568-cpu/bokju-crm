@@ -254,7 +254,7 @@
     </a>
     <a class="wd-k accent" href="#sec-ward" title="허가병상 {{ kpis.bed_capacity }}병상 기준">
         <span class="wd-k-n">{{ kpis.bed_occupancy }}<small>%</small></span>
-        <span class="wd-k-l">병상 가동률 · {{ kpis.admitted }}/{{ kpis.bed_capacity }}병상</span>
+        <span class="wd-k-l">병상 가동률 · {{ kpis.admitted }}/{{ kpis.bed_capacity }}병상{% if kpis.reserved %} <small title="병상 예약(사용 예정자) — 재원에 안 세고 가용 병상에서만 뺀다">· 예약 {{ kpis.reserved }}</small>{% endif %}</span>
     </a>
     <a class="wd-k wd-k-mix" href="/ward?tab=trend">
         <span class="wd-k-split"><b>{{ kpis.recovery }}<small>명 · {{ kpis.recovery_ratio|pct2 }}%</small></b><b>{{ kpis.nonrecovery }}<small>명 · {{ kpis.nonrecovery_ratio|pct2 }}%</small></b></span>
@@ -310,7 +310,22 @@
         <input type="text" class="rm-room-in" placeholder="호실" size="8">
         <button type="button" class="btn btn-primary btn-xs rm-room-save">이동</button>
     </div>
+    <div class="rm-inline rm-inline-reserve">
+        <select class="rm-res-consult" title="입원예정·입원대기 상담과 이어 두면 그 상담이 입원 완료될 때 예약이 자동으로 풀린다">
+            <option value="">상담 연결 없이 이름만</option>
+        </select>
+        <input type="text" class="rm-res-name" placeholder="사용 예정자 이름" maxlength="50" size="10">
+        <select class="rm-res-gender" title="성별 — 남/여 빈 병상 계산에 쓴다">
+            <option value="">성별</option><option value="M">남</option><option value="F">여</option>
+        </select>
+        <input type="date" class="rm-res-date" title="입원 예정일 (선택)">
+        <input type="text" class="rm-res-memo" placeholder="메모 (선택)" maxlength="200" size="12">
+        <button type="button" class="btn btn-primary btn-xs rm-res-save">📌 예약</button>
+        <button type="button" class="btn btn-secondary btn-xs rm-res-cancel">취소</button>
+    </div>
 </template>
+{# 예약 폼의 상담 후보(입원예정·입원대기) — 부분 갱신으로 명단을 새로 받아도 이 목록은 본문에 남아 있다 #}
+<script type="application/json" id="rm-reserve-candidates">{{ reserve_candidates|tojson }}</script>
 <div class="card wd-sec" id="sec-ward">
     <div class="wd-sec-head">
         <h3>🏥
@@ -745,8 +760,21 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
 /* 침상 칸은 정원만큼 같은 크기로 고정(최소 4칸 격자) — 3명이 있어도 4칸, 빈 침상도 같은 크기의 빈 칸으로 남는다 */
 .rm-beds { flex:1; min-width:0; display:grid; grid-template-columns:repeat(var(--slots, 4), minmax(0, 1fr)); gap:6px; align-items:stretch; }
 .rm-beds .rm-bed { min-width:0; }
-.rm-beds .rm-empty { display:flex; align-items:center; justify-content:center; min-height:72px; color:var(--text-light); opacity:.55;
+.rm-beds .rm-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; min-height:72px; color:var(--text-light); opacity:.55;
                      font-size:0.78em; border:1px dashed var(--border); border-left:1px dashed var(--border); background:transparent; }
+.rm-beds .rm-empty:hover, .rm-beds .rm-empty:focus-within { opacity:1; }
+.rm-beds .rm-empty .rm-reserve-btn { opacity:0; transition:opacity .15s; }
+.rm-beds .rm-empty:hover .rm-reserve-btn, .rm-beds .rm-empty:focus-within .rm-reserve-btn { opacity:1; }
+.rm-beds .rm-empty .rm-inline { opacity:1; }
+/* 예약 침상(사용 예정자) — 재원 아님. 점선 테두리·호박색으로 재원 카드와 구분 */
+.rm-bed.rm-reserved { border:1px dashed #f59e0b; border-left:3px solid #f59e0b; background:#fffbeb; }
+.rm-bed.rm-reserved-overdue { border-left-color:#dc2626; background:#fff1f2; }
+.rm-res-tag { font-size:0.68em; font-weight:700; padding:1px 6px; border-radius:999px; background:#fef3c7; color:#92400e; white-space:nowrap; }
+.rm-res-late { color:#b91c1c; }
+.rm-row-vacant { background:#fbfcfd; }
+.rm-cap-res { font-style:normal; color:#b45309; margin-left:1px; }
+.rm-ward-reserved { font-size:0.8em; font-weight:700; color:#92400e; background:#fef3c7; border-radius:999px; padding:0 7px; margin-left:4px; }
+.rm-inline-reserve { flex-wrap:wrap; }
 .wd-away-tbl td { white-space:nowrap; }
 .wd-away-tbl td.wd-memo { max-width:260px; overflow:hidden; text-overflow:ellipsis; }
 .wd-away-tbl .wd-back-cell { display:flex; flex-wrap:nowrap; gap:4px; align-items:center; }
@@ -1298,6 +1326,59 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
         if (btnAway) btnAway.addEventListener('click', () => toggleEditor(bed, 'away'));
         if (btnMove) btnMove.addEventListener('click', () => toggleEditor(bed, 'move'));
         if (btnDis) btnDis.addEventListener('click', () => toggleEditor(bed, 'discharge'));
+    });
+    // ── 병상 예약(사용 예정자) — 빈 침상 [📌 예약] → 인라인 폼, 예약 카드 [예약 해제] ──
+    let reserveCandidates = [];
+    try { reserveCandidates = JSON.parse(document.getElementById('rm-reserve-candidates')?.textContent || '[]'); } catch (e) {}
+    root.querySelectorAll('.rm-empty .rm-reserve-btn').forEach(btn => {
+        const slot = btn.closest('.rm-empty'), room = slot.dataset.room;
+        btn.addEventListener('click', () => {
+            let form = slot.querySelector('.rm-inline-reserve');
+            if (!form) {
+                if (!editorTpl) return;
+                form = editorTpl.content.querySelector('.rm-inline-reserve').cloneNode(true);
+                const sel = form.querySelector('.rm-res-consult'), nameIn = form.querySelector('.rm-res-name');
+                const genderIn = form.querySelector('.rm-res-gender'), dateIn = form.querySelector('.rm-res-date');
+                reserveCandidates.forEach(c => {
+                    const o = document.createElement('option');
+                    o.value = c.id;
+                    o.textContent = `${c.name}${c.gender === 'M' ? '(남)' : c.gender === 'F' ? '(여)' : ''} · ${c.status}${c.date ? ' ' + c.date.slice(5).replace('-', '.') : ''}${c.room ? ' · ' + c.room : ''}`;
+                    sel.appendChild(o);
+                });
+                sel.addEventListener('change', () => {
+                    const c = reserveCandidates.find(x => String(x.id) === sel.value);
+                    if (!c) return;
+                    nameIn.value = c.name; genderIn.value = c.gender || ''; if (c.date) dateIn.value = c.date;
+                });
+                form.querySelector('.rm-res-cancel').addEventListener('click', () => { form.hidden = true; });
+                form.querySelector('.rm-res-save').addEventListener('click', async (e) => {
+                    const name = nameIn.value.trim();
+                    if (!name && !sel.value) { alert('사용 예정자 이름을 입력하세요.'); return; }
+                    e.target.disabled = true;
+                    try {
+                        const r = await api.post('/api/bed-reservation', {
+                            room_number: room, name, gender: genderIn.value || null,
+                            consultation_id: sel.value || null, expected_date: dateIn.value || null,
+                            memo: form.querySelector('.rm-res-memo').value.trim() || null });
+                        reload(`📌 ${r.room_number} ${r.name} 예약 — 가용 병상에서 빠집니다(재원 아님)`);
+                    } catch (err) { e.target.disabled = false; alert('예약 실패: ' + err.message); }
+                });
+                slot.appendChild(form);
+            }
+            form.hidden = !form.hidden;
+            if (!form.hidden) form.querySelector('.rm-res-name').focus();
+        });
+    });
+    root.querySelectorAll('.rm-reserved .rm-res-release').forEach(btn => {
+        const card = btn.closest('.rm-reserved');
+        btn.addEventListener('click', async () => {
+            if (!confirm(`${card.dataset.room} ${card.dataset.name} 예약을 해제할까요? (자리가 다시 가용 병상이 됩니다)`)) return;
+            btn.disabled = true;
+            try {
+                await api.post(`/api/bed-reservation/${card.dataset.rid}/release`, { reason: '취소' });
+                reload('예약을 해제했습니다');
+            } catch (e) { btn.disabled = false; alert('예약 해제 실패: ' + e.message); }
+        });
     });
     // 호실 지정·이동 (미지정 목록 + 침상 카드 공용) — 카드 쪽은 폼이 생길 때 bindRoomSave를 부른다
     function bindRoomSave(btn, box, cid) {

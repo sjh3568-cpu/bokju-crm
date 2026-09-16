@@ -5,20 +5,40 @@
     {# ── 병실 뷰 — 병동 → 호실 카드 → 침상 ── #}
     {% for w in room_view %}
     <div class="rm-ward">
-        <div class="rm-ward-head">{{ w.ward }} <span class="wd-n">{{ w.n }}</span></div>
-        {# 호실 한 줄 = 왼쪽 호실 번호, 오른쪽에 침상을 가로로 #}
+        <div class="rm-ward-head">{{ w.ward }} <span class="wd-n">{{ w.n }}</span>{% if w.reserved %} <span class="rm-ward-reserved" title="병상 예약(사용 예정자) — 재원 아님, 가용에서만 뺀다">예약 {{ w.reserved }}</span>{% endif %}</div>
+        {# 호실 한 줄 = 왼쪽 호실 번호, 오른쪽에 침상을 가로로. 빈 방도 그린다(2026-09-17) #}
         {% for b in w.rooms %}
-        <div class="rm-row">
+        {% set slots = b.patients|length + b.reserved|length + b.empty %}
+        <div class="rm-row {% if not b.patients and not b.reserved %}rm-row-vacant{% endif %}">
             <div class="rm-row-head">
                 <span class="rm-no">{{ b.room|replace('호', '') }}</span>
-                <span class="rm-cap" title="재원/정원">{{ b.patients|length }}/{{ b.patients|length + b.empty }}</span>
+                <span class="rm-cap" title="재원/정원{% if b.reserved %} · 예약 {{ b.reserved|length }}{% endif %}">{{ b.patients|length }}/{{ slots }}{% if b.reserved %}<i class="rm-cap-res">+{{ b.reserved|length }}</i>{% endif %}</span>
             </div>
-            <div class="rm-beds" style="--slots: {{ [4, b.patients|length + b.empty]|max }}">
+            <div class="rm-beds" style="--slots: {{ [4, slots]|max }}">
                 {% for c in b.patients %}
                 {{ bed(c) }}
                 {% endfor %}
+                {% for r in b.reserved %}
+                {# 예약 침상 — 사용 예정자. 재원 카드와 구분되게 점선·호박색 #}
+                <div class="rm-bed rm-reserved {% if r.expected_date and r.expected_date < today_str %}rm-reserved-overdue{% endif %}" data-rid="{{ r.id }}" data-name="{{ r.name }}" data-room="{{ b.room }}">
+                    <div class="rm-bed-top">
+                        <span class="rm-res-tag">📌 예약</span>
+                        {% if r.consultation_id %}<a href="/consult/{{ r.consultation_id }}" class="rm-name">{{ r.name }}</a>{% else %}<span class="rm-name">{{ r.name }}</span>{% endif %}
+                        <span class="rm-age muted-sm">({% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% else %}-{% endif %})</span>
+                    </div>
+                    <div class="rm-dx">{% if r.expected_date %}입원 예정 {{ r.expected_date|krdate_short }}{% if r.expected_date < today_str %} <b class="rm-res-late">지남</b>{% endif %}{% else %}입원일 미정{% endif %}{% if r.admission_status %} · {{ r.admission_status }}{% endif %}</div>
+                    {% if r.memo %}<div class="rm-dx" title="{{ r.memo }}">{{ r.memo }}</div>{% endif %}
+                    <div class="rm-who"><span class="rm-doc">{{ r.created_by or '' }}{% if r.created_at %} · {{ r.created_at[:10]|krdate_short }}{% endif %}</span></div>
+                    <div class="rm-act">
+                        <button type="button" class="btn btn-secondary btn-xs rm-res-release" title="예약을 지우고 자리를 다시 가용 병상으로">예약 해제</button>
+                    </div>
+                </div>
+                {% endfor %}
                 {% for _ in range(b.empty) %}
-                <div class="rm-bed rm-empty">빈 침상</div>
+                <div class="rm-bed rm-empty" data-room="{{ b.room }}">
+                    <span>빈 침상</span>
+                    {% if show_all_rooms %}<button type="button" class="btn btn-secondary btn-xs rm-reserve-btn" title="사용 예정자를 적어 자리를 잡아 둔다 — 재원에는 안 들어가고 가용 병상에서만 빠진다">📌 예약</button>{% endif %}
+                </div>
                 {% endfor %}
             </div>
         </div>

@@ -313,6 +313,7 @@
 .page-dashboard .ws-free i.m { background: var(--dinfo-bg); color: var(--dinfo); }
 .page-dashboard .ws-free i.f { background: #fce7f0; color: #b83a6b; }
 .page-dashboard .ws-free i.o { background: var(--dcard2); color: var(--dmuted); border: 1px solid var(--dborder); }
+.page-dashboard .ws-free i.r { background: #fef3c7; color: #92400e; }   /* 병상 예약(사용 예정자) — 가용에서 뺐지만 재원 아님 */
 /* 병동 9개가 1920px 화면(띠 ≈1,610px)에서 한 줄에 들어가는 최소 폭: 9×168 + 8×8 = 1,576px */
 .page-dashboard .ws-row { grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); }
 .page-dashboard .dash-grid2 > .card > .tbl-wrap, .page-dashboard .dash-grid2 > .card > .aq-panel { min-height: 0; }

@@ -99,6 +99,7 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
 | `GET /consultations/inquiries` (+`.csv`) | **채널 문의 내역** — 홈페이지·카카오톡 문의 전체 기록·기간별 '문의→상담' 전환 집계 (상담목록 하위 메뉴) |
 | `GET /patients/<id>` | 환자 상세 + 생애주기 타임라인 |
 | `GET /ward` | **재원 관리** — 외진 중 · 재원 환자 · 입원일 미확정 3섹션 |
+| `POST /api/bed-reservation` · `POST /api/bed-reservation/<id>/release` | **병상 예약(사용 예정자)** — `bed_reservations`. 빈 침상에 이름을 적어 자리만 잡아 둔다: 가용 병상(대시보드 띠 `ward_occupancy`·상담일지 `room_status`)에서는 빼고 재원(KPI·명부)에는 안 센다. 상담을 이어 두면 `/api/consult/<id>/admit`에서 자동 해제. 병실 뷰는 조건(q·doctor) 없을 때 `ROOM_BED_CAPACITIES`의 빈 방도 다 그린다(2026-09-17) |
 | `POST /api/consult/<id>/admit` | 입원일 확정 (이 시점부터 재원 명부 + D-day 시작) |
 | `GET /lifecycle` | → `/ward` 리다이렉트 (구 생애주기 보드는 `/lifecycle/board`) |
 | `GET /inbox` | 통합 인박스 (재연락·인바운드·입원/퇴원 임박) — **2026-09-10 보류·숨김, `INBOX_ENABLED=0`이면 404** |

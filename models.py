@@ -525,6 +525,24 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_admevent_consult ON admission_events(consultation_id);
 
+        -- 병상 예약 — 빈 침상에 '사용 예정자'를 적어 자리를 잡아 둔다(2026-09-17 요청).
+        -- 가용 병상에서는 빠지지만 재원 환자로는 세지 않는다(입원 전, 자리만 확보).
+        -- released_at이 채워지면 끝난 예약(입원 완료·취소). consultation_id는 입원예정 상담과 이어 둘 때만.
+        CREATE TABLE IF NOT EXISTS bed_reservations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            room_number TEXT NOT NULL,
+            name TEXT NOT NULL,
+            gender TEXT,
+            consultation_id INTEGER REFERENCES consultations(id) ON DELETE SET NULL,
+            expected_date DATE,
+            memo TEXT,
+            created_by TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            released_at DATETIME,
+            release_reason TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_bedres_active ON bed_reservations(released_at, room_number);
+
         CREATE TABLE IF NOT EXISTS quick_filters (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             label TEXT NOT NULL,
@@ -1356,6 +1374,129 @@ def touch_user_login(user_id: int):
     )
     conn.commit()
     conn.close()
+
+
+# ── 병상 예약 ────────────────────────────────────────────────────────────
+
+def norm_room_number(room):
+    """'316호 ★'·'316' → '316호' — 병실 표기 흔들림을 config 키와 맞춘다(dashboard_metrics._norm_room과 같은 규칙)."""
+    digits = "".join(ch for ch in (room or "") if ch.isdigit())
+    return f"{digits}호" if digits else (room or "").strip()
+
+
+def list_bed_reservations(*, active_only=True, room=None):
+    """병상 예약 목록(기본: 아직 해제되지 않은 것). 상담과 이어진 예약은 환자 이름·성별을 상담 쪽에서 채운다."""
+    conn = get_db()
+    try:
+        where, params = [], []
+        if active_only:
+            where.append("r.released_at IS NULL")
+        if room:
+            where.append("r.room_number = ?")
+            params.append(norm_room_number(room))
+        rows = conn.execute(
+            f"""SELECT r.*, p.name AS patient_name, p.gender AS patient_gender,
+                       c.planned_admission_date, c.admission_status
+                FROM bed_reservations r
+                LEFT JOIN consultations c ON c.id = r.consultation_id
+                LEFT JOIN patients p ON p.id = c.patient_id
+                {('WHERE ' + ' AND '.join(where)) if where else ''}
+                ORDER BY r.room_number, r.created_at, r.id""", params).fetchall()
+    finally:
+        conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        if d.get("patient_name"):
+            d["name"] = d["patient_name"]
+        if d.get("patient_gender") in ("M", "F"):
+            d["gender"] = d["patient_gender"]
+        if not d.get("expected_date") and d.get("planned_admission_date"):
+            d["expected_date"] = d["planned_admission_date"]
+        out.append(d)
+    return out
+
+
+def active_reservations_by_room():
+    """{'1207호': [예약, ...]} — 병실 배치도·가용 병상 계산 공용."""
+    by_room = {}
+    for r in list_bed_reservations():
+        by_room.setdefault(norm_room_number(r["room_number"]), []).append(r)
+    return by_room
+
+
+def add_bed_reservation(*, room_number, name, gender=None, consultation_id=None,
+                        expected_date=None, memo=None, created_by=None):
+    room = norm_room_number(room_number)
+    if not room:
+        raise ValueError("호실을 입력하세요.")
+    name = (name or "").strip()
+    if consultation_id:
+        con = get_consultation(int(consultation_id))
+        if not con:
+            raise ValueError("이어 줄 상담을 찾지 못했습니다.")
+        name = name or (con.get("patient_name") or "")
+        if gender not in ("M", "F"):
+            gender = con.get("gender") if con.get("gender") in ("M", "F") else None
+        if not expected_date:
+            expected_date = (con.get("planned_admission_date") or "")[:10] or None
+    if not name:
+        raise ValueError("사용 예정자 이름을 입력하세요.")
+    if gender not in ("M", "F"):
+        gender = None
+    conn = get_db()
+    try:
+        cur = conn.execute(
+            """INSERT INTO bed_reservations (room_number, name, gender, consultation_id, expected_date, memo, created_by)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (room, name, gender, int(consultation_id) if consultation_id else None,
+             expected_date or None, (memo or "").strip() or None, created_by))
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def get_bed_reservation(rid):
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT * FROM bed_reservations WHERE id = ?", (rid,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def release_bed_reservation(rid, reason=None):
+    """예약 해제(취소·입원 완료). 이미 해제된 예약은 그대로 둔다. 반환: 해제됐으면 True."""
+    conn = get_db()
+    try:
+        cur = conn.execute(
+            """UPDATE bed_reservations SET released_at = CURRENT_TIMESTAMP, release_reason = ?
+               WHERE id = ? AND released_at IS NULL""", ((reason or "").strip() or None, rid))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def release_reservations_for_admission(consultation_id, *, patient_name=None, room_number=None, reason="입원 완료"):
+    """입원 완료 처리 때 그 환자 몫의 예약을 자동으로 닫는다 — 상담이 이어진 예약, 또는 같은 방의 같은 이름."""
+    conn = get_db()
+    try:
+        ids = [r["id"] for r in conn.execute(
+            "SELECT id FROM bed_reservations WHERE released_at IS NULL AND consultation_id = ?", (consultation_id,))]
+        if patient_name and room_number:
+            ids += [r["id"] for r in conn.execute(
+                """SELECT id FROM bed_reservations
+                   WHERE released_at IS NULL AND consultation_id IS NULL AND name = ? AND room_number = ?""",
+                (patient_name.strip(), norm_room_number(room_number)))]
+        for rid in ids:
+            conn.execute("UPDATE bed_reservations SET released_at = CURRENT_TIMESTAMP, release_reason = ? WHERE id = ?",
+                         (reason, rid))
+        conn.commit()
+        return len(set(ids))
+    finally:
+        conn.close()
 
 
 def log_audit(*, user_id=None, username=None, action, target_type=None, target_id=None, detail=None, ip=None):

@@ -711,20 +711,43 @@ def ward_view():
             continue
         ward = _dashboard_ward_label(room)
         rooms.setdefault(ward, {}).setdefault(room, []).append(c)
+    # 검색·주치의로 좁히지 않은 배치도에는 비어 있는 병실도 다 그린다(2026-09-17 요청 — 1207호가 빈 방이라 안 보였다).
+    # 좁혀 본 화면에서 빈 방을 다 그리면 '그 주치의 환자가 없는 방'이 빈 방처럼 보여 혼동이라 조건 없을 때만.
+    show_all_rooms = not (q or doctor)
+    reservations_by_room = models.active_reservations_by_room() if show_all_rooms else {}
+    if show_all_rooms:
+        for room in ROOM_BED_CAPACITIES:
+            ward = _dashboard_ward_label(room)
+            if ward:
+                rooms.setdefault(ward, {}).setdefault(room, [])
     def _room_beds(r):
         # 병실 정원은 병실별 병상 표(5인실·2인실·1인실 반영), 표에 없는 방은 기본 4.
         key = r if r.endswith("호") else f"{r}호"
         return ROOM_BED_CAPACITIES.get(key, ROOM_CAPACITY)
     room_view = []
     for ward in sorted(rooms, key=lambda w: (_room_sort_key(w), w)):
-        beds = [
-            {"room": r, "patients": sorted(rooms[ward][r],
-                                           key=lambda c: c.get("patient_name") or ""),
-             "empty": max(0, max(_room_beds(r), len(rooms[ward][r])) - len(rooms[ward][r]))}
-            for r in sorted(rooms[ward], key=_room_sort_key)
-        ]
+        # 같은 방이 '1207'·'1207호'로 갈려 두 줄이 되지 않게 표기를 맞춰 합친다.
+        merged = {}
+        for r, plist in rooms[ward].items():
+            merged.setdefault(models.norm_room_number(r) or r, []).extend(plist)
+        beds = []
+        for r in sorted(merged, key=_room_sort_key):
+            plist = sorted(merged[r], key=lambda c: c.get("patient_name") or "")
+            reserved = reservations_by_room.get(r, [])
+            cap = max(_room_beds(r), len(plist) + len(reserved))
+            beds.append({"room": r, "patients": plist, "reserved": reserved,
+                         "empty": max(0, cap - len(plist) - len(reserved))})
         room_view.append({"ward": ward, "rooms": beds,
-                          "n": sum(len(b["patients"]) for b in beds)})
+                          "n": sum(len(b["patients"]) for b in beds),
+                          "reserved": sum(len(b["reserved"]) for b in beds)})
+    # 예약 폼에서 이어 줄 상담 후보 — 입원예정·입원대기(아직 입원 전) 환자
+    reserve_candidates = [
+        {"id": c["id"], "name": c.get("patient_name") or "", "gender": c.get("gender"),
+         "date": (c.get("planned_admission_date") or "")[:10], "status": c.get("admission_status") or "",
+         "room": c.get("room_number") or ""}
+        for c in list(planned_list) + list(bed_waiting)]
+    reserved_total = sum(len(v) for v in reservations_by_room.values()) if show_all_rooms else \
+        len(models.list_bed_reservations())
 
     def _dday(c):
         vals = [d for d in (c.get("phase_dday"), c.get("discharge_dday")) if d is not None]
@@ -764,6 +787,7 @@ def ward_view():
         "nonrecovery_ratio": round(nonrecovery_n / total_n * 100, 2) if total_n else 0,
         "bed_capacity": bed_capacity,
         "bed_occupancy": round(total_n / bed_capacity * 100, 1),
+        "reserved": reserved_total,   # 병상 예약(사용 예정자) — 재원 아님, 가용에서만 뺀다
         "away": len(away),
         "away_overdue": sum(1 for c in away if c["away"].get("overdue")),
         "recovery_due": sum(1 for c in admitted if c.get("recovery_due")),
@@ -930,7 +954,8 @@ def ward_view():
     partial = request.args.get("partial") == "roster"
     return render_template(
         "_ward_roster.html" if partial else "ward.html", away=away, admitted=admitted_list,
-        room_view=room_view, unassigned=unassigned,
+        room_view=room_view, unassigned=unassigned, show_all_rooms=show_all_rooms,
+        reserve_candidates=reserve_candidates,
         view=view,
         pending=pending_recent, pending_old=pending_old, show_old=show_old,
         kpis=kpis, q=q or "", doctor=doctor or "", sort=sort, sort_dir=sort_dir,
@@ -1717,6 +1742,70 @@ def _room_sort_key(room):
     digits = "".join(ch for ch in r if ch.isdigit())
     return (0, int(digits)) if digits else (1, r)
 
+@bp.route("/api/bed-reservation", methods=["POST"])
+@login_required
+def api_bed_reservation_create():
+    """빈 침상에 사용 예정자 기입 — 가용 병상에서는 빠지고 재원으로는 세지 않는다(2026-09-17 요청).
+    consultation_id를 주면 입원예정·입원대기 상담과 이어 두고, 그 상담이 입원 완료되면 자동 해제된다."""
+    payload = request.get_json(silent=True) or {}
+    room = models.norm_room_number(payload.get("room_number"))
+    if not room:
+        return jsonify({"error": "호실을 입력하세요."}), 400
+    expected = (payload.get("expected_date") or "").strip() or None
+    if expected:
+        try:
+            datetime.strptime(expected, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"error": "입원 예정일 형식 오류 (YYYY-MM-DD)"}), 400
+    cid = payload.get("consultation_id") or None
+    try:
+        cid = int(cid) if cid else None
+    except (TypeError, ValueError):
+        return jsonify({"error": "상담 번호가 올바르지 않습니다."}), 400
+    cap = ROOM_BED_CAPACITIES.get(room, ROOM_CAPACITY)
+    gender = payload.get("gender") if payload.get("gender") in ("M", "F") else None
+    if cid and not gender:
+        con = models.get_consultation(cid)
+        gender = con.get("gender") if con and con.get("gender") in ("M", "F") else None
+    status = dashboard_metrics.room_status(room, gender=gender, exclude_cid=cid)
+    if status["used"] + len(status["planned"]) >= cap:
+        return jsonify({"error": f"{room}는 재원·예약을 합쳐 이미 정원({cap})입니다."}), 400
+    if "gender" in status["conflicts"]:
+        # 병실은 성별로 나뉜다 — 남자 방에 여자 예약을 넣으면 남/여 빈 병상 셈이 깨진다
+        return jsonify({"error": f"{room}는 {'남자' if 'M' in status['genders'] else '여자'} 병실입니다. 성별이 맞는 방을 고르세요."}), 400
+    try:
+        rid = models.add_bed_reservation(
+            room_number=room, name=payload.get("name"), gender=payload.get("gender"),
+            consultation_id=cid, expected_date=expected, memo=payload.get("memo"),
+            created_by=g.user.get("display_name") or g.user["username"])
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    res = models.get_bed_reservation(rid)
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="reserve_bed", target_type="bed_reservation", target_id=rid,
+        detail=f"{room} {res['name']}" + (f" · {expected}" if expected else "") + (f" · 상담 #{cid}" if cid else ""),
+        ip=request.remote_addr,
+    )
+    return jsonify({"ok": True, "id": rid, "room_number": room, "name": res["name"]})
+
+@bp.route("/api/bed-reservation/<int:rid>/release", methods=["POST"])
+@login_required
+def api_bed_reservation_release(rid):
+    """예약 해제(취소) — 자리가 다시 가용 병상으로 돌아간다."""
+    res = models.get_bed_reservation(rid)
+    if not res:
+        return jsonify({"error": "not found"}), 404
+    payload = request.get_json(silent=True) or {}
+    reason = (payload.get("reason") or "취소").strip()
+    models.release_bed_reservation(rid, reason)
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="release_bed", target_type="bed_reservation", target_id=rid,
+        detail=f"{res['room_number']} {res['name']} · {reason}", ip=request.remote_addr,
+    )
+    return jsonify({"ok": True})
+
 @bp.route("/api/consult/<int:cid>/room", methods=["POST"])
 @login_required
 def api_consult_room(cid):
@@ -1757,6 +1846,9 @@ def api_consult_admit(cid):
         fields["room_number"] = room
     models.update_consultation(cid, **fields)
     _sync_lifecycle_stage(con["patient_id"], "입원완료")
+    # 이 환자 몫으로 잡아 둔 병상 예약은 입원과 함께 닫는다(자리가 실제 재원으로 바뀜)
+    models.release_reservations_for_admission(
+        cid, patient_name=con.get("patient_name"), room_number=room or con.get("room_number"))
     models.log_audit(
         user_id=g.user["id"], username=g.user["username"],
         action="confirm_admission", target_type="consultation", target_id=cid,

@@ -478,11 +478,11 @@
     {% if ward_occupancy %}
     <div class="ws-row">
         {% for w in ward_occupancy %}
-        <a class="ws {{ w.level }}" href="/ward?ward={{ w.ward }}" title="{{ w.ward }} 재원 {{ w.count }}명 (남 {{ w.male }} · 여 {{ w.female }}){% if w.capacity %} / 허가 {{ w.capacity }} · 가동률 {{ w.pct }}% · 가용 {{ w.free }}{% if w.rooms_known %} = 남자 방 빈 병상 {{ w.free_m }} + 여자 방 빈 병상 {{ w.free_f }}{% if w.free_open %} + 빈 병실 {{ w.free_rooms }}실의 병상 {{ w.free_open }}(남녀 무관){% endif %}{% endif %}{% endif %}">
+        <a class="ws {{ w.level }}" href="/ward?ward={{ w.ward }}" title="{{ w.ward }} 재원 {{ w.count }}명 (남 {{ w.male }} · 여 {{ w.female }}){% if w.capacity %} / 허가 {{ w.capacity }} · 가동률 {{ w.pct }}% · 가용 {{ w.free }}{% if w.rooms_known %} = 남자 방 빈 병상 {{ w.free_m }} + 여자 방 빈 병상 {{ w.free_f }}{% if w.free_open %} + 빈 병실 {{ w.free_rooms }}실의 병상 {{ w.free_open }}(남녀 무관){% endif %}{% endif %}{% if w.reserved %} · 예약 {{ w.reserved }}(가용에서 뺌, 재원 아님){% endif %}{% endif %}">
             <b>{{ w.ward }}{% if w.pct is not none %}<small class="ws-pct">{{ w.pct|round|int }}%</small>{% endif %}</b>
             <span class="ws-bar"><i style="width:{{ w.bar }}%"></i></span>
             <span class="ws-n"><b>{{ w.count }}</b>{% if w.capacity %}/{{ w.capacity }}{% else %}명{% endif %}</span>
-            {% if w.capacity %}<small class="ws-free">{% if w.free <= 0 %}<b class="full">만석</b>{% else %}가용 <b>{{ w.free }}</b>{% if w.rooms_known %} <i class="m">남 {{ w.free_m }}</i> <i class="f">여 {{ w.free_f }}</i>{% if w.free_open %} <i class="o" title="아무도 없는 병실 {{ w.free_rooms }}실의 병상 — 남녀 무관">빈병상 {{ w.free_open }}</i>{% endif %}{% endif %}{% endif %}</small>{% endif %}
+            {% if w.capacity %}<small class="ws-free">{% if w.free <= 0 %}<b class="full">만석</b>{% else %}가용 <b>{{ w.free }}</b>{% if w.rooms_known %} <i class="m">남 {{ w.free_m }}</i> <i class="f">여 {{ w.free_f }}</i>{% if w.free_open %} <i class="o" title="아무도 없는 병실 {{ w.free_rooms }}실의 병상 — 남녀 무관">빈병상 {{ w.free_open }}</i>{% endif %}{% endif %}{% endif %}{% if w.reserved %} <i class="r" title="병상 예약(사용 예정자) {{ w.reserved }} — 재원에 안 세고 가용에서만 뺀다">예약 {{ w.reserved }}</i>{% endif %}</small>{% endif %}
         </a>
         {% endfor %}
     </div>

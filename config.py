@@ -203,6 +203,8 @@ AUDIT_ACTION_LABELS = {
     "update_consult": "상담 수정",
     "delete_consult": "상담 삭제",
     "confirm_admission": "입원 확정",
+    "reserve_bed": "병상 예약",
+    "release_bed": "병상 예약 해제",
     "update_status": "입원 상태 변경",
     "update_stage": "생애주기 단계 변경",
     "update_room": "병실 변경",
