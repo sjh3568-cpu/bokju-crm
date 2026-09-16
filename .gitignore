@@ -19,3 +19,6 @@ server.log
 
 # 심평원 명부 자동 갱신 상태(런타임 생성)
 data/hira_sync_status.json
+
+# 공단 요양원 명부 자동 갱신 상태(런타임 생성)
+data/ltci_sync_status.json

@@ -181,6 +181,12 @@ def initialize():
         hira_sync.start_scheduler()
     except Exception:
         app.logger.exception("심평원 자동 갱신 스케줄러를 시작하지 못했습니다")
+    # 공단 장기요양기관(요양원) 명부 자동 갱신 — LTCI_SERVICE_KEY(없으면 HIRA 키)가 있을 때만 매주 돈다
+    try:
+        import ltci_sync
+        ltci_sync.start_scheduler()
+    except Exception:
+        app.logger.exception("공단 요양원 명부 자동 갱신 스케줄러를 시작하지 못했습니다")
     # 운행 시트(구글) 연동 — TRANSPORT_SHEET_URL이 있을 때만 주기 동기화
     try:
         transport.start_scheduler()

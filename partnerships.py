@@ -473,7 +473,7 @@ def index():
         skipped_total=db.execute('SELECT COUNT(*) FROM cooperation_candidate_skips').fetchone()[0]
         unlinked_count=db.execute('SELECT COUNT(*) FROM cooperation_partners WHERE directory_id IS NULL').fetchone()[0]
     _audit('view_cooperation')
-    return render_template('partners.html',partners=selected,q=q,master_count=master_count,hira=_hira_state(),
+    return render_template('partners.html',partners=selected,q=q,master_count=master_count,hira=_hira_state(),ltci=_ltci_state(),
         master_kinds=master_kinds,master_regions=master_regions,
         partner_kinds=partner_kinds,partner_regions=partner_regions,
         reminders=reminders(),csrf=_csrf(),view=('feed' if request.args.get('view',user_prefs.get('partner_view','list'))=='feed' else 'list'),
@@ -533,6 +533,39 @@ def _hira_state():
         'master_total': last.get('master_total'),
         'weekday': '월화수목금토일'[hira_sync.WEEKDAY], 'hour': hira_sync.HOUR,
     }
+
+
+def _ltci_state():
+    """기관협력 화면에 보여줄 전국 요양원 명부(공단 장기요양기관) 갱신 상태 — 심평원 블록과 같은 모양."""
+    import ltci_sync
+    last = ltci_sync.status() or {}
+    with closing(models.get_db()) as db:
+        master_total = db.execute('SELECT COUNT(*) FROM source_nursing_homes WHERE active=1').fetchone()[0]
+    return {
+        'synced': ltci_sync.master_synced(),
+        'running': ltci_sync.is_running(),
+        'configured': bool(ltci_sync.service_key()),
+        'ok': last.get('ok') is True,
+        'at': (last.get('at') or '')[:16].replace('T', ' '),
+        'error': last.get('error') or '',
+        'master_total': master_total,
+        'weekday': '월화수목금토일'[ltci_sync.WEEKDAY], 'hour': ltci_sync.HOUR,
+    }
+
+
+@bp.route('/partners/ltci-sync',methods=['POST'])
+@login_required
+def ltci_sync_now():
+    """[지금 갱신] — 전국 요양원 명부를 공단 API에서 바로 받는다(백그라운드, 1분 남짓)."""
+    import ltci_sync
+    if not ltci_sync.service_key():
+        flash('LTCI_SERVICE_KEY(또는 HIRA_SERVICE_KEY)가 설정되지 않아 갱신할 수 없습니다. 운영 .env에 키를 넣고 재기동하세요.','error')
+    elif ltci_sync.run_in_background('manual'):
+        _audit('ltci_sync_manual')
+        flash('전국 요양원 명부 갱신을 시작했습니다. 1~2분 뒤 이 화면을 새로고침하면 결과가 표시됩니다.','success')
+    else:
+        flash('이미 갱신 중입니다. 잠시 뒤 새로고침하세요.','info')
+    return redirect(url_for('partners.index'))
 
 
 @bp.route('/partners/hira-sync',methods=['POST'])

@@ -22,6 +22,14 @@
 {% endif %}
 {% if hira.configured and not hira.running %}<form method="post" action="{{ url_for('partners.hira_sync_now') }}" class="coop-hira-form"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-secondary btn-sm">지금 갱신</button></form>{% endif %}
 </div>
+<div class="coop-hira-state{% if not ltci.synced or (ltci.error and not ltci.running) %} warn{% endif %}">
+{% if ltci.running %}⏳ 전국 요양원 명부를 국민건강보험공단(장기요양기관)에서 받는 중입니다. 1~2분 뒤 새로고침하세요.
+{% elif not ltci.synced %}⚠️ <b>전국 요양원 명부가 아직 적재되지 않았습니다.</b> 상담일지 '환자상태 → 요양원' 자동완성이 직접 등록한 {{ ltci.master_total|int }}곳에서만 찾습니다.{% if not ltci.configured %} 공공데이터포털에서 '국민건강보험공단_장기요양기관 검색 서비스'를 활용신청하고 운영 .env에 LTCI_SERVICE_KEY를 넣어 재기동하면 자동으로 받습니다.{% else %} 같은 포털 키라도 이 서비스는 활용신청이 따로 필요합니다.{% endif %}{% if ltci.error %} 마지막 시도 실패: {{ ltci.error }}{% endif %}
+{% elif ltci.error %}⚠️ 요양원 명부 마지막 갱신 실패({{ ltci.at }}): {{ ltci.error }} — 6시간마다 재시도합니다.
+{% else %}✅ 전국 요양원 명부 갱신 {{ ltci.at }} · 마스터 {{ ltci.master_total|int }}곳 · 매주 {{ ltci.weekday }}요일 {{ '%02d'|format(ltci.hour) }}시 자동
+{% endif %}
+{% if ltci.configured and not ltci.running %}<form method="post" action="{{ url_for('partners.ltci_sync_now') }}" class="coop-hira-form"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn btn-secondary btn-sm">요양원 명부 지금 갱신</button></form>{% endif %}
+</div>
 <style>.coop-hira-state{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:.92em;color:#4b5563;margin-top:6px}.coop-hira-state.warn{background:#fff8ec;border:1px solid #f5c26b;border-left:4px solid #e8912d;color:#7c4a06;padding:8px 12px}.coop-hira-form{margin:0}</style>
 </section>
 <details class="card coop-section coop-manual-add" id="manual-institution"><summary>공공기관·복지기관 등 직접 등록</summary><p class="muted">의료기관 공식 명부에 없는 보건소, 행정기관, 복지관, 협회 등을 등록합니다.</p><form method="post" action="{{ url_for('partners.add_manual') }}" class="coop-form"><input type="hidden" name="csrf" value="{{ csrf }}"><label>기관명<input name="name" required maxlength="200" placeholder="예: 대구광역시 보건정책과"></label><label>기관 유형<select name="kind" required><option value="">선택</option>{% for k in ('공공기관','보건소','복지기관','행정기관','협회·단체','기타기관') %}<option>{{ k }}</option>{% endfor %}</select></label><label>지역<input name="region" maxlength="100" placeholder="예: 대구광역시"></label><label>주소<input name="address" maxlength="300"></label><label>연락처<input name="phone" maxlength="100"></label><button class="btn btn-primary">직접 등록</button></form></details>

@@ -517,12 +517,21 @@
         row.appendChild(btn);
         return row;
     }
+    // 병원(심평원)·요양원(공단 장기요양기관) 칸이 같은 도움 상자를 쓴다 — 문구·API만 data-ac로 갈린다(2026-09-16).
+    function hospCfg(input) {
+        return input.dataset.ac === 'nursing'
+            ? { label: '요양원', src: '공단(장기요양기관)', srcList: '공단 장기요양기관 명부',
+                lookupUrl: '/api/nursing/lookup', registerUrl: '/api/nursing/register' }
+            : { label: '병원', src: '심평원', srcList: '심평원 명부',
+                lookupUrl: '/api/hospital/lookup', registerUrl: '/api/hospital/register' };
+    }
     async function hospRegister(input, entry, btn) {
+        const cfg = hospCfg(input);
         if (btn) btn.disabled = true;
         try {
-            const res = await api.post('/api/hospital/register', entry);
+            const res = await api.post(cfg.registerUrl, entry);
             hospAccept(input, res.name);
-            toast(entry.official_code ? `심평원 명부에서 등록했습니다: ${res.name}` : `입력한 이름으로 등록했습니다: ${res.name}`, 'success');
+            toast(entry.official_code ? `${cfg.srcList}에서 등록했습니다: ${res.name}` : `입력한 이름으로 등록했습니다: ${res.name}`, 'success');
         } catch (e) {
             toast(`등록 실패: ${e.message}`, 'error');
             if (btn) btn.disabled = false;
@@ -540,13 +549,14 @@
         (candidates || []).slice(0, 5).forEach(it => box.appendChild(hospCandidateRow(input, it, () => hospAccept(input, it.name))));
         const actions = document.createElement('div');
         actions.className = 'hosp-help-actions';
+        const cfg = hospCfg(input);
         const lookupBtn = document.createElement('button');
-        lookupBtn.type = 'button'; lookupBtn.className = 'btn btn-primary btn-sm'; lookupBtn.textContent = '심평원에서 찾기';
+        lookupBtn.type = 'button'; lookupBtn.className = 'btn btn-primary btn-sm'; lookupBtn.textContent = `${cfg.src}에서 찾기`;
         lookupBtn.addEventListener('click', () => hospLookup(input, raw, lookupBtn));
         const manualBtn = document.createElement('button');
         manualBtn.type = 'button'; manualBtn.className = 'btn btn-secondary btn-sm'; manualBtn.textContent = `"${raw}" 이름 그대로 등록`;
         manualBtn.addEventListener('click', () => {
-            if (!confirm(`"${raw}"을(를) 병원 마스터에 그대로 등록할까요?\n심평원 정식명과 다르면 통계에서 따로 집계될 수 있습니다. 먼저 [심평원에서 찾기]를 권합니다.`)) return;
+            if (!confirm(`"${raw}"을(를) ${cfg.label} 마스터에 그대로 등록할까요?\n${cfg.src} 정식명과 다르면 통계에서 따로 집계될 수 있습니다. 먼저 [${cfg.src}에서 찾기]를 권합니다.`)) return;
             hospRegister(input, { name: raw }, manualBtn);
         });
         actions.appendChild(lookupBtn); actions.appendChild(manualBtn);
@@ -554,26 +564,27 @@
     }
     async function hospLookup(input, raw, btn) {
         const box = hospHelpBox(input);
-        btn.disabled = true; btn.textContent = '심평원 조회 중…';
+        const cfg = hospCfg(input);
+        btn.disabled = true; btn.textContent = `${cfg.src} 조회 중…`;
         let res;
         try {
-            const r = await fetch(`/api/hospital/lookup?q=${encodeURIComponent(raw)}`);
+            const r = await fetch(`${cfg.lookupUrl}?q=${encodeURIComponent(raw)}`);
             res = await r.json();
         } catch (e) { res = { items: [], error: '조회 실패' }; }
-        btn.disabled = false; btn.textContent = '심평원에서 찾기';
+        btn.disabled = false; btn.textContent = `${cfg.src}에서 찾기`;
         let list = box.querySelector('.hosp-help-lookup');
         if (!list) { list = document.createElement('div'); list.className = 'hosp-help-lookup'; box.insertBefore(list, box.querySelector('.hosp-help-actions')); }
         list.innerHTML = '';
         if (res.configured === false) {
-            list.textContent = '심평원 API 키가 설정되지 않아 조회할 수 없습니다. 관리자에게 알리거나 이름 그대로 등록하세요.';
+            list.textContent = `${cfg.src} API 키가 설정되지 않아 조회할 수 없습니다. 관리자에게 알리거나 이름 그대로 등록하세요.`;
             return;
         }
         if (res.error) { list.textContent = res.error; return; }
         if (!res.items || !res.items.length) {
-            list.textContent = `심평원 명부에 "${raw}"이(가) 없습니다. 검색어를 줄여 다시 찾거나(예: 대표 두세 글자), 이름 그대로 등록하세요.`;
+            list.textContent = `${cfg.srcList}에 "${raw}"이(가) 없습니다. 검색어를 줄여 다시 찾거나(예: 대표 두세 글자), 이름 그대로 등록하세요.`;
             return;
         }
-        const title = document.createElement('div'); title.className = 'hosp-help-head'; title.textContent = `심평원 명부 ${res.items.length}곳 — 맞는 곳을 선택하면 바로 등록됩니다`;
+        const title = document.createElement('div'); title.className = 'hosp-help-head'; title.textContent = `${cfg.srcList} ${res.items.length}곳 — 맞는 곳을 선택하면 바로 등록됩니다`;
         list.appendChild(title);
         res.items.forEach(it => list.appendChild(hospCandidateRow(input, it, (item, b) => hospRegister(input, item, b))));
     }
@@ -607,22 +618,19 @@
             toast(`정식 명칭으로 자동 변환: ${raw} → ${official}`, 'info');
             return;
         }
+        const cfg = hospCfg(input);
         if (items.length > 1) {
             markHospitalInvalid(input, '정식 명칭을 아래에서 선택하세요.');
-            if (acKind === 'hospital') hospHelpShow(input, raw, items, `"${raw}"와 비슷한 병원이 여러 곳입니다 — 맞는 곳을 선택하세요. 없으면 심평원에서 찾거나 그대로 등록할 수 있습니다.`);
+            hospHelpShow(input, raw, items, `"${raw}"와 비슷한 ${cfg.label}이 여러 곳입니다 — 맞는 곳을 선택하세요. 없으면 ${cfg.src}에서 찾거나 그대로 등록할 수 있습니다.`);
             return;
         }
-        const facLabel = acKind === 'nursing' ? '요양원' : '병원';
-        if (acKind === 'hospital') {
-            // 전국 명부(심평원 4만여 곳)가 아직 안 들어온 상태면 "없는 병원"이 아니라 "명부 미적재"가 원인이다(2026-09-15 서울아산병원 보고).
-            const sparse = (res.master_size || 0) < 1000;
-            markHospitalInvalid(input, '마스터에 없는 병원입니다. 아래 버튼으로 바로 등록하세요.');
-            hospHelpShow(input, raw, [], sparse
-                ? `전국 병원 명부가 아직 적재되지 않아 등록된 ${res.master_size}곳에서만 찾습니다. [심평원에서 찾기]로 바로 등록할 수 있습니다.`
-                : `"${raw}"은(는) 병원 마스터에 없습니다. 심평원에서 찾아 정식명으로 등록하거나, 이름 그대로 등록하세요.`);
-            return;
-        }
-        markHospitalInvalid(input, `마스터에 없는 ${facLabel}입니다. 정확한 이름을 입력하거나 관리자에게 등록을 요청하세요.`);
+        // 전국 명부(심평원 4만여 곳·공단 요양원 6천여 곳)가 아직 안 들어온 상태면 "없는 기관"이 아니라 "명부 미적재"가 원인이다(2026-09-15 서울아산병원 보고).
+        // 요양원도 병원과 같은 흐름 — 예전엔 "관리자에게 등록 요청"으로 막기만 했다(2026-09-16).
+        const sparse = (res.master_size || 0) < (acKind === 'nursing' ? 500 : 1000);
+        markHospitalInvalid(input, `마스터에 없는 ${cfg.label}입니다. 아래 버튼으로 바로 등록하세요.`);
+        hospHelpShow(input, raw, [], sparse
+            ? `전국 ${cfg.label} 명부가 아직 적재되지 않아 등록된 ${res.master_size}곳에서만 찾습니다. [${cfg.src}에서 찾기]로 바로 등록할 수 있습니다.`
+            : `"${raw}"은(는) ${cfg.label} 마스터에 없습니다. ${cfg.src}에서 찾아 정식명으로 등록하거나, 이름 그대로 등록하세요.`);
     }
 
     function autoFillPatient(it) {
