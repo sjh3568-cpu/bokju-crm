@@ -1165,6 +1165,12 @@ def _dashboard_ward_label(room_number):
 def _dashboard_disease_labels(record):
     labels = []
     diseases = record.get("diseases") or []
+    if isinstance(diseases, str) and diseases.lstrip().startswith("["):
+        # 역직렬화를 거치지 않은 행(보류 목록 등)은 JSON 문자열 그대로 온다 — '["…"]'가 화면에 찍히지 않게
+        try:
+            diseases = json.loads(diseases)
+        except ValueError:
+            diseases = []
     if isinstance(diseases, list):
         labels.extend(str(v).strip() for v in diseases if str(v).strip())
     elif str(diseases).strip():
@@ -1297,6 +1303,17 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
 
     STALE_THRESHOLD = 8  # 일. 이 이상 방치된 건은 '오래 방치' 섹션으로 분리.
 
+    def age_tier(days):
+        """경과 색상 단계 — 오늘(fresh) · 1~2일(mid) · 3~7일(old) · 8일+(stale)."""
+        days = days or 0
+        if days >= STALE_THRESHOLD:
+            return "stale"
+        if days >= 3:
+            return "old"
+        if days >= 1:
+            return "mid"
+        return "fresh"
+
     def add(kind, tone, title, detail="", meta="", href=None, sort=50, age_days=0, action=None,
             record=None):
         # action = {"type": "comm"|"callback", "id": n} — 행에서 바로 완료/상담 등록을 누를 수 있게.
@@ -1312,6 +1329,7 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
             "href": href,
             "sort": sort,
             "age_days": age_days or 0,
+            "age_tier": age_tier(age_days),
             "is_stale": (age_days or 0) >= STALE_THRESHOLD,
             "action": action,
             "group": _dashboard_action_group(kind),   # 카드의 세부 탭 이름

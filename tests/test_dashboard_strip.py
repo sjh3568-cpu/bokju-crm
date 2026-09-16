@@ -203,6 +203,13 @@ class DashboardDueQueueTests(DashboardStripTests):
                 """INSERT INTO consultations
                    (id, patient_id, consult_date, consult_result, patient_age, diseases)
                    VALUES (8, 8, ?, '상담요청', 65, '["척수손상", "기저질환"]')""", (self.today_iso,))
+            # 보류 행은 역직렬화를 거치지 않아 diseases가 JSON 문자열 그대로 — '["…"]'가 찍히면 안 된다.
+            conn.execute("INSERT INTO patients (id,name,gender) VALUES (9,'보류환자','F')")
+            conn.execute(
+                """INSERT INTO consultations
+                   (id, patient_id, consult_date, consult_result, patient_age, diseases, updated_at)
+                   VALUES (9, 9, ?, '상담보류', 80, '["파킨슨병"]', ?)""",
+                (self.today_iso, (self.today - timedelta(days=2)).isoformat() + " 09:00:00"))
         self._add_admitted_consult(6, 6, base, (self.today - timedelta(days=5)).isoformat())   # 오늘 처리 필요(초과)
         self._add_admitted_consult(7, 7, base, (self.today + timedelta(days=30)).isoformat())  # 기한 임박(D-30)
         html = self.client.get("/").get_data(as_text=True)
@@ -212,6 +219,12 @@ class DashboardDueQueueTests(DashboardStripTests):
         self.assertIn('재연락대기</a> <span class="dash-who">남/65세</span>', html)
         self.assertIn('<td class="dash-dx" title="상세불명의 뇌경색증">상세불명의 뇌경색증</td>', html)
         self.assertIn('<td class="dash-dx" title="척수손상">척수손상</td>', html)
+        self.assertIn('<td class="dash-dx" title="파킨슨병">파킨슨병</td>', html)
+        self.assertNotIn('title="[&#34;', html)
+        # 경과·D-day 색상 단계: 오늘 상담요청=fresh, 5일 초과=old, D-30=far
+        self.assertIn('aq-meta age-fresh', html)
+        self.assertIn('aq-meta age-old', html)
+        self.assertIn('<span class="dd dd-far" title="15일 이상 남음">D-30</span>', html)
 
     def test_no_roster_falls_back_to_consultation_status(self):
         with models.get_db() as conn:

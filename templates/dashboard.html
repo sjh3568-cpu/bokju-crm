@@ -160,7 +160,7 @@
             {% for d in rows %}
             {% set interviewed = d.con.discharge_interview_at %}
             <tr{% if interviewed %} class="follow-up-done"{% endif %}>
-                <td class="nowrap">{% if d.watch.days_left < 0 %}<span class="danger-text">{{ -d.watch.days_left }}일 초과</span>{% else %}D-{{ d.watch.days_left }}{% endif %}</td>
+                <td class="nowrap">{{ dday(d.watch.days_left) }}</td>
                 <td class="nowrap">
                     {% if d.watch.mandatory %}
                     <span class="badge badge-must" title="비중추신경계 — S005 재원 기간 안에 반드시 퇴원">필수 퇴원</span>
@@ -288,7 +288,7 @@
     <td class="nowrap"><a href="{{ item.href or '#' }}">{{ item.title }}</a>{% if item.who %} <span class="dash-who">{{ item.who }}</span>{% endif %}</td>
     <td class="dash-dx" title="{{ item.dx }}">{{ item.dx or '-' }}</td>
     <td class="aq-detail" title="{{ item.detail }}">{{ item.detail or '-' }}</td>
-    <td class="nowrap aq-meta {{ item.tone }}">{% if stale %}{{ item.age_days }}일 방치{% if item.meta %} <span class="muted-sm">· {{ item.meta }}</span>{% endif %}{% else %}{{ item.meta }}{% endif %}</td>
+    <td class="nowrap aq-meta age-{{ item.age_tier }}" title="경과 {{ item.age_days }}일 — 오늘=초록 · 1~2일=주황 · 3~7일=빨강 · 8일 이상=방치">{% if stale %}{{ item.age_days }}일 방치{% if item.meta %} <span class="muted-sm">· {{ item.meta }}</span>{% endif %}{% else %}{{ item.meta }}{% endif %}</td>
     <td class="nowrap dash-action-cell">
         {% if item.action and item.action.type == 'comm' %}
         {% if item.action.homepage_idx %}<button type="button" class="btn btn-primary btn-xs ib-hp-reply" data-comm="{{ item.action.id }}" title="홈페이지 상담게시판에 답변을 올리고 완료 처리">✎ 답변</button>{% endif %}
@@ -304,6 +304,13 @@
     </td>
 </tr>
 {% endmacro %}
+{% macro dday(left) -%}
+{#- 남은 일수별 색상: 초과=빨강 굵게 · D-7 이내=빨강 · D-14 이내=주황 · 그 밖=초록 -#}
+{%- if left < 0 %}<span class="danger-text">{{ -left }}일 초과</span>
+{%- elif left <= 7 %}<span class="dd dd-soon" title="7일 이내">D-{{ left }}</span>
+{%- elif left <= 14 %}<span class="dd dd-near" title="14일 이내">D-{{ left }}</span>
+{%- else %}<span class="dd dd-far" title="15일 이상 남음">D-{{ left }}</span>{% endif -%}
+{%- endmacro %}
 {% macro action_table(rows, stale=False, limit=5) %}
 <div class="tbl-wrap">
     <table class="tbl dash-table aq-table"{% if limit %} data-limit="{{ limit }}"{% endif %}>
@@ -552,7 +559,7 @@
                     {% for d in recovery_transition_due %}
                     {% set called = d.con.recovery_call_at %}
                     <tr{% if called %} class="follow-up-done"{% endif %}>
-                        <td class="nowrap">{% if d.watch.billing_left < 0 %}<span class="danger-text">{{ -d.watch.billing_left }}일 초과</span>{% else %}D-{{ d.watch.billing_left }}{% endif %}</td>
+                        <td class="nowrap">{{ dday(d.watch.billing_left) }}</td>
                         <td class="nowrap"><a href="/consult/{{ d.con.id }}">{{ d.con.patient_name }}</a>{% if d.con.who %} <span class="dash-who">{{ d.con.who }}</span>{% endif %}</td>
                         <td class="dash-dx" title="{{ d.con.disease_summary }}">{{ d.con.dx_primary or '-' }}</td>
                         <td class="nowrap">{{ d.watch.billing_date|krdate_wd }}</td>
@@ -739,6 +746,16 @@
 .muted-sm { color:var(--text-light); font-size:0.82em; }
 .nowrap { white-space:nowrap; }
 .danger-text { color:#b91c1c; font-weight:700; }
+/* 기한 임박 D-day — 남은 기간별 색 */
+.dd { display:inline-block; padding:1px 7px; border-radius:999px; font-weight:800; font-size:.8rem; white-space:nowrap; }
+.dd-soon { background:var(--dcrit-bg,#fbe6e6); color:var(--dcrit,#d13b3b); }
+.dd-near { background:var(--dwarn-bg,#fdf1de); color:var(--dwarn,#c7700a); }
+.dd-far { background:var(--dok-bg,#e4f5ea); color:var(--dok,#1a8f4d); }
+/* 오늘 처리 필요 경과 — 경과 일수별 색 (dashboard.css의 tone 색보다 우선) */
+.page-dashboard .aq-meta.age-fresh { color:var(--dok,#1a8f4d); font-weight:700; }
+.page-dashboard .aq-meta.age-mid { color:var(--dwarn,#c7700a); font-weight:700; }
+.page-dashboard .aq-meta.age-old { color:var(--dcrit,#d13b3b); font-weight:800; }
+.page-dashboard .aq-meta.age-stale { color:#7f1d1d; font-weight:800; }
 .bl-mark { display:inline-block; padding:0 4px; background:#1f2937; color:#fecaca;
     border-radius:5px; font-size:0.7em; font-weight:700; }
 .rh-yes { background:#d1fae5; color:#047857; }
