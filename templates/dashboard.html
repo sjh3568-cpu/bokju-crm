@@ -492,6 +492,7 @@
         <span>{% for c in unassigned_planned[:5] %}<a href="/consult/{{ c.id }}">{{ c.patient_name }}</a> {{ c.planned_admission_date[5:] }}{% if c.planned_admission_time %} {{ c.planned_admission_time }}{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}{% if unassigned_planned|length > 5 %} 외 {{ unassigned_planned|length - 5 }}명{% endif %}</span>
     </div>
     {% endif %}
+    <div class="ws-legend" title="칩 색 = 병동 가동률"><i class="easy"></i>여유 ~90% <i class="mid"></i>빡빡 90~95% <i class="full"></i>포화 95%~</div>
     {% else %}
     <div class="empty">원무 입퇴원 명부를 올리면 병동별 재원이 표시됩니다.</div>
     {% endif %}
@@ -503,7 +504,6 @@
         <h3>입원 환자 현황 <small class="dash-adm-scope">{{ {'planned':'입원예정','completed':'실제 입원','all':'전체'}.get(admission_lookup_scope,'전체') }}</small></h3>
         <span class="muted">{{ admission_lookup_label }} · {{ admission_lookup|length }}명</span>
     </div>
-    <div class="ws-legend" title="칩 색 = 병동 가동률"><i class="easy"></i>여유 ~90% <i class="mid"></i>빡빡 90~95% <i class="full"></i>포화 95%~</div>
     <div class="dash-admission-datebar">
         {# 빠른 조회 버튼은 뺐다(2026-09-14) — 기본이 '이번 주(월~일)'이고, 기간은 아래 입력·빠른 달력으로 바꾼다 #}
         <form method="get" action="/" class="dash-admission-date-form" id="admission-date-form">
