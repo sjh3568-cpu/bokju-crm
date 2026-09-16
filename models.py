@@ -3643,6 +3643,10 @@ def dashboard_summary(admission_lookup_from: str | None = None,
         (today,),
     ).fetchall()
 
+    # 예정일·입원일 조회 창 = 기본 창(오늘~15일) ∪ 사용자 조회 기간. 전에는 예정일에 기본 창만 써서
+    # 어제 예정이었는데 미처리인 건이 조회 기간을 어제로 잡아도 나오지 않았다(2026-09-16).
+    range_lo = min(today, admission_lookup_from)
+    range_hi = max(week_until, admission_lookup_to)
     admission_schedule_rows = conn.execute(
         """
         SELECT c.id, c.consult_date, c.consult_time, c.counselor,
@@ -3675,14 +3679,12 @@ def dashboard_summary(admission_lookup_from: str | None = None,
                  COALESCE(c.planned_admission_time, c.consult_time, ''),
                  c.id
         """,
-        (today, week_until, today, week_until, today, week_until,
+        (range_lo, range_hi, range_lo, range_hi, range_lo, range_hi,
          admission_lookup_from, admission_lookup_to),
     ).fetchall()
 
     # 외진 복귀(예정·완료) — 아래에서 admission_schedule에 상담 행과 같은 모양으로 합친다.
     ph_away = ",".join("?" * len(AWAY_EVENT_TYPES))
-    range_lo = min(today, admission_lookup_from)
-    range_hi = max(week_until, admission_lookup_to)
     return_rows = conn.execute(
         f"""
         SELECT c.id, c.consult_date, c.consult_time, c.counselor,

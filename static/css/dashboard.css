@@ -287,7 +287,7 @@
    전에는 고정폭 합이 716px라 병명·기타가 20px로 눌려 보이지 않았다. */
 .page-dashboard .dash-adm-tbl { width: 100%; table-layout: fixed; }
 .page-dashboard .dash-adm-tbl col.c-when { width: 80px; }   /* '09.14(월)' / '10:30' */
-.page-dashboard .dash-adm-tbl col.c-state { width: 52px; }  /* '신규' / '복귀' */
+.page-dashboard .dash-adm-tbl col.c-state { width: 60px; }  /* '예정' / '완료' / '복귀' / '복귀예정' */
 .page-dashboard .dash-adm-tbl col.c-who { width: 98px; }    /* '김영희' / '여/78 건보' */
 .page-dashboard .dash-adm-tbl col.c-onset { width: 68px; }  /* '26.07.02' */
 .page-dashboard .dash-adm-tbl col.c-room { width: 78px; }   /* '1004호' / '비회복기' */
