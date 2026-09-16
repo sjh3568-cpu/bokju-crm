@@ -3657,6 +3657,7 @@ def dashboard_summary(admission_lookup_from: str | None = None,
                c.diseases, c.disease_detail, c.disease_onset, c.special_care,
                c.special_mrsa_note, c.special_vre_note, c.special_cre_note,
                c.admission_purpose, c.external_referral_note,
+               c.source_hospital, c.current_location_type, c.current_location_name,
                p.id AS patient_id, p.name AS patient_name, p.gender,
                p.insurance_type,
                p.guardian_name, p.guardian_phone, p.blacklist
@@ -4051,12 +4052,18 @@ def dashboard_summary(admission_lookup_from: str | None = None,
         d["admission_time"] = d.get("planned_admission_time") or ""
         d["admission_disease_summary"] = _admission_disease_summary(d)
         d["admission_organisms"] = _admission_organisms(d)
-        d["other_note"] = (
-            d.get("external_referral_note")
-            or d.get("disease_detail")
-            or d.get("admission_purpose")
-            or ""
-        )
+        # '모병원·외진' 칸 — 일반 입원은 어느 병원(또는 자택)에서 오는지. 병명은 왼쪽 병명 열에 있고
+        # 입원목적은 84%가 '회복기재활'이라 회복기 배지와 겹쳐, 표에 없던 모병원을 올린다(2026-09-16 결정).
+        # 입원목적·연계 메모는 툴팁으로.
+        origin = (d.get("source_hospital") or d.get("current_location_name") or "").strip()
+        if not origin and (d.get("current_location_type") or "").strip() == "집":
+            origin = "자택"
+        d["other_note"] = origin
+        d["other_note_title"] = " · ".join(v for v in (
+            f"모병원 {origin}" if origin else "",
+            f"입원목적 {d['admission_purpose']}" if d.get("admission_purpose") else "",
+            f"연계 {d['external_referral_note']}" if d.get("external_referral_note") else "",
+        ) if v)
         d["ward"] = _ward_label(d.get("room_number"))
         admission_schedule.append(d)
 
@@ -4082,10 +4089,14 @@ def dashboard_summary(admission_lookup_from: str | None = None,
         d["admission_time"] = ""
         d["admission_disease_summary"] = _admission_disease_summary(d)
         d["admission_organisms"] = _admission_organisms(d)
-        d["other_note"] = " ".join(v for v in (
-            d.get("away_event_type") or "외진",
+        # 복귀 행 — 외진 종류 · 다녀온 병원 (같은 칸에서 모병원과 같은 결로 읽히게)
+        away_label = {"모병원 외래치료": "모병원 진료"}.get(d.get("away_event_type") or "", d.get("away_event_type") or "외진")
+        d["other_note"] = " · ".join(v for v in (away_label, (d.get("away_hospital") or "").strip()) if v)
+        d["other_note_title"] = " ".join(v for v in (
+            away_label,
             (d.get("away_event_date") or "")[5:].replace("-", "/"),
             f"→ {d['away_hospital']}" if d.get("away_hospital") else "",
+            "복귀 " + (d.get("returned_at") or "")[:10] if d.get("returned_at") else "",
         ) if v)
         d["ward"] = _ward_label(d.get("room_number"))
         admission_schedule.append(d)

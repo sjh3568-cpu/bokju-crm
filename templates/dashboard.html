@@ -4,7 +4,7 @@
 {% macro admission_table(rows, limit=None) %}
 {# 대시보드 반 칸(1920px 화면 ≈770px)에 두 줄 칸으로. 10칸:
    일시(일자/시간) · 구분(예정/완료/복귀/복귀예정 — 색으로도 구분) · 환자(이름/성별·나이·보험약칭) · 병명 · 발병일
-   · 병실/회복기 · 상담 · 주치의(이름/약어) · 기타 · 처리(예정=드롭다운, 완료=표식)
+   · 병실/회복기 · 상담 · 주치의(이름/약어) · 모병원·외진(일반 입원=모병원/자택, 복귀=외진 종류·병원) · 처리(예정=드롭다운, 완료=표식)
    2026-09-15 사용자 요청: 보조 정보는 이름 아래 줄로 내려 열을 좁히고, 그만큼 병명·기타에 폭을 준다(전에는 20px로 눌려 안 보였다).
    colgroup 폭 + table-layout:fixed 라 어떤 값이 와도 가로 스크롤이 생기지 않는다 — 병명·기타는 두 줄까지 접고 넘치면 말줄임(전체는 툴팁).
    1500px 이하(반 칸 ≈515px)에서는 CSS가 발병일·기타 열을 접는다. #}
@@ -26,7 +26,7 @@
                 <th>병실·회복기</th>
                 <th>상담</th>
                 <th>주치의</th>
-                <th>기타</th>
+                <th>모병원·외진</th>
                 <th>처리</th>
             </tr>
         </thead>
@@ -59,7 +59,7 @@
                 <td class="dash-adm-cs" title="상담사 {{ r.counselor or '-' }}">{{ r.counselor or '-' }}</td>
                 {% set doc_name, _sep, doc_code = (r.attending_doctor|doctor_short if r.attending_doctor else '').partition('(') %}
                 <td class="dash-adm-doc" title="주치의 {{ r.attending_doctor or '-' }}"><b>{{ doc_name or '-' }}</b>{% if doc_code %}<small>({{ doc_code }}</small>{% endif %}</td>
-                <td class="dash-note" title="{{ r.other_note or '' }}">{% if is_return %}{{ {'응급전원': '응급전원', '모병원 외래치료': '모병원 진료'}.get(r.away_event_type, r.away_event_type or '외진') }}{% else %}{{ r.other_note or '-' }}{% endif %}</td>
+                <td class="dash-note" title="{{ r.other_note_title or r.other_note or '' }}">{{ r.other_note or '-' }}</td>
                 <td class="dash-action-cell">
                     {% if is_return and is_planned %}
                     <select class="adm-action-sel" data-kind="return" data-aevent="{{ r.away_event_id }}" data-name="{{ r.patient_name }}" title="외진 복귀 처리 — 복귀(오늘 복귀 완료) / 취소(복귀 예정 취소). 날짜·병실 지정은 재원 관리 외진 중에서">

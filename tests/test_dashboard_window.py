@@ -46,8 +46,11 @@ class DashboardWindowTests(unittest.TestCase):
             ]
             for cid, pid, st, planned, actual in rows:
                 conn.execute("""INSERT INTO consultations (id, patient_id, consult_date, admission_status,
-                                planned_admission_date, actual_admission_date, attending_doctor, room_number, patient_age)
-                                VALUES (?,?,?,?,?,?,'RM1 이성범 부장','301호',70)""", (cid, pid, d(-20), st, planned, actual))
+                                planned_admission_date, actual_admission_date, attending_doctor, room_number, patient_age,
+                                source_hospital, current_location_type, admission_purpose, disease_detail)
+                                VALUES (?,?,?,?,?,?,'RM1 이성범 부장','301호',70,?,?,'회복기재활','뇌손상 / 뇌경색')""",
+                             (cid, pid, d(-20), st, planned, actual,
+                              None if pid == 3 else "제천서울병원", "집" if pid == 3 else "입원중"))
             # 4번: 20일 전 응급전원 → 오늘 복귀
             conn.execute("""INSERT INTO admission_events (consultation_id, event_type, event_date, hospital, returned_at, return_outcome, expected_return_date)
                             VALUES (4, '응급전원', ?, '안동병원', ?, '복귀', ?)""", (d(-20), d(0), d(0)))
@@ -77,6 +80,17 @@ class DashboardWindowTests(unittest.TestCase):
         self.assertIn('>복귀</span>', html)
         self.assertIn('>예정</span>', html)
         self.assertIn('>완료</span>', html)
+
+    def test_origin_column_shows_source_hospital_or_home_and_away_type(self):
+        """'모병원·외진' 칸 — 일반 입원은 모병원(집이면 자택), 복귀는 외진 종류·병원. 병명·입원목적은 안 겹친다."""
+        rows = {r["patient_id"]: r for r in models.dashboard_summary(d(-1), d(1))["admission_schedule"]}
+        self.assertEqual(rows[2]["other_note"], "제천서울병원")
+        self.assertEqual(rows[3]["other_note"], "자택")
+        self.assertEqual(rows[4]["other_note"], "응급전원 · 안동병원")
+        self.assertIn("입원목적 회복기재활", rows[2]["other_note_title"])
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertIn("<th>모병원·외진</th>", html)
+        self.assertNotIn("뇌손상 / 뇌경색", html)    # 병명과 중복되던 옛 메모는 더 이상 표에 없다
 
     def test_week_in_counts_return_and_consultation_once(self):
         with main.app.test_request_context():
