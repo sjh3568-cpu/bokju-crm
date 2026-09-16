@@ -707,6 +707,12 @@ select,input,textarea { accent-color:var(--primary-light); }
     border-radius: 6px; font-size: 0.78em; font-weight: 700; margin-left: 4px; }
 .hpw-actions { margin-top: 14px; text-align: right; padding-top: 12px; border-top: 1px dashed #e2e8f0; }
 .hpw-pick { white-space: nowrap; }
+/* 산정특례 진단일 확인 경고 (비사용증후군 파킨슨·신생물 체크 시) — hpw-modal 레이아웃 재사용 */
+.hpw-modal.sx-alert .hpw-content { max-width: 520px; border-top-color: #d97706; }
+.hpw-modal.sx-alert .hpw-title { color: #b45309; font-size: 1.15em; }
+.hpw-modal.sx-alert .sx-msg { margin: 0 0 6px; font-size: 1.05em; font-weight: 700; color: #1f2937; line-height: 1.5; }
+.hpw-modal.sx-alert .sx-msg strong { color: #b91c1c; }
+.hpw-modal.sx-alert .sx-sub { margin: 0; color: var(--text-light); font-size: 0.9em; }
 .flash.warn { background: #fef3c7; color: #92400e; border-color: #fde68a; }
 .flash.info { background: #dbeafe; color: #1e40af; border-color: #bfdbfe; }
 .flash.success { background: #d1fae5; color: #047857; border-color: #a7f3d0; }

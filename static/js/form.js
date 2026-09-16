@@ -1207,6 +1207,60 @@
         blChk.addEventListener('change', () => { blReason.hidden = !blChk.checked; });
     })();
 
+    // ─── 산정특례 진단일 확인 경고 — 비사용증후군의 파킨슨(신규)·신생물(암) 체크 시 팝업 ───
+    // 산정특례 대상 질환은 진단일에 따라 입원 가능 기간 판정이 달라지므로 원무과 확인을 강제 안내한다.
+    // 체크할 때만 뜨고(해제·수정 화면 초기 로드 시엔 안 뜸), 확인 후 상세칸으로 포커스 이동.
+    (function() {
+        const TARGETS = { '파킨슨(신규)': '파킨슨', '신생물': '신생물(암)' };
+        const boxes = Array.from(form.querySelectorAll('[name="consultation.diseases[]"]'))
+            .filter(cb => cb.value in TARGETS && cb.closest('fieldset')?.querySelector('legend')?.textContent.trim() === '비사용증후군');
+        if (!boxes.length) return;
+
+        function showSpecialExemptionAlert(label, onClose) {
+            let modal = document.getElementById('sx-alert-modal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'sx-alert-modal';
+                modal.className = 'hpw-modal sx-alert';
+                modal.setAttribute('role', 'alertdialog');
+                modal.innerHTML = `
+                    <div class="hpw-backdrop"></div>
+                    <div class="hpw-content">
+                        <h3 class="hpw-title">⚠ 산정특례 진단일 확인 필요</h3>
+                        <p class="sx-msg"></p>
+                        <p class="sx-sub">산정특례 등록일·진단일에 따라 입원 가능 기간 판정이 달라집니다. 상담 중 반드시 확인해 주세요.</p>
+                        <div class="hpw-actions">
+                            <button type="button" class="btn btn-primary btn-sm" id="sx-alert-ok">확인했습니다</button>
+                        </div>
+                    </div>`;
+                document.body.appendChild(modal);
+            }
+            modal.querySelector('.sx-msg').innerHTML =
+                `<strong>${label}</strong> 선택 시 <strong>산정특례 진단일</strong>을 원무과를 통해서 <strong>반드시 확인</strong>하세요.`;
+            const close = () => {
+                modal.classList.remove('show');
+                document.body.style.overflow = '';
+                document.removeEventListener('keydown', onKey);
+                if (onClose) onClose();
+            };
+            const onKey = e => { if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); close(); } };
+            modal.querySelector('#sx-alert-ok').onclick = close;
+            modal.querySelector('.hpw-backdrop').onclick = close;
+            document.addEventListener('keydown', onKey);
+            modal.classList.add('show');
+            document.body.style.overflow = 'hidden';
+            modal.querySelector('#sx-alert-ok').focus();
+        }
+
+        boxes.forEach(cb => {
+            cb.addEventListener('change', () => {
+                if (!cb.checked) return;
+                const detail = cb.closest('.dx-item')?.querySelector('.dx-addon-input');
+                showSpecialExemptionAlert(TARGETS[cb.value], () => detail?.focus());
+            });
+        });
+    })();
+
     // ─── 모병원 빠른 선택 — Top 5 버튼 클릭 시 병원칸 채움 ───
     (function() {
         const hospInput = form.querySelector('[name="consultation.current_location_name"]');
