@@ -3,9 +3,7 @@
 {% set can_edit = P.get('ward', 0) >= 2 %}
 {% set base_args = request.args.to_dict() %}
 <section class="card wd-sec away-head">
-    <div class="wd-sec-head"><h2>외진 환자</h2>
-        {% set away_badge_stats = report.stats %}{% include '_away_badges.html' %}
-        <span class="muted-sm">전원·외래치료 기록과 복귀 현황{% if f.away_from or f.away_to or f.away_type %} · 배지는 선택한 기간·유형 기준{% endif %}</span></div>
+    <div class="wd-sec-head"><h2>외진 환자</h2><span class="muted-sm">전원·외래치료 기록과 복귀 현황</span></div>
 </section>
 <div class="wd-kpi away-kpi">
     <div class="wd-k"><span class="wd-k-n">{{ report.stats.patients }}<small>명</small></span><span class="wd-k-l">외진·전원 환자 · {{ report.stats.events }}건</span></div>
@@ -72,6 +70,8 @@
 <section class="card wd-sec away-list-sec">
     <div class="away-toolbar">
         <h3>외진·전원 명부 <span class="wd-n">{{ report.rows|length }}건</span></h3>
+        {# 표를 보기 전에 전체 규모부터 — 총 외진·복귀·미복귀 실인원(선택한 기간·유형 기준) #}
+        {% set away_badge_stats = report.stats %}{% include '_away_badges.html' %}
         <div class="away-toolbar-right">
             <a class="btn btn-secondary btn-sm" href="{{ url_for('ward.ward_away_xlsx', **base_args) }}" title="현재 필터 그대로 엑셀 저장">⬇ 엑셀</a>
             {% if can_edit %}<button type="button" class="btn btn-primary btn-sm" id="away-register-open">＋ 기록 등록</button>{% endif %}
@@ -225,6 +225,7 @@
 /* 툴바 — 제목·등록·보기 전환 한 줄 */
 .away-toolbar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
 .away-toolbar h3{margin:0}
+.away-toolbar>.away-badges{margin-right:auto}
 .away-toolbar-right{display:flex;align-items:center;gap:8px}
 .away-view-toggle{display:inline-flex;border:1px solid var(--border);border-radius:999px;overflow:hidden;background:#fff}
 .away-view-toggle a{padding:5px 12px;font-size:.85em;font-weight:700;color:#475569;text-decoration:none}
