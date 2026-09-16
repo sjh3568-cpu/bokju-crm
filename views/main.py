@@ -83,7 +83,9 @@ from app import (  # noqa: E402 — app.py 공용 헬퍼·상수 (app.py 맨 아
     _dashboard_groups,
     _dashboard_inbound_bucket,
     _dashboard_parse_datetime,
+    _dashboard_primary_dx,
     _dashboard_ward_label,
+    _dashboard_who,
     _discharge_watch,
     _kr_holidays,
     _lunar_label,
@@ -342,14 +344,14 @@ def _dashboard_residents():
 def dashboard():
     today_d = date.today()
     legacy_admission_date = request.args.get("admission_date")
-    # 기본 조회 기간은 '이번 주(월~일)' — 빠른 조회 버튼 대신(2026-09-14 요청). 기간 입력으로 바꿀 수 있다.
-    week_mon = today_d - timedelta(days=today_d.weekday())
-    week_sun = week_mon + timedelta(days=6)
+    # 기본 조회 기간은 '어제~내일' 3일(2026-09-16 요청; 그 전엔 이번 주). 기간 입력으로 바꿀 수 있다.
+    default_from = today_d - timedelta(days=1)
+    default_to = today_d + timedelta(days=1)
     admission_from = _valid_date(
-        request.args.get("admission_from") or legacy_admission_date, week_mon.isoformat())
+        request.args.get("admission_from") or legacy_admission_date, default_from.isoformat())
     admission_to = _valid_date(
         request.args.get("admission_to") or legacy_admission_date,
-        admission_from if (request.args.get("admission_from") or legacy_admission_date) else week_sun.isoformat())
+        admission_from if (request.args.get("admission_from") or legacy_admission_date) else default_to.isoformat())
     if admission_from > admission_to:
         admission_from, admission_to = admission_to, admission_from
     admission_scope = (request.args.get("admission_scope") or "all").strip()
@@ -365,8 +367,8 @@ def dashboard():
         "admission_lookup_to": admission_to,
         "admission_lookup_scope": admission_scope,
         "admission_lookup_label": (
-            f"이번 주 {admission_date_label(admission_from)} ~ {admission_date_label(admission_to)}"
-            if (admission_from, admission_to) == (week_mon.isoformat(), week_sun.isoformat()) else
+            f"어제~내일 {admission_date_label(admission_from)} ~ {admission_date_label(admission_to)}"
+            if (admission_from, admission_to) == (default_from.isoformat(), default_to.isoformat()) else
             admission_date_label(admission_from) if admission_from == admission_to else
             f"{admission_date_label(admission_from)} ~ {admission_date_label(admission_to)}"),
     })
@@ -400,6 +402,8 @@ def dashboard():
     for con in admitted:
         disease_labels = _dashboard_disease_labels(con)
         con["disease_summary"] = "" if disease_labels == ["병명 미지정"] else ", ".join(disease_labels[:3])
+        con["who"] = _dashboard_who(con)                 # 이름 옆 성별/나이
+        con["dx_primary"] = _dashboard_primary_dx(con)   # 주상병 열
         con["ward"] = _dashboard_ward_label(con.get("room_number"))
         ax = _admission_expiry(con)
         # 회복기→비회복기 전환 30일 전 안내 대상 — 이미 전환된(음수) 환자는 안내 시점이 지났으므로 뺀다.

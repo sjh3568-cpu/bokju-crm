@@ -3,7 +3,7 @@
 {% block body_attrs %} data-autorefresh="30"{% endblock %}
 {% macro admission_table(rows, limit=None) %}
 {# 대시보드 반 칸(1920px 화면 ≈770px)에 두 줄 칸으로. 10칸:
-   일시(일자/시간) · 구분(신규/복귀 — 예정·완료 여부는 색과 처리 칸이 말한다) · 환자(이름/성별·나이·보험약칭) · 병명 · 발병일
+   일시(일자/시간) · 구분(예정/완료/복귀/복귀예정 — 색으로도 구분) · 환자(이름/성별·나이·보험약칭) · 병명 · 발병일
    · 병실/회복기 · 상담 · 주치의(이름/약어) · 기타 · 처리(예정=드롭다운, 완료=표식)
    2026-09-15 사용자 요청: 보조 정보는 이름 아래 줄로 내려 열을 좁히고, 그만큼 병명·기타에 폭을 준다(전에는 20px로 눌려 안 보였다).
    colgroup 폭 + table-layout:fixed 라 어떤 값이 와도 가로 스크롤이 생기지 않는다 — 병명·기타는 두 줄까지 접고 넘치면 말줄임(전체는 툴팁).
@@ -40,8 +40,9 @@
                     <b>{{ (r.admission_display_date|krdate_short_wd)[3:] }}</b><small>{{ r.planned_admission_time or ' ' }}</small>
                 </td>
                 <td class="dash-adm-state">
-                    <span class="badge {% if is_planned %}adm-planned{% else %}adm-completed{% endif %}{% if is_return %} adm-return{% endif %}"
-                          title="{% if is_return %}외진 복귀{% if r.other_note %} — {{ r.other_note }}{% endif %}{% else %}신규 입원{% endif %} · {% if is_planned %}입원예정{% else %}입원완료{% endif %}">{{ '복귀' if is_return else '신규' }}</span>
+                    {% set kind = ('복귀예정' if is_planned else '복귀') if is_return else ('예정' if is_planned else '완료') %}
+                    <span class="badge adm-kind adm-kind-{{ {'예정':'planned','완료':'done','복귀':'return','복귀예정':'return-planned'}[kind] }}"
+                          title="{% if is_return %}외진 복귀{% if r.other_note %} — {{ r.other_note }}{% endif %}{% else %}신규 입원{% endif %} · {% if is_planned %}입원예정{% else %}입원완료{% endif %}">{{ kind }}</span>
                 </td>
                 <td class="dash-adm-who" title="{{ r.patient_name }} ({% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% else %}-{% endif %}/{% if r.patient_age is not none %}{{ r.patient_age }}세{% else %}-{% endif %}){% if r.insurance_type %} · {{ r.insurance_type }}{% endif %}">
                     {% if r.blacklist %}<span class="bl-mark">블랙</span> {% endif %}<a href="/consult/{{ r.id }}">{{ r.patient_name }}</a>{% if r.readmission %}<span class="badge adm-readmit" title="재입원 — 이전 입원 {% for s in r.prior_stays %}{{ s.admitted_at|krdate_short }}~{{ s.discharged_at|krdate_short }}{% if s.room_number %} {{ s.room_number }}{% endif %}({{ s.source }}){% if not loop.last %} · {% endif %}{% endfor %}">재입원</span>{% endif %}<small>{% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% else %}-{% endif %}/{% if r.patient_age is not none %}{{ r.patient_age }}{% else %}-{% endif %}{% if r.insurance_type %} <i class="dash-ins">{{ ins_abbr.get(r.insurance_type, r.insurance_type[:2]) }}</i>{% endif %}</small>
@@ -85,7 +86,7 @@
 {% macro admission_flat_panel(view_key, rows, empty_text, active=False) %}
 <div class="dash-admission-view{% if active %} active{% endif %}" data-view-panel="{{ view_key }}">
     {% if rows %}
-    {{ admission_table(rows, limit=5) }}
+    {{ admission_table(rows) }}
     {% else %}
     <div class="empty">{{ empty_text }}</div>
     {% endif %}
@@ -154,7 +155,7 @@
 {% macro discharge_table(rows, limit=None) %}
 <div class="tbl-wrap">
     <table class="tbl dash-table"{% if limit %} data-limit="{{ limit }}"{% endif %}>
-        <thead><tr><th>D-day</th><th>유형</th><th>환자</th><th>병명</th><th>병동</th><th>주치의</th><th>퇴원예정</th><th>병동 면담</th><th>액션</th></tr></thead>
+        <thead><tr><th>D-day</th><th>유형</th><th>환자</th><th>주상병</th><th>병동</th><th>주치의</th><th>퇴원예정</th><th>병동 면담</th><th>액션</th></tr></thead>
         <tbody>
             {% for d in rows %}
             {% set interviewed = d.con.discharge_interview_at %}
@@ -167,8 +168,8 @@
                     <span class="muted-sm">연장 가능</span>
                     {% endif %}
                 </td>
-                <td class="nowrap">{% if d.con.blacklist %}<span class="bl-mark" title="블랙리스트">⚠</span> {% endif %}<a href="/consult/{{ d.con.id }}">{{ d.con.patient_name }}</a></td>
-                <td class="dash-dx" title="{{ d.con.disease_summary }}">{{ d.con.disease_summary or '-' }}</td>
+                <td class="nowrap">{% if d.con.blacklist %}<span class="bl-mark" title="블랙리스트">⚠</span> {% endif %}<a href="/consult/{{ d.con.id }}">{{ d.con.patient_name }}</a>{% if d.con.who %} <span class="dash-who">{{ d.con.who }}</span>{% endif %}</td>
+                <td class="dash-dx" title="{{ d.con.disease_summary }}">{{ d.con.dx_primary or d.con.disease_summary or '-' }}</td>
                 <td class="nowrap">{{ d.con.ward or '-' }}</td>
                 <td class="nowrap">{{ d.con.attending_doctor or '-' }}</td>
                 <td class="nowrap">{{ d.watch.due_date|krdate_wd }}</td>
@@ -284,7 +285,8 @@
 <tr class="aq-row {{ item.tone }}{% if stale %} stale{% endif %}">
     {% set kslug = {'퇴원예정':'discharge','재연락':'callback','문의':'inquiry','입원준비':'prep','담당자':'staff','운행':'transport','입원예정일':'planned'}.get(item.group, 'hold-adm' if item.kind == '입원보류' else 'hold') %}
     <td class="nowrap"><span class="aq-kind k-{{ kslug }}">{{ item.kind }}</span></td>
-    <td class="nowrap"><a href="{{ item.href or '#' }}">{{ item.title }}</a></td>
+    <td class="nowrap"><a href="{{ item.href or '#' }}">{{ item.title }}</a>{% if item.who %} <span class="dash-who">{{ item.who }}</span>{% endif %}</td>
+    <td class="dash-dx" title="{{ item.dx }}">{{ item.dx or '-' }}</td>
     <td class="aq-detail" title="{{ item.detail }}">{{ item.detail or '-' }}</td>
     <td class="nowrap aq-meta {{ item.tone }}">{% if stale %}{{ item.age_days }}일 방치{% if item.meta %} <span class="muted-sm">· {{ item.meta }}</span>{% endif %}{% else %}{{ item.meta }}{% endif %}</td>
     <td class="nowrap dash-action-cell">
@@ -305,7 +307,7 @@
 {% macro action_table(rows, stale=False, limit=5) %}
 <div class="tbl-wrap">
     <table class="tbl dash-table aq-table"{% if limit %} data-limit="{{ limit }}"{% endif %}>
-        <thead><tr><th>구분</th><th>환자</th><th>내용</th><th>경과</th><th>액션</th></tr></thead>
+        <thead><tr><th>구분</th><th>환자</th><th>주상병</th><th>내용</th><th>경과</th><th>액션</th></tr></thead>
         <tbody>{% for item in rows %}{{ action_tr(item, stale) }}{% endfor %}</tbody>
     </table>
 </div>
@@ -545,13 +547,14 @@
         {% if recovery_transition_due %}
         <div class="tbl-wrap">
             <table class="tbl dash-table" data-limit="5">
-                <thead><tr><th>D-day</th><th>환자</th><th>전환일</th><th>주치의</th><th>보호자 안내</th></tr></thead>
+                <thead><tr><th>D-day</th><th>환자</th><th>주상병</th><th>전환일</th><th>주치의</th><th>보호자 안내</th></tr></thead>
                 <tbody>
                     {% for d in recovery_transition_due %}
                     {% set called = d.con.recovery_call_at %}
                     <tr{% if called %} class="follow-up-done"{% endif %}>
                         <td class="nowrap">{% if d.watch.billing_left < 0 %}<span class="danger-text">{{ -d.watch.billing_left }}일 초과</span>{% else %}D-{{ d.watch.billing_left }}{% endif %}</td>
-                        <td class="nowrap"><a href="/consult/{{ d.con.id }}">{{ d.con.patient_name }}</a></td>
+                        <td class="nowrap"><a href="/consult/{{ d.con.id }}">{{ d.con.patient_name }}</a>{% if d.con.who %} <span class="dash-who">{{ d.con.who }}</span>{% endif %}</td>
+                        <td class="dash-dx" title="{{ d.con.disease_summary }}">{{ d.con.dx_primary or '-' }}</td>
                         <td class="nowrap">{{ d.watch.billing_date|krdate_wd }}</td>
                         <td class="nowrap">{{ d.con.attending_doctor or '-' }}</td>
                         <td class="nowrap dash-action-cell">
@@ -731,6 +734,7 @@
 .dash-two-col > .card { margin-top:0; height:100%; }
 .dash-table th, .dash-table td { padding:7px 9px; font-size:0.84em; }
 .dash-dx { max-width:210px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.dash-who { margin-left:4px; font-size:.78em; color:var(--muted,#6b7280); font-weight:600; white-space:nowrap; }
 .dash-note { max-width:260px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#475569; }
 .muted-sm { color:var(--text-light); font-size:0.82em; }
 .nowrap { white-space:nowrap; }
@@ -742,6 +746,12 @@
 .adm-planned { background:#dbeafe; color:#1d4ed8; }
 .adm-completed { background:#dcfce7; color:#047857; }
 .adm-return { outline:1px dashed currentColor; outline-offset:-1px; }   /* 외진 복귀 — 상담 입원과 구분 */
+/* 입원 환자 현황 구분 배지 — 예정(파랑) · 완료(초록) · 복귀(보라) · 복귀예정(주황) (2026-09-16 요청: 한눈에 구분) */
+.adm-kind { font-weight:800; letter-spacing:-.01em; }
+.adm-kind-planned { background:#dbeafe; color:#1d4ed8; }
+.adm-kind-done { background:#dcfce7; color:#047857; }
+.adm-kind-return { background:#ede9fe; color:#6d28d9; }
+.adm-kind-return-planned { background:#fef3c7; color:#92400e; outline:1px dashed currentColor; outline-offset:-1px; }
 .dash-adm-state .muted-sm { display:block; margin-top:2px; }
 .badge-callback { background:#fef3c7; color:#92400e; }
 .badge-callback-due { background:#fee2e2; color:#991b1b; font-weight:600; }

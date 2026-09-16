@@ -1177,6 +1177,23 @@ def _dashboard_disease_labels(record):
     return labels or ["병명 미지정"]
 
 
+def _dashboard_who(record):
+    """이름 옆 성별/나이 — '여/72세'. 둘 다 없으면 ''."""
+    gender = {"M": "남", "F": "여"}.get((record.get("gender") or "").strip(), "")
+    age = record.get("patient_age")
+    age_label = f"{age}세" if age not in (None, "") else ""
+    return "/".join(v for v in (gender, age_label) if v)
+
+
+def _dashboard_primary_dx(record):
+    """주상병 한 줄 — primary_diagnosis 우선, 없으면 병명 목록(기저질환 제외)의 첫 항목."""
+    value = (record.get("primary_diagnosis") or "").strip()
+    if value:
+        return value
+    labels = _dashboard_disease_labels(record)
+    return "" if labels == ["병명 미지정"] else labels[0]
+
+
 def _dashboard_groups(items, labels_fn):
     grouped = {}
     for item in items:
@@ -1280,12 +1297,16 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
 
     STALE_THRESHOLD = 8  # 일. 이 이상 방치된 건은 '오래 방치' 섹션으로 분리.
 
-    def add(kind, tone, title, detail="", meta="", href=None, sort=50, age_days=0, action=None):
+    def add(kind, tone, title, detail="", meta="", href=None, sort=50, age_days=0, action=None,
+            record=None):
         # action = {"type": "comm"|"callback", "id": n} — 행에서 바로 완료/상담 등록을 누를 수 있게.
+        # record = 환자가 있는 원본 행 — 이름 옆 성별/나이(who)와 주상병(dx) 열을 채운다.
         items.append({
             "kind": kind,
             "tone": tone,
             "title": title,
+            "who": _dashboard_who(record) if record else "",
+            "dx": _dashboard_primary_dx(record) if record else "",
             "detail": detail,
             "meta": meta,
             "href": href,
@@ -1323,6 +1344,7 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
             age_days=int(hours // 24),
             action={"type": "comm", "id": m.get("id"),
                     "homepage_idx": m.get("homepage_idx")} if m.get("id") else None,
+            record=m,
         )
 
     for r in callbacks:
@@ -1343,6 +1365,7 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
             8 if tone == "danger" else 25,
             age_days=days,
             action={"type": "callback", "id": r.get("id")} if r.get("id") else None,
+            record=r,
         )
 
     for r in data.get("admission_by_status", {}).get("planned", []):
@@ -1369,6 +1392,7 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
                 f"/consult/{r.get('id')}" if r.get("id") else None,
                 2,
                 age_days=0,
+                record=r,
             )
 
     for r in data.get("today", []):
@@ -1382,6 +1406,7 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
                 f"/consult/{r.get('id')}" if r.get("id") else None,
                 28,
                 age_days=0,
+                record=r,
             )
 
     # 회복기 전환(전환체크)은 아래 '기한 임박' 카드와 겹치므로 큐에 넣지 않는다 (2026-09-13).
@@ -1400,6 +1425,7 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
             f"/consult/{d['con'].get('id')}" if d["con"].get("id") else None,
             10,
             age_days=-left,
+            record=d["con"],
         )
 
     for h in data.get("holds", []):
@@ -1413,6 +1439,7 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
             f"/consult/{h.get('id')}" if h.get("id") else None,
             35,
             age_days=days,
+            record=h,
         )
 
     # 차량 운행(픽업) — 오늘·내일 입원인데 운행 여부 미정 / 시트 전송 안 됨 / 배정 대기

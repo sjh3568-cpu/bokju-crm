@@ -187,6 +187,32 @@ class DashboardDueQueueTests(DashboardStripTests):
         self.assertIn("5일 초과", html)
         self.assertIn("퇴원 예정일이 지남", html)
 
+    def test_queue_and_due_rows_show_who_and_primary_dx(self):
+        """오늘 처리 필요·기한 임박의 환자 이름 옆에 성별/나이, 별도 열에 주상병이 붙는다."""
+        base = (self.today - timedelta(days=100)).isoformat()
+        with models.get_db() as conn:
+            for pid, name, gender in ((6, "최근초과", "F"), (7, "곧만료", "M"), (8, "재연락대기", "M")):
+                conn.execute("INSERT INTO patients (id,name,gender) VALUES (?,?,?)", (pid, name, gender))
+            for pid in (6, 7):
+                conn.execute(
+                    """INSERT INTO admission_episodes
+                       (patient_id, episode_no, status, admitted_at, roster_key)
+                       VALUES (?, 1, 'admitted', ?, ?)""", (pid, base, "chart%d|x" % pid))
+            # 재연락 대기(상담요청) — 주상병은 비우고 병명 목록만 있어 첫 병명이 주상병 열에 나온다.
+            conn.execute(
+                """INSERT INTO consultations
+                   (id, patient_id, consult_date, consult_result, patient_age, diseases)
+                   VALUES (8, 8, ?, '상담요청', 65, '["척수손상", "기저질환"]')""", (self.today_iso,))
+        self._add_admitted_consult(6, 6, base, (self.today - timedelta(days=5)).isoformat())   # 오늘 처리 필요(초과)
+        self._add_admitted_consult(7, 7, base, (self.today + timedelta(days=30)).isoformat())  # 기한 임박(D-30)
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertGreaterEqual(html.count("<th>주상병</th>"), 3)     # 처리 큐 · 회복기 전환 · 퇴원 예정
+        self.assertIn('최근초과</a> <span class="dash-who">여/70세</span>', html)
+        self.assertIn('곧만료</a> <span class="dash-who">남/70세</span>', html)
+        self.assertIn('재연락대기</a> <span class="dash-who">남/65세</span>', html)
+        self.assertIn('<td class="dash-dx" title="상세불명의 뇌경색증">상세불명의 뇌경색증</td>', html)
+        self.assertIn('<td class="dash-dx" title="척수손상">척수손상</td>', html)
+
     def test_no_roster_falls_back_to_consultation_status(self):
         with models.get_db() as conn:
             conn.execute("DELETE FROM admission_episodes")

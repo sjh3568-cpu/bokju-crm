@@ -3617,7 +3617,7 @@ def dashboard_summary(admission_lookup_from: str | None = None,
                c.attending_doctor, c.room_number,
                c.planned_admission_date, c.planned_admission_time,
                c.primary_diagnosis, c.secondary_diagnosis,
-               c.diseases, c.disease_detail,
+               c.diseases, c.disease_detail, c.patient_age,
                p.id AS patient_id, p.name AS patient_name, p.gender, p.blacklist
         FROM consultations c JOIN patients p ON p.id = c.patient_id
         WHERE c.consult_date = ?
@@ -3717,6 +3717,7 @@ def dashboard_summary(admission_lookup_from: str | None = None,
                c.consult_result, c.consult_result_reason,
                c.admission_status, c.hold_reason,
                c.planned_admission_date, c.attending_doctor, c.updated_at,
+               c.patient_age, c.primary_diagnosis, c.secondary_diagnosis, c.diseases,
                p.id AS patient_id, p.name AS patient_name, p.gender,
                p.guardian_name, p.guardian_phone, p.blacklist
         FROM consultations c JOIN patients p ON p.id = c.patient_id
@@ -4087,6 +4088,16 @@ def dashboard_summary(admission_lookup_from: str | None = None,
         d["ward"] = _ward_label(d.get("room_number"))
         admission_schedule.append(d)
 
+    # 외진 복귀와 상담 입원완료가 같은 날 겹치면 복귀 행만 남긴다 — 장광진 님(2026-09-16):
+    # 8/27 응급전원 → 9/15 복귀 처리했는데 상담도 9/15 입원완료로 잡혀 두 줄로 보였다.
+    # 병동 입장에선 한 사람이 그날 한 번 들어온 것이고, 복귀 행이 더 구체적인 사실이다.
+    return_keys = {(d.get("patient_id"), (d.get("admission_display_date") or "")[:10])
+                   for d in admission_schedule if d.get("admission_kind") == "return"}
+    admission_schedule = [
+        d for d in admission_schedule
+        if d.get("admission_kind") == "return"
+        or (d.get("patient_id"), (d.get("admission_display_date") or "")[:10]) not in return_keys]
+
     # 재입원 표시 — 이 입원보다 앞서 퇴원한 회차가 있으면 그 입원·퇴원일을 함께 보여준다
     # (2026-09-16 요청: 재입원 환자는 기존 입원일과 신규 입원일을 다 파악할 수 있게).
     prior_by_patient = prior_admissions_by_patient(
@@ -4140,8 +4151,6 @@ def dashboard_summary(admission_lookup_from: str | None = None,
     admission_selected = [
         row for row in admission_schedule
         if admission_lookup_from <= (row.get("admission_display_date") or "") <= admission_lookup_to
-        and (_date_value(row.get("admission_display_date")) >= today_d
-             or row.get("admission_bucket") == "completed")
         and (admission_lookup_scope == "all" or row.get("admission_bucket") == admission_lookup_scope)
         and (admission_lookup_scope != "planned"
              or row.get("admission_kind") == "return"
@@ -6648,7 +6657,11 @@ def admission_flow_counts(week_from, week_to, month_from, month_to):
                       AND e.{col} IS NOT NULL AND e.{col} != '' AND date(e.{col}) BETWEEN ? AND ?
                       AND NOT EXISTS (SELECT 1 FROM admission_episodes r
                                        WHERE r.patient_id = e.patient_id AND r.roster_key IS NOT NULL
-                                         AND date(r.admitted_at) >= date(e.admitted_at))""",
+                                         AND date(r.admitted_at) >= date(e.admitted_at))
+                      AND NOT EXISTS (SELECT 1 FROM admission_events ae
+                                       WHERE ae.consultation_id = e.consultation_id
+                                         AND COALESCE(ae.return_outcome, '복귀') = '복귀'
+                                         AND date(ae.returned_at) = date(e.admitted_at))""",
                 (roster_asof, lo, hi)).fetchone()[0]
         return {
             "week_in": _count("admitted_at", week_from, week_to) + _crm_count("admitted_at", week_from, week_to)
@@ -7384,8 +7397,8 @@ def inbox_callbacks():
     rows = conn.execute(
         """SELECT c.id, c.consult_date, c.consult_result_reason, c.counselor,
                   c.primary_diagnosis, c.secondary_diagnosis, c.diseases,
-                  c.disease_detail,
-                  p.id AS patient_id, p.name AS patient_name, p.guardian_name,
+                  c.disease_detail, c.patient_age,
+                  p.id AS patient_id, p.name AS patient_name, p.gender, p.guardian_name,
                   p.guardian_phone, p.blacklist
            FROM consultations c JOIN patients p ON p.id = c.patient_id
            WHERE c.consult_result = '상담요청'
