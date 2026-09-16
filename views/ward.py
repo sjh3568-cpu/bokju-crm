@@ -638,6 +638,22 @@ def ward_view():
         "avg_days": (round(sum((c.get("wait_days") or 0) for c in bed_waiting) / len(bed_waiting), 1)
                      if bed_waiting else 0),
     }
+    # 입원 예정 환자 — 대기에서 [입원 예정]으로 넘긴 환자(상담일지에서 바로 입원예정으로 둔 환자 포함).
+    # 입원하기로 해도 변수가 생겨 못 오는 일이 있어, 실제로 온 날 [입원 완료]를 눌러야 재원 명부에 오른다(2026-09-16 결정).
+    planned_list = models.list_consultations(admission_status="입원예정", limit=10000)
+    today_iso = date.today().isoformat()
+    for c in planned_list:
+        pdate = (c.get("planned_admission_date") or "").strip()[:10]
+        c["plan_dday"] = ((date.fromisoformat(pdate) - date.today()).days if pdate else None)
+        c["plan_overdue"] = bool(pdate and pdate < today_iso)
+        c["care_label"] = (_recovery_status(c) or {}).get("label")
+        c.update(_split_diagnosis(c))
+    planned_list.sort(key=lambda c: ((c.get("planned_admission_date") or "9999-99-99"),
+                                     c.get("planned_admission_time") or "", c.get("patient_name") or ""))
+    for i, c in enumerate(planned_list, 1):
+        c["seq"] = i
+    wait_kpis["planned_total"] = len(planned_list)
+    wait_kpis["planned_overdue"] = sum(1 for c in planned_list if c.get("plan_overdue"))
 
     away_records = models.away_now()
     away_by_pid = {a["pid"]: a for a in away_records}
@@ -933,7 +949,7 @@ def ward_view():
         subtab=subtab, away_report=away_report, away_candidates=admitted, moves=moves_report,
         away_counts=away_counts,
         blacklisted=blacklisted,
-        bed_waiting=bed_waiting, wait_kpis=wait_kpis,
+        bed_waiting=bed_waiting, wait_kpis=wait_kpis, planned_list=planned_list,
         room_f=room_f, gender_f=gender_f, dx_f=dx_f,
         sido_f=sido_f, stay_period=stay_period, stay_periods=_WARD_STAY_PERIODS,
         ward_csv_url=url_for("ward.ward_csv") + ("?" + urlencode(request.args.to_dict()) if request.args else ""),
@@ -956,7 +972,7 @@ def api_consult_waitlist(cid):
         return jsonify({"error": "입원 대기 환자가 아닙니다."}), 404
     payload = request.get_json(silent=True) or {}
     allowed = ("wait_priority", "wait_preferred_ward", "wait_bed_requirements",
-               "wait_next_contact_date", "wait_cancel_reason")
+               "wait_next_contact_date", "wait_cancel_reason", "recontact_memo")
     fields = {k: (payload.get(k) or "").strip() or None for k in allowed if k in payload}
     priority = fields.get("wait_priority")
     if priority and priority not in ("긴급", "우선", "일반"):

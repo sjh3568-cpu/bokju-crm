@@ -213,7 +213,8 @@
         <div class="wd-k {% if wait_kpis.contact_overdue %}danger{% else %}zero{% endif %}"><span class="wd-k-n">{{ wait_kpis.contact_overdue }}</span><span class="wd-k-l">📞 연락 지연 <small>다음 연락일 지남</small></span></div>
         <div class="wd-k"><span class="wd-k-n">{{ wait_kpis.male }}<small> / {{ wait_kpis.female }}</small></span><span class="wd-k-l">남 / 여 <small>· 예상 입원일 있음 {{ wait_kpis.planned }}</small></span></div>
     </div>
-    {% if bed_waiting %}<div class="tbl-wrap"><table class="tbl wd-tbl"><thead><tr><th class="wd-seq">연번</th><th>우선순위·대기</th><th>환자</th><th>예상 입원</th><th>선호 병동·병상 조건</th><th>최근·다음 연락</th><th>대기 메모</th><th>저장·입원</th></tr></thead><tbody>
+    <datalist id="wd-doctor-options">{% for d in ATTENDING_DOCTORS %}<option value="{{ d }}">{% endfor %}</datalist>
+    {% if bed_waiting %}<div class="tbl-wrap"><table class="tbl wd-tbl"><thead><tr><th class="wd-seq">연번</th><th>우선순위·대기</th><th>환자</th><th>예상 입원</th><th>선호 병동·병상 조건</th><th>최근·다음 연락</th><th>대기 메모</th><th>입원 예정 잡기</th></tr></thead><tbody>
     {% for c in bed_waiting %}<tr class="{% if c.wait_days is not none and c.wait_days >= 7 %}wd-over{% endif %}">
         <td class="wd-seq">{{ c.seq }}</td>
         <td class="nowrap wd-wait-edit" data-cid="{{ c.id }}"><select class="wd-w-priority"><option {% if (c.wait_priority or '일반') == '긴급' %}selected{% endif %}>긴급</option><option {% if c.wait_priority == '우선' %}selected{% endif %}>우선</option><option {% if (c.wait_priority or '일반') == '일반' %}selected{% endif %}>일반</option></select><span class="wd-days {% if c.wait_days is not none and c.wait_days >= 7 %}over{% endif %}">{{ c.wait_days or 0 }}일</span></td>
@@ -223,10 +224,24 @@
             <small class="wd-block">상담 {{ c.consult_date|krdate }}</small></td>
         <td class="wd-wait-edit"><input class="wd-w-ward" value="{{ c.wait_preferred_ward or '' }}" placeholder="선호 병동"><input class="wd-w-req" value="{{ c.wait_bed_requirements or '' }}" placeholder="격리·성별 등 조건"></td>
         <td class="wd-wait-edit {% if c.contact_overdue %}wd-contact-over{% endif %}"><small>최근 {{ c.wait_last_contact_at[0:16] if c.wait_last_contact_at else '없음' }}{% if c.wait_contact_by %} · {{ c.wait_contact_by }}{% endif %}</small><input type="date" class="wd-w-next" value="{{ c.wait_next_contact_date or '' }}"><button type="button" class="btn btn-secondary btn-xs wd-contact-done">연락 완료</button></td>
-        <td>{{ c.hold_reason or '병상 배정 대기' }}<small class="wd-block">{{ c.guardian_name or '-' }} · {{ c.guardian_phone or '-' }}</small></td>
-        <td class="nowrap wd-admit" data-cid="{{ c.id }}"><button type="button" class="btn btn-secondary btn-xs wd-w-save">대기정보 저장</button><input type="date" class="wd-ad-date" value="{{ c.planned_admission_date or today_str }}"><input type="text" class="wd-ad-room" placeholder="호실" size="5"><button type="button" class="btn btn-primary btn-xs wd-ad-save">입원 확정</button></td>
+        <td class="wd-wait-edit"><textarea class="wd-w-memo" rows="2" placeholder="대기 메모 (연락 내용·보호자 요청 등)">{{ c.recontact_memo or '' }}</textarea>{% if c.hold_reason %}<small class="wd-block muted-sm">보류 사유: {{ c.hold_reason }}</small>{% endif %}<small class="wd-block">{{ c.guardian_name or '-' }} · {{ c.guardian_phone or '-' }}</small></td>
+        <td class="nowrap wd-plan" data-cid="{{ c.id }}"><input type="date" class="wd-pl-date" value="{{ c.planned_admission_date or today_str }}"><input type="time" class="wd-pl-time" value="{{ c.planned_admission_time or '' }}"><input type="text" class="wd-pl-doctor" list="wd-doctor-options" placeholder="주치의" size="12" value="{{ c.attending_doctor or '' }}" autocomplete="off"><input type="text" class="wd-pl-room" placeholder="호실" size="5" value="{{ c.room_number or '' }}"><button type="button" class="btn btn-primary btn-xs wd-pl-save" title="입원 예정으로 넘깁니다. 환자가 실제로 온 날 아래 '입원 예정 환자' 표에서 [입원 완료]">입원 예정</button></td>
     </tr>{% endfor %}</tbody></table></div>
     {% else %}<div class="empty">현재 입원 대기 환자가 없습니다.</div>{% endif %}
+</section>
+<section class="card wd-sec wd-planned" id="sec-planned">
+    <div class="wd-sec-head"><h3>📅 입원 예정 환자 <span class="wd-n">{{ planned_list|length }}</span>{% if wait_kpis.planned_overdue %} <span class="wd-badge-warn" title="예정일이 지났는데 입원 완료·취소 처리가 안 된 환자">예정일 지남 {{ wait_kpis.planned_overdue }}</span>{% endif %}</h3><span class="muted-sm">입원하기로 한 환자 · 실제로 온 날 [입원 완료]를 눌러야 재원 명부에 오릅니다 · 못 오게 되면 [대기로]</span></div>
+    {% if planned_list %}<div class="tbl-wrap"><table class="tbl wd-tbl"><thead><tr><th class="wd-seq">연번</th><th>예정일·시간</th><th>환자</th><th>병실·주치의</th><th>모병원·진단</th><th>보호자</th><th>입원 처리</th></tr></thead><tbody>
+    {% for c in planned_list %}<tr class="{% if c.plan_overdue %}wd-over{% endif %}">
+        <td class="wd-seq">{{ c.seq }}</td>
+        <td class="nowrap"><strong>{{ c.planned_admission_date|krdate_short_wd if c.planned_admission_date else '미정' }}</strong> {{ c.planned_admission_time or '' }}{% if c.plan_dday is not none %}<small class="wd-block {% if c.plan_overdue %}wd-red{% endif %}">{% if c.plan_dday == 0 %}오늘{% elif c.plan_dday > 0 %}D-{{ c.plan_dday }}{% else %}{{ -c.plan_dday }}일 지남{% endif %}</small>{% endif %}</td>
+        <td class="nowrap"><a href="/consult/{{ c.id }}"><strong>{{ c.patient_name }}</strong></a> <span class="muted-sm">{% if c.patient_age is not none %}{{ c.patient_age }}세{% endif %}{% if c.gender == 'M' %}·남{% elif c.gender == 'F' %}·여{% endif %}</span>{% if c.care_label %}<small class="wd-block wd-care wd-care-{{ 'rec' if c.care_label == '회복기' else 'non' if c.care_label == '비회복기' else 'etc' }}">{{ c.care_label }} 대상</small>{% endif %}</td>
+        <td class="nowrap">{{ c.room_number or '-' }}<small class="wd-block">{{ c.attending_doctor|doctor_short if c.attending_doctor else '-' }}</small></td>
+        <td>{{ c.source_hospital or '-' }}<small class="wd-block">{{ (c.dx_primary|join(', ') if (c.dx_primary is iterable and c.dx_primary is not string) else c.dx_primary) or c.disease_detail or '-' }}</small></td>
+        <td class="nowrap"><small>{{ c.guardian_name or '-' }}<br>{{ c.guardian_phone or '-' }}</small></td>
+        <td class="nowrap wd-admit" data-cid="{{ c.id }}"><input type="date" class="wd-ad-date" value="{{ today_str }}" title="실제 입원일"><input type="text" class="wd-ad-room" placeholder="호실" size="5" value="{{ c.room_number or '' }}"><button type="button" class="btn btn-primary btn-xs wd-ad-save">입원 완료</button><button type="button" class="btn btn-secondary btn-xs wd-back-wait" title="입원 예정을 접고 다시 대기 명단으로">대기로</button></td>
+    </tr>{% endfor %}</tbody></table></div>
+    {% else %}<div class="empty">입원 예정 환자가 없습니다.</div>{% endif %}
 </section>
 {% else %}
 
@@ -513,6 +528,13 @@
 .wd-wait-kpi .wd-k { cursor:default; }
 .wd-wait-kpi .wd-k:hover { border-color:var(--border); background:#fff; }
 .wd-seq { width:36px; text-align:center; color:#64748b; font-weight:700; }
+.wd-w-memo { width:100%; min-width:150px; font:inherit; font-size:.85em; padding:3px 5px; border:1px solid var(--border); border-radius:6px; resize:vertical; }
+.wd-plan input, .wd-admit input { margin-right:3px; }
+.wd-plan .wd-pl-time { width:78px; }
+.wd-plan .wd-pl-doctor { width:118px; }
+tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
+.wd-red { color:#b91c1c; font-weight:700; }
+.wd-badge-warn { font-size:.7em; background:#fef3c7; color:#92400e; border-radius:999px; padding:2px 8px; margin-left:6px; vertical-align:middle; }
 .wd-care { font-size:.74em; font-weight:700; }
 .wd-care-rec { color:#0f766e; } .wd-care-non { color:#b45309; } .wd-care-etc { color:#64748b; }
 .wd-k.zero .wd-k-n { color:var(--text-light); }
@@ -1041,9 +1063,43 @@
         wait_priority: row.querySelector('.wd-w-priority').value,
         wait_preferred_ward: row.querySelector('.wd-w-ward').value.trim(),
         wait_bed_requirements: row.querySelector('.wd-w-req').value.trim(),
-        wait_next_contact_date: row.querySelector('.wd-w-next').value
+        wait_next_contact_date: row.querySelector('.wd-w-next').value,
+        recontact_memo: (row.querySelector('.wd-w-memo') || {value: ''}).value.trim()
     });
-    document.querySelectorAll('.wd-w-save,.wd-contact-done').forEach(btn => btn.addEventListener('click', async () => {
+    // 대기 정보(우선순위·선호 병동·조건·다음 연락일·메모)는 바꾸는 즉시 저장 — 따로 저장 버튼을 누르지 않는다(2026-09-16)
+    document.querySelectorAll('.wd-waiting tbody tr').forEach(row => {
+        const edit = row.querySelector('.wd-wait-edit[data-cid]'); if (!edit) return;
+        let timer;
+        const save = async () => {
+            try { await api.post(`/api/consult/${edit.dataset.cid}/waitlist`, waitPayload(row)); row.classList.add('wd-saved'); setTimeout(() => row.classList.remove('wd-saved'), 900); }
+            catch (e) { alert('대기 정보 저장 실패: ' + e.message); }
+        };
+        row.querySelectorAll('.wd-w-priority,.wd-w-ward,.wd-w-req,.wd-w-next').forEach(el => el.addEventListener('change', save));
+        const memo = row.querySelector('.wd-w-memo');
+        if (memo) { memo.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(save, 800); }); memo.addEventListener('change', () => { clearTimeout(timer); save(); }); }
+    });
+    // 입원 예정 — 대기 → 입원예정(예정일·시간·호실). 실제로 온 날 아래 표에서 [입원 완료]
+    document.querySelectorAll('.wd-plan').forEach(cell => cell.querySelector('.wd-pl-save').addEventListener('click', async () => {
+        const btn = cell.querySelector('.wd-pl-save'), d = cell.querySelector('.wd-pl-date').value;
+        const doctor = cell.querySelector('.wd-pl-doctor').value.trim(), room = cell.querySelector('.wd-pl-room').value.trim();
+        const missing = [!d && '예정일', !doctor && '주치의', !room && '호실'].filter(Boolean);
+        if (missing.length) { alert('입원 예정에는 예정일·주치의·호실이 모두 필요합니다. 누락: ' + missing.join(', ')); return; }
+        btn.disabled = true;
+        try {
+            await api.post(`/api/consult/${cell.dataset.cid}/status`, { admission_status: '입원예정', planned_admission_date: d,
+                planned_admission_time: cell.querySelector('.wd-pl-time').value, attending_doctor: doctor, room_number: room });
+            toast('✓ 입원 예정으로 넘겼습니다 — 환자가 오면 [입원 완료]', 'success');
+            setTimeout(() => location.reload(), 400);
+        } catch (e) { btn.disabled = false; alert('입원 예정 처리 실패: ' + e.message); }
+    }));
+    document.querySelectorAll('.wd-back-wait').forEach(btn => btn.addEventListener('click', async () => {
+        const cell = btn.closest('.wd-admit');
+        if (!confirm('입원 예정을 접고 다시 입원 대기 명단으로 돌립니다. 계속할까요?')) return;
+        btn.disabled = true;
+        try { await api.post(`/api/consult/${cell.dataset.cid}/status`, { admission_status: '입원대기' }); toast('↩ 입원 대기로 되돌렸습니다', 'success'); setTimeout(() => location.reload(), 400); }
+        catch (e) { btn.disabled = false; alert('되돌리기 실패: ' + e.message); }
+    }));
+    document.querySelectorAll('.wd-contact-done').forEach(btn => btn.addEventListener('click', async () => {
         const row=btn.closest('tr'), edit=row.querySelector('.wd-wait-edit[data-cid]');
         btn.disabled=true;
         try { const payload=waitPayload(row); if(btn.classList.contains('wd-contact-done'))payload.contact_done=true;
@@ -1271,7 +1327,7 @@
                     admission_date: cell.querySelector('.wd-ad-date').value,
                     room_number: cell.querySelector('.wd-ad-room').value.trim(),
                 });
-                toast('✓ 입원 확정 — 재원 명부로 이동', 'success');
+                toast('✓ 입원 완료 — 재원 명부로 이동', 'success');
                 setTimeout(() => location.reload(), 400);
             } catch (e) { btn.disabled = false; alert('입원 확정 실패: ' + e.message); }
         });
