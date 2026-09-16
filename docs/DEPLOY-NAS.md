@@ -135,8 +135,8 @@ BACKUP_ENABLED=1       # 0이면 끔
 주 1회는 `backups/`를 USB나 다른 공유폴더로 복사해 **NAS 밖에도** 한 벌 둘 것.
 NAS 자체가 고장나면 안에 있는 백업도 같이 사라진다.
 
-**복구** — 프로젝트 중지 → `backups/bokju_daily_YYYYMMDD_HHMMSS.db`를
-`data/bokju.db`로 복사 → 재시작.
+**복구** — 프로젝트 중지 → `backups/bokju_daily_YYYYMMDD_HHMMSS.db.gz`를 `gunzip -c … > data/bokju.db`로 풀어 → 재시작.
+(2026-09-16부터 백업은 gzip 압축 저장. daily 30일 · startup 최근 5개 · manual_배포전 최근 3개만 자동 보관)
 
 **자동 재시작** — `restart: unless-stopped`라 NAS 재부팅·앱 오류 종료 시 알아서 다시 뜬다.
 
