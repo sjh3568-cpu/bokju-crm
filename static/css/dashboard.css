@@ -140,7 +140,10 @@
 .page-dashboard .dash-stale-block summary { font-size: .78rem; color: var(--dmuted); font-weight: 700; cursor: pointer; }
 
 /* ── 병동별 재원 ── */
-.page-dashboard .floors { display: grid; gap: 4px; padding: 4px 14px 6px; }
+/* 병동별 재원은 왼쪽 입원 환자 현황과 같은 행에 있어 카드 높이가 같이 늘어난다. 병동 줄이 위에 몰리고
+   아래가 비지 않도록, 남는 높이를 병동 줄들이 균등하게 나눠 갖는다(2026-09-16 요청: 좌우 균형). */
+.page-dashboard .floors { display: grid; gap: 4px; padding: 4px 14px 6px; flex: 1 1 auto; grid-auto-rows: minmax(max-content, 1fr); align-content: stretch; }
+.page-dashboard .fl { align-content: center; }
 .page-dashboard .fl { display: grid; grid-template-columns: 52px 1fr 64px; grid-template-rows: auto auto; align-items: center; gap: 2px 10px; font-size: .84rem; color: var(--dtext); text-decoration: none; padding: 2px 0; border-radius: 8px; }
 .page-dashboard .fl:hover { background: var(--dcard2); }
 .page-dashboard .fl .beds { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; font-size: .72rem; color: var(--dmuted); line-height: 1.3; }
