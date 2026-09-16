@@ -265,13 +265,15 @@ def normalize_consult_channel(v):
     return CONSULT_CHANNEL_MAP.get(s, s)
 
 
-# 입원여부 매핑 — 상태 4종 개편(2026-05): 입원예정·입원확정은 입원보류로 통합
+# 입원여부 매핑 — 2026-05 개편 땐 입원대기·입원예정 상태가 없어 입원보류로 뭉갰지만, 이제 둘 다
+# 정식 상태(ADMISSION_STATUSES)라 그대로 옮긴다(2026-09-16). 입원대기는 재원관리 → 입원 대기 탭,
+# 입원예정은 대시보드 '오늘 입원'에 잡힌다. 입원확정 = 입원 결정·실입원 전이므로 입원예정.
 ADMISSION_STATUS_MAP = {
     "상담완료": "상담완료",
-    "입원예정": "입원보류",
-    "입원확정": "입원보류",
+    "입원예정": "입원예정",
+    "입원확정": "입원예정",
     "입원보류": "입원보류", "보류": "입원보류",
-    "입원대기": "입원보류",
+    "입원대기": "입원대기", "대기": "입원대기",
     "입원완료": "입원완료", "입원": "입원완료",
     "퇴원완료": "퇴원완료", "퇴원": "퇴원완료",
     "입원취소": "입원취소", "취소": "입원취소",
@@ -541,8 +543,14 @@ def parse_schema_c_row(headers_idx, row):
 
     # 신규 컬럼
     iso_admit = parse_date(cell("입원일 / 비고")) or parse_date(cell("입원일/비고"))
-    d["actual_admission_date"] = iso_admit
+    if d["admission_status"] in ("입원예정", "입원대기"):
+        # 아직 입원 전 — 날짜가 있으면 실제 입원일이 아니라 예정일이다
+        d["planned_admission_date"] = iso_admit
+    else:
+        d["actual_admission_date"] = iso_admit
     d["recontact_memo"] = norm_str(cell("재 접촉 관리 현황")) or norm_str(cell("재접촉 관리"))
+    # '입원환자 대기 명단' 시트만 있는 칸(헤더 줄바꿈은 header_index_map이 지운다)
+    d["wait_started_at"] = parse_date(cell("입원대기시작일자")) or parse_date(cell("입원대기 시작일자"))
 
     return d, issues
 
@@ -680,10 +688,23 @@ def normalize_date_for_month_sheet(sheet_name, parsed):
 # Dry-run / Apply 실행
 # ─────────────────────────────────────────────────────────
 
-def import_sheet(wb, sheet_name, *, apply_changes=False, schema_hint=None, skip_backup=False):
+# '입원환자 대기 명단' 시트 — 상담 내역이 아니라 "지금 병상을 기다리는 환자" 표. 같은 사람의 원래 상담 행을
+# 그대로 복사해 둔 것이라 상담일자가 예전 달이다. 그래서 이 시트는 (1) 상태를 무조건 입원대기로 두고,
+# (2) 이미 적재된 상담(같은 환자·같은 날짜)이 있으면 새로 넣지 않고 그 상담을 입원대기로 갱신한다.
+WAITING_SHEETS = {"입원환자 대기 명단"}
+
+
+def is_waiting_sheet(sheet_name):
+    return sheet_name.strip() in WAITING_SHEETS
+
+
+def import_sheet(wb, sheet_name, *, apply_changes=False, schema_hint=None, skip_backup=False,
+                 waiting_mode=None):
     if sheet_name not in wb.sheetnames:
         raise SystemExit(f"시트 없음: {sheet_name}")
     ws = wb[sheet_name]
+    if waiting_mode is None:
+        waiting_mode = is_waiting_sheet(sheet_name)
 
     # 행 1~5 추출 → 스키마 감지
     rows_top = list(ws.iter_rows(min_row=1, max_row=5, values_only=True))
@@ -710,8 +731,10 @@ def import_sheet(wb, sheet_name, *, apply_changes=False, schema_hint=None, skip_
         "header_row": header_idx,
         "rows_total": 0,
         "rows_imported": 0,
+        "rows_updated": 0,
         "rows_skipped": 0,
         "rows_duplicates": 0,
+        "waiting_mode": waiting_mode,
         "issues": Counter(),
         "issue_samples": defaultdict(list),
         "unmapped_values": defaultdict(Counter),
@@ -749,7 +772,13 @@ def import_sheet(wb, sheet_name, *, apply_changes=False, schema_hint=None, skip_
                 report["issues"][it] += 1
             continue
 
-        corrected = normalize_date_for_month_sheet(sheet_name, parsed)
+        if waiting_mode:
+            # 대기 명단은 시트 이름이 월이 아니라 날짜 보정을 건너뛰고, 상태는 입원대기로 고정
+            parsed["admission_status"] = "입원대기"
+            parsed["actual_admission_date"] = None
+            corrected = None
+        else:
+            corrected = normalize_date_for_month_sheet(sheet_name, parsed)
         if corrected:
             old, new = corrected
             report["issues"][f"상담일자 자동 보정: {old} → {new}"] += 1
@@ -791,16 +820,29 @@ def import_sheet(wb, sheet_name, *, apply_changes=False, schema_hint=None, skip_
             backup_db()
         conn = models.get_db()
         try:
+            touched = []   # (cid, pid, status) — 커밋 뒤 회차·생애주기 동기화
             for ri, parsed in rows_to_apply:
                 pid = _upsert_patient(conn, parsed, report)
-                if _consultation_exists(conn, pid, parsed):
-                    report["rows_duplicates"] += 1
+                existing_cid = _consultation_exists(conn, pid, parsed)
+                if existing_cid:
+                    if waiting_mode and _mark_waiting(conn, existing_cid, parsed):
+                        report["rows_updated"] += 1
+                        touched.append((existing_cid, pid, "입원대기"))
+                    else:
+                        report["rows_duplicates"] += 1
                     continue
-                _insert_consultation(conn, pid, parsed)
+                cid = _insert_consultation(conn, pid, parsed)
                 report["rows_imported"] += 1
+                if parsed.get("admission_status") in ("입원대기", "입원예정", "입원완료"):
+                    touched.append((cid, pid, parsed["admission_status"]))
             conn.commit()
         finally:
             conn.close()
+        # 입원 진행이 있는 행은 회차(admission_episodes)와 환자 생애주기 단계까지 맞춘다 —
+        # 웹 폼으로 저장할 때와 같은 결과가 되게. (직접 INSERT라 트리거가 없다)
+        for cid, pid, status in touched:
+            models.sync_admission_episode(cid)
+            _advance_stage(pid, status)
     else:
         # dry-run: 환자 매칭 후보만 시뮬
         conn = models.get_db()
@@ -899,6 +941,8 @@ def _insert_consultation(conn, pid, parsed):
         "disease_detail": parsed.get("disease_detail"),
         "admission_status": parsed.get("admission_status"),
         "actual_admission_date": parsed.get("actual_admission_date"),
+        "planned_admission_date": parsed.get("planned_admission_date"),
+        "wait_started_at": parsed.get("wait_started_at"),
         "recontact_memo": parsed.get("recontact_memo"),
         "referrer_person": parsed.get("referrer_person"),
         "import_source": "excel",
@@ -916,18 +960,62 @@ def _insert_consultation(conn, pid, parsed):
 
     cols = [k for k, v in fields.items() if v not in (None, "")]
     vals = [fields[k] for k in cols]
-    conn.execute(
+    cur = conn.execute(
         f"INSERT INTO consultations (patient_id, {','.join(cols)}) VALUES ({','.join(['?']*(len(cols)+1))})",
         [pid] + vals,
     )
+    return cur.lastrowid
 
 
 def _consultation_exists(conn, pid, parsed):
-    """동일 환자의 같은 날짜 상담을 재가져오기하지 않는다."""
-    return conn.execute(
-        "SELECT 1 FROM consultations WHERE patient_id=? AND consult_date=? LIMIT 1",
+    """동일 환자의 같은 날짜 상담을 재가져오기하지 않는다. 있으면 그 상담 id, 없으면 None."""
+    row = conn.execute(
+        "SELECT id FROM consultations WHERE patient_id=? AND consult_date=? ORDER BY id LIMIT 1",
         (pid, parsed.get("consult_date")),
-    ).fetchone() is not None
+    ).fetchone()
+    return row[0] if row else None
+
+
+def _mark_waiting(conn, cid, parsed):
+    """대기 명단 시트의 행이 이미 적재된 상담이면 그 상담을 입원대기로 올린다.
+    이미 입원완료·퇴원완료인 상담은 건드리지 않는다(명단이 오래된 경우). 바뀐 게 있으면 True."""
+    row = conn.execute("SELECT admission_status, wait_started_at, recontact_memo FROM consultations WHERE id=?",
+                       (cid,)).fetchone()
+    if not row:
+        return False
+    status = (row["admission_status"] or "").strip()
+    if status in ("입원완료", "퇴원완료"):
+        return False
+    sets, vals = [], []
+    if status != "입원대기":
+        sets.append("admission_status='입원대기'")
+    if parsed.get("wait_started_at") and not row["wait_started_at"]:
+        sets.append("wait_started_at=?"); vals.append(parsed["wait_started_at"])
+    if parsed.get("recontact_memo") and not row["recontact_memo"]:
+        sets.append("recontact_memo=?"); vals.append(parsed["recontact_memo"])
+    if not sets:
+        return False
+    sets.append("updated_at=CURRENT_TIMESTAMP")
+    conn.execute(f"UPDATE consultations SET {', '.join(sets)} WHERE id=?", vals + [cid])
+    return True
+
+
+# 입원 진행 → 환자 생애주기 단계 (app._STATUS_TO_STAGE와 같은 규칙). 앞 단계일 때만 전진시킨다.
+_STAGE_OF = {"입원대기": "입원대기", "입원예정": "입원대기", "입원완료": "입원"}
+_STAGE_ORDER = ["상담", "입원대기", "입원", "퇴원"]
+
+
+def _advance_stage(pid, status):
+    target = _STAGE_OF.get(status)
+    if not target:
+        return
+    p = models.get_patient(pid)
+    if not p:
+        return
+    cur = (p.get("lifecycle_stage") or "").strip()
+    if cur in _STAGE_ORDER and _STAGE_ORDER.index(cur) >= _STAGE_ORDER.index(target):
+        return
+    models.set_patient_stage(pid, target)
 
 
 def backup_db(label="excel_import"):
@@ -960,7 +1048,11 @@ def render_report(report, apply_mode=False):
     lines.append(f"=== {title} : {report['sheet']} (Schema {report['schema']}) ===")
     lines.append(f"  헤더 위치: 행 {report['header_row']}")
     lines.append(f"  데이터 행: {report['rows_total']}")
+    if report.get("waiting_mode"):
+        lines.append("  모드:      입원환자 대기 명단 — 전 행 입원대기, 기존 상담은 갱신")
     lines.append(f"  성공:      {report['rows_imported']}")
+    if report.get("rows_updated"):
+        lines.append(f"  갱신:      {report['rows_updated']}  (이미 있던 상담을 입원대기로)")
     lines.append(f"  스킵:      {report['rows_skipped']}")
     lines.append(f"  기존 중복: {report['rows_duplicates']}")
     lines.append(f"  환자 신규: {report['patients_new']}")
@@ -994,8 +1086,9 @@ def render_report(report, apply_mode=False):
 # 진입점
 # ─────────────────────────────────────────────────────────
 
-# --all 에서 제외할 시트 — 상담 내역이 아니라 별도 관리 목적의 표
-EXCLUDED_SHEETS = {"입원환자 대기 명단"}
+# --all 에서 제외할 시트 — 상담 내역이 아니라 별도 관리 목적의 표.
+# 대기 명단은 --sheet "입원환자 대기 명단"으로 따로 돌린다(WAITING_SHEETS 모드).
+EXCLUDED_SHEETS = set(WAITING_SHEETS)
 
 
 def main():

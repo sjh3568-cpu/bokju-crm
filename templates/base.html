@@ -94,6 +94,7 @@
                         <div class="nav-dropdown">
                             <a href="/admin/users" {% if request.path.startswith('/admin/users') or request.path.startswith('/admin/password-reset') %}class="active"{% endif %}><span class="nav-icon nav-icon-users">👥</span><span><b>사용자 관리</b><small>계정·권한·초기화 요청</small></span></a>
                             <a href="/admin/audit" {% if request.path.startswith('/admin/audit') %}class="active"{% endif %}><span class="nav-icon nav-icon-audit">🕘</span><span><b>이력 관리</b><small>조회·등록·변경 기록</small></span></a>
+                            <a href="/admin/import" {% if request.path.startswith('/admin/import') %}class="active"{% endif %}><span class="nav-icon nav-icon-import">📥</span><span><b>엑셀 적재</b><small>상담내역 시트 → 상담목록</small></span></a>
                         </div>
                     </div>
                     {% endif %}

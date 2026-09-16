@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}엑셀 적재 — 복주 상담실{% endblock %}
+{% block content %}
+{# 엑셀 적재 — 상담내역 스프레드시트(.xlsx)를 상담목록·입원 대기에 반영. 어드민 전용(/admin/import).
+   흐름: ① 파일 올리기(또는 이미 올라온 파일 고르기) → ② 시트 고르기 → ③ 미리보기(DB 변경 없음) → ④ 적재 #}
+<div class="page-header">
+    <h2>엑셀 적재</h2>
+    <div style="margin-left:auto; display:flex; gap:6px">
+        <a class="btn btn-secondary btn-sm" href="/consultations">상담목록</a>
+        <a class="btn btn-secondary btn-sm" href="/ward?tab=waiting">입원 대기</a>
+        <a class="btn btn-secondary btn-sm" href="/admin/audit?category=import">적재 이력</a>
+    </div>
+    <p class="hint">
+        구글 시트 "상담내역 종합"을 .xlsx로 내려받아 올린 뒤, 새로 생긴 달 시트만 골라 <b>미리보기 → 적재</b> 순서로 진행하세요.
+        같은 환자의 같은 날짜 상담은 중복으로 걸러지고, <b>입원환자 대기 명단</b> 시트는 전 행이 입원대기로 들어가며 이미 있던 상담은 입원대기로 갱신됩니다.
+        적재 직전 DB 백업이 자동으로 남습니다.
+    </p>
+</div>
+
+<div class="card">
+    <h3>① 파일</h3>
+    <form method="post" enctype="multipart/form-data" class="ei-upload">
+        <input type="hidden" name="action" value="upload">
+        <input type="file" name="xlsx" accept=".xlsx" required>
+        <button type="submit" class="btn btn-secondary btn-sm">올리기</button>
+        <span class="muted" style="font-size:.85em">저장 위치: {{ data_dir }}</span>
+    </form>
+    {% if files %}
+    <table class="tbl ei-files">
+        <thead><tr><th></th><th>파일</th><th>크기</th><th>올린 시각</th></tr></thead>
+        <tbody>
+        {% for f in files %}
+        <tr class="{% if f.name == selected_file %}on{% endif %}">
+            <td><a class="btn btn-xs {% if f.name == selected_file %}btn-primary{% else %}btn-secondary{% endif %}" href="/admin/import?file={{ f.name|urlencode }}">{% if f.name == selected_file %}선택됨{% else %}고르기{% endif %}</a></td>
+            <td>{{ f.name }}</td><td>{{ f.size_kb }} KB</td><td>{{ f.mtime }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="muted">올라온 .xlsx 파일이 없습니다.</p>
+    {% endif %}
+</div>
+
+{% if selected_file %}
+<div class="card">
+    <h3>② 시트 고르기 — {{ selected_file }}</h3>
+    <form method="post" id="ei-form">
+        <input type="hidden" name="file" value="{{ selected_file }}">
+        <div class="ei-sheets">
+            {% for s in sheets %}
+            <label class="ei-sheet {% if s.waiting %}waiting{% endif %}">
+                <input type="checkbox" name="sheets" value="{{ s.name }}" {% if s.name in selected_sheets %}checked{% endif %}>
+                <b>{{ s.name }}</b> <small>{{ s.rows }}행</small>
+                {% if s.waiting %}<small class="ei-tag">대기 명단 → 입원대기</small>{% endif %}
+            </label>
+            {% endfor %}
+        </div>
+        <div class="ei-actions">
+            <button type="submit" name="action" value="dryrun" class="btn btn-secondary">③ 미리보기 (DB 변경 없음)</button>
+            <button type="submit" name="action" value="apply" class="btn btn-primary"
+                    onclick="return confirm('고른 시트를 실제로 적재합니다. 미리보기 결과를 확인하셨나요?\n적재 직전 백업이 자동으로 남습니다.')">④ 적재</button>
+            <span class="muted" style="font-size:.85em">이미 적재한 달을 다시 고르면 대부분 중복으로 걸러지지만, 전체(--all) 재적재는 피하세요.</span>
+        </div>
+    </form>
+</div>
+{% endif %}
+
+{% if report_text %}
+<div class="card">
+    <h3>{% if mode == 'apply' %}적재 결과{% else %}미리보기 결과{% endif %}</h3>
+    {% if mode == 'apply' %}
+    <p class="hint">반영된 상담은 <a href="/consultations">상담목록</a>에서, 입원대기 환자는 <a href="/ward?tab=waiting">재원 관리 → 입원 대기</a>에서 바로 보입니다.</p>
+    {% else %}
+    <p class="hint">숫자와 이슈를 확인한 뒤 위의 <b>④ 적재</b>를 누르세요. "성공"은 새로 들어갈 건수, "기존 중복"은 이미 있어 건너뛸 건수입니다.</p>
+    {% endif %}
+    <pre class="ei-report">{{ report_text }}</pre>
+</div>
+{% endif %}
+
+<style>
+.ei-upload { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+.ei-files { width:auto; min-width:60%; }
+.ei-files tr.on td { background:#f0fdf4; }
+.ei-sheets { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+.ei-sheet { display:inline-flex; gap:6px; align-items:center; padding:6px 10px; border:1px solid var(--border); border-radius:8px; background:#fff; cursor:pointer; }
+.ei-sheet:has(input:checked) { border-color:var(--primary); background:#f0fdf4; }
+.ei-sheet.waiting { border-style:dashed; }
+.ei-tag { color:#92400e; background:#fef3c7; border-radius:999px; padding:1px 7px; }
+.ei-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.ei-report { background:#0f172a; color:#e2e8f0; padding:12px 14px; border-radius:8px; font-size:.82rem; line-height:1.45; overflow:auto; max-height:70vh; white-space:pre-wrap; }
+</style>
+{% endblock %}
