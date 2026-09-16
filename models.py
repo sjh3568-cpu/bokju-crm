@@ -3656,6 +3656,8 @@ def dashboard_summary(admission_lookup_from: str | None = None,
                c.primary_diagnosis, c.secondary_diagnosis,
                c.diseases, c.disease_detail, c.disease_onset, c.special_care,
                c.special_mrsa_note, c.special_vre_note, c.special_cre_note,
+               c.consciousness_main, c.activity_others, c.diet_types, c.wound_care, c.wound_site, c.tracheostomy_detail,
+               c.oxygen_lpm, c.special_vent_note, c.special_intubation_note, c.special_suction_note, c.special_tpn_note,
                c.referral_source_type, c.referral_source_detail, c.referrer_person, c.referrer_institution,
                c.admission_purpose, c.external_referral_note,
                c.source_hospital, c.current_location_type, c.current_location_name,
@@ -3695,6 +3697,8 @@ def dashboard_summary(admission_lookup_from: str | None = None,
                c.primary_diagnosis, c.secondary_diagnosis,
                c.diseases, c.disease_detail, c.disease_onset, c.special_care,
                c.special_mrsa_note, c.special_vre_note, c.special_cre_note,
+               c.consciousness_main, c.activity_others, c.diet_types, c.wound_care, c.wound_site, c.tracheostomy_detail,
+               c.oxygen_lpm, c.special_vent_note, c.special_intubation_note, c.special_suction_note, c.special_tpn_note,
                c.referral_source_type, c.referral_source_detail, c.referrer_person, c.referrer_institution,
                COALESCE(NULLIF(ae.return_room, ''), c.room_number) AS room_number,
                ae.id AS away_event_id, ae.event_type AS away_event_type,
@@ -4036,6 +4040,48 @@ def dashboard_summary(admission_lookup_from: str | None = None,
             main_disease = next(iter(_consult_disease_labels(item)), "")
         return main_disease
 
+    # 중증도 — 상담일지의 의식·활동·식사·상처·특수처치 항목에서 병동이 미리 준비할 것을 뽑아 칩으로 보여주고,
+    # 무게를 더해 높음(3 이상)/중간(1~2)으로 등급을 매긴다(2026-09-16 요청: 이 환자가 얼마나 중증한지 한눈에).
+    # 내성균(CRE·VRE…)은 admission_organisms 빨간 배지로 같은 칸에 놓고 여기서는 점수에만 더한다.
+    def _sev_list(item, key):
+        v = item.get(key) or []
+        return [v] if isinstance(v, str) else list(v)
+
+    def _sev_note(item, key):
+        return (item.get(key) or "").strip() if key else ""
+
+    _SEVERITY_RULES = (
+        # (칩, css 키, 무게, 판정, 메모 필드, 툴팁 이름) — 무게 3짜리 하나면 곧 '높음'
+        ("호흡기", "vent", 3, lambda it: "인공호흡기" in _sev_list(it, "special_care"), "special_vent_note", "인공호흡기"),
+        ("삽관", "intub", 3, lambda it: "기관내삽관" in _sev_list(it, "special_care"), "special_intubation_note", "기관내삽관"),
+        ("혼수", "coma", 3, lambda it: (it.get("consciousness_main") or "").strip() == "혼수", None, "의식 혼수"),
+        ("반혼수", "semicoma", 2, lambda it: (it.get("consciousness_main") or "").strip() == "반혼수", None, "의식 반혼수"),
+        ("기관절개", "trach", 2, lambda it: "기관절개" in _sev_list(it, "wound_care") or bool(_sev_note(it, "tracheostomy_detail")), "tracheostomy_detail", "기관절개"),
+        ("와상", "bed", 1, lambda it: "와상" in _sev_list(it, "activity_others"), None, "와상"),
+        ("콧줄", "ltube", 1, lambda it: "비강영양(L-tube)" in _sev_list(it, "diet_types"), None, "비강영양(L-tube)"),
+        ("PEG", "peg", 1, lambda it: "위루술(PEG)" in _sev_list(it, "diet_types"), None, "위루술(PEG)"),
+        ("흡인", "suction", 1, lambda it: "흡인" in _sev_list(it, "special_care"), "special_suction_note", "흡인"),
+        ("산소", "o2", 1, lambda it: "산소요법" in _sev_list(it, "special_care") or bool(_sev_note(it, "oxygen_lpm")), "oxygen_lpm", "산소요법"),
+        ("욕창", "sore", 1, lambda it: "욕창" in _sev_list(it, "wound_care"), "wound_site", "욕창"),
+        ("TPN", "tpn", 1, lambda it: "중심정맥영양" in _sev_list(it, "special_care"), "special_tpn_note", "중심정맥영양"),
+    )
+
+    def _admission_severity(item):
+        tags, score = [], 0
+        for chip, key, weight, hit, note_key, name in _SEVERITY_RULES:
+            if not hit(item):
+                continue
+            note = _sev_note(item, note_key)
+            tags.append({"key": key, "label": chip, "title": f"{name} — {note}" if note else name})
+            score += weight
+        organisms = item.get("admission_organisms") or []
+        score += len(organisms)
+        level, label = (("high", "높음") if score >= 3 else ("mid", "중간") if score else (None, ""))
+        parts = [f"내성균 {' · '.join(organisms)}"] if organisms else []
+        parts += [t["title"] for t in tags]
+        title = f"중증도 {label} — " + " · ".join(parts) if level else ""
+        return {"level": level, "label": label, "score": score, "tags": tags, "title": title}
+
     admission_schedule = []
     for r in admission_schedule_rows:
         d = _deserialize_consultation(dict(r))
@@ -4054,6 +4100,7 @@ def dashboard_summary(admission_lookup_from: str | None = None,
         d["admission_time"] = d.get("planned_admission_time") or ""
         d["admission_disease_summary"] = _admission_disease_summary(d)
         d["admission_organisms"] = _admission_organisms(d)
+        d["admission_severity"] = _admission_severity(d)
         # '모병원·외진' 칸 — 일반 입원은 어느 병원(또는 자택)에서 오는지. 병명은 왼쪽 병명 열에 있고
         # 입원목적은 84%가 '회복기재활'이라 회복기 배지와 겹쳐, 표에 없던 모병원을 올린다(2026-09-16 결정).
         # 입원목적·연계 메모는 툴팁으로.
@@ -4091,6 +4138,7 @@ def dashboard_summary(admission_lookup_from: str | None = None,
         d["admission_time"] = ""
         d["admission_disease_summary"] = _admission_disease_summary(d)
         d["admission_organisms"] = _admission_organisms(d)
+        d["admission_severity"] = _admission_severity(d)
         # 복귀 행 — 외진 종류 · 다녀온 병원 (같은 칸에서 모병원과 같은 결로 읽히게)
         away_label = {"모병원 외래치료": "모병원 진료"}.get(d.get("away_event_type") or "", d.get("away_event_type") or "외진")
         d["other_note"] = " · ".join(v for v in (away_label, (d.get("away_hospital") or "").strip()) if v)

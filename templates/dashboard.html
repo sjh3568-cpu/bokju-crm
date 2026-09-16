@@ -2,33 +2,40 @@
 {# 여러 명이 띄워놓고 보는 현황 화면 — 30초마다 자동 새로고침 #}
 {% block body_attrs %} data-autorefresh="30"{% endblock %}
 {% macro admission_table(rows, limit=None) %}
-{# 대시보드 반 칸(1920px 화면 ≈770px)에 두 줄 칸으로. 10칸:
-   일시(일자/시간) · 구분(예정/완료/복귀/복귀예정 — 색으로도 구분) · 환자(이름/성별·나이·보험약칭) · 병명 · 발병일
-   · 병실/회복기 · 상담 · 주치의(이름/약어) · 유입경로·소개자(경로(세부)/소개한 사람·기관) · 모병원·외진(일반 입원=모병원/자택, 복귀=외진 종류·병원) · 처리
-   2026-09-16 A안: 이 표가 대시보드의 중심이라 전체 폭(≈1,650px)을 쓴다. 병동별 재원은 위쪽 한 줄 띠로.
-   2026-09-15 사용자 요청: 보조 정보는 이름 아래 줄로 내려 열을 좁히고, 그만큼 병명·기타에 폭을 준다(전에는 20px로 눌려 안 보였다).
-   colgroup 폭 + table-layout:fixed 라 어떤 값이 와도 가로 스크롤이 생기지 않는다 — 병명·기타는 두 줄까지 접고 넘치면 말줄임(전체는 툴팁).
-   1500px 이하(반 칸 ≈515px)에서는 CSS가 발병일·기타 열을 접는다. #}
+{# 대시보드 전체 폭(1920px 화면 ≈1,650px)에 15칸 — 2026-09-16 요청 순서:
+   일시(일자/시간) · 구분(예정/완료/복귀/복귀예정 — 색으로도 구분) · 환자(이름 + 블랙·재입원 배지) · 성별/나이
+   · 모병원·외진(일반 입원=모병원/자택, 복귀=외진 종류·병원) · 주병명 · 중증도(높음/중간 등급 + 내성균 배지 + 호흡기·기관절개·와상·콧줄·흡인·산소·욕창 칩)
+   · 발병일 · 병실 · 회복기
+   · 주치의(이름/약어) · 상담자 · 보험(약칭 칩, 전체 이름은 툴팁) · 유입경로·소개자(경로(세부)/소개한 사람·기관) · 처리
+   2026-09-16 A안: 이 표가 대시보드의 중심이라 전체 폭을 쓴다. 병동별 재원은 위쪽 한 줄 띠로.
+   전에는 성별·나이·보험을 이름 아래 줄에, 회복기를 병실 아래 줄에 묶었는데(반 칸 시절) 같은 날 요청으로 각각 제 열로 풀었다 —
+   세로로 훑어 읽기 쉽고, 열 간격도 값 길이에 맞춰 잡을 수 있다.
+   colgroup 폭 + table-layout:fixed 라 어떤 값이 와도 가로 스크롤이 생기지 않는다 — 폭을 정하지 않은 주병명·유입경로가 남는 폭을 반씩 갖고
+   줄바꿈한다(전체 문구는 툴팁). 1500px 이하(노트북 ≈1,250px)에서는 폭·글자를 한 단계 줄이고, 1400px 이하에서는 발병일 열을 접는다(병명 툴팁에 있다). #}
 {% set ins_abbr = {'건강보험': '건보', '의료급여': '급여', '보호1종': '보호1', '보호2종': '보호2',
                    '차상위 1종': '차상1', '차상위 2종': '차상2', '장기요양': '장기', '암등록': '암'} %}
 <div class="tbl-wrap">
     <table class="tbl dash-table dash-adm-tbl"{% if limit %} data-limit="{{ limit }}"{% endif %}>
         <colgroup>
-            <col class="c-when"><col class="c-state"><col class="c-who"><col class="c-dx"><col class="c-onset">
-            <col class="c-room"><col class="c-cs"><col class="c-doc"><col class="c-ref"><col class="c-note"><col class="c-act">
+            <col class="c-when"><col class="c-state"><col class="c-who"><col class="c-sex"><col class="c-hosp"><col class="c-dx"><col class="c-sev"><col class="c-onset">
+            <col class="c-room"><col class="c-rh"><col class="c-doc"><col class="c-cs"><col class="c-ins"><col class="c-ref"><col class="c-act">
         </colgroup>
         <thead>
             <tr>
                 <th>일시</th>
                 <th>구분</th>
                 <th>환자</th>
-                <th>병명</th>
-                <th>발병일</th>
-                <th>병실·회복기</th>
-                <th>상담</th>
-                <th>주치의</th>
-                <th>유입경로·소개자</th>
+                <th>성별/나이</th>
                 <th>모병원·외진</th>
+                <th>주병명</th>
+                <th>중증도</th>
+                <th>발병일</th>
+                <th>병실</th>
+                <th>회복기</th>
+                <th>주치의</th>
+                <th>상담자</th>
+                <th>보험</th>
+                <th>유입경로·소개자</th>
                 <th>처리</th>
             </tr>
         </thead>
@@ -46,25 +53,29 @@
                     <span class="badge adm-kind adm-kind-{{ {'예정':'planned','완료':'done','복귀':'return','복귀예정':'return-planned'}[kind] }}"
                           title="{% if is_return %}외진 복귀{% if r.other_note %} — {{ r.other_note }}{% endif %}{% else %}신규 입원{% endif %} · {% if is_planned %}입원예정{% else %}입원완료{% endif %}">{{ kind }}</span>
                 </td>
-                <td class="dash-adm-who" title="{{ r.patient_name }} ({% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% else %}-{% endif %}/{% if r.patient_age is not none %}{{ r.patient_age }}세{% else %}-{% endif %}){% if r.insurance_type %} · {{ r.insurance_type }}{% endif %}">
-                    {% if r.blacklist %}<span class="bl-mark">블랙</span> {% endif %}<a href="/consult/{{ r.id }}">{{ r.patient_name }}</a>{% if r.readmission %}<span class="badge adm-readmit" title="재입원 — 이전 입원 {% for s in r.prior_stays %}{{ s.admitted_at|krdate_short }}~{{ s.discharged_at|krdate_short }}{% if s.room_number %} {{ s.room_number }}{% endif %}({{ s.source }}){% if not loop.last %} · {% endif %}{% endfor %}">재입원</span>{% endif %}<small>{% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% else %}-{% endif %}/{% if r.patient_age is not none %}{{ r.patient_age }}{% else %}-{% endif %}{% if r.insurance_type %} <i class="dash-ins">{{ ins_abbr.get(r.insurance_type, r.insurance_type[:2]) }}</i>{% endif %}</small>
+                <td class="dash-adm-who" title="{{ r.patient_name }}{% if r.blacklist %} · 블랙리스트{% endif %}{% if r.readmission %} · 재입원{% endif %}">
+                    {% if r.blacklist %}<span class="bl-mark">블랙</span> {% endif %}<a href="/consult/{{ r.id }}">{{ r.patient_name }}</a>{% if r.readmission %}<span class="badge adm-readmit" title="재입원 — 이전 입원 {% for s in r.prior_stays %}{{ s.admitted_at|krdate_short }}~{{ s.discharged_at|krdate_short }}{% if s.room_number %} {{ s.room_number }}{% endif %}({{ s.source }}){% if not loop.last %} · {% endif %}{% endfor %}">재입원</span>{% endif %}
                 </td>
-                <td class="dash-dx" title="{% if r.admission_organisms %}내성균 {{ r.admission_organisms|join(', ') }} · {% endif %}{{ r.admission_disease_summary }}{% if r.disease_onset %} · 발병 {{ r.disease_onset }}{% endif %}">{% for o in r.admission_organisms %}<span class="dash-org">{{ o }}</span>{% endfor %}{{ r.admission_disease_summary or '-' }}</td>
-                <td class="dash-adm-onset" title="발병일">{{ r.disease_onset|krdate_short if r.disease_onset else '-' }}</td>
-                <td class="dash-adm-room">
-                    <b>{{ r.room_number or '-' }}</b>
+                <td class="dash-adm-sex" title="{% if r.gender == 'M' %}남성{% elif r.gender == 'F' %}여성{% else %}성별 미기재{% endif %}{% if r.patient_age is not none %} · {{ r.patient_age }}세{% else %} · 나이 미기재{% endif %}">{% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% else %}-{% endif %}/{% if r.patient_age is not none %}{{ r.patient_age }}{% else %}-{% endif %}</td>
+                <td class="dash-note dash-adm-hosp" title="{{ r.other_note_title or r.other_note or '' }}">{{ r.other_note or '-' }}</td>
+                <td class="dash-dx" title="{{ r.admission_disease_summary }}{% if r.disease_onset %} · 발병 {{ r.disease_onset }}{% endif %}">{{ r.admission_disease_summary or '-' }}</td>
+                {% set sev = r.admission_severity %}
+                <td class="dash-adm-sev" title="{{ sev.title or '중증도 표시 항목 없음 — 상담일지의 의식·활동·식사·상처·특수처치에 해당 항목이 없다' }}">{% if sev.level %}<span class="sev sev-{{ sev.level }}">{{ sev.label }}</span>{% endif %}{% for o in r.admission_organisms %}<span class="dash-org">{{ o }}</span>{% endfor %}{% for t in sev.tags %}<i class="sev-tag sev-{{ t.key }}" title="{{ t.title }}">{{ t.label }}</i>{% endfor %}{% if not sev.level %}-{% endif %}</td>
+                <td class="dash-adm-onset" title="발병일{% if r.disease_onset %} {{ r.disease_onset }}{% endif %}">{{ r.disease_onset|krdate_short if r.disease_onset else '-' }}</td>
+                <td class="dash-adm-room" title="병실 {{ r.room_number or '미배정' }}"><b>{{ r.room_number or '-' }}</b></td>
+                <td class="dash-adm-rh" title="회복기 여부{% if rec.label %} — {{ rec.label }}{% if rec.source == 'auto' %} (* 병명·발병일로 자동 판정){% endif %}{% else %} — 판정 전{% endif %}">
                     {% if rec.label == '회복기' %}<span class="badge rh-yes">회복기{% if rec.source == 'auto' %}*{% endif %}</span>
                     {% elif rec.label == '비회복기' %}<span class="badge rh-no">비회복기{% if rec.source == 'auto' %}*{% endif %}</span>
                     {% elif rec.label %}<span class="badge badge-pending">{{ rec.label }}</span>
-                    {% else %}<small class="muted">-</small>{% endif %}
+                    {% else %}-{% endif %}
                 </td>
-                <td class="dash-adm-cs" title="상담사 {{ r.counselor or '-' }}">{{ r.counselor or '-' }}</td>
                 {% set doc_name, _sep, doc_code = (r.attending_doctor|doctor_short if r.attending_doctor else '').partition('(') %}
                 <td class="dash-adm-doc" title="주치의 {{ r.attending_doctor or '-' }}"><b>{{ doc_name or '-' }}</b>{% if doc_code %}<small>({{ doc_code }}</small>{% endif %}</td>
+                <td class="dash-adm-cs" title="상담사 {{ r.counselor or '-' }}">{{ r.counselor or '-' }}</td>
+                <td class="dash-adm-ins" title="보험유형 {{ r.insurance_type or '미기재' }}">{% if r.insurance_type %}<i class="dash-ins">{{ ins_abbr.get(r.insurance_type, r.insurance_type[:2]) }}</i>{% else %}-{% endif %}</td>
                 {% set ref_main = (r.referral_source_type|join('/') if r.referral_source_type else '') ~ (' (' ~ r.referral_source_detail|join(', ') ~ ')' if r.referral_source_detail else '') %}
                 {% set ref_who = [r.referrer_person, r.referrer_institution]|select|join(' · ') %}
                 <td class="dash-adm-ref" title="{{ ref_main }}{% if ref_who %} · 소개 {{ ref_who }}{% endif %}"><span class="ref-main">{{ ref_main or '-' }}</span>{% if ref_who %}<small>{{ ref_who }}</small>{% endif %}</td>
-                <td class="dash-note" title="{{ r.other_note_title or r.other_note or '' }}">{{ r.other_note or '-' }}</td>
                 <td class="dash-action-cell">
                     {% if is_return and is_planned %}
                     <select class="adm-action-sel" data-kind="return" data-aevent="{{ r.away_event_id }}" data-name="{{ r.patient_name }}" title="외진 복귀 처리 — 복귀(오늘 복귀 완료) / 취소(복귀 예정 취소). 날짜·병실 지정은 재원 관리 외진 중에서">

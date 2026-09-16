@@ -95,6 +95,29 @@ class DashboardWindowTests(unittest.TestCase):
         self.assertIn("<th>모병원·외진</th>", html)
         self.assertNotIn("뇌손상 / 뇌경색", html)    # 병명과 중복되던 옛 메모는 더 이상 표에 없다
 
+    def test_severity_column_collects_care_items_from_consultation(self):
+        """중증도 칸 — 상담일지의 의식·와상·콧줄·기관절개·욕창·흡인·산소·인공호흡기·내성균을 칩으로, 무게를 더해 높음/중간."""
+        with models.get_db() as conn:
+            conn.execute("""UPDATE consultations SET special_care='["인공호흡기","산소요법","CRE"]', wound_care='["욕창","기관절개"]',
+                            diet_types='["비강영양(L-tube)"]', activity_others='["와상"]', consciousness_main='반혼수', oxygen_lpm='3L'
+                            WHERE id=1""")
+            conn.execute("""UPDATE consultations SET wound_care='["욕창"]' WHERE id=3""")
+        rows = {r["patient_id"]: r for r in models.dashboard_summary(d(-1), d(1))["admission_selected"]}   # 조회 기간 행(어제 예정 포함)
+        sev = rows[1]["admission_severity"]
+        self.assertEqual(sev["level"], "high")
+        self.assertEqual([t["label"] for t in sev["tags"]], ["호흡기", "반혼수", "기관절개", "와상", "콧줄", "산소", "욕창"])
+        self.assertEqual(rows[1]["admission_organisms"], ["CRE"])
+        self.assertIn("산소요법 — 3L", sev["title"])
+        self.assertEqual(rows[3]["admission_severity"]["level"], "mid")     # 욕창 하나 = 중간
+        self.assertIsNone(rows[2]["admission_severity"]["level"])          # 해당 항목 없음
+        self.assertIsNone(rows[4]["admission_severity"]["level"])          # 복귀 행도 같은 구조
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertIn("<th>중증도</th>", html)
+        self.assertIn('class="sev sev-high">높음<', html)
+        self.assertIn('>콧줄</i>', html)
+        self.assertLess(html.index("<th>주병명</th>"), html.index("<th>중증도</th>"))
+        self.assertLess(html.index("<th>중증도</th>"), html.index("<th>발병일</th>"))
+
     def test_layout_a_ward_strip_and_referral_column(self):
         """A안: 병동별 재원은 KPI 아래 띠 + 전체 펼치기, 입원 환자 현황은 전체 폭에 유입경로·소개자 열."""
         html = self.client.get("/").get_data(as_text=True)
