@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}팩스·문서 자료함 · 복주 상담CRM{% endblock %}
+{% block content %}
+<div class="page-header doc-title"><div><span>OMNICHANNEL · FAX</span><h1>팩스·문서 자료함</h1><p>모병원에서 온 팩스가 NAS 폴더에 떨어지면 자동으로 읽어 <b>날짜_환자이름_주병명</b>으로 정리하고, 핵심 요약을 붙여 여기에 올립니다.</p></div>
+ {% if can_edit %}<div class="doc-head-actions"><button class="btn btn-secondary" type="button" id="doc-scan" {% if not fax.enabled %}disabled title="FAX_INBOX_DIR 미설정"{% endif %}>폴더 지금 확인</button><label class="btn btn-primary" for="doc-upload-file">＋ 파일 올리기<input type="file" id="doc-upload-file" accept=".pdf,.jpg,.jpeg,.png,.tif,.tiff" hidden></label></div>{% endif %}
+</div>
+
+<div class="doc-status card">
+ <div><b>수신 폴더</b><span>{% if fax.enabled %}{{ fax.inbox_dir }} {% if fax.inbox_exists %}<em class="ok">연결됨</em>{% else %}<em class="bad">폴더 없음</em>{% endif %}{% else %}<em class="bad">미설정</em> — .env에 FAX_INBOX_DIR을 넣으면 {{ fax.poll_seconds }}초마다 확인합니다{% endif %}</span></div>
+ <div><b>정리 폴더</b><span>{{ fax.archive_dir or '—' }}</span></div>
+ <div><b>AI 판독</b><span>{% if fax.ai %}<em class="ok">켜짐</em> · {{ fax.model }} · 앞 {{ fax.max_pages }}쪽까지{% else %}<em class="bad">꺼짐</em> — 파일명은 날짜_미확인_원본명으로만 정리{% endif %}</span></div>
+ <div><b>원본 보관</b><span>{% if fax.keep_days %}{{ fax.keep_days }}일 지나면 파일만 삭제(요약·판독값은 유지){% else %}자동 삭제 없음{% endif %} · 현재 {{ fax.files }}개 · {{ fax.mb }}MB</span></div>
+</div>
+
+<form class="doc-filter" method="get">
+ <div class="doc-tabs">
+  <a href="/documents{% if q %}?q={{ q }}{% endif %}" class="{% if not status %}active{% endif %}">전체 <b>{{ (counts.values()|sum) }}</b></a>
+  {% for key, label in STATUS_LABELS.items() %}<a href="/documents?status={{ key }}{% if q %}&q={{ q }}{% endif %}" class="{% if status==key %}active{% endif %} st-{{ key }}">{{ label }} <b>{{ counts.get(key, 0) }}</b></a>{% endfor %}
+ </div>
+ <input type="hidden" name="status" value="{{ status }}"><input name="q" value="{{ q }}" placeholder="환자 이름·병명·보낸 곳·파일명"><button class="btn btn-secondary">검색</button>
+</form>
+
+<section class="card doc-board">
+ <table class="tbl doc-tbl">
+  <thead><tr><th>날짜</th><th>환자</th><th>주병명</th><th>보낸 곳</th><th>요약</th><th>상태</th><th>연결</th><th></th></tr></thead>
+  <tbody>
+  {% for d in rows %}
+  <tr id="doc-{{ d.id }}" class="st-{{ d.status }}">
+   <td class="nowrap">{{ d.doc_date or (d.created_at or '')[:10] }}</td>
+   <td class="nowrap"><a href="/documents/{{ d.id }}"><b>{{ d.patient_name_ai or '미확인' }}</b></a>{% if d.ai.age or d.ai.sex %}<small>{{ d.ai.sex }}{% if d.ai.age %} {{ d.ai.age }}세{% endif %}</small>{% endif %}</td>
+   <td>{{ d.diagnosis_ai or '—' }}</td>
+   <td>{{ d.sender_ai or '—' }}</td>
+   <td class="doc-sum">{% if d.ai.summary %}{{ d.ai.summary[0] }}{% if d.ai.summary|length > 1 %} <small>외 {{ d.ai.summary|length - 1 }}</small>{% endif %}{% elif d.ai_error %}<span class="bad">{{ d.ai_error }}</span>{% else %}<span class="muted">{{ d.filename }}</span>{% endif %}
+       {% if d.ai.precautions %}<div class="doc-warn">⚠ {{ d.ai.precautions|join(', ') }}</div>{% endif %}</td>
+   <td class="nowrap"><span class="badge doc-badge-{{ d.status }}">{{ d.status_label }}</span>{% if d.ai.confidence=='low' %}<span class="badge badge-low" title="판독 신뢰도 낮음 — 원본 확인">신뢰도 낮음</span>{% endif %}</td>
+   <td class="nowrap">{% if d.patient_id %}<a href="/patients/{{ d.patient_id }}">{{ d.patient_name }}</a>{% if d.consultation_id %} · <a href="/consult/{{ d.consultation_id }}">상담</a>{% endif %}{% else %}<span class="muted">미연결</span>{% endif %}</td>
+   <td class="nowrap"><a class="btn btn-secondary btn-xs" href="/documents/{{ d.id }}">열기</a> {% if d.file_deleted_at %}<span class="muted-sm" title="보관기간 경과 — {{ d.file_deleted_at[:10] }} 원본 삭제">원본 삭제됨</span>{% else %}<a class="btn btn-secondary btn-xs" href="/documents/{{ d.id }}/file" target="_blank" rel="noopener">원본</a>{% if d.pages %} <small>{{ d.pages }}쪽</small>{% endif %}{% endif %}</td>
+  </tr>
+  {% else %}<tr><td colspan="8"><div class="empty">{% if fax.enabled %}아직 들어온 팩스가 없습니다. 수신 폴더에 PDF가 떨어지면 자동으로 올라옵니다.{% else %}수신 폴더가 설정되지 않았습니다. docs/FAX-NAS-PLAN.md의 순서대로 복합기·PC·NAS 폴더를 잡은 뒤 .env에 FAX_INBOX_DIR을 넣으세요.{% endif %}</div></td></tr>{% endfor %}
+  </tbody>
+ </table>
+</section>
+
+<style>
+.doc-title>div>span{color:#287247;font-size:.7rem;font-weight:900;letter-spacing:.12em}.doc-title p{color:#64748b;max-width:760px}.doc-head-actions{display:flex;gap:8px}
+.doc-status{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;padding:12px 18px;margin-bottom:12px;font-size:.8rem}.doc-status b{display:block;color:#64748b;font-size:.7rem;font-weight:800}.doc-status em{font-style:normal;font-weight:800}.doc-status .ok,.badge.ok{color:#166534}.doc-status .bad,.bad{color:#b91c1c}
+.doc-filter{display:flex;gap:8px;align-items:center;margin-bottom:12px}.doc-filter input[name=q]{flex:1;max-width:360px;padding:8px;border:1px solid #d5dfd9;border-radius:8px;background:#fff}
+.doc-tabs{display:flex;gap:6px}.doc-tabs a{padding:6px 12px;border:1px solid #dbe5df;border-radius:20px;background:#fff;color:#334155;text-decoration:none;font-size:.78rem;font-weight:750}.doc-tabs a.active{background:#14532d;border-color:#14532d;color:#fff}.doc-tabs a b{margin-left:4px}
+.doc-board{padding:0;overflow:auto}.doc-tbl{width:100%}.doc-tbl td,.doc-tbl th{padding:10px 12px;vertical-align:top;border-bottom:1px solid #edf1ef}.doc-tbl small{display:block;color:#64748b;font-size:.7rem}.doc-sum{max-width:420px;font-size:.82rem}.doc-warn{margin-top:3px;color:#b45309;font-size:.74rem;font-weight:750}
+.doc-badge-pending{background:#fef3c7;color:#92400e}.doc-badge-analyzed{background:#dbeafe;color:#1d4ed8}.doc-badge-done{background:#dcfce7;color:#166534}.badge-low{background:#fee2e2;color:#b91c1c;margin-left:4px}
+tr.st-done td{color:#64748b}
+@media(max-width:900px){.doc-status{grid-template-columns:1fr}.doc-filter{flex-wrap:wrap}}
+</style>
+{% endblock %}
+{% block scripts %}
+<script>
+(function(){
+  var scan=document.getElementById('doc-scan');
+  if(scan) scan.onclick=function(){
+    scan.disabled=true; scan.textContent='확인 중…';
+    fetch('/api/documents/scan',{method:'POST'}).then(r=>r.json()).then(j=>{
+      if(j.error){alert(j.error);scan.disabled=false;scan.textContent='폴더 지금 확인';return;}
+      location.reload();
+    }).catch(()=>{alert('스캔 요청 실패');scan.disabled=false;scan.textContent='폴더 지금 확인';});
+  };
+  var up=document.getElementById('doc-upload-file');
+  if(up) up.onchange=function(){
+    if(!up.files.length) return;
+    var fd=new FormData(); fd.append('file',up.files[0]);
+    var lbl=up.parentElement; lbl.textContent='올리는 중…';
+    fetch('/api/documents/upload',{method:'POST',body:fd}).then(r=>r.json()).then(j=>{
+      if(j.error){alert(j.error);location.reload();return;}
+      location.href='/documents/'+j.id;
+    }).catch(()=>{alert('업로드 실패');location.reload();});
+  };
+})();
+</script>
+{% endblock %}

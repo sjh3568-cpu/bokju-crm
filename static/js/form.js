@@ -775,7 +775,11 @@
             // 인박스에서 진입한 신규 상담 — comm_id 전달 → 등록 후 인바운드 자동 처리완료
             if (!isEdit) {
                 const commId = form.dataset.commId || '';
-                if (commId) url += `?comm_id=${encodeURIComponent(commId)}`;
+                const docId = form.dataset.docId || '';
+                const qs = [];
+                if (commId) qs.push(`comm_id=${encodeURIComponent(commId)}`);
+                if (docId) qs.push(`doc_id=${encodeURIComponent(docId)}`);   // 팩스 자료함 → 문서 연결·완료
+                if (qs.length) url += '?' + qs.join('&');
             }
             const res = await api.post(url, payload);
             const targetId = res.id || cid;

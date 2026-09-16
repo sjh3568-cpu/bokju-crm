@@ -203,6 +203,12 @@ def initialize():
         homepage_board.start_worker()
     except Exception:
         app.logger.exception("홈페이지 상담게시판 연동을 시작하지 못했습니다")
+    # 팩스 자료함 — NAS 수신 폴더(FAX_INBOX_DIR) 감시 → AI 판독 → 파일명 정리 → 인박스 카드
+    try:
+        import fax_inbox
+        fax_inbox.start_worker()
+    except Exception:
+        app.logger.exception("팩스 자료함 감시를 시작하지 못했습니다")
 
 
 @app.before_request
@@ -290,6 +296,10 @@ def _route_requirement(path: str, method: str):
 
     if path.startswith("/partners"):
         return "partners", (PERM_EDIT if is_write else PERM_VIEW)
+
+    # ── 팩스·문서 자료함 (상담 메뉴) — 열람은 조회, 판독·연결·업로드는 수정 ──
+    if path.startswith("/documents") or path.startswith("/api/documents"):
+        return "consult", (PERM_EDIT if is_write else PERM_VIEW)
 
     # ── 재원 관리 (환자·병동·생애주기·외진) ──
     if path.startswith("/ward") or path.startswith("/patients") \
@@ -581,6 +591,7 @@ def global_search():
         ('ward','재원 관리','재원 현황·입원 대기·회복기 관리','/ward'),
         ('ward','입원 대기','입원 예정·병상 대기 환자','/ward?tab=waiting'),
         ('partners','기관협력','협력기관·방문·연락·업무협약','/partners'),
+        ('consult','팩스·문서 자료함','모병원 팩스 원본·AI 요약·환자 연결','/documents'),
         ('sms','문자','문자 발송·템플릿·발송 이력','/sms'),
         ('stats','통계 대시보드','상담·입원 핵심 통계','/stats'),
         ('stats','모병원 분석','모병원별 상담의뢰·입원완료 현황','/stats/hospitals'),
@@ -1367,7 +1378,8 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
             0 if tone == "danger" else 15 if tone == "warn" else 45,
             age_days=int(hours // 24),
             action={"type": "comm", "id": m.get("id"),
-                    "homepage_idx": m.get("homepage_idx")} if m.get("id") else None,
+                    "homepage_idx": m.get("homepage_idx"),
+                    "channel": m.get("channel")} if m.get("id") else None,
             record=m,
         )
 
@@ -1929,8 +1941,8 @@ def _403(_):
 # ───────────────────── 화면·API Blueprint 등록 (views/) ─────────────────────
 # 분리된 라우트 모듈은 여기서(모든 공용 헬퍼·필터가 정의된 뒤) import·등록한다.
 # 각 모듈은 `from app import …`로 공용 헬퍼를 가져오므로, 이 블록보다 위에 있어야 하는 이름을 아래에 두지 말 것.
-from views import account, admin, consult, inbound, main, notices, sms_views, stats, todos, ward  # noqa: E402
-for _bp_module in (account, admin, consult, inbound, main, notices, sms_views, stats, todos, ward):
+from views import account, admin, consult, documents, inbound, main, notices, sms_views, stats, todos, ward  # noqa: E402
+for _bp_module in (account, admin, consult, documents, inbound, main, notices, sms_views, stats, todos, ward):
     app.register_blueprint(_bp_module.bp)
 # app.py에 남은 코드·테스트(tests/*.py의 main._x)가 쓰는 이름 재수출
 from views.main import _ward_status_strip  # noqa: E402,F401

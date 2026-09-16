@@ -555,6 +555,24 @@ def init_db():
     """)
 
     # ─── 마이그레이션: 종이 상담일지 항목 매핑 ───
+    # 팩스·문서 자료함 (fax_inbox.py, 2026-09-17) — NAS 폴더 감시 → AI 판독 → 파일명 정리
+    _ensure_columns(conn, "patient_documents", {
+        "sha256": "TEXT",              # 중복 등록 방지 (같은 팩스가 두 번 떨어져도 1건)
+        "original_name": "TEXT",       # 팩스 PC가 저장한 원래 파일명
+        "doc_date": "DATE",            # 문서 날짜(팩스 수신일) — 파일명 앞부분
+        "patient_name_ai": "TEXT",     # AI가 읽은 환자 이름(직원이 고칠 수 있음)
+        "diagnosis_ai": "TEXT",        # AI가 읽은 주병명 — 파일명 뒷부분
+        "sender_ai": "TEXT",           # 보낸 기관(모병원)
+        "ai_json": "TEXT",             # 구조화 판독 결과 전체(JSON)
+        "ai_attempts": "INTEGER DEFAULT 0",
+        "ai_error": "TEXT",
+        "analyzed_at": "DATETIME",
+        "comm_id": "INTEGER",          # 인박스 카드(communications.id)
+        "size_bytes": "INTEGER",
+        "pages": "INTEGER",            # PDF 총 쪽수(판독 시 확인)
+        "file_deleted_at": "DATETIME", # 보관기간 경과로 원본 삭제(요약·판독값은 남김)
+    })
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_doc_sha ON patient_documents(sha256)")
     _ensure_columns(conn, "patients", {
         "address_full": "TEXT",
         "family_info": "TEXT",
@@ -6457,7 +6475,7 @@ def update_communication(comm_id, **fields):
     valid = {k: v for k, v in fields.items()
              if k in ("status", "summary", "body", "follow_up_at",
                       "patient_id", "consultation_id", "channel",
-                      "assigned_user_id", "priority")}
+                      "assigned_user_id", "priority", "contact")}
     if not valid:
         return
     sets = [f"{k} = ?" for k in valid]
@@ -7585,9 +7603,9 @@ def patient_timeline(patient_id, viewer_id=None):
         items.append({
             "kind": "doc", "channel": r["source"] or "문서", "direction": "in",
             "date": ca[:10], "time": ca[11:16],
-            "title": "문서 — " + (r["filename"] or "첨부"),
+            "title": "문서 — " + (r["filename"] or "첨부") + (" (원본 삭제됨)" if r["file_deleted_at"] else ""),
             "detail": r["ai_summary"] or (r["ocr_text"] or "")[:300],
-            "ref": f"/documents#doc-{r['id']}",
+            "ref": f"/documents/{r['id']}",
             "del_kind": "doc", "del_id": r["id"], "status": r["status"],
         })
     conn.close()
@@ -7749,20 +7767,90 @@ def get_document(doc_id):
     return dict(row) if row else None
 
 
-def list_documents(limit: int = 200):
+def list_documents(limit: int = 200, *, status=None, q=None, source=None):
+    """자료함 목록 — status('pending'|'analyzed'|'done'), q(환자명·병명·보낸 곳·파일명), source('팩스' 등)."""
+    where, vals = [], []
+    if status:
+        where.append("d.status = ?"); vals.append(status)
+    if source:
+        where.append("d.source = ?"); vals.append(source)
+    if q:
+        like = f"%{q.strip()}%"
+        where.append("(d.patient_name_ai LIKE ? OR d.diagnosis_ai LIKE ? OR d.sender_ai LIKE ? "
+                     "OR d.filename LIKE ? OR p.name LIKE ? OR d.ai_summary LIKE ?)")
+        vals += [like] * 6
+    sql = ("SELECT d.*, p.name AS patient_name FROM patient_documents d "
+           "LEFT JOIN patients p ON p.id = d.patient_id ")
+    if where:
+        sql += "WHERE " + " AND ".join(where) + " "
+    sql += "ORDER BY COALESCE(d.doc_date, substr(d.created_at,1,10)) DESC, d.id DESC LIMIT ?"
     conn = get_db()
-    rows = conn.execute(
-        "SELECT d.*, p.name AS patient_name FROM patient_documents d "
-        "LEFT JOIN patients p ON p.id = d.patient_id "
-        "ORDER BY d.created_at DESC, d.id DESC LIMIT ?", (limit,)).fetchall()
+    rows = conn.execute(sql, vals + [limit]).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def document_by_sha(sha256: str):
+    if not sha256:
+        return None
+    conn = get_db()
+    row = conn.execute("SELECT * FROM patient_documents WHERE sha256 = ? LIMIT 1", (sha256,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def document_by_comm(comm_id: int):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM patient_documents WHERE comm_id = ? LIMIT 1", (comm_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def documents_retry_candidates(max_attempts: int = 3):
+    """AI 판독이 실패했거나 아직 안 된 문서 — 워커가 다음 주기에 다시 시도."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM patient_documents WHERE status = 'pending' AND analyzed_at IS NULL "
+        "AND COALESCE(ai_attempts, 0) < ? ORDER BY id", (max_attempts,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def documents_expired(before_date: str):
+    """보관기간이 지난 원본 — doc_date(없으면 등록일)가 before_date 이전이고 아직 파일이 남은 것."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM patient_documents WHERE file_deleted_at IS NULL AND stored_path IS NOT NULL "
+        "AND COALESCE(doc_date, substr(created_at,1,10)) < ? ORDER BY id", (before_date,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def documents_storage():
+    """자료함 상태 표시용 — 남아 있는 원본 수·용량."""
+    conn = get_db()
+    row = conn.execute(
+        "SELECT COUNT(*) AS n, COALESCE(SUM(size_bytes),0) AS bytes FROM patient_documents "
+        "WHERE file_deleted_at IS NULL AND stored_path IS NOT NULL").fetchone()
+    conn.close()
+    return {"files": row["n"], "bytes": row["bytes"]}
+
+
+def document_counts():
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT status, COUNT(*) AS n FROM patient_documents GROUP BY status").fetchall()
+    conn.close()
+    return {r["status"]: r["n"] for r in rows}
 
 
 def update_document(doc_id, **fields):
     valid = {k: v for k, v in fields.items()
              if k in ("patient_id", "consultation_id", "ocr_text", "ai_summary",
-                      "status", "source")}
+                      "status", "source", "filename", "stored_path", "mime",
+                      "sha256", "original_name", "doc_date", "patient_name_ai",
+                      "diagnosis_ai", "sender_ai", "ai_json", "ai_attempts",
+                      "ai_error", "analyzed_at", "comm_id", "size_bytes", "pages", "file_deleted_at")}
     if not valid:
         return
     sets = [f"{k} = ?" for k in valid]

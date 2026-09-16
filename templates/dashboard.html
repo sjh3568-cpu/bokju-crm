@@ -242,7 +242,8 @@
             <td class="ib-body" title="{{ m.body or m.summary }}">{{ m.summary or '' }}{% if m.summary and m.body %} — {% endif %}{{ m.body or '' }}</td>
             <td class="nowrap dash-action-cell">
                 {% if m.homepage_idx %}<button type="button" class="btn btn-primary btn-xs ib-hp-reply" data-comm="{{ m.id }}" title="홈페이지 상담게시판에 답변을 올리고 완료 처리">✎ 답변</button>{% endif %}
-                <a class="btn {{ 'btn-secondary' if m.homepage_idx else 'btn-primary' }} btn-xs" href="/consult/new?comm_id={{ m.id }}">상담 등록</a>
+                {% if m.channel == '팩스' %}<a class="btn btn-primary btn-xs" href="/documents?comm={{ m.id }}" title="팩스 원본과 AI 요약">📠 원본·요약</a>{% endif %}
+                <a class="btn {{ 'btn-secondary' if (m.homepage_idx or m.channel == '팩스') else 'btn-primary' }} btn-xs" href="/consult/new?comm_id={{ m.id }}">상담 등록</a>
                 <button class="btn btn-secondary btn-xs ib-missed" data-comm="{{ m.id }}" title="전화했는데 안 받음 — 재연락 시각을 잡아 두면 그때 다시 알림">부재중</button>
                 <button class="btn btn-secondary btn-xs ib-done" data-comm="{{ m.id }}" title="후속 처리 완료로 표시">완료</button>
                 <button class="btn btn-secondary btn-xs ib-del" data-comm="{{ m.id }}" title="삭제">삭제</button>
@@ -308,7 +309,8 @@
     <td class="nowrap dash-action-cell">
         {% if item.action and item.action.type == 'comm' %}
         {% if item.action.homepage_idx %}<button type="button" class="btn btn-primary btn-xs ib-hp-reply" data-comm="{{ item.action.id }}" title="홈페이지 상담게시판에 답변을 올리고 완료 처리">✎ 답변</button>{% endif %}
-        <a class="btn {{ 'btn-secondary' if item.action.homepage_idx else 'btn-primary' }} btn-xs" href="/consult/new?comm_id={{ item.action.id }}">상담 등록</a>
+        {% if item.action.channel == '팩스' %}<a class="btn btn-primary btn-xs" href="/documents?comm={{ item.action.id }}" title="팩스 원본과 AI 요약">📠 원본·요약</a>{% endif %}
+        <a class="btn {{ 'btn-secondary' if (item.action.homepage_idx or item.action.channel == '팩스') else 'btn-primary' }} btn-xs" href="/consult/new?comm_id={{ item.action.id }}">상담 등록</a>
         <button type="button" class="btn btn-secondary btn-xs ib-missed" data-comm="{{ item.action.id }}" title="전화했는데 안 받음 — 재연락 시각을 잡아 두면 그때 다시 알림">부재중</button>
         <button type="button" class="btn btn-secondary btn-xs ib-done" data-comm="{{ item.action.id }}" title="후속 처리 완료로 표시">완료</button>
         {% elif item.action and item.action.type == 'callback' %}

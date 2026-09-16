@@ -32,7 +32,7 @@
       <select name="priority" aria-label="중요도"><option value="normal" {% if m.priority=='normal' or not m.priority %}selected{% endif %}>일반</option><option value="high" {% if m.priority=='high' %}selected{% endif %}>중요</option><option value="urgent" {% if m.priority=='urgent' %}selected{% endif %}>긴급</option></select>
       <input type="date" name="follow_up_at" value="{{ m.follow_up_at or '' }}" aria-label="콜백 예정일"><button class="btn btn-secondary btn-sm">저장</button>
     </form>
-    <div>{% if m.patient_id %}<a class="btn btn-secondary btn-sm" href="/patients/{{ m.patient_id }}">환자 타임라인</a>{% endif %}<a class="btn btn-primary btn-sm" href="/consult/new?comm_id={{ m.id }}">상담 등록·연결</a></div>
+    <div>{% if m.patient_id %}<a class="btn btn-secondary btn-sm" href="/patients/{{ m.patient_id }}">환자 타임라인</a>{% endif %}{% if m.channel == '팩스' %}<a class="btn btn-secondary btn-sm" href="/documents?comm={{ m.id }}">📠 원본·요약</a>{% endif %}<a class="btn btn-primary btn-sm" href="/consult/new?comm_id={{ m.id }}">상담 등록·연결</a></div>
    </div>
   </article>
  {% else %}<div class="empty">조건에 맞는 문의가 없습니다.</div>{% endfor %}

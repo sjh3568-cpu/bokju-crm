@@ -18,6 +18,9 @@ services:
       # DB — 반드시 NAS 로컬 볼륨. SMB 공유폴더를 마운트하면 WAL이 깨진다.
       - ./data:/data
       - ./backups:/backups
+      # 팩스 자료함 — 수신 담당 PC가 PDF를 떨어뜨리는 공유폴더. 읽고 이름을 바꿔 옮기므로 rw.
+      # 공유폴더 이름이 정해지면 주석을 풀고 .env에 FAX_INBOX_DIR=/fax/수신 을 넣는다.
+      # - /volume1/팩스:/fax
     env_file:
       - .env
     environment:

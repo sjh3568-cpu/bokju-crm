@@ -62,6 +62,7 @@ views/             화면·API 라우트 Blueprint (2026-09-15 app.py 7,400줄�
   ward.py          재원 관리·생애주기·입원 확정·호실·태그·블랙리스트                     bp "ward"
   inbound.py       옴니채널 인박스·홈페이지 게시판 답변·외진 이벤트 API·webhook          bp "inbound"
   sms_views.py     문자 발송                                                          bp "sms"
+  documents.py     팩스·문서 자료함 (/documents, /api/documents/*)                        bp "documents"
                    규칙: 공용 헬퍼는 app.py에 두고 `from app import …`(app.py가 맨 아래에서 views를 import하므로 순환 없음).
                    views 모듈이 서로 쓰는 이름은 `from views.x import`(main→ward, consult→inbound·todos 방향만; 역방향 금지).
                    app.py에 남은 코드나 tests가 쓰는 views 이름은 app.py 맨 아래 재수출 블록에 추가.
@@ -78,6 +79,7 @@ serve.py           운영 진입점 — waitress WSGI (개발용 app.run 대체)
 backup.py          자동 백업 — 기동 시 1회 + 매일 03시, 보관기간 경과분 정리
 homepage_inbox.py  홈페이지 문의 메일 브릿지 — IMAP 폴링 → communications(웹문의/in) 자동등록
 homepage_board.py  홈페이지 상담게시판(bokjurh.co.kr) 연동 — 공개 목록 폴링 → 인박스, 인박스 '답변' → 관리자 화면에 답변 등록
+fax_inbox.py       팩스 자료함 — NAS 수신 폴더 감시 → Claude 판독 → '날짜_이름_주병명' 정리 → patient_documents + 인박스(팩스)
 Dockerfile         NAS Container Manager 배포용 이미지
 docker-compose.yml NAS 프로젝트 정의 (볼륨·재시작·헬스체크)
 bokju.db           SQLite (gitignore)
@@ -314,7 +316,19 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
   시각 전엔 배지·알림·액션큐에서 빠지고(카드엔 🔁 재연락 배지로 남음), 시각이 되면
   `open_inbound_count`·`/api/inbound/alerts`(id `cb<id>@<시각>`으로 재통지, bucket 재연락)·
   액션큐(종류 '재연락', meta '부재 N회')에 다시 올라온다. 회귀: tests/test_inbound_missed.py.
-- 인프라 의존 미구현: STT 자동 상담일지(NAS·음성캡처 확정 필요), 팩스 OCR, 인박스에서 카톡/문자 직접 회신(아웃바운드).
+- **팩스·문서 자료함 (2026-09-17)** ([fax_inbox.py](fax_inbox.py) · [views/documents.py](views/documents.py) · `/documents`) — 모병원 팩스가
+  NAS 공유폴더(`FAX_INBOX_DIR`)에 PDF로 떨어지면 60초 워커가 감지(해시 중복 제외, 15초 미만 파일은 복사 중으로 대기) →
+  `llm.analyze_document`(Claude, PDF/이미지 통째로 + 구조화 출력 `FAX_SCHEMA`)가 환자 이름·주병명·보낸 곳·핵심 요약·주의사항을 읽음 →
+  `FAX_ARCHIVE_DIR/YYYY-MM-DD_이름_주병명.pdf`로 **이동**(삭제 없음; 못 읽으면 `날짜_미확인_원본명`) → `patient_documents`(source=팩스,
+  status pending→analyzed→done) + `communications`(채널 팩스) → 대시보드 처리 큐·알림에 '📠 원본·요약' 링크. 자료함 상세는 PDF 뷰어 +
+  AI 요약 + 판독값 수정→파일명 재정리 + 동명 환자 연결 + '상담 등록'(`/consult/new?doc_id=` → 이름·주병명·모병원·기관연계 prefill,
+  저장 시 문서·카드 자동 완료). 파일 직접 올리기도 됨. AI 실패는 3회 재시도 후 [다시 판독]. `.tif`는 판독 불가(PC에서 PDF 저장으로).
+  판독은 앞 `FAX_AI_MAX_PAGES`(20)쪽만 보낸다(pypdf로 자름, 크기 한도는 자른 뒤 적용, 파일은 통째로 보관 — 보통 10~20장, 책 두께로도 옴).
+  원본은 `FAX_KEEP_DAYS`(**10일**, 사용자 결정) 지나면 매일 04시
+  파일만 삭제(`purge_expired`, 수신·정리 폴더 안 경로만), 판독값·요약·연결은 DB에 남아 `file_deleted_at`로 표시 — 자료함은 사본·상담 참고용이고
+  정식 보존은 모병원·EMR 몫. **주의: 팩스 문서 자체(환자 식별정보 포함)가 Claude API로 나간다** — `FAX_AI_ENABLED=0`이면 감지·자료함·수동 연결만.
+  권한 consult(조회=열람, 수정=판독·연결·업로드), 감사 `*_document`. 현장 설정 순서·확인 항목은 docs/FAX-NAS-PLAN.md. 회귀 tests/test_fax_inbox.py.
+- 인프라 의존 미구현: STT 자동 상담일지(NAS·음성캡처 확정 필요), 인박스에서 카톡/문자 직접 회신(아웃바운드). 팩스는 CRM 쪽 완료, 현장(복합기·PC·NAS 폴더) 설정 대기.
 
 ## 2026-05-23 상담일지 폼 개선 5종 (사용자 명시 요청)
 

@@ -44,6 +44,9 @@
                     <a href="/consult/new" {% if request.path == '/consult/new' %}class="active"{% endif %}><span class="nav-icon nav-icon-new">✍️</span>새 상담</a>
                     {% endif %}
                     {% if P.get('consult',0) >= 1 %}
+                    <a href="/documents" {% if request.path.startswith('/documents') %}class="active"{% endif %}><span class="nav-icon">📠</span>팩스·문서</a>
+                    {% endif %}
+                    {% if P.get('consult',0) >= 1 %}
                     <div class="nav-menu-group {% if request.path.startswith('/consultations') %}active{% endif %}">
                         <a href="/consultations" {% if request.path.startswith('/consultations') %}class="active"{% endif %}><span class="nav-icon nav-icon-list">📋</span>상담목록</a>
                         <button type="button" class="nav-menu-toggle" aria-label="상담목록 하위 메뉴" aria-expanded="false">▾</button>

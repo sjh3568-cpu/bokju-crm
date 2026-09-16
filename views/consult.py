@@ -460,6 +460,40 @@ def consult_new():
                     "guardian_phone": contact if contact else "",
                 }
 
+    # 팩스 자료함에서 '상담 등록' — AI가 읽은 이름·주병명·모병원을 미리 채운다 (doc_id)
+    fax_doc = None
+    try:
+        doc_id = int(request.args.get("doc_id") or 0)
+    except (ValueError, TypeError):
+        doc_id = 0
+    if doc_id and not patient:
+        fax_doc = models.get_document(doc_id)
+        if fax_doc and (fax_doc.get("status") or "") != "done":
+            import json as _json
+            try:
+                ai = _json.loads(fax_doc.get("ai_json") or "{}")
+            except ValueError:
+                ai = {}
+            if fax_doc.get("comm_id") and not inbox_comm:
+                inbox_comm = models.get_communication(fax_doc["comm_id"])
+            prefill_consult = dict(prefill_consult or {})
+            prefill_consult.setdefault("consult_channel", "전화상담")
+            prefill_consult.setdefault("referral_source_detail", ["기관연계"])
+            if fax_doc.get("sender_ai"):
+                prefill_consult["current_location_type"] = "입원중"
+                prefill_consult["current_location_name"] = fax_doc["sender_ai"]
+                prefill_consult["referrer_institution"] = fax_doc["sender_ai"]
+            if fax_doc.get("diagnosis_ai"):
+                prefill_consult["diagnosis"] = fax_doc["diagnosis_ai"]
+            if fax_doc.get("patient_id"):
+                patient = models.get_patient(fax_doc["patient_id"])
+            else:
+                patient = {"id": None, "name": fax_doc.get("patient_name_ai") or "",
+                           "gender": (ai.get("sex") or "") if ai.get("sex") in ("남", "여") else "",
+                           "guardian_phone": ""}
+        else:
+            fax_doc = None
+
     # 미니카드 '새 상담 등록' / 환자 상세 '재상담' 진입 — 환자 정보 + 가장 최근 상담 일부 필드 prefill
     if not patient:
         try:
@@ -485,7 +519,7 @@ def consult_new():
                     prefill_consult = {k: last.get(k) for k in SAFE_PREFILL if last.get(k)}
 
     return render_template("consult_form.html", consultation=None, patient=patient,
-                           inbox_comm=inbox_comm, prefill=prefill_consult,
+                           inbox_comm=inbox_comm, prefill=prefill_consult, fax_doc=fax_doc,
                            top_hospitals=models.top_source_hospitals())
 
 @bp.route("/consult/<int:cid>")
@@ -916,6 +950,21 @@ def api_consult_create():
             user_id=g.user["id"], username=g.user["username"],
             action="close_communication", target_type="communication",
             target_id=comm_id, detail=f"→ consult #{cid}", ip=request.remote_addr,
+        )
+    # 팩스 자료함에서 등록 → 문서를 상담·환자에 연결하고 처리 완료
+    try:
+        doc_id = int(request.args.get("doc_id") or 0)
+    except (ValueError, TypeError):
+        doc_id = 0
+    if doc_id and models.get_document(doc_id):
+        models.update_document(doc_id, status="done", consultation_id=cid, patient_id=pid)
+        fdoc = models.get_document(doc_id)
+        if fdoc.get("comm_id"):
+            models.update_communication(fdoc["comm_id"], status="done", consultation_id=cid, patient_id=pid)
+        models.log_audit(
+            user_id=g.user["id"], username=g.user["username"],
+            action="link_document", target_type="document",
+            target_id=doc_id, detail=f"→ consult #{cid}", ip=request.remote_addr,
         )
     models.log_audit(
         user_id=g.user["id"], username=g.user["username"],

@@ -211,7 +211,8 @@ def summarize_monthly(data: dict) -> dict:
     return _post_json(payload, api_key)
 
 
-def _post_json(payload: dict, api_key: str) -> dict:
+def _post_json(payload: dict, api_key: str, *, extra_headers: dict | None = None,
+               read_timeout: int = 90) -> dict:
     """구조화 출력 호출 — 스키마가 보장되므로 방어적 파싱 불필요.
 
     스트리밍으로 받는다. max_tokens가 크고 사고 시간이 길어 단일 응답을 기다리면
@@ -222,13 +223,15 @@ def _post_json(payload: dict, api_key: str) -> dict:
         "anthropic-version": "2023-06-01",
         "content-type": "application/json",
     }
+    if extra_headers:
+        headers.update(extra_headers)
     body = dict(payload, stream=True)
 
     last_err: Exception | None = None
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             with requests.post(CLAUDE_URL, headers=headers, json=body,
-                               stream=True, timeout=(10, 90)) as r:
+                               stream=True, timeout=(10, read_timeout)) as r:
                 if r.status_code == 429:
                     time.sleep(RETRY_DELAY * attempt)
                     continue
@@ -401,3 +404,144 @@ def _parse_json_object(text: str) -> dict:
     except (json.JSONDecodeError, ValueError):
         logger.warning("LLM JSON 파싱 실패")
         return {}
+
+
+# ───────────────────── 팩스·문서 판독 (fax_inbox.py) ─────────────────────
+# 모병원에서 온 팩스(진료의뢰서·소견서·검사결과 등) PDF/이미지를 통째로 보내
+# 환자 이름·주병명·보낸 곳·핵심 요약을 구조화해 받는다. 파일명 정리와 자료함 카드에 쓴다.
+# 주의: 이 경로는 환자 식별정보가 담긴 문서 자체가 API로 나간다(월간 보고서와 다름).
+# FAX_AI_ENABLED=0 이면 호출하지 않는다.
+
+FAX_MODEL = "claude-opus-5"
+FAX_MAX_BYTES = 25 * 1024 * 1024          # API 요청 32MB 한도 아래
+FAX_MEDIA_TYPES = {
+    ".pdf": ("document", "application/pdf"),
+    ".jpg": ("image", "image/jpeg"), ".jpeg": ("image", "image/jpeg"),
+    ".png": ("image", "image/png"), ".gif": ("image", "image/gif"), ".webp": ("image", "image/webp"),
+}
+
+FAX_SYSTEM_PROMPT = """당신은 복주회복병원(입원 전용 재활병원) 상담실의 문서 판독 보조 AI입니다.
+모병원(급성기 병원)에서 팩스로 보내온 환자 관련 서류(진료의뢰서·소견서·진단서·검사결과·간호정보조사지 등)를 읽고,
+상담사가 파일을 열지 않아도 상황을 파악할 수 있도록 핵심만 구조화합니다.
+
+규칙:
+1. 문서에 **실제로 적힌 내용만** 씁니다. 추측·보완·창작 금지. 못 읽거나 없는 항목은 빈 값으로 둡니다.
+2. 이름·생년월일·병명은 문서 표기 그대로 옮깁니다(오타 교정 금지). 병명은 한글 진단명이 있으면 한글, 없으면 영문·ICD 그대로.
+3. 주병명(main_diagnosis)은 이번 전원·의뢰의 **주된 사유가 되는 진단 하나**를 15자 이내로. 파일명에 들어가므로 특수문자 없이.
+4. summary는 상담사가 30초 안에 읽을 3~6개 항목. 각 항목은 한 문장. "왜 보냈나 → 현재 상태 → 주의할 점" 순서.
+5. 의료법 위반 표현(효과 단정·완치 보장) 금지. 재활 가능성·예후를 문서에 없는데 평가하지 마세요.
+6. 팩스 화질이 낮아 읽기 어려운 부분은 confidence를 낮추고 notes에 무엇을 못 읽었는지 적습니다."""
+
+FAX_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "document_type": {"type": "string",
+                          "description": "서류 종류: 진료의뢰서 / 소견서 / 진단서 / 검사결과 / 간호정보조사지 / 투약기록 / 기타"},
+        "patient_name": {"type": "string", "description": "환자 이름(문서 표기 그대로). 없으면 빈 문자열"},
+        "birth_date": {"type": "string", "description": "생년월일 YYYY-MM-DD. 모르면 빈 문자열"},
+        "age": {"type": "string", "description": "나이(숫자만). 모르면 빈 문자열"},
+        "sex": {"type": "string", "description": "남 / 여 / 빈 문자열"},
+        "main_diagnosis": {"type": "string", "description": "주병명 1개, 15자 이내, 특수문자 없이"},
+        "diagnoses": {"type": "array", "items": {"type": "string"}, "description": "문서에 적힌 진단명 전체(주병명 포함)"},
+        "sender_hospital": {"type": "string", "description": "보낸 병원(모병원) 이름. 없으면 빈 문자열"},
+        "sender_department": {"type": "string", "description": "보낸 진료과·부서"},
+        "sender_contact": {"type": "string", "description": "회신 전화·팩스 번호"},
+        "doc_date": {"type": "string", "description": "문서 작성일 또는 팩스 수신일 YYYY-MM-DD. 모르면 빈 문자열"},
+        "referral_reason": {"type": "string", "description": "의뢰·전원 사유 한 문장"},
+        "current_status": {"type": "string", "description": "의식·마비·보행·식이·배뇨 등 현재 상태 요약 1~2문장"},
+        "precautions": {"type": "array", "items": {"type": "string"},
+                        "description": "주의사항: 감염(MRSA 등)·튜브(L-tube, 기관절개)·욕창·DNR·알레르기·격리 등. 없으면 빈 배열"},
+        "medications": {"type": "array", "items": {"type": "string"}, "description": "주요 투약(있으면)"},
+        "summary": {"type": "array", "items": {"type": "string"}, "description": "핵심 요약 3~6항목"},
+        "confidence": {"type": "string", "description": "high / medium / low — 판독 신뢰도"},
+        "notes": {"type": "string", "description": "못 읽은 부분·판단이 필요한 점. 없으면 빈 문자열"},
+    },
+    "required": ["document_type", "patient_name", "birth_date", "age", "sex", "main_diagnosis",
+                 "diagnoses", "sender_hospital", "sender_department", "sender_contact", "doc_date",
+                 "referral_reason", "current_status", "precautions", "medications", "summary",
+                 "confidence", "notes"],
+    "additionalProperties": False,
+}
+
+
+def fax_ai_enabled() -> bool:
+    return bool(os.getenv("ANTHROPIC_API_KEY")) and os.getenv("FAX_AI_ENABLED", "1") == "1"
+
+
+def fax_max_pages() -> int:
+    try:
+        return max(1, int(os.getenv("FAX_AI_MAX_PAGES", "20")))
+    except ValueError:
+        return 20
+
+
+def _pdf_head(data: bytes, max_pages: int) -> tuple[bytes, int, int]:
+    """PDF 앞 max_pages쪽만 남긴 바이트, (총 쪽수, 보낸 쪽수). pypdf가 없거나 못 읽으면 원본 그대로."""
+    try:
+        import io
+        from pypdf import PdfReader, PdfWriter
+        reader = PdfReader(io.BytesIO(data))
+        total = len(reader.pages)
+        if total <= max_pages:
+            return data, total, total
+        writer = PdfWriter()
+        for i in range(max_pages):
+            writer.add_page(reader.pages[i])
+        out = io.BytesIO()
+        writer.write(out)
+        return out.getvalue(), total, max_pages
+    except Exception as e:                       # pypdf 미설치·암호화·손상 — 통째로 보낸다
+        logger.warning("PDF 쪽 자르기 실패, 전체를 보냅니다: %s", e)
+        return data, 0, 0
+
+
+def analyze_document(path: str, *, hint: str = "") -> dict:
+    """팩스 PDF/이미지 1개 → FAX_SCHEMA dict (+ _pages_total/_pages_sent). 실패 시 RuntimeError.
+
+    보통 팩스는 10~20쪽이라 기본 FAX_AI_MAX_PAGES=20이면 통째로 읽고, 책 두께(수백 쪽)로 오면 앞 20쪽만
+    보낸다 — 환자·진단·의뢰 사유는 앞장에 있고, 뒷장까지 보내면 시간·비용만 커진다. 파일 자체는 통째로 보관된다.
+    """
+    import base64
+    from pathlib import Path
+
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise RuntimeError("ANTHROPIC_API_KEY 미설정")
+    p = Path(path)
+    kind = FAX_MEDIA_TYPES.get(p.suffix.lower())
+    if not kind:
+        raise RuntimeError(f"판독 불가 형식: {p.suffix}")
+    block_type, media_type = kind
+    raw = p.read_bytes()
+    pages_total = pages_sent = 0
+    if block_type == "document":
+        raw, pages_total, pages_sent = _pdf_head(raw, fax_max_pages())
+    # 크기 검사는 앞쪽만 잘라낸 뒤에 — 책 두께 팩스(수백 쪽)도 앞 N쪽은 판독된다
+    if len(raw) > FAX_MAX_BYTES:
+        raise RuntimeError(f"보낼 분량이 너무 큽니다 ({len(raw) // (1024 * 1024)}MB) — FAX_AI_MAX_PAGES를 줄이세요")
+    data = base64.standard_b64encode(raw).decode("ascii")
+    page_note = ""
+    if pages_total and pages_sent < pages_total:
+        page_note = (f"이 문서는 총 {pages_total}쪽이지만 앞 {pages_sent}쪽만 첨부했습니다. "
+                     f"뒷부분(검사·투약 상세 등)은 못 본 것이므로 notes에 그 사실을 적으세요.\n")
+    user_text = (f"오늘: {date.today().isoformat()}\n"
+                 f"파일명: {p.name}\n" + (f"참고: {hint}\n" if hint else "") + page_note +
+                 "위 문서를 읽고 스키마대로 정리하세요.")
+    payload = {
+        "model": os.getenv("CLAUDE_MODEL_FAX", FAX_MODEL),
+        "max_tokens": 8000,
+        "system": FAX_SYSTEM_PROMPT,
+        "messages": [{"role": "user", "content": [
+            {"type": block_type, "source": {"type": "base64", "media_type": media_type, "data": data}},
+            {"type": "text", "text": user_text},
+        ]}],
+        "output_config": {"effort": "medium", "format": {"type": "json_schema", "schema": FAX_SCHEMA}},
+        # 안전 분류기가 거절하면 같은 요청을 대체 모델로 이어 받는다(서버측 폴백).
+        "fallbacks": "default",
+    }
+    result = _post_json(payload, api_key,
+                        extra_headers={"anthropic-beta": "server-side-fallback-2026-07-01"},
+                        read_timeout=180)
+    result["_pages_total"] = pages_total
+    result["_pages_sent"] = pages_sent
+    return result

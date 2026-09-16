@@ -659,7 +659,14 @@
 </script>
 {% endif %}
 
-{% if inbox_comm %}
+{% if fax_doc %}
+<div class="inbox-banner">
+    <strong>📠 팩스 자료함에서 상담 등록 중</strong>
+    <a href="/documents/{{ fax_doc.id }}" target="_blank" rel="noopener">{{ fax_doc.filename }}</a>
+    {% if fax_doc.ai_summary %}<div class="inbox-banner-body" style="white-space:pre-line">{{ fax_doc.ai_summary }}</div>{% endif %}
+    <div class="muted-sm">AI가 읽은 이름·주병명·모병원을 미리 채웠습니다. 원본과 대조해 고친 뒤 저장하면 문서가 이 상담에 연결됩니다.</div>
+</div>
+{% elif inbox_comm %}
 <div class="inbox-banner">
     <strong>📨 인박스 인바운드에서 상담 등록 중</strong>
     <span class="ib-ch">{{ inbox_comm.channel or '?' }}</span>
@@ -701,7 +708,8 @@
       data-edit="{{ '1' if is_edit else '0' }}"
       data-cid="{{ consultation.id if is_edit else '' }}"
       data-user-id="{{ current_user.id }}"
-      data-comm-id="{{ inbox_comm.id if inbox_comm else '' }}">
+      data-comm-id="{{ inbox_comm.id if inbox_comm else '' }}"
+      data-doc-id="{{ fax_doc.id if fax_doc else '' }}">
 
 {% if not is_edit %}
 <!-- ───────── AI 통화 메모 → 상담일지 자동 채움 ───────── -->
@@ -1371,7 +1379,7 @@ input.room-invalid { border-color:#ef4444 !important; box-shadow:0 0 0 2px rgba(
     {% if is_edit and consultation.disease_detail %}
     <div class="field">
         <label>기타 메모 (기존) <span class="muted" style="font-size:0.85em">— 과거 입력값, 필요 시 수정</span></label>
-        <textarea name="consultation.disease_detail" rows="2">{{ consultation.disease_detail }}</textarea>
+        <textarea name="consultation.disease_detail" rows="2">{{ consultation.disease_detail if is_edit else ((prefill.diagnosis if prefill else '') or '') }}</textarea>
     </div>
     {% endif %}
 

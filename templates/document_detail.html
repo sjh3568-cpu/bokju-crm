@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}{{ doc.patient_name_ai or '미확인' }} · 팩스 · 복주 상담CRM{% endblock %}
+{% block content %}
+{% set ai = doc.ai %}
+<div class="page-header"><div><a href="/documents" class="btn-back">← 자료함</a><h1>{{ doc.patient_name_ai or '미확인' }}{% if ai.sex or ai.age %} <small class="muted">{{ ai.sex }}{% if ai.age %} {{ ai.age }}세{% endif %}{% if ai.birth_date %} · {{ ai.birth_date }}{% endif %}</small>{% endif %}</h1>
+ <p class="doc-file"><span class="badge doc-badge-{{ doc.status }}">{{ doc.status_label }}</span> <code>{{ doc.filename }}</code>{% if doc.original_name and doc.original_name != doc.filename %} <small class="muted">(원본명 {{ doc.original_name }})</small>{% endif %}</p></div>
+ <div class="doc-head-actions">
+  {% if file_exists %}<a class="btn btn-secondary" href="/documents/{{ doc.id }}/file" target="_blank" rel="noopener">새 창에서 원본</a>
+  <a class="btn btn-secondary" href="/documents/{{ doc.id }}/file?download=1">내려받기</a>{% endif %}
+  {% if can_edit %}{% if doc.status != 'done' %}<a class="btn btn-primary" href="/consult/new?doc_id={{ doc.id }}">상담 등록</a>{% endif %}{% endif %}
+ </div>
+</div>
+
+<div class="doc-layout">
+ <section class="card doc-viewer">
+  {% if file_exists %}
+   {% if (doc.mime or '').startswith('image/') %}<img src="/documents/{{ doc.id }}/file" alt="{{ doc.filename }}">
+   {% else %}<iframe src="/documents/{{ doc.id }}/file#toolbar=1&view=FitH" title="{{ doc.filename }}"></iframe>{% endif %}
+  {% elif doc.file_deleted_at %}<div class="empty">원본은 보관기간({{ fax.keep_days }}일)이 지나 {{ doc.file_deleted_at[:10] }}에 삭제됐습니다.<br><small>AI 요약과 판독값, 환자 연결은 그대로 남아 있습니다. 원본이 필요하면 보낸 병원 또는 의무기록실에 요청하세요.</small></div>
+  {% else %}<div class="empty">파일을 찾을 수 없습니다.<br><small>{{ doc.stored_path }}</small><br>NAS 폴더가 옮겨졌거나 이름이 바뀌었을 수 있습니다.</div>{% endif %}
+ </section>
+
+ <aside class="doc-side">
+  <section class="card doc-ai">
+   <div class="doc-ai-head"><h2>AI 핵심 요약</h2>{% if doc.analyzed_at %}<small>{{ doc.analyzed_at[:16] }} · {% if ai.confidence=='low' %}<b class="bad">신뢰도 낮음</b>{% elif ai.confidence=='medium' %}신뢰도 보통{% else %}신뢰도 높음{% endif %}</small>{% endif %}
+    {% if can_edit %}<button class="btn btn-secondary btn-xs" id="doc-analyze" {% if not fax.ai or not file_exists %}disabled title="{% if not file_exists %}원본 없음{% else %}AI 판독 꺼짐{% endif %}"{% endif %}>{% if doc.analyzed_at %}다시 판독{% else %}지금 판독{% endif %}</button>{% endif %}</div>
+   {% if ai %}
+    <dl class="doc-facts">
+     {% if ai.document_type %}<dt>서류</dt><dd>{{ ai.document_type }}</dd>{% endif %}
+     {% if ai.sender_hospital or ai.sender_department %}<dt>보낸 곳</dt><dd>{{ ai.sender_hospital }}{% if ai.sender_department %} {{ ai.sender_department }}{% endif %}{% if ai.sender_contact %} <small>{{ ai.sender_contact }}</small>{% endif %}</dd>{% endif %}
+     {% if ai.referral_reason %}<dt>의뢰 사유</dt><dd>{{ ai.referral_reason }}</dd>{% endif %}
+     {% if ai.diagnoses %}<dt>진단</dt><dd>{{ ai.diagnoses|join(', ') }}</dd>{% endif %}
+     {% if ai.current_status %}<dt>현재 상태</dt><dd>{{ ai.current_status }}</dd>{% endif %}
+     {% if ai.medications %}<dt>투약</dt><dd>{{ ai.medications|join(', ') }}</dd>{% endif %}
+    </dl>
+    {% if ai.precautions %}<div class="doc-warnbox">⚠ 주의 <ul>{% for p in ai.precautions %}<li>{{ p }}</li>{% endfor %}</ul></div>{% endif %}
+    {% if ai.summary %}<ul class="doc-summary">{% for s in ai.summary %}<li>{{ s }}</li>{% endfor %}</ul>{% endif %}
+    {% if ai._pages_total and ai._pages_sent and ai._pages_sent < ai._pages_total %}<p class="doc-notes">📄 총 {{ ai._pages_total }}쪽 중 앞 {{ ai._pages_sent }}쪽만 판독했습니다. 검사·투약 상세는 원본에서 확인하세요.</p>{% endif %}
+    {% if ai.notes %}<p class="doc-notes">※ {{ ai.notes }}</p>{% endif %}
+    <p class="doc-disclaimer">AI가 팩스를 읽어 정리한 초안입니다. 원본과 다를 수 있으니 상담·입원 판단 전에 원본을 확인하세요.</p>
+   {% elif doc.ai_error %}<div class="empty bad">판독 실패 — {{ doc.ai_error }}</div>
+   {% else %}<div class="empty">아직 판독 전입니다.{% if fax.ai %} 다음 주기에 자동으로 읽습니다.{% endif %}</div>{% endif %}
+  </section>
+
+  <section class="card doc-edit">
+   <h2>판독값 확인 · 파일명 정리</h2>
+   <form id="doc-form" class="doc-form">
+    <label>환자 이름<input name="patient_name" value="{{ doc.patient_name_ai or '' }}" maxlength="40" {% if not can_edit %}disabled{% endif %}></label>
+    <label>주병명<input name="diagnosis" value="{{ doc.diagnosis_ai or '' }}" maxlength="60" {% if not can_edit %}disabled{% endif %}></label>
+    <label>문서 날짜<input type="date" name="doc_date" value="{{ doc.doc_date or '' }}" {% if not can_edit %}disabled{% endif %}></label>
+    <label>보낸 곳<input name="sender" value="{{ doc.sender_ai or '' }}" maxlength="80" {% if not can_edit %}disabled{% endif %}></label>
+    {% if can_edit %}<div class="doc-form-actions"><button class="btn btn-primary btn-sm" type="submit">{% if file_exists %}저장하고 파일명 정리{% else %}저장{% endif %}</button><small>→ <span id="doc-preview"></span></small></div>{% endif %}
+   </form>
+  </section>
+
+  <section class="card doc-link">
+   <h2>환자 연결</h2>
+   {% if doc.patient_id %}
+    <p>연결됨: <a href="/patients/{{ doc.patient_id }}"><b>{{ doc.patient_name }}</b></a>{% if consult %} · <a href="/consult/{{ consult.id }}">상담 {{ consult.consult_date }}</a>{% endif %}</p>
+   {% else %}
+    {% if candidates %}<p class="muted-sm">같은 이름의 기존 환자 {{ candidates|length }}명</p>
+     <ul class="doc-cands">{% for c in candidates %}<li><span><b>{{ c.name }}</b> {{ c.gender or '' }} · {{ c.residence_sido or '' }} {{ c.residence_sigungu or '' }}{% if c.guardian_phone %} · {{ c.guardian_phone }}{% endif %}{% if c.blacklist %} <em class="bad">⚠ 블랙리스트</em>{% endif %}</span>{% if can_edit %}<button class="btn btn-secondary btn-xs doc-link-btn" data-pid="{{ c.id }}">이 환자로 연결</button>{% endif %}</li>{% endfor %}</ul>
+    {% else %}<p class="muted-sm">같은 이름의 기존 환자가 없습니다. 새 환자면 <b>상담 등록</b>으로 들어가면 이름·병명·모병원이 미리 채워집니다.</p>{% endif %}
+   {% endif %}
+   {% if can_edit %}<div class="doc-link-actions">
+    {% if doc.status != 'done' %}<button class="btn btn-secondary btn-sm" id="doc-done">처리 완료</button>{% else %}<button class="btn btn-secondary btn-sm" id="doc-reopen">다시 열기</button>{% endif %}
+    <button class="btn btn-secondary btn-sm doc-danger" id="doc-del" title="자료함에서만 지웁니다. NAS 파일은 남습니다">자료함에서 삭제</button>
+   </div>{% endif %}
+  </section>
+ </aside>
+</div>
+
+<style>
+.doc-file{margin-top:4px;font-size:.8rem}.doc-file code{background:#f1f5f9;padding:2px 6px;border-radius:5px}.doc-head-actions{display:flex;gap:8px;flex-wrap:wrap}
+.doc-layout{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(360px,.9fr);gap:14px;align-items:start}
+.doc-viewer{padding:0;overflow:hidden;min-height:70vh}.doc-viewer iframe{width:100%;height:calc(100vh - 190px);min-height:600px;border:0}.doc-viewer img{max-width:100%;display:block}
+.doc-side{display:grid;gap:12px}.doc-side h2{font-size:.95rem;margin:0 0 8px}
+.doc-ai-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.doc-ai-head small{color:#64748b;flex:1}.doc-ai-head h2{margin:0}
+.doc-facts{display:grid;grid-template-columns:auto 1fr;gap:5px 10px;margin:10px 0;font-size:.82rem}.doc-facts dt{color:#64748b;font-weight:800;white-space:nowrap}.doc-facts dd{margin:0}
+.doc-warnbox{background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 10px;font-size:.8rem;color:#9a3412;font-weight:750}.doc-warnbox ul{margin:4px 0 0 16px;font-weight:600}
+.doc-summary{margin:10px 0 0 16px;font-size:.86rem;line-height:1.5}.doc-summary li{margin-bottom:4px}.doc-notes{color:#64748b;font-size:.76rem;margin-top:8px}.doc-disclaimer{color:#94a3b8;font-size:.7rem;margin-top:10px}
+.doc-form{display:grid;grid-template-columns:1fr 1fr;gap:8px}.doc-form label{display:grid;gap:3px;font-size:.74rem;font-weight:750;color:#64748b}.doc-form input{padding:7px;border:1px solid #d5dfd9;border-radius:7px;font-size:.84rem}.doc-form-actions{grid-column:1/-1;display:flex;align-items:center;gap:8px;flex-wrap:wrap}.doc-form-actions small{color:#64748b;word-break:break-all}
+.doc-cands{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:.8rem}.doc-cands li{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 9px;background:#f8fafc;border-radius:7px}
+.doc-link-actions{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}.doc-danger{color:#b91c1c}.bad{color:#b91c1c}
+.doc-badge-pending{background:#fef3c7;color:#92400e}.doc-badge-analyzed{background:#dbeafe;color:#1d4ed8}.doc-badge-done{background:#dcfce7;color:#166534}
+@media(max-width:1100px){.doc-layout{grid-template-columns:1fr}.doc-viewer iframe{height:70vh}}
+</style>
+{% endblock %}
+{% block scripts %}
+<script>
+(function(){
+  var id={{ doc.id }};
+  function post(url,body,method){return fetch(url,{method:method||'POST',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}).then(function(r){return r.json().then(function(j){if(!r.ok||j.error){throw new Error(j.error||('HTTP '+r.status));}return j;});});}
+  function fail(e){alert(e.message||'요청 실패');}
+  var form=document.getElementById('doc-form'), prev=document.getElementById('doc-preview');
+  function clean(t,n){return (t||'').replace(/[\\\/:*?"<>|\r\n\t]+/g,' ').replace(/\s+/g,' ').trim().slice(0,n)||'';}
+  function preview(){ if(!prev) return; var f=form; var d=f.doc_date.value||'{{ doc.doc_date or '' }}'; prev.textContent=(d||'날짜')+'_'+(clean(f.patient_name.value,20)||'미확인')+'_'+(clean(f.diagnosis.value,30)||'미분류')+'{{ (doc.filename or "")[-4:] if doc.filename and "." in doc.filename else ".pdf" }}'; }
+  if(form){ form.addEventListener('input',preview); preview();
+    form.onsubmit=function(e){e.preventDefault(); post('/api/documents/'+id,{patient_name:form.patient_name.value,diagnosis:form.diagnosis.value,doc_date:form.doc_date.value,sender:form.sender.value,rename:1}).then(function(){location.reload();}).catch(fail);}; }
+  var an=document.getElementById('doc-analyze');
+  if(an) an.onclick=function(){an.disabled=true;an.textContent='판독 중… (수십 초)';post('/api/documents/'+id+'/analyze').then(function(){location.reload();}).catch(function(e){fail(e);an.disabled=false;an.textContent='다시 판독';});};
+  document.querySelectorAll('.doc-link-btn').forEach(function(b){b.onclick=function(){post('/api/documents/'+id+'/link',{patient_id:b.dataset.pid}).then(function(){location.reload();}).catch(fail);};});
+  var dn=document.getElementById('doc-done'); if(dn) dn.onclick=function(){post('/api/documents/'+id+'/done').then(function(){location.reload();}).catch(fail);};
+  var ro=document.getElementById('doc-reopen'); if(ro) ro.onclick=function(){post('/api/documents/'+id+'/reopen').then(function(){location.reload();}).catch(fail);};
+  var dl=document.getElementById('doc-del'); if(dl) dl.onclick=function(){if(!confirm('자료함에서 지울까요? NAS의 파일은 남습니다.')) return; post('/api/documents/'+id,null,'DELETE').then(function(){location.href='/documents';}).catch(fail);};
+})();
+</script>
+{% endblock %}
