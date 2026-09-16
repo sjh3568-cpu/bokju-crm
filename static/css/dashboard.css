@@ -286,13 +286,20 @@
 /* 병동별 재원 띠 */
 .page-dashboard #ward-strip { margin-bottom: 12px; }
 .page-dashboard #ward-strip .dash-section-head { justify-content: flex-start; gap: 10px; flex-wrap: wrap; }
-.page-dashboard #ward-strip .ws-toggle { margin-left: auto; padding: 4px 10px; border: 1px solid var(--dborder); border-radius: 8px; background: var(--dcard); color: var(--dtext); font: 700 .78rem inherit; cursor: pointer; }
-.page-dashboard #ward-strip .ws-toggle:hover { border-color: var(--da); color: var(--da-ink); }
-.page-dashboard #ward-strip .ws-warn { padding: 3px 9px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: .74rem; font-weight: 800; text-decoration: none; }
 .page-dashboard .ws-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px 8px; padding: 2px 14px 12px; }
 .page-dashboard .ws { display: grid; grid-template-columns: auto 1fr auto; grid-template-rows: auto auto; gap: 3px 8px; align-items: center; padding: 7px 10px 6px; border: 1px solid var(--dborder); border-radius: 10px; background: var(--dcard2); color: var(--dtext); text-decoration: none; min-width: 0; }
 .page-dashboard .ws:hover { border-color: var(--da); }
-.page-dashboard .ws > b { font-size: .86rem; font-weight: 800; white-space: nowrap; }
+.page-dashboard .ws > b { font-size: .86rem; font-weight: 800; white-space: nowrap; display: flex; align-items: baseline; gap: 5px; }
+.page-dashboard .ws > b .ws-pct { font-size: .72rem; font-weight: 800; color: var(--da); }
+.page-dashboard .ws.mid > b .ws-pct { color: var(--dwarn); }
+.page-dashboard .ws.full > b .ws-pct { color: var(--dcrit); }
+.page-dashboard .ws-free > b { color: var(--dtext); font-weight: 900; font-size: .8rem; }
+.page-dashboard .ws-free > b.full { color: var(--dcrit); }
+.page-dashboard #ward-strip .ws-legend { margin-left: auto; font-size: .72rem; color: var(--dmuted); white-space: nowrap; }
+.page-dashboard #ward-strip .ws-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin: 0 3px 0 6px; vertical-align: -1px; background: var(--da); }
+.page-dashboard #ward-strip .ws-legend i.mid { background: var(--dwarn); }
+.page-dashboard #ward-strip .ws-legend i.full { background: var(--dcrit); }
+.page-dashboard #ward-strip .ws-wait { margin: 0 14px 12px; }
 .page-dashboard .ws-bar { height: 9px; border-radius: 4px; background: var(--dgrid); position: relative; overflow: hidden; }
 .page-dashboard .ws-bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--da); }
 .page-dashboard .ws.mid .ws-bar i { background: var(--dwarn); }
@@ -300,7 +307,7 @@
 .page-dashboard .ws.none .ws-bar i { background: var(--dh4); }
 .page-dashboard .ws-n { font-size: .78rem; color: var(--dmuted); white-space: nowrap; }
 .page-dashboard .ws-n b { color: var(--dtext); font-weight: 800; }
-.page-dashboard .ws-free { grid-column: 1 / -1; font-size: .7rem; color: var(--dmuted); line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.page-dashboard .ws-free { grid-column: 1 / -1; font-size: .7rem; color: var(--dmuted); line-height: 1.6; white-space: normal; }   /* 길면 둘째 줄로 — 잘리지 않게 */
 /* 가용 내역 — 남자 방 빈 병상 / 여자 방 빈 병상 / 빈 병실(남녀 무관). 상세 카드의 .beds i.m/.f/.o와 같은 색 */
 .page-dashboard .ws-free i { font-style: normal; font-weight: 700; padding: 0 4px; border-radius: 5px; }
 .page-dashboard .ws-free i.m { background: var(--dinfo-bg); color: var(--dinfo); }
@@ -310,8 +317,6 @@
 .page-dashboard .ws-row { grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); }
 .page-dashboard .ws.mid .ws-free { color: var(--dwarn); font-weight: 700; }
 .page-dashboard .ws.full .ws-free { color: var(--dcrit); font-weight: 800; }
-.page-dashboard .ws-detail { border-top: 1px dashed var(--dborder); padding-top: 6px; }
-.page-dashboard .ws-detail[hidden] { display: none; }
 .page-dashboard .dash-grid2 > .card > .tbl-wrap, .page-dashboard .dash-grid2 > .card > .aq-panel { min-height: 0; }
 .page-dashboard .dash-grid2 > .card > .dash-subsection { margin: 8px 18px 0; }
 .page-dashboard .dash-grid2 > .card > .dash-subsection .tbl-wrap { margin: 0; }

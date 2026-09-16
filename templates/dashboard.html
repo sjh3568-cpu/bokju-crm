@@ -456,68 +456,36 @@
 
 {# ── 좌(7): 오늘 처리 필요 · 기한 임박 / 우(5): 오늘 입·퇴원 · 병상 현황 ── #}
 {# ── 병동별 재원 띠 (2026-09-16 A안): 병동 9개를 KPI 아래 한 줄로. 입원 환자 현황이 전체 폭을 쓰게 하면서도
-   병상 현황은 첫 화면에 남긴다. [전체 펼치기]를 누르면 예전 카드 내용(막대·가용·남/여 빈 병상·병실 미배정)이
-   같은 자리에서 펼쳐지고, 선택은 브라우저에 기억된다(30초 자동 새로고침에도 유지). ── #}
+   병상 현황은 첫 화면에 남긴다. 칩 하나 = 이름·가동률 · 막대 · 재원/허가 · 가용(남자 방·여자 방·빈 병실의 빈 병상).
+   처음엔 [전체 펼치기]로 옛 카드(큰 막대·가용 계산·범례)를 열 수 있었지만, 칩에 같은 정보가 다 들어가 뺐다(같은 날 요청).
+   자세한 병실 단위 현황은 재원 관리로. ── #}
 <div class="card" id="ward-strip">
     <div class="dash-section-head">
         <h3>병동별 재원</h3>
         <span class="muted-sm" title="총 가용 = 허가 병상 − 재원 (정비·격리 등은 반영 안 됨)">{% if ws.admitted is not none %}재원 {{ ws.admitted }} / 허가 {{ ws.bed_capacity }}{% if ws.bed_capacity %} · 총 가용 {{ ws.bed_capacity - ws.admitted }}{% endif %}{% endif %}</span>
-        {% if unassigned_planned %}<a class="ws-warn" href="#ward-occupancy" data-ward-open title="병실이 정해지지 않은 입원 예정 — 펼쳐서 확인">병실 미배정 {{ unassigned_planned|length }}</a>{% endif %}
-        <button type="button" class="ws-toggle" id="ward-detail-toggle" aria-expanded="false" aria-controls="ward-occupancy">전체 펼치기 ▾</button>
+        <span class="ws-legend" title="칩 색 = 병동 가동률"><i class="easy"></i>여유 ~90% <i class="mid"></i>빡빡 90~95% <i class="full"></i>포화 95%~</span>
         <a class="dash-more" href="/ward">재원 관리 →</a>
     </div>
     {% if ward_occupancy %}
     <div class="ws-row">
         {% for w in ward_occupancy %}
-        <a class="ws {{ w.level }}" href="/ward?ward={{ w.ward }}" title="{{ w.ward }} 재원 {{ w.count }}명 (남 {{ w.male }} · 여 {{ w.female }}){% if w.capacity %} / 허가 {{ w.capacity }} · {{ w.pct }}% · 가용 {{ w.free }}{% if w.rooms_known %} = 남자 방 빈 병상 {{ w.free_m }} + 여자 방 빈 병상 {{ w.free_f }}{% if w.free_open %} + 빈 병실 병상 {{ w.free_open }}(남녀 무관){% endif %}{% endif %}{% endif %}">
-            <b>{{ w.ward }}</b>
+        <a class="ws {{ w.level }}" href="/ward?ward={{ w.ward }}" title="{{ w.ward }} 재원 {{ w.count }}명 (남 {{ w.male }} · 여 {{ w.female }}){% if w.capacity %} / 허가 {{ w.capacity }} · 가동률 {{ w.pct }}% · 가용 {{ w.free }}{% if w.rooms_known %} = 남자 방 빈 병상 {{ w.free_m }} + 여자 방 빈 병상 {{ w.free_f }}{% if w.free_open %} + 빈 병실 {{ w.free_rooms }}실의 병상 {{ w.free_open }}(남녀 무관){% endif %}{% endif %}{% endif %}">
+            <b>{{ w.ward }}{% if w.pct is not none %}<small class="ws-pct">{{ w.pct|round|int }}%</small>{% endif %}</b>
             <span class="ws-bar"><i style="width:{{ w.bar }}%"></i></span>
             <span class="ws-n"><b>{{ w.count }}</b>{% if w.capacity %}/{{ w.capacity }}{% else %}명{% endif %}</span>
-            {% if w.capacity %}<small class="ws-free">{% if w.free <= 0 %}만석{% else %}가용 {{ w.free }}{% if w.rooms_known %} <i class="m">남 {{ w.free_m }}</i> <i class="f">여 {{ w.free_f }}</i>{% if w.free_open %} <i class="o">무관 {{ w.free_open }}</i>{% endif %}{% elif w.pct is not none %} · {{ w.pct|round|int }}%{% endif %}{% endif %}</small>{% endif %}
+            {% if w.capacity %}<small class="ws-free">{% if w.free <= 0 %}<b class="full">만석</b>{% else %}가용 <b>{{ w.free }}</b>{% if w.rooms_known %} <i class="m">남 {{ w.free_m }}</i> <i class="f">여 {{ w.free_f }}</i>{% if w.free_open %} <i class="o" title="아무도 없는 병실 {{ w.free_rooms }}실의 병상 — 남녀 무관">빈병상 {{ w.free_open }}</i>{% endif %}{% endif %}{% endif %}</small>{% endif %}
         </a>
         {% endfor %}
     </div>
-    {% endif %}
-    <div id="ward-occupancy" class="ws-detail" hidden>
-            {% if ward_occupancy %}
-            <div class="floors">
-                {% for w in ward_occupancy %}
-                <a class="fl {{ w.level }}" href="/ward?ward={{ w.ward }}" title="{{ w.ward }} 재원 {{ w.count }}명 (남 {{ w.male }} · 여 {{ w.female }}){% if w.capacity %} / 허가 {{ w.capacity }} · {{ w.pct }}% · 가용 {{ w.free }} (허가 {{ w.capacity }} − 재원 {{ w.count }}){% endif %}">
-                    <b>{{ w.ward }}</b>{% if w.pct is not none %}<small class="fl-pct" title="병동 가동률 = 재원 ÷ 허가 병상">{{ w.pct|round|int }}%</small>{% endif %}
-                    <span class="bar"><i style="width:{{ w.bar }}%"></i></span>
-                    <span class="n num"><b>{{ w.count }}</b>{% if w.capacity %}/{{ w.capacity }}{% else %}명{% endif %}</span>
-                    <span class="beds">
-                        {% if w.capacity %}{% if w.free <= 0 %}<b class="num full">만석</b>{% else %}<b class="num">가용 {{ w.free }}</b>{% endif %}{% endif %}
-                        {% if w.rooms_known %}
-                            {# 가용 = 남자 방 빈자리 + 여자 방 빈자리 + 빈 병실 병상(남녀 무관) − 병실 미기재 재원(어느 방인지 몰라 위 셈에서 빠짐) #}
-                            <em class="eq">=</em><i class="m" title="남자만 있는 병실의 빈 병상">남 {{ w.free_m }}</i><em class="eq">+</em><i class="f" title="여자만 있는 병실의 빈 병상">여 {{ w.free_f }}</i>{% if w.free_open %}<em class="eq">+</em><i class="o" title="아무도 없는 병실 {{ w.free_rooms }}개 · 그 안의 병상 {{ w.free_open }}개 — 남녀 어느 쪽이든 배정 가능">남녀무관 {{ w.free_open }}<em>(빈 병실 {{ w.free_rooms }})</em></i>{% endif %}{% if w.no_room %}<em class="eq">−</em><i class="u" title="명부에 병실이 비어 있는 재원 {{ w.no_room }}명 — 어느 방 침대를 쓰는지 몰라 남/여 빈 병상에 그만큼 더 잡혀 있다. 원무 명부에서 병실을 채우면 맞는다">병실 미기재 {{ w.no_room }}</i>{% endif %}{% if w.free_unknown %}<i class="u" title="병실별 병상 표에 없는 병상">미확인 {{ w.free_unknown }}</i>{% endif %}
-                        {% else %}
-                            <em>재원 남 {{ w.male }} · 여 {{ w.female }}</em>
-                        {% endif %}
-                    </span>
-                </a>
-                {% endfor %}
-            </div>
-            <div class="fl-foot">
-                {% if ward_occupancy|selectattr('capacity')|list %}
-                <span><i class="easy"></i>여유 ~90%</span><span><i class="mid"></i>빡빡 90~95%</span><span><i class="full"></i>포화 95%~</span>
-                {% else %}
-                <span class="muted-sm">병동별 허가 병상을 <code>config.WARD_BED_CAPACITIES</code>에 넣으면 가동률·포화 색이 표시됩니다.</span>
-                {% endif %}
-                {% if ward_occupancy|selectattr('capacity')|list and not (ward_occupancy|selectattr('rooms_known')|list) %}
-                <span class="muted-sm">남/여 빈 병상은 병실별 병상 수(<code>config.ROOM_BED_CAPACITIES</code>)를 넣으면 표시됩니다.</span>
-                {% endif %}
-            </div>
-            {% else %}
-            <div class="empty">원무 입퇴원 명부를 올리면 병동별 재원이 표시됩니다.</div>
-            {% endif %}
-            {% if unassigned_planned %}
-            <div class="wait">
-                병실 미배정 입원 예정 {{ unassigned_planned|length }}명
-                <span>{% for c in unassigned_planned[:3] %}<a href="/consult/{{ c.id }}">{{ c.patient_name }}</a> {{ c.planned_admission_date[5:] }}{% if c.planned_admission_time %} {{ c.planned_admission_time }}{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}{% if unassigned_planned|length > 3 %} · +{{ unassigned_planned|length - 3 }}{% endif %}</span>
-            </div>
-            {% endif %}
+    {% if unassigned_planned %}
+    <div class="wait ws-wait">
+        병실 미배정 입원 예정 {{ unassigned_planned|length }}명
+        <span>{% for c in unassigned_planned[:5] %}<a href="/consult/{{ c.id }}">{{ c.patient_name }}</a> {{ c.planned_admission_date[5:] }}{% if c.planned_admission_time %} {{ c.planned_admission_time }}{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}{% if unassigned_planned|length > 5 %} 외 {{ unassigned_planned|length - 5 }}명{% endif %}</span>
     </div>
+    {% endif %}
+    {% else %}
+    <div class="empty">원무 입퇴원 명부를 올리면 병동별 재원이 표시됩니다.</div>
+    {% endif %}
 </div>
 
 <section class="dash-grid2">
@@ -1258,25 +1226,6 @@ document.querySelectorAll('.page-dashboard [data-limit]').forEach(table=>{
     if(table.tagName!=='TABLE')btn.style.margin='6px 0 4px';
 });
 
-// 병동별 재원 띠 [전체 펼치기] — 예전 카드 내용을 같은 자리에서 열고 닫는다. 선택은 브라우저에 기억(자동 새로고침에도 유지).
-(() => {
-    const btn = document.getElementById('ward-detail-toggle'), panel = document.getElementById('ward-occupancy');
-    if (!btn || !panel) return;
-    const KEY = 'dash.wardDetailOpen';
-    const set = open => {
-        panel.hidden = !open;
-        btn.setAttribute('aria-expanded', String(open));
-        btn.textContent = open ? '접기 ▴' : '전체 펼치기 ▾';
-        try { localStorage.setItem(KEY, open ? '1' : '0'); } catch (e) { /* 사설 창 등 */ }
-    };
-    let open = false;
-    try { open = localStorage.getItem(KEY) === '1'; } catch (e) {}
-    set(open);
-    btn.addEventListener('click', () => set(panel.hidden));
-    document.querySelectorAll('[data-ward-open]').forEach(a => a.addEventListener('click', e => {
-        e.preventDefault(); set(true); panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }));
-})();
 </script>
 
 {% include "_hp_reply_dialog.html" %}

@@ -99,8 +99,7 @@ class DashboardWindowTests(unittest.TestCase):
         """A안: 병동별 재원은 KPI 아래 띠 + 전체 펼치기, 입원 환자 현황은 전체 폭에 유입경로·소개자 열."""
         html = self.client.get("/").get_data(as_text=True)
         self.assertIn('id="ward-strip"', html)
-        self.assertIn('id="ward-detail-toggle"', html)
-        self.assertIn('id="ward-occupancy" class="ws-detail" hidden', html)
+        self.assertNotIn('ward-detail-toggle', html)      # 펼치기/접기는 뺐다 — 칩에 다 들어 있다
         self.assertLess(html.index('id="ward-strip"'), html.index('id="admission-schedule"'))   # 띠가 표 위에
         self.assertIn("<th>유입경로·소개자</th>", html)
         self.assertIn("소개 (지인추천)", html)
