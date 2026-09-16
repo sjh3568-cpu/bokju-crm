@@ -309,7 +309,7 @@
 .page-dashboard .ws-n b { color: var(--dtext); font-weight: 800; }
 .page-dashboard .ws-free { grid-column: 1 / -1; font-size: .7rem; color: var(--dmuted); line-height: 1.6; white-space: normal; }   /* 길면 둘째 줄로 — 잘리지 않게 */
 /* 가용 내역 — 남자 방 빈 병상 / 여자 방 빈 병상 / 빈 병실(남녀 무관). 상세 카드의 .beds i.m/.f/.o와 같은 색 */
-.page-dashboard .ws-free i { font-style: normal; font-weight: 700; padding: 0 4px; border-radius: 5px; }
+.page-dashboard .ws-free i { font-style: normal; font-weight: 700; padding: 0 4px; border-radius: 5px; display: inline-block; white-space: nowrap; }   /* 태그 안에서는 줄이 안 바뀌게 */
 .page-dashboard .ws-free i.m { background: var(--dinfo-bg); color: var(--dinfo); }
 .page-dashboard .ws-free i.f { background: #fce7f0; color: #b83a6b; }
 .page-dashboard .ws-free i.o { background: var(--dcard2); color: var(--dmuted); border: 1px solid var(--dborder); }
