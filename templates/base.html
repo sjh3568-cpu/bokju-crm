@@ -6,6 +6,15 @@
     <meta http-equiv="Cache-Control" content="no-store, must-revalidate">
     <title>{% block title %}복주 상담실{% endblock %}</title>
     <link rel="stylesheet" href="/static/css/style.css">
+    <script>
+    /* 오늘 날짜(YYYY-MM-DD) — new Date().toISOString()은 UTC 기준이라 한국시간 09시
+       이전에는 전날 날짜를 만든다. 입원완료·퇴원·복귀 처리가 하루 앞으로 기록되던
+       원인(2026-09-15). 화면 어디서든 오늘은 이 함수로 만든다. */
+    window.todayISO = function () {
+        const d = new Date(), p = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    };
+    </script>
     {% block head_extra %}{% endblock %}
 </head>
 {%- set P = current_user.perms if current_user else {} -%}

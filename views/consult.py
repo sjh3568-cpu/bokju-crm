@@ -1218,9 +1218,14 @@ def api_consult_status(cid):
             if adate:
                 try:
                     datetime.strptime(adate, "%Y-%m-%d")
-                    fields["admission_date"] = adate
                 except ValueError:
                     return jsonify({"error": "입원일자 형식 오류"}), 400
+                # 화면·집계는 모두 COALESCE(actual_admission_date, admission_date)를 본다.
+                # 재입원(8/25 입원 → 9/9 퇴원 → 오늘 재입원)이면 옛 실제입원일이 남아 있어
+                # 새 입원일이 무시되고 입원 환자 현황·오늘 완료 집계에서 사라졌다(2026-09-15).
+                # → 두 칸을 함께 맞춘다. 실제 입원일이 곧 이 처리의 사실이다.
+                fields["admission_date"] = adate
+                fields["actual_admission_date"] = adate
         elif status in ("입원예정", "입원대기"):
             # 입원예정을 고르는 그 자리에서 예정일·시간까지 한 번에 — 헤더 칸을 따로 고치러 갈 필요 없게(2026-09-14).
             pdate = (payload.get("planned_admission_date") or "").strip()

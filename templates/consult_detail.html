@@ -486,7 +486,7 @@ tr.ae-open { background:#fff7ed; }
     });
     document.querySelectorAll('.ae-undo').forEach(btn => {
         btn.addEventListener('click', async () => {
-            const today = new Date().toISOString().slice(0, 10);
+            const today = todayISO();
             const expected = prompt('복귀 처리를 취소합니다. 복귀 예정일을 입력하세요 (비우면 미정)', today);
             if (expected === null) return;
             btn.disabled = true;

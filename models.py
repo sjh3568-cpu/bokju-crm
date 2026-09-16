@@ -2213,7 +2213,8 @@ def update_consultation(cid: int, **fields):
 
 # 결과(상담·입원 진행 단계) 변경 전용 — 폼 필드와 분리해서 실수 방지
 _META_FIELDS = ("consult_result", "consult_result_reason",
-                "admission_status", "admission_date", "rejection_reason",
+                "admission_status", "admission_date", "actual_admission_date",
+                "rejection_reason",
                 "planned_admission_date", "planned_admission_time",
                 "attending_doctor", "room_number",
                 "rejection_reason_detail", "hold_reason",
@@ -6805,6 +6806,32 @@ def away_record_stats(rows):
         'patient_rate': round(100 * len(returned_patients) / len(patients), 1) if patients else 0,
         'event_rate': round(100 * len(returned) / len(rows), 1) if rows else 0,
     }
+
+
+def away_summary_counts(doctor=None):
+    """외진 배지용 실인원 3종 — 총 외진·복귀·미복귀 (전 기간, 유형 전체).
+
+    재원 현황의 '외진 중' 머리와 외진 환자 탭 머리가 같은 정의를 쓴다.
+    상담 전체를 역직렬화하는 list_away_records 대신 집계에 필요한 열만 읽는다.
+    doctor를 주면 담당의 기준으로 좁힌다(재원 현황의 담당의 필터와 맞춤).
+    """
+    conn = get_db()
+    ph_type = ",".join("?" * len(AWAY_EVENT_TYPES))
+    try:
+        rows = conn.execute(f"""
+            SELECT c.patient_id, ae.returned_at, ae.return_outcome,
+                   COALESCE(NULLIF(ep.attending_doctor, ''), c.attending_doctor) AS attending_doctor
+            FROM admission_events ae
+            JOIN consultations c ON c.id = ae.consultation_id
+            LEFT JOIN admission_episodes ep ON ep.id = ae.episode_id
+            WHERE ae.event_type IN ({ph_type})
+        """, list(AWAY_EVENT_TYPES)).fetchall()
+    finally:
+        conn.close()
+    rows = [dict(r) for r in rows]
+    if doctor:
+        rows = [r for r in rows if (r.get('attending_doctor') or '') == doctor]
+    return away_record_stats(rows)
 
 
 def create_admission_event(*, consultation_id, event_type=None, event_date=None,

@@ -1060,7 +1060,7 @@ body .container { max-width: none; padding: 0 12px; }
                 }
             } else if (newStatus === '입원예정') {
                 // 예정일·시간을 여기서 바로 — 상세 화면을 따로 열지 않아도 되게
-                const today = new Date().toISOString().slice(0, 10);
+                const today = todayISO();
                 const d = prompt('입원예정일을 입력하세요 (YYYY-MM-DD, 필수)', today);
                 if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d.trim())) { sel.value = old === '미정' ? '' : old; return; }
                 body.planned_admission_date = d.trim();
@@ -1088,7 +1088,7 @@ body .container { max-width: none; padding: 0 12px; }
         btn.addEventListener('click', async () => {
             const cid = btn.dataset.cid;
             const act = btn.dataset.act;
-            const today = new Date().toISOString().slice(0, 10);
+            const today = todayISO();
             let body;
             if (act === 'complete') {
                 const d = prompt('실제 퇴원일자를 입력하세요 (YYYY-MM-DD)', today);

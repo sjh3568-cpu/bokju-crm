@@ -1025,7 +1025,7 @@ document.querySelectorAll('.adm-action-sel').forEach(sel => {
         const v = sel.value;
         if (!v) return;
         const reset = () => { sel.value = ''; sel.disabled = false; };
-        const today = new Date().toISOString().slice(0, 10);
+        const today = todayISO();
         let url, body;
         if (sel.dataset.kind === 'return') {
             if (v === '예정취소') {
@@ -1072,7 +1072,7 @@ document.querySelectorAll('.adm-status-btn').forEach(btn => {
         const body = { admission_status: status };
         // 입원완료는 오늘을 admission_date로 자동 기록 (당일 처리 케이스)
         if (status === '입원완료') {
-            const today = new Date().toISOString().slice(0, 10);
+            const today = todayISO();
             body.admission_date = today;
             if (!confirm(`오늘(${today}) 입원완료로 처리할까요?`)) return;
         } else if (status === '입원취소') {
@@ -1103,7 +1103,7 @@ document.querySelectorAll('.adm-status-btn').forEach(btn => {
 // 외진 복귀 예정 행 — 오늘 복귀로 1클릭 처리 (재원 관리의 [↩ 복귀]와 같은 API)
 document.querySelectorAll('.adm-return-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = todayISO();
         if (!confirm(`${btn.dataset.name} 님 외진 복귀를 오늘(${today}) 완료 처리할까요? (입원 완료로 집계)`)) return;
         btn.disabled = true;
         try {
