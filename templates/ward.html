@@ -80,7 +80,7 @@
         <div class="wd-k"><span class="wd-k-n">{{ ts.low.ratio|pct2 }}<small>%</small></span><span class="wd-k-l">기간 최저 <small>{{ ts.low.label }} · {{ ts.low.recovery }}/{{ ts.low.known }}명</small></span></div>
         <div class="wd-k"><span class="wd-k-n">{{ ts.high.ratio|pct2 }}<small>%</small></span><span class="wd-k-l">기간 최고 <small>{{ ts.high.label }} · {{ ts.high.recovery }}/{{ ts.high.known }}명</small></span></div>
         <div class="wd-k {% if ts.below_days %}warn{% else %}ok{% endif %}"><span class="wd-k-n">{{ ts.below_days }}<small>일 / {{ ts.days }}일</small></span><span class="wd-k-l">40% 미만 일수 <small>{% if ts.below_first %}첫 날 {{ ts.below_first.label }}{% else %}없음{% endif %}</small></span></div>
-        <div class="wd-k"><span class="wd-k-n">{% if ts.month_avg is not none %}{{ ts.month_avg|pct2 }}<small>%</small>{% else %}-{% endif %}</span><span class="wd-k-l">{{ ts.month_count }}개월 평균 <small>월말 기준 연인원</small></span></div>
+        <div class="wd-k"><span class="wd-k-n">{% if ts.month_avg is not none %}{{ ts.month_avg|pct2 }}<small>%</small>{% else %}-{% endif %}</span><span class="wd-k-l">최근 {{ ts.month_count }}개월 월말 평균 <small>달마다 월말 하루 · 조회 기간과 무관</small></span></div>
     </div>
     {% if ts.below_runs %}
     <details class="wd-below-runs"><summary>40% 미만 구간 {{ ts.below_runs|length }}회 · 총 {{ ts.below_days }}일 보기</summary>
@@ -331,14 +331,14 @@
                class="wd-sort-btn {% if view != 'room' %}on{% endif %}">☰ 목록</a>
             {% if view == 'list' %}<label class="wd-page-size">표시 <select onchange="location.href='{{ url_with(page=1, page_size='__N__') }}#sec-ward'.replace('__N__',this.value)">{% for n in (30,50,100,200) %}<option value="{{ n }}" {% if page_size == n %}selected{% endif %}>{{ n }}명</option>{% endfor %}</select></label>{% endif %}
             <button type="button" class="wd-roster-toggle wd-filter-toggle" id="wd-filter-toggle"
-                    aria-expanded="false" aria-controls="wd-filter-panel" title="검색·필터 열기/닫기">🔍 검색·필터 ▾</button>
+                    aria-expanded="true" aria-controls="wd-filter-panel" title="검색·필터 열기/닫기">🔍 검색·필터 ▴</button>
             <button type="button" class="wd-roster-toggle" id="wd-roster-toggle"
                     aria-expanded="{{ 'true' if roster_open else 'false' }}" aria-controls="wd-roster-body">
                 {{ '명단 접기' if roster_open else '명단 펼치기' }}</button>
         </div>
     </div>
-    {# 검색·필터는 항상 접힌 채로 시작(2026-09-14 사용자 요청) — 적용 중인 조건은 위 제목 줄에 라벨로 보인다 #}
-    <div class="wd-filter-panel" id="wd-filter-panel" hidden>
+    {# 검색·필터는 펼친 채로 시작하고 명단은 접힌 채로 시작(2026-09-17 사용자 요청) — 조건을 고르면 명단이 자동으로 펼쳐진다 #}
+    <div class="wd-filter-panel" id="wd-filter-panel">
         <div class="wd-filter-title"><strong>검색·필터</strong><span>조건을 선택하면 명단이 자동으로 펼쳐집니다.</span></div>
         <form id="ward-filter" class="wd-filter-search" method="get" action="/ward"
               data-detail-active="{{ 'true' if doctor or any_filter or column_filter else 'false' }}">
@@ -391,20 +391,22 @@
     <div class="tbl-wrap">
         <table class="tbl wd-tbl wd-away-tbl">
             <thead><tr>
-                <th>경과</th><th>환자</th><th>호실</th><th>이송 일시</th><th>유형</th><th>이송기관</th><th>사유</th><th>복귀</th>
+                <th class="wd-seq">연번</th><th>환자</th><th>호실</th><th>이송 일시</th><th>경과</th><th>유형</th><th>이송기관</th><th>사유</th><th>복귀</th>
             </tr></thead>
             <tbody>
                 {% for c in away %}
                 {% set a = c.away %}
                 <tr class="{% if a.overdue %}wd-over{% endif %}">
+                    <td class="wd-seq">{{ loop.index }}</td>
+                    <td class="nowrap"><a href="/consult/{{ c.id }}">{{ c.patient_name }}</a></td>
+                    <td class="nowrap">{{ c.room_number or '-' }}</td>
+                    <td class="nowrap">{{ a.event_date|krdate if a.event_date else '-' }}{% if a.event_time %} {{ a.event_time[:5] }}{% endif %}</td>
+                    {# 경과는 이송 일시에서 계산된 값이라 그 옆에 둔다(2026-09-17). 지연 강조는 행 색·정렬(오래된 순)이 맡는다 #}
                     <td class="nowrap">
                         {% if a.days_out is not none %}
                         <span class="wd-days {% if a.overdue %}over{% endif %}">{{ a.days_out }}일차</span>
                         {% else %}<span class="muted-sm">일자 미기재</span>{% endif %}
                     </td>
-                    <td class="nowrap"><a href="/consult/{{ c.id }}">{{ c.patient_name }}</a></td>
-                    <td class="nowrap">{{ c.room_number or '-' }}</td>
-                    <td class="nowrap">{{ a.event_date|krdate if a.event_date else '-' }}{% if a.event_time %} {{ a.event_time[:5] }}{% endif %}</td>
                     <td class="nowrap">{{ a.event_type }}</td><td class="nowrap">{{ a.hospital or '-' }}</td><td class="wd-memo" title="{{ a.memo or '' }}">{{ a.memo or '-' }}</td>
                     <td class="nowrap wd-back-cell">
                         {% if a.expected_return_date %}<span class="wd-exp-badge" title="대시보드 입원 처리에서 [완료]하면 입원 완료로 집계">복귀 예정 {{ a.expected_return_date|krdate }}</span>{% endif %}
@@ -873,7 +875,7 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
         detailToggle.addEventListener('click', () => setDetailOpen(detailFilter.hidden));
         detailFilter.querySelectorAll('select').forEach(select => select.addEventListener('change', () => filterForm.submit()));
     }
-    // 검색·필터 패널 — 상시 접힘. 버튼으로만 연다(조회 뒤 새로고침돼도 다시 접힌다)
+    // 검색·필터 패널 — 기본 펼침. 버튼으로 접었다 편다(조회 뒤 새로고침되면 다시 펼쳐진다)
     const filterBtn = document.getElementById('wd-filter-toggle');
     const filterPanel = document.getElementById('wd-filter-panel');
     if (filterBtn && filterPanel) filterBtn.addEventListener('click', () => {

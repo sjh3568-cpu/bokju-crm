@@ -23,8 +23,9 @@
 </section>
 
 {% if report.insights %}{% set ai = report.insights %}
-<section class="card wd-sec away-insight">
-    <div class="wd-sec-head"><h3>외진 환자 특성</h3><span class="muted-sm">위 통계와 같은 기간·유형 기준 {{ ai.events }}건 · {{ ai.patients }}명 · 복귀 소요일은 나간 날을 1일째로</span></div>
+{# 특성 블록은 평소 접힘(2026-09-17 사용자 요청) — 제목 줄을 누르면 펼쳐진다 #}
+<details class="card wd-sec away-insight">
+    <summary class="wd-sec-head away-insight-summary"><h3>외진 환자 특성</h3><span class="muted-sm">위 통계와 같은 기간·유형 기준 {{ ai.events }}건 · {{ ai.patients }}명 · 복귀 소요일은 나간 날을 1일째로</span><span class="muted-sm away-insight-hint" aria-hidden="true"></span></summary>
     <div class="away-ins-kpi">
         <div><b>{% if ai.avg_days is not none %}{{ ai.avg_days }}일{% else %}-{% endif %}</b><span>평균 복귀 소요{% if ai.returned_n %} <small>· 복귀 {{ ai.returned_n }}건 기준</small>{% endif %}</span></div>
         <div><b>{% if ai.median_days is not none %}{{ ai.median_days }}일{% else %}-{% endif %}</b><span>중앙값{% if ai.max_days is not none %} <small>· 최장 {{ ai.max_days }}일</small>{% endif %}</span></div>
@@ -64,7 +65,7 @@
             <ul class="away-repeaters">{% for r in ai.repeaters %}<li><a href="/consult/{{ r.id }}">{{ r.name }}</a> <b>{{ r.events }}회</b>{% if r.hospitals %} <small class="muted">{{ r.hospitals|join(', ') }}</small>{% endif %}</li>{% endfor %}</ul>{% endif %}
         </div>
     </div>
-</section>
+</details>
 {% endif %}
 
 <section class="card wd-sec away-list-sec">
@@ -197,7 +198,12 @@
 .away-transfer p{margin:6px 0}
 .away-help summary{cursor:pointer;font-size:.82em;color:#64748b}
 .away-help p{margin:6px 0 0}
-/* 외진 특성 인사이트 */
+/* 외진 특성 인사이트 — 평소 접힘, 제목 줄 클릭으로 펼침 */
+.away-insight-summary{list-style:none;cursor:pointer;justify-content:flex-start;gap:10px}
+.away-insight-summary::-webkit-details-marker{display:none}
+.away-insight-hint{margin-left:auto}
+.away-insight-hint::after{content:'펼치기 ▾'}
+.away-insight[open] .away-insight-hint::after{content:'접기 ▴'}
 .away-ins-kpi{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:6px 0 10px}
 .away-ins-kpi>div{display:flex;flex-direction:column;gap:2px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:#fff}
 .away-ins-kpi b{font-size:1.45em;font-weight:800;color:#14633f;line-height:1.1}

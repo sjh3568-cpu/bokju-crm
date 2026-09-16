@@ -187,6 +187,8 @@ class AwayManagementTests(unittest.TestCase):
         html = self.client.get('/ward?tab=away').get_data(as_text=True)
         self.assertIn('외진 환자 특성', html)
         self.assertIn('평균 복귀 소요', html)
+        # 특성 블록은 평소 접힘 — details에 open 없이 렌더
+        self.assertIn('<details class="card wd-sec away-insight">', html)
 
     def test_return_persistence_validation_and_permissions(self):
         url = '/api/admission-event/2/return'
@@ -379,6 +381,23 @@ class AwayManagementTests(unittest.TestCase):
         self.assertEqual(models.get_admission_event(r.get_json()['id'])['expected_return_date'], tomorrow)
         self.assertEqual(self._today_admission_counts(), (0, 0, 0))   # 내일 예정이라 오늘엔 안 잡힌다
         self.assertEqual(models.dashboard_summary()['summary']['admission_planned_week'], 1)
+
+    def test_landing_filter_open_roster_collapsed_and_away_seq(self):
+        # 첫 랜딩(조건 없음): 검색·필터 패널은 펼침, 명단은 접힘(지연 로드)
+        html = self.client.get('/ward').get_data(as_text=True)
+        self.assertIn('id="wd-filter-panel">', html)
+        self.assertNotIn('id="wd-filter-panel" hidden', html)
+        self.assertIn('aria-controls="wd-filter-panel" title="검색·필터 열기/닫기">🔍 검색·필터 ▴', html)
+        self.assertIn('id="wd-roster-body" hidden data-lazy="1"', html)
+        self.assertRegex(html, r'aria-controls="wd-roster-body">\s*명단 펼치기<')
+        # 조건을 주면 명단은 자동으로 펼쳐진다(기존 동작 유지)
+        html_q = self.client.get('/ward?q=테스트').get_data(as_text=True)
+        self.assertRegex(html_q, r'aria-controls="wd-roster-body">\s*명단 접기<')
+        # 외진 중 표: 경과 앞 연번 열 + 1부터 번호
+        away = html.split('id="sec-away"', 1)[1]
+        self.assertIn('<th class="wd-seq">연번</th><th>환자</th><th>호실</th><th>이송 일시</th><th>경과</th>', away)
+        self.assertIn('<td class="wd-seq">1</td>', away)
+        self.assertIn('<td class="wd-seq">2</td>', away)
 
 
 if __name__ == '__main__':
