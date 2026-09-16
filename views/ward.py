@@ -582,6 +582,7 @@ def ward_view():
         if not ep:
             continue
         c["episode_id"] = ep["id"]
+        c["census_source"] = ep.get("source") or "roster"
         c["actual_admission_date"] = ep["admitted_at"]
         c["discharge_date"] = None
         if ep.get("room_number"):
@@ -715,8 +716,10 @@ def ward_view():
     total_n = len(admitted)
     recovery_ratio = round(recovery_n / total_n * 100, 2) if total_n else 0
     bed_capacity = 355
+    crm_n = sum(1 for c in admitted if c.get("census_source") == "crm")
     kpis = {
         "admitted": total_n,
+        "crm_n": crm_n, "roster_n": total_n - crm_n,
         "recovery": recovery_n,
         "nonrecovery": nonrecovery_n,
         "recovery_ratio": recovery_ratio,

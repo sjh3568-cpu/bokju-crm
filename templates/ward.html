@@ -222,7 +222,7 @@
 <div class="wd-kpi">
     <a class="wd-k {% if not filt %}on{% endif %}" href="/ward{% if doctor %}?doctor={{ doctor|urlencode }}{% endif %}#sec-ward">
         <span class="wd-k-n">{{ kpis.admitted }}</span>
-        <span class="wd-k-l">🏥 총 입원 환자</span>
+        <span class="wd-k-l">🏥 총 입원 환자{% if kpis.crm_n %} <small title="원무 명부 {{ kpis.roster_n }}명 + 명부 이후 CRM에서 입원완료 처리한 {{ kpis.crm_n }}명">· 명부 {{ kpis.roster_n }} + CRM {{ kpis.crm_n }}</small>{% endif %}</span>
     </a>
     <a class="wd-k accent" href="#sec-ward" title="허가병상 {{ kpis.bed_capacity }}병상 기준">
         <span class="wd-k-n">{{ kpis.bed_occupancy }}<small>%</small></span>

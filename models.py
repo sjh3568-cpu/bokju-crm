@@ -2384,6 +2384,41 @@ def prior_admissions_by_patient(patient_ids):
     return out
 
 
+def patient_admission_history(patient_id):
+    """상담 상세 '입원 회차 이력' — 시간순으로 번호를 다시 매긴다(가장 오래된 입원이 1회).
+
+    episode_no는 생성 순서다. 상담이 먼저 회차를 만들고 원무 명부가 나중에 적재되면
+    첫 입원(명부)이 2회, 재입원(CRM)이 1회로 보였다(김한진 님, 2026-09-16). 같은 입원일의
+    명부 회차와 CRM 회차는 한 사실이므로 한 줄로 합친다 — 입·퇴원일·호실은 명부 값,
+    상담 연결은 CRM 값. 두 번째 이후 입원에는 readmission 표시.
+    """
+    def _when(e):
+        return (e.get("admitted_at") or e.get("planned_admission_date")
+                or e.get("wait_started_at") or e.get("created_at") or "9999-12-31")[:10]
+    merged = []
+    for e in sorted(list_admission_episodes(patient_id),
+                    key=lambda e: (_when(e), 0 if e.get("roster_key") else 1, e["id"])):
+        e = dict(e)
+        e["source"] = "명부" if e.get("roster_key") else "CRM"
+        adm = (e.get("admitted_at") or "")[:10]
+        prev = merged[-1] if merged else None
+        if adm and prev and (prev.get("admitted_at") or "")[:10] == adm and prev["source"] != e["source"]:
+            if prev["source"] == "명부":
+                prev["consultation_id"] = prev.get("consultation_id") or e.get("consultation_id")
+            else:
+                for k in ("admitted_at", "discharged_at", "room_number", "ward", "status",
+                          "attending_doctor", "care_type", "roster_key"):
+                    if e.get(k):
+                        prev[k] = e[k]
+            prev["source"] = "명부+CRM"
+            continue
+        merged.append(e)
+    for i, e in enumerate(merged, 1):
+        e["seq"] = i
+        e["readmission"] = i > 1 and bool(e.get("admitted_at") or e.get("planned_admission_date"))
+    return merged
+
+
 def set_app_meta(key, value):
     conn = get_db()
     conn.execute("""INSERT INTO app_meta(key,value,updated_at) VALUES(?,?,CURRENT_TIMESTAMP)
@@ -6506,6 +6541,44 @@ def current_admission_census():
             if prev is None or ep["admitted_at"][:10] > prev["admitted_at"][:10]:
                 latest[ep["patient_id"]] = ep
         episodes = list(latest.values())
+        for ep in episodes:
+            ep["source"] = "roster"
+
+        # ── 명부 이후 CRM에서 입원완료한 환자도 재원이다 (2026-09-16 사용자 규칙:
+        # "입원완료는 어디에서 하든 현재 재원에 반영돼야 한다") ──
+        # CRM 회차를 전부 세면 명부상 이미 퇴원한 746명이 섞인다. 그래서
+        #  ① 명부 마지막 입원일(roster_asof) 이후에 입원했고
+        #  ② 상담이 지금도 입원완료(퇴원일 없음)이며
+        #  ③ 그 환자의 명부 회차가 그 입원을 아직 모르는(같은 날 이후 명부 회차 없음) 것만 더한다.
+        # 다음 명부 적재에서 같은 입원이 들어오면 ③에 걸려 명부 회차가 대신한다 — 두 번 세지 않는다.
+        roster_asof = conn.execute(
+            "SELECT MAX(date(admitted_at)) FROM admission_episodes WHERE roster_key IS NOT NULL"
+        ).fetchone()[0] or "0000-01-01"
+        roster_patients = {e["patient_id"] for e in episodes}
+        crm_extra, seen = [], set()
+        for r in conn.execute(
+                """SELECT e.*, p.name AS patient_name, p.gender, p.birth_year, p.chart_no
+                     FROM admission_episodes e
+                     JOIN patients p ON p.id = e.patient_id
+                     JOIN consultations c ON c.id = e.consultation_id
+                    WHERE e.roster_key IS NULL
+                      AND e.discharged_at IS NULL
+                      AND e.admitted_at IS NOT NULL AND e.admitted_at != ''
+                      AND date(e.admitted_at) >= date(?)
+                      AND c.admission_status = '입원완료'
+                      AND COALESCE(c.discharge_date, '') = ''
+                      AND NOT EXISTS (SELECT 1 FROM admission_episodes r
+                                       WHERE r.patient_id = e.patient_id AND r.roster_key IS NOT NULL
+                                         AND date(r.admitted_at) >= date(e.admitted_at))
+                    ORDER BY e.admitted_at DESC, e.id DESC""", (roster_asof,)):
+            ep = dict(r)
+            if ep["patient_id"] in roster_patients or ep["patient_id"] in seen:
+                continue
+            seen.add(ep["patient_id"])
+            ep["source"] = "crm"
+            if not ep.get("ward"):
+                ep["ward"] = _ward_from_room(ep.get("room_number"))
+            crm_extra.append(ep)
 
         # 환자별 상담 목록을 한 번에 가져와 파이썬에서 고른다. 회차가 수백 건
         # 규모라 상관 서브쿼리보다 이쪽이 읽기 쉽다.
@@ -6522,8 +6595,27 @@ def current_admission_census():
         conn.close()
 
     by_consultation, orphans = _link_episodes(episodes, by_patient)
+    # CRM 회차는 상담을 이미 알고 있다 — 날짜로 다시 맞추지 않고 그대로 붙인다.
+    for ep in crm_extra:
+        by_consultation[ep["consultation_id"]] = ep
     return {"by_consultation": by_consultation, "orphans": orphans,
-            "patients": {e["patient_id"] for e in episodes}, "has_roster": True}
+            "patients": {e["patient_id"] for e in episodes} | {e["patient_id"] for e in crm_extra},
+            "has_roster": True,
+            "roster_count": len(episodes), "crm_count": len(crm_extra), "roster_asof": roster_asof}
+
+
+def _ward_from_room(room):
+    """'1004호' → '10병동', '305' → '3병동'. 명부 병동 값이 없는 CRM 회차용."""
+    room = (room or "").strip()
+    digits = ""
+    for ch in room:
+        if ch.isdigit():
+            digits += ch
+        elif digits:
+            break
+    if len(digits) >= 3:
+        return f"{digits[:-2]}병동"
+    return f"{digits}병동" if digits else None
 
 
 
@@ -6541,11 +6633,30 @@ def admission_flow_counts(week_from, week_to, month_from, month_to):
                 f"SELECT COUNT(*) FROM admission_episodes "
                 f"WHERE roster_key IS NOT NULL AND {col} IS NOT NULL AND {col} != '' "
                 f"AND date({col}) BETWEEN ? AND ?", (lo, hi)).fetchone()[0]
+        # 명부 이후 CRM에서 처리한 입원·퇴원 — current_admission_census와 같은 ①②③ 규칙
+        roster_asof = conn.execute(
+            "SELECT MAX(date(admitted_at)) FROM admission_episodes WHERE roster_key IS NOT NULL"
+        ).fetchone()[0] or "0000-01-01"
+
+        def _crm_count(col, lo, hi):
+            return conn.execute(
+                f"""SELECT COUNT(*) FROM admission_episodes e
+                     JOIN consultations c ON c.id = e.consultation_id
+                    WHERE e.roster_key IS NULL AND e.admitted_at IS NOT NULL AND e.admitted_at != ''
+                      AND date(e.admitted_at) >= date(?)
+                      AND c.admission_status IN ('입원완료', '퇴원완료')
+                      AND e.{col} IS NOT NULL AND e.{col} != '' AND date(e.{col}) BETWEEN ? AND ?
+                      AND NOT EXISTS (SELECT 1 FROM admission_episodes r
+                                       WHERE r.patient_id = e.patient_id AND r.roster_key IS NOT NULL
+                                         AND date(r.admitted_at) >= date(e.admitted_at))""",
+                (roster_asof, lo, hi)).fetchone()[0]
         return {
-            "week_in": _count("admitted_at", week_from, week_to) + _away_return_count(conn, week_from, week_to),
-            "week_out": _count("discharged_at", week_from, week_to),
-            "month_in": _count("admitted_at", month_from, month_to) + _away_return_count(conn, month_from, month_to),
-            "month_out": _count("discharged_at", month_from, month_to),
+            "week_in": _count("admitted_at", week_from, week_to) + _crm_count("admitted_at", week_from, week_to)
+                       + _away_return_count(conn, week_from, week_to),
+            "week_out": _count("discharged_at", week_from, week_to) + _crm_count("discharged_at", week_from, week_to),
+            "month_in": _count("admitted_at", month_from, month_to) + _crm_count("admitted_at", month_from, month_to)
+                        + _away_return_count(conn, month_from, month_to),
+            "month_out": _count("discharged_at", month_from, month_to) + _crm_count("discharged_at", month_from, month_to),
         }
     finally:
         conn.close()

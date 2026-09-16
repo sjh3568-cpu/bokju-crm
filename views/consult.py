@@ -504,7 +504,7 @@ def consult_detail(cid):
         models.list_todos_for_patient(g.user["id"], c["patient_id"]), date.today())
     return render_template("consult_detail.html", c=c, history=history,
                            admission_events=models.list_admission_events(cid),
-                           admission_episodes=models.list_admission_episodes(c["patient_id"]),
+                           admission_episodes=models.patient_admission_history(c["patient_id"]),
                            patient_todos=patient_todos, today_str=date.today().isoformat(),
                            LIFECYCLE_EVENT_TYPES=LIFECYCLE_EVENT_TYPES)
 

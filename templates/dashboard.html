@@ -411,10 +411,10 @@
         </a>
     </div>
     <div class="krow">
-        <span class="gl">재원 · {% if ws.has_roster %}원무 입퇴원 명부 기준{% else %}명부 없음 — 상담 기준{% endif %}</span>
+        <span class="gl">재원 · {% if ws.has_roster %}원무 명부{% if ws.crm_n %} + 명부 이후 CRM 입원완료{% endif %}{% else %}명부 없음 — 상담 기준{% endif %}</span>
         <a class="kc" href="/ward">
             <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 5v15"/><path d="M2 9h18a2 2 0 0 1 2 2v9"/><path d="M2 16h20"/><path d="M6 9v7"/><circle cx="7" cy="6.5" r="1.5"/></svg></span><svg data-spark="{{ mx.census.spark|join(',') }}" aria-hidden="true"></svg>
-            <span class="l">현재 재원</span>
+            <span class="l">현재 재원{% if ws.crm_n %} <small class="muted" title="원무 명부(입원 {{ ws.roster_asof }}까지 반영) {{ ws.roster_n }}명 + 그 뒤 CRM에서 입원완료 처리해 명부에 아직 없는 {{ ws.crm_n }}명. 다음 명부 적재 때 명부 값으로 합쳐진다.">명부 {{ ws.roster_n }} + CRM {{ ws.crm_n }}</small>{% endif %}</span>
             <span class="v"><b class="num">{% if ws.admitted is not none %}{{ ws.admitted }}{% else %}–{% endif %}</b><small>명</small>{% if ws.admitted is not none %}{{ delta_chip(mx.census.delta) }}{% endif %}</span>
             <span class="s" title="이번주·이번달 입원/퇴원 인원 (원무 명부 기준)">이번주 입 <b>{{ ws.week_in }}</b> 퇴 <b>{{ ws.week_out }}</b> · 이번달 입 <b>{{ ws.month_in }}</b> 퇴 <b>{{ ws.month_out }}</b></span>
         </a>
