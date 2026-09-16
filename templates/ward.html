@@ -200,11 +200,24 @@
 </section>
 {% elif subtab == 'waiting' %}
 <section class="card wd-sec wd-waiting">
-    <div class="wd-sec-head"><h3>🛏 입원 대기 환자 <span class="wd-n">{{ bed_waiting|length }}</span></h3><span class="muted-sm">입원 결정 후 병상 배정을 기다리는 환자 · 오래 기다린 순</span></div>
-    {% if bed_waiting %}<div class="tbl-wrap"><table class="tbl wd-tbl"><thead><tr><th>우선순위·대기</th><th>환자</th><th>예상 입원</th><th>선호 병동·병상 조건</th><th>최근·다음 연락</th><th>대기 메모</th><th>저장·입원</th></tr></thead><tbody>
+    <div class="wd-sec-head"><h3>🛏 입원 대기 환자 <span class="wd-n">{{ bed_waiting|length }}</span></h3><span class="muted-sm">입원 결정 후 병상 배정을 기다리는 환자 · 긴급 → 우선 → 일반, 같은 등급은 오래 기다린 순</span></div>
+    {# 상단 KPI — 총 인원 · 회복기/비회복기 대상자(상담 판정) · 긴급/우선 · 7일 이상 · 연락 지연 · 남/여 (2026-09-16 요청) #}
+    <div class="wd-kpi wd-wait-kpi">
+        <div class="wd-k"><span class="wd-k-n">{{ wait_kpis.total }}</span><span class="wd-k-l">🛏 총 대기 인원 <small>평균 {{ wait_kpis.avg_days }}일</small></span></div>
+        <div class="wd-k wd-k-mix" title="입원 전이라 상담일지의 입원목적·발병일로 판정한 값입니다">
+            <span class="wd-k-split"><b>{{ wait_kpis.recovery }}<small>명</small></b><b>{{ wait_kpis.nonrecovery }}<small>명</small></b></span>
+            <span class="wd-k-l"><i class="rec"></i>회복기 대상 · <i class="non"></i>비회복기 대상{% if wait_kpis.other or wait_kpis.unknown %} <small>· 기타 {{ wait_kpis.other }} · 미판정 {{ wait_kpis.unknown }}</small>{% endif %}</span>
+        </div>
+        <div class="wd-k {% if wait_kpis.urgent %}danger{% elif wait_kpis.priority %}warn{% else %}zero{% endif %}"><span class="wd-k-n">{{ wait_kpis.urgent }}<small> / {{ wait_kpis.priority }}</small></span><span class="wd-k-l">🔥 긴급 / 우선</span></div>
+        <div class="wd-k {% if wait_kpis.over7 %}warn{% else %}zero{% endif %}"><span class="wd-k-n">{{ wait_kpis.over7 }}</span><span class="wd-k-l">⏳ 7일 이상 대기</span></div>
+        <div class="wd-k {% if wait_kpis.contact_overdue %}danger{% else %}zero{% endif %}"><span class="wd-k-n">{{ wait_kpis.contact_overdue }}</span><span class="wd-k-l">📞 연락 지연 <small>다음 연락일 지남</small></span></div>
+        <div class="wd-k"><span class="wd-k-n">{{ wait_kpis.male }}<small> / {{ wait_kpis.female }}</small></span><span class="wd-k-l">남 / 여 <small>· 예상 입원일 있음 {{ wait_kpis.planned }}</small></span></div>
+    </div>
+    {% if bed_waiting %}<div class="tbl-wrap"><table class="tbl wd-tbl"><thead><tr><th class="wd-seq">연번</th><th>우선순위·대기</th><th>환자</th><th>예상 입원</th><th>선호 병동·병상 조건</th><th>최근·다음 연락</th><th>대기 메모</th><th>저장·입원</th></tr></thead><tbody>
     {% for c in bed_waiting %}<tr class="{% if c.wait_days is not none and c.wait_days >= 7 %}wd-over{% endif %}">
+        <td class="wd-seq">{{ c.seq }}</td>
         <td class="nowrap wd-wait-edit" data-cid="{{ c.id }}"><select class="wd-w-priority"><option {% if (c.wait_priority or '일반') == '긴급' %}selected{% endif %}>긴급</option><option {% if c.wait_priority == '우선' %}selected{% endif %}>우선</option><option {% if (c.wait_priority or '일반') == '일반' %}selected{% endif %}>일반</option></select><span class="wd-days {% if c.wait_days is not none and c.wait_days >= 7 %}over{% endif %}">{{ c.wait_days or 0 }}일</span></td>
-        <td class="nowrap"><a href="/consult/{{ c.id }}"><strong>{{ c.patient_name }}</strong></a> <span class="muted-sm">{% if c.patient_age is not none %}{{ c.patient_age }}세{% endif %}{% if c.gender == 'M' %}·남{% elif c.gender == 'F' %}·여{% endif %}</span></td>
+        <td class="nowrap"><a href="/consult/{{ c.id }}"><strong>{{ c.patient_name }}</strong></a> <span class="muted-sm">{% if c.patient_age is not none %}{{ c.patient_age }}세{% endif %}{% if c.gender == 'M' %}·남{% elif c.gender == 'F' %}·여{% endif %}</span>{% if c.care_label %}<small class="wd-block wd-care wd-care-{{ 'rec' if c.care_label == '회복기' else 'non' if c.care_label == '비회복기' else 'etc' }}">{{ c.care_label }} 대상</small>{% endif %}</td>
         <td class="nowrap">{{ c.planned_admission_date|krdate if c.planned_admission_date else '미정' }} {{ c.planned_admission_time or '' }}
             {% set _tp = transport_info(c.id).req %}<a href="/consult/{{ c.id }}#transport" class="wd-tp {% if not _tp %}wd-tp-none{% elif _tp.needed == 'no' %}wd-tp-skip{% elif _tp.sheet_status == 'sent' and _tp.driver %}wd-tp-ok{% elif _tp.sheet_status == 'sent' %}wd-tp-sent{% else %}wd-tp-warn{% endif %}" title="차량 운행: {% if not _tp %}미정{% elif _tp.needed == 'no' %}불필요{% elif _tp.sheet_status == 'sent' %}시트 전송됨{% if _tp.driver %} · 배정 {{ _tp.driver }}{% else %} · 배정 대기{% endif %}{% else %}전송 대기/실패{% endif %}">🚐{% if not _tp %}?{% elif _tp.needed == 'no' %}✕{% elif _tp.sheet_status == 'sent' and _tp.driver %}✓{% elif _tp.sheet_status == 'sent' %}…{% else %}!{% endif %}</a>
             <small class="wd-block">상담 {{ c.consult_date|krdate }}</small></td>
@@ -497,6 +510,11 @@
 .wd-k.ok .wd-k-n { color:#15803d; }
 .wd-k.ok .wd-k-l b { background:#16a34a; }
 .wd-k.zero { background:#fafafa; opacity:0.5; }
+.wd-wait-kpi .wd-k { cursor:default; }
+.wd-wait-kpi .wd-k:hover { border-color:var(--border); background:#fff; }
+.wd-seq { width:36px; text-align:center; color:#64748b; font-weight:700; }
+.wd-care { font-size:.74em; font-weight:700; }
+.wd-care-rec { color:#0f766e; } .wd-care-non { color:#b45309; } .wd-care-etc { color:#64748b; }
 .wd-k.zero .wd-k-n { color:var(--text-light); }
 .wd-k.warn { background:#fff7ed; border-color:#fdba74; }
 .wd-k.warn .wd-k-n { color:#9a3412; }

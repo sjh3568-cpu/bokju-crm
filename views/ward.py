@@ -617,6 +617,27 @@ def ward_view():
     priority_order = {"긴급": 0, "우선": 1, "일반": 2}
     bed_waiting.sort(key=lambda c: (priority_order.get(c.get("wait_priority") or "일반", 2),
                                     -(c.get("wait_days") or 0), c.get("patient_name") or ""))
+    # 입원 대기 탭 상단 KPI(2026-09-16 요청) — 총 인원, 회복기/비회복기 대상자, 긴급·우선, 7일 이상, 연락 지연.
+    # 회복기 여부는 입원 전이라 상담 판정(_recovery_status: 입원목적 우선, 없으면 발병일·진단군 자동)이다.
+    for i, c in enumerate(bed_waiting, 1):
+        c["seq"] = i
+        c["care_label"] = (_recovery_status(c) or {}).get("label")
+    wait_kpis = {
+        "total": len(bed_waiting),
+        "urgent": sum(1 for c in bed_waiting if c.get("wait_priority") == "긴급"),
+        "priority": sum(1 for c in bed_waiting if c.get("wait_priority") == "우선"),
+        "over7": sum(1 for c in bed_waiting if (c.get("wait_days") or 0) >= 7),
+        "contact_overdue": sum(1 for c in bed_waiting if c.get("contact_overdue")),
+        "recovery": sum(1 for c in bed_waiting if c.get("care_label") == "회복기"),
+        "nonrecovery": sum(1 for c in bed_waiting if c.get("care_label") == "비회복기"),
+        "other": sum(1 for c in bed_waiting if c.get("care_label") in ("일반재활", "요양")),
+        "unknown": sum(1 for c in bed_waiting if not c.get("care_label")),
+        "male": sum(1 for c in bed_waiting if c.get("gender") == "M"),
+        "female": sum(1 for c in bed_waiting if c.get("gender") == "F"),
+        "planned": sum(1 for c in bed_waiting if (c.get("planned_admission_date") or "").strip()),
+        "avg_days": (round(sum((c.get("wait_days") or 0) for c in bed_waiting) / len(bed_waiting), 1)
+                     if bed_waiting else 0),
+    }
 
     away_records = models.away_now()
     away_by_pid = {a["pid"]: a for a in away_records}
@@ -912,7 +933,7 @@ def ward_view():
         subtab=subtab, away_report=away_report, away_candidates=admitted, moves=moves_report,
         away_counts=away_counts,
         blacklisted=blacklisted,
-        bed_waiting=bed_waiting,
+        bed_waiting=bed_waiting, wait_kpis=wait_kpis,
         room_f=room_f, gender_f=gender_f, dx_f=dx_f,
         sido_f=sido_f, stay_period=stay_period, stay_periods=_WARD_STAY_PERIODS,
         ward_csv_url=url_for("ward.ward_csv") + ("?" + urlencode(request.args.to_dict()) if request.args else ""),
