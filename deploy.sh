@@ -12,7 +12,9 @@
 # 안전장치:
 # - git·docker·curl이 없거나 저장소가 아니면 "아무것도 건드리기 전에" 멈춘다.
 # - .env·data(실환자 DB)·backups는 git이 추적하지 않으므로 checkout이 건드리지 않는다.
-# - 배포 전 DB를 backups/ 로 복사한다. 기동이 확인되지 않으면 롤백 방법을 안내한다.
+# - DB 백업은 앱이 맡는다(기동 시 bokju_startup_*, 매일 03시 bokju_daily_*, gzip·보관규칙은 backup.py).
+#   예전엔 여기서 manual_배포전_*.db 를 cp로 하나 더 만들었는데 startup과 중복이라 2026-09-16에 뺐다.
+#   기동이 확인되지 않으면 롤백 방법을 안내한다.
 # 이 스크립트는 프로젝트 폴더 안에서도, 그 상위 폴더(옆)에서도, /root 처럼 아예 다른
 # 곳에서도 실행할 수 있다(그때는 BOKJU_PROJ 또는 기본 /volume1/docker/bokju-crm).
 # 프로젝트 밖에 두고 실행하면 checkout이 이 파일을 건드리지 않아 롤백까지 안전하고,
@@ -41,7 +43,6 @@ for a in "$@"; do
     esac
 done
 DB="data/bokju.db"
-BACKUP_DIR="backups"
 HEALTH="http://127.0.0.1:8003/healthz"
 LOGIN="http://127.0.0.1:8003/login"
 
@@ -103,13 +104,8 @@ if [ "$DOW" -le 5 ] && [ "$H" -ge 9 ] && [ "$H" -lt 18 ] && [ "$YES" != 1 ]; the
     fi
 fi
 
-# ── 2. DB 백업 먼저 ──
-if [ -f "$DB" ]; then
-    mkdir -p "$BACKUP_DIR"
-    B="$BACKUP_DIR/manual_배포전_$(date +%Y%m%d_%H%M%S).db"
-    cp "$DB" "$B"
-    echo "✓ DB 백업: $PROJ/$B"
-fi
+# ── 2. DB 확인 (백업은 앱 기동 시 자동) ──
+[ -f "$DB" ] && echo "✓ DB 확인: $PROJ/$DB (백업은 기동 직후 앱이 backups/bokju_startup_*.db.gz 로 남김)"
 
 # ── 3. 태그 파일로 교체 (.env·data·backups는 gitignore라 안 건드림) ──
 git checkout -q "$TAG" || fail "코드 교체(checkout) 실패."

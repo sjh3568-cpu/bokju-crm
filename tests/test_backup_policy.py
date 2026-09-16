@@ -1,4 +1,4 @@
-"""백업 보관 규칙 — 압축 저장, daily 30일, startup 5개, manual_배포전 3개, 1회성 pre_*는 보존."""
+"""백업 보관 규칙 — 압축 저장, daily 30일, startup 5개, 옛 manual_배포전은 전부 삭제, 1회성 pre_*는 보존."""
 import gzip
 import os
 import sqlite3
@@ -57,9 +57,8 @@ class BackupPolicyTests(unittest.TestCase):
         self.assertEqual(backup.KEEP_STARTUP, 5)
         self.assertEqual([n for n in left if n.startswith("bokju_startup_")],
                          [f"bokju_startup_2026091{i}_000000.db.gz" for i in (3, 4, 5, 6, 7)])  # 최근 5개
-        self.assertEqual(len([n for n in left if n.startswith("manual_배포전_")]), backup.KEEP_MANUAL)
-        self.assertIn("manual_배포전_20260914_000000.db", left)
-        self.assertNotIn("manual_배포전_20260910_000000.db", left)
+        self.assertEqual(backup.KEEP_MANUAL, 0)   # deploy.sh가 더는 만들지 않으므로 남은 것도 정리
+        self.assertEqual([n for n in left if n.startswith("manual_배포전_")], [])
         self.assertNotIn("bokju_daily_20260801_030000.db.gz", left)
         self.assertIn("bokju_daily_20260901_030000.db", left)
         self.assertIn("pre_excel_import_20260701.db", left)

@@ -10,7 +10,8 @@ SQLite 온라인 백업 API(`Connection.backup`)를 쓴다. 파일 복사와 달
   · 보관 규칙(2026-09-16, 배포 1회당 68MB씩 쌓여 backups/가 1.9GB가 된 뒤 정리):
       daily    BACKUP_KEEP_DAYS 일 보관 (기본 30일) — 며칠 전 상태 복구는 이쪽이 맡는다
       startup  최근 BACKUP_KEEP_STARTUP 개만 (기본 5개) — 재기동마다 생기므로 개수로 자른다
-      manual_배포전_*  deploy.sh가 배포 전 cp한 파일, 최근 BACKUP_KEEP_MANUAL 개만 (기본 3개)
+      manual_배포전_*  예전 deploy.sh가 배포 전 cp하던 파일 — startup과 중복이라 이제 만들지 않고,
+                       남은 것은 최근 BACKUP_KEEP_MANUAL 개(기본 0 = 전부)까지 지운다
       그 밖의 pre_* 같은 1회성 수동 백업은 건드리지 않는다
   · 복구: gunzip -c backups/bokju_daily_YYYYMMDD_HHMMSS.db.gz > data/bokju.db (앱 중지 상태에서)
 
@@ -34,7 +35,7 @@ BACKUP_DIR = Path(os.getenv("BACKUP_DIR") or "./backups")
 BACKUP_HOUR = int(os.getenv("BACKUP_HOUR", "3"))
 KEEP_DAYS = int(os.getenv("BACKUP_KEEP_DAYS", "30"))
 KEEP_STARTUP = int(os.getenv("BACKUP_KEEP_STARTUP", "5"))
-KEEP_MANUAL = int(os.getenv("BACKUP_KEEP_MANUAL", "3"))
+KEEP_MANUAL = int(os.getenv("BACKUP_KEEP_MANUAL", "0"))
 COMPRESS = os.getenv("BACKUP_COMPRESS", "1") not in ("0", "false", "no")
 
 
