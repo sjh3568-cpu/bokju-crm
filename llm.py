@@ -470,9 +470,9 @@ def fax_ai_enabled() -> bool:
 
 def fax_max_pages() -> int:
     try:
-        return max(1, int(os.getenv("FAX_AI_MAX_PAGES", "20")))
+        return max(1, int(os.getenv("FAX_AI_MAX_PAGES", "50")))
     except ValueError:
-        return 20
+        return 50
 
 
 def _pdf_head(data: bytes, max_pages: int) -> tuple[bytes, int, int]:
@@ -498,7 +498,7 @@ def _pdf_head(data: bytes, max_pages: int) -> tuple[bytes, int, int]:
 def analyze_document(path: str, *, hint: str = "") -> dict:
     """팩스 PDF/이미지 1개 → FAX_SCHEMA dict (+ _pages_total/_pages_sent). 실패 시 RuntimeError.
 
-    보통 팩스는 10~20쪽이라 기본 FAX_AI_MAX_PAGES=20이면 통째로 읽고, 책 두께(수백 쪽)로 오면 앞 20쪽만
+    보통 팩스는 10~20쪽이라 기본 FAX_AI_MAX_PAGES=50이면 통째로 읽고, 책 두께(수백 쪽)로 오면 앞 50쪽만
     보낸다 — 환자·진단·의뢰 사유는 앞장에 있고, 뒷장까지 보내면 시간·비용만 커진다. 파일 자체는 통째로 보관된다.
     """
     import base64

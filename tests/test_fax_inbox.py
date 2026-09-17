@@ -286,12 +286,12 @@ class FaxInboxTests(unittest.TestCase):
         self.assertTrue(outside.is_file())
         self.assertIsNone(models.get_document(d["id"])["file_deleted_at"])
 
-    def test_defaults_keep_10_days_and_20_pages(self):
+    def test_defaults_keep_10_days_and_50_pages(self):
         import llm
         with patch.dict(os.environ, {"FAX_KEEP_DAYS": "", "FAX_AI_MAX_PAGES": ""}):
             os.environ.pop("FAX_KEEP_DAYS"); os.environ.pop("FAX_AI_MAX_PAGES")
             self.assertEqual(fax_inbox.keep_days(), 10)
-            self.assertEqual(llm.fax_max_pages(), 20)
+            self.assertEqual(llm.fax_max_pages(), 50)
 
     def test_size_limit_applies_after_page_cut(self):
         """책 두께 팩스 — 원본이 25MB를 넘어도 앞쪽만 잘라 보내면 판독된다."""
