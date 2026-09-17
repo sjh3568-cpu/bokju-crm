@@ -429,7 +429,7 @@
                                min="{{ a.event_date or '' }}" title="복귀 예정일">
                         <input type="text" class="wd-back-room" value="{{ a.return_room or c.room_number or '' }}" placeholder="복귀 병실" maxlength="50" size="7" title="복귀 병실">
                         <button type="button" class="btn {% if a.expected_return_date %}btn-secondary{% else %}btn-primary{% endif %} btn-xs wd-back" data-aevent="{{ a.id }}">{% if a.expected_return_date %}예정 변경{% else %}↩ 복귀 예정{% endif %}</button>
-                        {% if a.expected_return_date %}<button type="button" class="btn btn-primary btn-xs wd-back-done" data-aevent="{{ a.id }}" title="오늘 실제 복귀 — 입원 완료로 집계">완료</button><button type="button" class="btn btn-secondary btn-xs wd-back-clear" data-aevent="{{ a.id }}" data-name="{{ c.patient_name }}" title="잘못 누른 복귀 예정을 지운다 — 외진 중으로만 남는다">예정 취소</button>{% endif %}
+                        {% if a.expected_return_date %}<button type="button" class="btn btn-primary btn-xs wd-back-done" data-aevent="{{ a.id }}" title="실제 복귀 — 날짜칸이 지난 날짜면 그날로, 아니면 오늘로 입원 완료 집계">완료</button><button type="button" class="btn btn-secondary btn-xs wd-back-clear" data-aevent="{{ a.id }}" data-name="{{ c.patient_name }}" title="잘못 누른 복귀 예정을 지운다 — 외진 중으로만 남는다">예정 취소</button>{% endif %}
                     </td>
                 </tr>
                 {% endfor %}
@@ -1176,6 +1176,16 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
             } catch(e) { btn.disabled=false; alert('안내 확인 저장 실패: '+e.message); }
         });
     });
+    root.querySelectorAll('.wd-back-cell').forEach(cell => {
+        const input = cell.querySelector('.wd-back-date'), btn = cell.querySelector('.wd-back'), outcome = cell.querySelector('.wd-back-outcome');
+        if (!input || !btn) return;
+        if (!btn.dataset.label) btn.dataset.label = btn.textContent.trim();
+        const relabel = () => {
+            if (outcome && outcome.value === '전원') return;
+            btn.textContent = (input.value && input.value < todayISO()) ? '복귀 완료 저장' : btn.dataset.label;
+        };
+        input.addEventListener('change', relabel); input.addEventListener('input', relabel); relabel();
+    });
     root.querySelectorAll('.wd-back').forEach(btn => {
         btn.addEventListener('click', async () => {
             const cell = btn.closest('.wd-back-cell');
@@ -1194,6 +1204,15 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
                     if (note && note.value.trim()) body.return_note = note.value.trim();
                     const r = await api.post(`/api/admission-event/${btn.dataset.aevent}/return`, body);
                     toast(`✓ 타 병원 전원 처리 (${r.return_date})`, 'success');
+                } else if (input && input.value && input.value < todayISO()) {
+                    // 지난 날짜는 '예정'이 아니라 그날 돌아온 것 — 복귀 완료로 기록한다(2026-09-17: 9/16 복귀를
+                    // 9/17 예정으로 잘못 남긴 건을 화면에서 바로 고칠 수 있게). 서버가 외진일 이전·미래는 막는다.
+                    if (!confirm(`${input.value}에 실제 복귀한 것으로 처리할까요? (그날 입원 완료로 집계)`)) { btn.disabled = false; return; }
+                    const body = { return_date: input.value };
+                    if (room && room.value.trim()) body.return_room = room.value.trim();
+                    if (note && note.value.trim()) body.return_note = note.value.trim();
+                    const r = await api.post(`/api/admission-event/${btn.dataset.aevent}/return`, body);
+                    toast(`✓ 복귀 완료 (${r.return_date})`, 'success');
                 } else {
                     if (!input || !input.value) { alert('복귀 예정일을 입력하세요.'); btn.disabled = false; return; }
                     const body = { expected_return_date: input.value };
@@ -1221,9 +1240,17 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
     // 외진 [완료] — 오늘 실제 복귀. 복귀 예정 때 적어 둔 병실·기타 사항은 서버가 이어받는다.
     root.querySelectorAll('.wd-back-done').forEach(btn => {
         btn.addEventListener('click', async () => {
+            const cell = btn.closest('.wd-back-cell');
+            const input = cell ? cell.querySelector('.wd-back-date') : null;
+            const body = {};
+            if (input && input.value && input.value < todayISO()) {
+                // 날짜칸을 지난 날짜로 바꿔 두고 [완료]를 누르면 오늘이 아니라 그날 복귀로 기록
+                if (!confirm(`${input.value}에 복귀한 것으로 처리할까요? (오늘이 아니라 그날 입원 완료로 집계)`)) return;
+                body.return_date = input.value;
+            }
             btn.disabled = true;
             try {
-                const r = await api.post(`/api/admission-event/${btn.dataset.aevent}/return`, {});
+                const r = await api.post(`/api/admission-event/${btn.dataset.aevent}/return`, body);
                 toast(`✓ 복귀 완료 (${r.return_date}) — 오늘 입원 완료로 집계`, 'success');
                 setTimeout(() => location.reload(), 400);
             } catch (e) { btn.disabled = false; alert('복귀 완료 실패: ' + e.message); }

@@ -138,7 +138,7 @@
             <input class="wd-back-hospital" maxlength="200" placeholder="전원 병원" aria-label="{{ c.patient_name }} 전원 병원" hidden>
             <input class="wd-back-note" maxlength="3000" value="{{ c.return_note or '' }}" placeholder="기타 사항" aria-label="{{ c.patient_name }} 기타 사항">
             <button type="button" class="btn btn-primary btn-xs wd-back" data-aevent="{{ c.away_id }}" data-label="복귀 예정 저장">복귀 예정 저장</button>
-            {% if c.expected_return_date %}<button type="button" class="btn btn-secondary btn-xs wd-back-done" data-aevent="{{ c.away_id }}" title="오늘 실제 복귀 — 입원 완료로 집계">복귀 완료</button>{% endif %}
+            {% if c.expected_return_date %}<button type="button" class="btn btn-secondary btn-xs wd-back-done" data-aevent="{{ c.away_id }}" title="실제 복귀 — 날짜칸이 지난 날짜면 그날로, 아니면 오늘로 입원 완료 집계">복귀 완료</button>{% endif %}
         </div>{% endif %}{% endmacro %}
 
     {% if report.view == 'feed' %}
