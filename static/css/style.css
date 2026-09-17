@@ -370,6 +370,18 @@ fieldset.opt-box.box-half { flex: 1 1 calc(50% - 12px); min-width: 200px; }
     border-radius: 4px;
     background: white;
 }
+.sub-fields-textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 5px 8px;
+    font-size: 0.85em;
+    font-family: inherit;
+    line-height: 1.4;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: white;
+    resize: vertical;
+}
 
 /* 한 줄 옵션 모음 — 활동 수동, 의식 기타 등 */
 .compact-row {

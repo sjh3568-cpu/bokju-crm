@@ -1318,6 +1318,12 @@ input.room-invalid { border-color:#ef4444 !important; box-shadow:0 0 0 2px rgba(
                                value="{{ consultation.cancer_patch if is_edit and consultation.cancer_patch else '' }}">
                     </div>
                 </div>
+                {# 기타 — 체크 항목에 없는 기저질환을 자유롭게 기재 (consultations.chronic_other) #}
+                <div class="sub-fields">
+                    <div class="sub-fields-title">기타 (체크 항목에 없는 기저질환을 자유롭게 기재)</div>
+                    <textarea class="sub-fields-textarea" name="consultation.chronic_other" rows="2"
+                              placeholder="예) 갑상선기능저하증, 만성신부전(투석 주3회), 천식 …">{{ consultation.chronic_other if is_edit and consultation.chronic_other else '' }}</textarea>
+                </div>
                 {% endif %}
             </fieldset>
             {% if group_name == '기저질환' %}

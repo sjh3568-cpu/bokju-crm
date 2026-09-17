@@ -203,8 +203,8 @@ td.line2 { line-height: 1.55; }
         <span class="row">
           {{ opt('암' in dz, '암') }}-부위: <span class="v">{{ c.cancer_site or '' }}</span>&nbsp;&nbsp; 발병일: <span class="v">{{ c.cancer_onset or '' }}</span>&nbsp;&nbsp;
           전이: <span class="v">{{ c.cancer_metastasis or '' }}</span>&nbsp;&nbsp; 통증: <span class="v">{{ c.cancer_pain or '' }}</span>&nbsp;&nbsp; patch사용: <span class="v">{{ c.cancer_patch or '' }}</span>
-          {% if c.chronic_other %}<span class="sub">&nbsp; 기타: <span class="v">{{ c.chronic_other }}</span></span>{% endif %}
         </span>
+        {% if c.chronic_other %}<span class="row">기타: <span class="v" style="white-space:pre-wrap">{{ c.chronic_other }}</span></span>{% endif %}
         <span class="row">
           {{ opt('뇌출혈' in dz, '뇌출혈') }}(수술: <span class="v">{{ c.hemorrhage_surgery or '' }}</span>)
           {{ opt('뇌경색' in dz, '뇌경색', (' ' ~ c.infarction_site) if c.infarction_site else '') }}

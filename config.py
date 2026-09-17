@@ -415,10 +415,8 @@ DISEASES_LAYOUT = {
         ]},
         {"kind": "checkbox", "value": "탈출 위험(escape)"},
         {"kind": "checkbox", "value": "암"},
-        # 체크 항목에 없는 기저질환을 글로 적는 칸 (2026-09-14). 병명 목록(diseases)에는 들어가지 않고
-        # consultations.chronic_other 컬럼에만 저장된다.
-        {"kind": "text", "label": "기타", "stretch": True,
-         "addon_field": "chronic_other", "placeholder": "체크 항목에 없는 기저질환을 적어주세요"},
+        # 체크 항목에 없는 기저질환 자유 기재 칸('기타', chronic_other)은 박스 하단 '암 상세' 아래에
+        # 여러 줄 입력으로 따로 렌더링한다(consult_form.html). 병명 목록(diseases)에는 들어가지 않는다.
     ],
     "중추신경계": [
         {"kind": "checkbox+text", "value": "뇌출혈", "stretch": True,

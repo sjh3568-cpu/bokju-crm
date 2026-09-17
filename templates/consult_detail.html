@@ -662,7 +662,6 @@ document.querySelectorAll('.iso-btn').forEach(btn => btn.addEventListener('click
         {% if c.insulin_use %}<dt>인슐린</dt><dd>{{ c.insulin_use }}</dd>{% endif %}
         {% if c.parkinson_detail %}<dt>파킨슨 상세</dt><dd>{{ c.parkinson_detail }}</dd>{% endif %}
         {% if c.rare_disease_name %}<dt>희귀성난치질환</dt><dd>{{ c.rare_disease_name }}</dd>{% endif %}
-        {% if c.chronic_other %}<dt>기저질환 기타</dt><dd>{{ c.chronic_other }}</dd>{% endif %}
         <dt>기타(ARRANGE)</dt><dd>{{ (c.arrange_items or [])|join(', ') or '-' }}</dd>
         {% set cancer_parts = [] %}
         {% if c.cancer_site %}{% set _ = cancer_parts.append('부위: ' ~ c.cancer_site) %}{% endif %}
@@ -671,6 +670,7 @@ document.querySelectorAll('.iso-btn').forEach(btn => btn.addEventListener('click
         {% if c.cancer_pain %}{% set _ = cancer_parts.append('통증: ' ~ c.cancer_pain) %}{% endif %}
         {% if c.cancer_patch %}{% set _ = cancer_parts.append('patch: ' ~ c.cancer_patch) %}{% endif %}
         {% if cancer_parts %}<dt>암 상세</dt><dd>{{ cancer_parts|join(' · ') }}</dd>{% endif %}
+        {% if c.chronic_other %}<dt>기저질환 기타</dt><dd style="white-space:pre-wrap">{{ c.chronic_other }}</dd>{% endif %}
         {% if c.disease_onset %}<dt>발병일</dt><dd>{{ c.disease_onset }}</dd>{% endif %}
         {% if c.hemorrhage_surgery %}<dt>뇌출혈 수술</dt><dd>{{ c.hemorrhage_surgery }}</dd>{% endif %}
         {% if c.infarction_site %}<dt>뇌경색 부위</dt><dd>{{ c.infarction_site }}</dd>{% endif %}

@@ -47,7 +47,8 @@ class ConsultFormFieldTests(unittest.TestCase):
         detail = self.client.get(f'/consult/{cid}').get_data(as_text=True)
         self.assertIn('갑상선기능저하증', detail)
         edit = self.client.get(f'/consult/{cid}/edit').get_data(as_text=True)
-        self.assertIn('value="갑상선기능저하증"', edit)
+        self.assertIn('name="consultation.chronic_other"', edit)
+        self.assertIn('>갑상선기능저하증</textarea>', edit)
         # 수정으로 비우기
         r = self.client.post(f'/api/consult/{cid}', json={'consultation': {'chronic_other': ''}})
         self.assertEqual(r.status_code, 200, r.get_json())
