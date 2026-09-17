@@ -198,6 +198,12 @@ def initialize():
         homepage_inbox.start_worker()
     except Exception:
         pass
+    # EasyQR 전화상담 접수(walk.induk.ai.kr) 폴링 — MariaDB 읽기전용, 새 접수 → 인박스
+    try:
+        import easyqr_inbox
+        easyqr_inbox.start_worker()
+    except Exception:
+        app.logger.exception("EasyQR 접수 연동을 시작하지 못했습니다")
     # 홈페이지 상담게시판(bokjurh.co.kr) 폴링 — 새 글 → 인박스, 인박스 '답변' → 게시판 등록
     try:
         homepage_board.start_worker()

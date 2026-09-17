@@ -283,6 +283,16 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
   서버 코드를 못 건드리는 빌더는 웹훅 푸시가 불가하므로, 빌더의 '새 문의 관리자 메일 알림'을
   전용 메일함으로 받아 사내망 워커가 IMAP 폴링(`.env` IMAP_*)해 communications(웹문의/in)로 등록.
   아웃바운드 구조라 외부 포트 개방 불필요(역프록시보다 안전). 설정 없으면 조용히 비활성.
+- **EasyQR 전화상담 접수 연동 (2026-09-17)** ([easyqr_inbox.py](easyqr_inbox.py)) — 마케팅 랜딩페이지
+  walk.induk.ai.kr의 '빠른 전화상담 신청'(`Developer/EasyQR/api/consult.php`)은 접수를 같은 NAS의
+  MariaDB `easyqr_db.consultations`(127.0.0.1:3307)에 쌓는다. EasyQR은 별도 담당 소관이라 PHP를 고쳐
+  우리 웹훅으로 쏘게 만들 수 없어, **읽기 전용 계정으로 그 테이블을 3분마다 폴링**해
+  communications(웹문의/in, created_by=EasyQR)로 등록한다. EasyQR 코드는 무변경.
+  `.env` `EASYQR_DB_HOST/PORT/USER/PASS`(+`EASYQR_POLL_SECONDS`) — 미설정이면 조용히 비활성.
+  중복 방지는 `data/easyqr_sync_status.json`의 `last_id` 워터마크 + 요약의 접수번호(`#N`) 대조 2중.
+  첫 기동은 현재 MAX(id)부터(옛 접수 폭탄 방지) — 과거분은 `EASYQR_BACKFILL_FROM=<id>`(0이면 전체).
+  카드 모양을 `/api/webhook/homepage`와 동일하게 맞춰, 나중에 EasyQR이 직접 쏘게 바뀌어도 화면이 그대로다.
+  **주의: 단방향이다.** CRM에서 처리 완료해도 EasyQR `consult_admin`에는 pending으로 남는다(쓰기 권한 없음).
 - **홈페이지 상담게시판 직접 연동 (2026-09-15)** ([homepage_board.py](homepage_board.py)) — 병원 홈페이지
   bokjurh.co.kr는 제작사 자체 PHP(카페24 호스팅)라 API·메일 알림이 없다. 공개 목록
   `/sub/07_community/guide_01`(번호·제목·접수/답변완료·가린 이름·날짜)을 3분마다 읽어 새 글을
