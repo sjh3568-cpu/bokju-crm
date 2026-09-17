@@ -126,7 +126,7 @@
     {% macro away_dday(c) %}{% if c.discharge_date %}<span class="away-dday">퇴원 완료 {{ c.discharge_date }}</span>{% elif c.discharge_watch %}{% set days = c.discharge_watch.days_left %}<span class="away-dday {% if days <= 7 %}soon{% endif %}">퇴원 <b>{% if days > 0 %}D-{{ days }}{% elif days == 0 %}D-day{% else %}D+{{ -days }}{% endif %}</b> <small>{{ c.discharge_watch.due_date }}</small></span>{% endif %}{% endmacro %}
     {% macro away_return(c) %}
         {% if c.transferred %}<strong class="away-moved">타 병원 전원</strong> <span class="muted-sm">{{ c.returned_at[:10] }}{% if c.return_hospital %} · {{ c.return_hospital }}{% endif %}</span>{% if c.return_note %}<span class="away-detail away-note muted-sm">{{ c.return_note }}</span>{% endif %}
-        {% elif c.returned_at %}<strong class="away-ok">복귀 완료</strong> <span class="muted-sm">{{ c.returned_at[:10] }}{% if c.return_room %} · {{ c.return_room }}{% endif %}</span>{% if c.return_note %}<span class="away-detail away-note muted-sm">{{ c.return_note }}</span>{% endif %}
+        {% elif c.returned_at %}<strong class="away-ok">복귀 완료</strong> <span class="muted-sm">{{ c.returned_at[:10] }}{% if c.return_room %} · {{ c.return_room }}{% endif %}</span>{% if can_edit %} <button type="button" class="btn btn-secondary btn-xs away-fix-return" data-aevent="{{ c.away_id }}" data-current="{{ c.returned_at[:10] }}" data-min="{{ c.event_date or '' }}" title="복귀일 수정 — [완료]를 오늘로 눌렀지만 실제로는 다른 날 돌아온 경우">날짜 수정</button>{% endif %}{% if c.return_note %}<span class="away-detail away-note muted-sm">{{ c.return_note }}</span>{% endif %}
         {% elif can_edit %}{% if c.expected_return_date %}<strong class="away-open away-expected" title="대시보드 오늘 입원 예정에 집계 · 실제 복귀는 대시보드 입원 처리 [완료]">복귀 예정 {{ c.expected_return_date }}</strong>{% endif %}<button type="button" class="btn btn-secondary btn-xs away-return-toggle" aria-expanded="false">{% if c.expected_return_date %}예정 변경 · 완료 ▾{% else %}미복귀 · 처리 ▾{% endif %}</button>{% else %}<strong class="away-open">미복귀</strong>{% endif %}
     {% endmacro %}
     {# 복귀 처리 폼 — 좁은 칸 안에 접어 넣던 것을 한 줄(표는 아래 전체 폭 행, 피드는 카드 하단)로. 입력 요소·클래스는 그대로라
@@ -391,6 +391,22 @@ document.addEventListener('DOMContentLoaded', () => {
         else dateInput.removeAttribute('max');
         const btn = cell.querySelector('.wd-back');
         btn.textContent = moved ? '전원 저장' : btn.dataset.label;
+    }));
+
+    // [날짜 수정] — 완료된 복귀의 날짜만 고친다(오경자 님 2026-09-17: 어제 돌아왔는데 [완료]가 오늘로 찍힘)
+    document.querySelectorAll('.away-fix-return').forEach(btn => btn.addEventListener('click', async () => {
+        const hint = btn.dataset.min ? ` · 외진일 ${btn.dataset.min} 이후, 오늘까지` : ' · 오늘까지';
+        const v = prompt('실제 복귀일을 입력하세요 (YYYY-MM-DD)' + hint, btn.dataset.current || todayISO());
+        if (v === null) return;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(v.trim())) { alert('날짜는 YYYY-MM-DD 형식으로 입력하세요.'); return; }
+        btn.disabled = true;
+        try {
+            const r = await fetch(`/api/admission-event/${btn.dataset.aevent}/return-date`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ return_date: v.trim() }) });
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(j.error || r.status);
+            location.reload();
+        } catch (e) { alert('복귀일 수정 실패: ' + e.message); btn.disabled = false; }
     }));
 
     const form = document.getElementById('away-register');

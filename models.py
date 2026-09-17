@@ -7531,6 +7531,42 @@ def undo_admission_event_return(event_id, expected_return_date=None):
         conn.close()
 
 
+def set_admission_event_return_date(event_id, return_date, returned_by=None):
+    """이미 복귀 처리된 외진의 복귀일만 고친다.
+
+    [완료]가 오늘 날짜로만 찍히던 시절, 어제 돌아온 환자가 오늘 복귀로 남았다(오경자 님, 2026-09-17).
+    되돌렸다가 다시 처리하지 않고 날짜만 바꾼다. 외진 나간 날보다 빠르거나 미래면 거부. 타 병원 전원은
+    명부 회차의 퇴원일까지 얽혀 있어 여기서 고치지 않는다(취소 후 다시 처리).
+    """
+    try:
+        rd = datetime.strptime(str(return_date or "")[:10], "%Y-%m-%d").date()
+    except ValueError:
+        raise ValueError("복귀일 형식 오류 (YYYY-MM-DD)")
+    if rd > date.today():
+        raise ValueError("복귀일이 미래입니다.")
+    conn = get_db()
+    try:
+        with conn:
+            row = conn.execute(
+                "SELECT consultation_id, event_type, event_date, returned_at, return_outcome "
+                "FROM admission_events WHERE id = ?", (event_id,)).fetchone()
+            if not row or row["event_type"] not in AWAY_EVENT_TYPES:
+                raise ValueError("외진·전원 기록이 아닙니다.")
+            if not row["returned_at"]:
+                raise ValueError("아직 복귀 처리되지 않은 외진입니다 — 복귀 처리에서 날짜를 정하세요.")
+            if (row["return_outcome"] or "복귀") == "전원":
+                raise ValueError("타 병원 전원 기록은 복귀 취소 후 다시 처리하세요.")
+            out = (row["event_date"] or "")[:10]
+            if out and rd < datetime.strptime(out, "%Y-%m-%d").date():
+                raise ValueError(f"복귀일이 외진 나간 날({out})보다 빠릅니다.")
+            conn.execute(
+                "UPDATE admission_events SET returned_at = ?, returned_by = COALESCE(?, returned_by) WHERE id = ?",
+                (rd.isoformat(), returned_by, event_id))
+            return row["consultation_id"]
+    finally:
+        conn.close()
+
+
 def away_now(patient_ids=None):
     """현재 외진 중(미복귀) 환자 목록 — 나간 날짜·기관·경과일 포함.
     보드 배지와 '현재 외진 중' 패널이 같은 데이터를 쓴다.

@@ -458,6 +458,23 @@ def api_admission_event_return_undo(event_id):
     )
     return jsonify({"ok": True, "expected_return_date": expected})
 
+@bp.route("/api/admission-event/<int:event_id>/return-date", methods=["POST"])
+@login_required
+def api_admission_event_return_date(event_id):
+    """완료된 복귀의 날짜만 고친다 — 외진 명부 [날짜 수정]."""
+    payload = request.get_json(silent=True) or {}
+    try:
+        cid = models.set_admission_event_return_date(
+            event_id, payload.get("return_date"), returned_by=g.user.get("display_name"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="update_admission_event", target_type="consultation", target_id=cid,
+        detail=f"복귀일 수정 → {str(payload.get('return_date'))[:10]}", ip=request.remote_addr,
+    )
+    return jsonify({"ok": True, "return_date": str(payload.get("return_date"))[:10]})
+
 @bp.route("/api/admission-event/<int:event_id>/details", methods=["POST"])
 @login_required
 def api_admission_event_details(event_id):
