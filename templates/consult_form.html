@@ -1610,11 +1610,11 @@ input.room-invalid { border-color:#ef4444 !important; box-shadow:0 0 0 2px rgba(
             </div>
             <div class="field" style="margin:0; flex:1 1 170px">
                 <label>주치의 <span class="req">*</span></label>
-                <input type="text" class="boxed-input" list="planned-doctor-options" data-mirror="consultation.attending_doctor"
-                       placeholder="선택 또는 직접 입력" autocomplete="off">
-                <datalist id="planned-doctor-options">
-                    {% for d in ATTENDING_DOCTORS %}<option value="{{ d }}">{% endfor %}
-                </datalist>
+                <select class="boxed-input doctor-select" data-mirror="consultation.attending_doctor">
+                    <option value="">— 주치의 선택 —</option>
+                    {% for d in ATTENDING_DOCTORS %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+                    <option value="__custom__">직접 입력…</option>
+                </select>
             </div>
             <div class="field" style="margin:0; flex:0 1 120px">
                 <label>병실 <span class="req">*</span></label>

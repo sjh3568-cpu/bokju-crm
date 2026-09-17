@@ -89,11 +89,12 @@
         {# 주치의·병실은 입원예정으로 잡은 뒤에도, 입원완료 뒤에도 여기서 바로 고친다. 상태를 안 바꾸고 칸만 바꾸면 그 자리에서 저장 #}
         <div class="status-completed-row status-doctor-row {% if _status not in ('입원예정', '입원대기', '입원완료') %}hide{% endif %}">
             <label>주치의
-                <input type="text" id="planned-doctor" list="planned-doctor-options" value="{{ c.attending_doctor or '' }}"
-                       placeholder="선택 또는 직접 입력" autocomplete="off" style="width:150px">
-                <datalist id="planned-doctor-options">
-                    {% for d in ATTENDING_DOCTORS %}<option value="{{ d }}">{% endfor %}
-                </datalist>
+                <select id="planned-doctor" class="doctor-select" style="min-width:150px">
+                    <option value="">— 주치의 선택 —</option>
+                    {% for d in ATTENDING_DOCTORS %}<option value="{{ d }}" {% if c.attending_doctor == d %}selected{% endif %}>{{ d }}</option>{% endfor %}
+                    {% if c.attending_doctor and c.attending_doctor not in ATTENDING_DOCTORS %}<option value="{{ c.attending_doctor }}" selected>{{ c.attending_doctor }}</option>{% endif %}
+                    <option value="__custom__">직접 입력…</option>
+                </select>
             </label>
             <label>병실
                 <input type="text" id="planned-room" value="{{ c.room_number or '' }}" placeholder="예: 305호" style="width:90px">
@@ -147,6 +148,7 @@
 .status-chip.on { background:var(--primary); color:#fff; border-color:var(--primary); }
 .status-completed-row, .status-hold-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
 .status-completed-row label { font-size:0.85em; color:var(--text-light); display:flex; gap:6px; align-items:center; }
+.status-completed-row select { padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:inherit; background:#fff; }
 .status-completed-row input[type=date], .status-completed-row input[type=time], .status-completed-row input[type=text] { padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:inherit; }
 .status-cancel-row { display:flex; flex-direction:column; gap:8px; }
 .cr-reason-row { display:flex; }
@@ -211,6 +213,20 @@
     const reasonRadios = card.querySelectorAll('input[name="rejection_reason"]');
     const reasonChips = card.querySelectorAll('.reason-chip');
     const reasonDetail = card.querySelector('#reason-detail');
+
+    // 주치의 드롭다운 '직접 입력…' — 목록에 없는 의사는 이름을 받아 선택지로 넣는다. 취소하면 원래 값으로.
+    function doctorCustom(sel) {
+        if (sel.value !== '__custom__') return;
+        const v = (prompt('주치의 이름을 입력하세요 (예: RM3 허남연 과장)') || '').trim();
+        if (!v) { sel.value = sel.dataset.prev || ''; return; }
+        let o = Array.from(sel.options).find(x => x.value === v);
+        if (!o) { o = new Option(v, v); sel.insertBefore(o, sel.querySelector('option[value="__custom__"]')); }
+        sel.value = v;
+    }
+    document.querySelectorAll('select.doctor-select').forEach(sel => {
+        sel.addEventListener('focus', () => { sel.dataset.prev = sel.value; });
+        sel.addEventListener('change', () => doctorCustom(sel));
+    });
 
     function checkedVal(radios) {
         for (const r of radios) if (r.checked) return r.value;

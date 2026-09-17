@@ -1078,11 +1078,28 @@
     form.querySelectorAll('[data-mirror]').forEach(mirror => {
         const src = form.querySelector(`[name="${mirror.dataset.mirror}"]`);
         if (!src) return;
-        mirror.value = src.value;
+        const isSelect = mirror.tagName === 'SELECT';
+        // 미러가 드롭다운(주치의)이면 헤더 값이 목록에 없을 때 선택지로 넣어 준다 — 그래야 값이 안 사라진다
+        const setMirror = v => {
+            if (isSelect && v && !Array.from(mirror.options).some(o => o.value === v)) {
+                mirror.insertBefore(new Option(v, v), mirror.querySelector('option[value="__custom__"]'));
+            }
+            mirror.value = v;
+        };
+        setMirror(src.value);
+        if (isSelect) {
+            mirror.addEventListener('focus', () => { mirror.dataset.prev = mirror.value; });
+            mirror.addEventListener('change', () => {
+                if (mirror.value !== '__custom__') return;
+                const v = (prompt('주치의 이름을 입력하세요 (예: RM3 허남연 과장)') || '').trim();
+                if (!v) { mirror.value = mirror.dataset.prev || ''; return; }
+                setMirror(v);
+            });
+        }
         mirror.addEventListener('input', () => { src.value = mirror.value; src.dispatchEvent(new Event('input', { bubbles: true })); });
         mirror.addEventListener('change', () => { src.value = mirror.value; src.dispatchEvent(new Event('change', { bubbles: true })); });
-        src.addEventListener('input', () => { if (mirror.value !== src.value) mirror.value = src.value; });
-        src.addEventListener('change', () => { if (mirror.value !== src.value) mirror.value = src.value; });
+        src.addEventListener('input', () => { if (mirror.value !== src.value) setMirror(src.value); });
+        src.addEventListener('change', () => { if (mirror.value !== src.value) setMirror(src.value); });
     });
 
     // ─── 병실 배정 충돌 확인 — 재원 현황(명부)·다른 입원예정과 맞춰 보고 경고 ───
