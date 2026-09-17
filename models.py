@@ -6974,6 +6974,33 @@ def away_returns_by_date(dates):
     return {d: found.get(d, 0) for d in dates}
 
 
+def away_calendar_rows(d_from, d_to, counselor=None):
+    """통합 달력용 외진 복귀 일정 — 기간 안의 복귀 예정(미복귀)과 실제 복귀.
+    대시보드 '오늘 입원 예정'이 외진 복귀 예정을 입원 예정으로 함께 세므로(6adc35e), 달력도 같은 건을 올린다.
+    counselor를 주면 그 상담사 담당 상담의 건만."""
+    conn = get_db()
+    try:
+        counselor_sql, params = "", [d_from, d_to, d_from, d_to]
+        if counselor:
+            counselor_sql = " AND c.counselor = ?"
+            params.append(counselor)
+        rows = conn.execute(
+            f"""SELECT ae.id AS event_id, ae.event_type, ae.event_date, ae.expected_return_date, ae.returned_at,
+                       ae.return_outcome, ae.return_hospital, ae.return_room,
+                       c.id AS consultation_id, c.counselor, c.patient_age, c.primary_diagnosis, c.diseases,
+                       p.name AS patient_name, p.gender
+                  FROM admission_events ae
+                  JOIN consultations c ON c.id = ae.consultation_id
+                  JOIN patients p ON p.id = c.patient_id
+                 WHERE ae.event_type IN ('응급전원', '모병원 외래치료')
+                   AND ((ae.returned_at IS NULL AND date(NULLIF(ae.expected_return_date,'')) BETWEEN date(?) AND date(?))
+                        OR date(NULLIF(ae.returned_at,'')) BETWEEN date(?) AND date(?)){counselor_sql}
+                 ORDER BY ae.id""", params).fetchall()
+    finally:
+        conn.close()
+    return [dict(r) for r in rows]
+
+
 def away_returns_as_admissions(d_from, d_to):
     """기간에 복귀한 외진 중 명부 회차가 따로 없는 건 — 입원·퇴원 이력의 '입원(복귀)' 행.
 

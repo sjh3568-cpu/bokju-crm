@@ -150,6 +150,21 @@ def _dashboard_calendar_context(uid, year, month, counselor=None):
         elif discharge_due:
             add(discharge_due, "discharge", name, "퇴원예정", href, sub=sub)
 
+    # 외진 복귀 — 대시보드 '오늘 입원 예정'은 외진 복귀 예정을 입원 예정과 함께 센다. 달력만 빼놓으면
+    # 두 화면 숫자가 어긋나 보이므로(2026-09-17 질문) 복귀 예정은 입원예정 칸에, 실제 복귀는 입원 칸에 올린다.
+    for ev in models.away_calendar_rows(start.isoformat(), last.isoformat(), counselor):
+        name = ev.get("patient_name") or "환자 미지정"
+        href = f"/consult/{ev['consultation_id']}"
+        sub = patient_sub(ev)
+        kind_txt = ev.get("event_type") or "외진"
+        if ev.get("returned_at"):
+            if (ev.get("return_outcome") or "") == "전원":
+                add(ev["returned_at"], "discharged", name, f"외진 → 전원 · {ev.get('return_hospital') or ''}".rstrip(" ·"), href, sub=sub)
+            else:
+                add(ev["returned_at"], "admitted", name, f"외진 복귀 · {kind_txt}", href, sub=sub)
+        elif ev.get("expected_return_date"):
+            add(ev["expected_return_date"], "admission", name, f"외진 복귀예정 · {kind_txt}", href, sub=sub)
+
     todos = models.list_todos_range(uid, start.isoformat(), last.isoformat())
     for todo in todos:
         begin = date.fromisoformat(todo["due_date"])
