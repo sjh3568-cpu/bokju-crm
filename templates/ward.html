@@ -615,6 +615,11 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
 .wd-filter-extra { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .wd-tagsel { padding:5px 9px; border:1px solid var(--border); border-radius:7px; font-size:0.85em; }
 /* 관리 태그 배지 */
+/* 격리 상태 — 해제된 균은 회색 이력 배지, [해제]/[재격리]는 배지 옆 작은 버튼 */
+.wd-org.off { background:#e5e7eb; color:#4b5563; }
+.wd-iso { margin:0 4px 0 1px; padding:0 5px; border:1px solid #d1d5db; border-radius:5px; background:#fff; color:#374151; font:700 .68em inherit; cursor:pointer; vertical-align:middle; }
+.wd-iso:hover { border-color:#b91c1c; color:#b91c1c; }
+.rm-bed .wd-iso { font-size:.66em; }
 /* 재입원 — 이전 입원·퇴원일은 툴팁, 전체 이력은 상담 상세의 '입원 회차 이력' */
 .wd-readmit { display:inline-block; background:#fef3c7; color:#92400e; border-radius:5px; padding:0 4px; font-size:.68em; font-weight:800; vertical-align:middle; cursor:help; }
 .wd-roster-only { display:inline-block; background:#fef3c7; color:#92400e; border-radius:5px;
@@ -1269,6 +1274,24 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
             } catch (e) { btn.disabled = false; alert('복귀 완료 실패: ' + e.message); }
         });
     });
+
+    // 격리 [해제]/[재격리] — 날짜와 근거를 받아 격리 이벤트로 남긴다(상담일지의 '입원 시 보균'은 그대로 두고 현재 상태만 바꾼다)
+    root.querySelectorAll('.wd-iso').forEach(btn => btn.addEventListener('click', async (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const clear = btn.classList.contains('wd-iso-clear');
+        const org = btn.dataset.org, who = btn.dataset.name || '';
+        const when = prompt(`${who} ${org} ${clear ? '격리 해제일' : '재검출일'} (YYYY-MM-DD)`, todayISO());
+        if (when === null) return;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(when.trim())) { alert('날짜는 YYYY-MM-DD 형식으로 입력하세요.'); return; }
+        const note = prompt(clear ? '근거·메모 (예: 감염병동 카톡 공유, 아마란스 9/16 게시)' : '메모 (선택)', clear ? '감염병동 공유(아마란스)' : '');
+        if (note === null) return;
+        btn.disabled = true;
+        try {
+            await api.post(`/api/consult/${btn.dataset.cid}/isolation`, { organism: org, status: clear ? '해제' : '검출', event_date: when.trim(), note: note.trim() });
+            toast(clear ? `✓ ${org} 해제 (${when.trim()})` : `✓ ${org} 재격리 (${when.trim()})`, 'success');
+            setTimeout(() => location.reload(), 400);
+        } catch (err) { btn.disabled = false; alert('격리 상태 저장 실패: ' + err.message); }
+    }));
 
     // 외진 기록 — 행 아래 인라인 폼
     root.querySelectorAll('.wd-away-btn').forEach(btn => {

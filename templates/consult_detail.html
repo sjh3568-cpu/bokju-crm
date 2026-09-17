@@ -601,6 +601,24 @@ tr.ae-open { background:#fff7ed; }
         });
     });
 })();
+
+// 격리 상태 [해제]/[재격리] — 재원관리 배지의 버튼과 같은 API
+document.querySelectorAll('.iso-btn').forEach(btn => btn.addEventListener('click', async () => {
+    const clear = btn.dataset.status === '해제', org = btn.dataset.org;
+    const when = prompt(`${org} ${clear ? '격리 해제일' : '재검출일'} (YYYY-MM-DD)`, todayISO());
+    if (when === null) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(when.trim())) { alert('날짜는 YYYY-MM-DD 형식으로 입력하세요.'); return; }
+    const note = prompt(clear ? '근거·메모 (예: 감염병동 카톡 공유, 아마란스 9/16 게시)' : '메모 (선택)', clear ? '감염병동 공유(아마란스)' : '');
+    if (note === null) return;
+    btn.disabled = true;
+    try {
+        const r = await fetch(`/api/consult/{{ c.id }}/isolation`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ organism: org, status: btn.dataset.status, event_date: when.trim(), note: note.trim() }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || r.status);
+        location.reload();
+    } catch (e) { btn.disabled = false; alert('격리 상태 저장 실패: ' + e.message); }
+}));
 </script>
 
 <div class="card">
@@ -676,6 +694,18 @@ tr.ae-open { background:#fff7ed; }
           {%- set _ = sparts.append(opt ~ ('(' ~ c[fld] ~ ')' if c[fld] else '')) -%}
         {%- endfor -%}
         {{ sparts|join(', ') or '-' }}</dd>
+        {% if isolation and (isolation.detected or isolation.state) %}
+        <dt>격리 상태</dt><dd class="iso-cell">
+            {%- set _active = [] -%}
+            {%- for org in isolation.detected if (isolation.state.get(org) or {}).get('status') != '해제' %}{% set _ = _active.append(org) %}{% endfor -%}
+            {%- for org, ev in isolation.state.items() if ev.status == '검출' and org not in _active and org not in isolation.detected %}{% set _ = _active.append(org) %}{% endfor -%}
+            {%- for org in _active %}<span class="wd-org" style="display:inline-block;padding:1px 7px;border-radius:6px;background:#b91c1c;color:#fff;font-size:.78em;font-weight:800;margin-right:2px">{{ org }}</span> <button type="button" class="btn btn-secondary btn-xs iso-btn" data-org="{{ org }}" data-status="해제">해제</button> {% endfor -%}
+            {%- for org, ev in isolation.state.items() if ev.status == '해제' %}<span style="display:inline-block;padding:1px 7px;border-radius:6px;background:#e5e7eb;color:#4b5563;font-size:.78em;font-weight:800;margin-right:2px" title="{{ ev.note or '' }}">{{ org }} 해제 {{ ev.event_date }}</span> <button type="button" class="btn btn-secondary btn-xs iso-btn" data-org="{{ org }}" data-status="검출">재격리</button> {% endfor -%}
+            {%- if not _active and not isolation.state %}-{% endif -%}
+            {%- if isolation.events %}<div class="muted-sm" style="margin-top:4px">{% for e in isolation.events %}{{ e.event_date }} {{ e.organism }} {{ e.status }}{% if e.note %}({{ e.note }}){% endif %}{% if e.created_by %} · {{ e.created_by }}{% endif %}{% if not loop.last %} / {% endif %}{% endfor %}</div>{% endif -%}
+            <div class="muted-sm" style="margin-top:2px">입원 시 보균은 상담일지 기록 그대로 두고, 해제·재검출만 여기서 남깁니다. 해제 근거(감염병동 카톡·아마란스 공유)를 메모에 적어 주세요.</div>
+        </dd>
+        {% endif %}
         <dt>연하검사</dt><dd>{{ c.swallow_test or '-' }}{% if c.swallow_test_dates %} · {{ c.swallow_test_dates }}{% endif %}</dd>
         <dt>치료</dt><dd>{{ (c.therapy or [])|join(', ') or '-' }}</dd>
     </dl>

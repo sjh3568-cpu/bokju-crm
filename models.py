@@ -543,6 +543,21 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_bedres_active ON bed_reservations(released_at, room_number);
 
+        -- 격리 상태 이벤트 (2026-09-17): 내성균(CRE·VRE…)은 상담일지에 '입원 시 보균'으로 남고, 해제·재검출은
+        -- 여기 이벤트로 쌓는다. 화면은 균별 최신 이벤트가 '해제'면 배지를 회색으로(이력), 아니면 빨강(격리 중).
+        -- 해제 판단은 감염병동 간호사가 카톡·아마란스로 공유하고 상담실이 입력한다 — note에 근거를 남긴다.
+        CREATE TABLE IF NOT EXISTS isolation_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            consultation_id INTEGER NOT NULL REFERENCES consultations(id) ON DELETE CASCADE,
+            organism TEXT NOT NULL,
+            status TEXT NOT NULL,
+            event_date DATE NOT NULL,
+            note TEXT,
+            created_by TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_isolation_consult ON isolation_events(consultation_id, organism, event_date, id);
+
         CREATE TABLE IF NOT EXISTS quick_filters (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             label TEXT NOT NULL,
@@ -2603,6 +2618,123 @@ def patient_admission_history(patient_id):
     return merged
 
 
+# ───────── 격리 상태 (2026-09-17) ─────────
+ORGANISM_TAGS = ("CRE", "VRE", "CPE", "MRSA", "MRAB", "MRPA")
+ISOLATION_STATUSES = ("검출", "해제")
+
+
+def detected_organisms(item):
+    """상담일지에 적힌 내성균 — 특수관리 항목·균 비고·진단/질환 문구 어디에 있든 잡는다(입원 시 보균 사실)."""
+    special_care = item.get("special_care") or []
+    if isinstance(special_care, str):
+        special_care = [special_care]
+    diseases = item.get("diseases") or []
+    if isinstance(diseases, str):
+        diseases = [diseases]
+    text = " ".join([
+        " ".join(str(v) for v in special_care), " ".join(str(v) for v in diseases),
+        item.get("primary_diagnosis") or "", item.get("disease_detail") or "",
+        item.get("secondary_diagnosis") or "",
+        *(tag for tag, k in (("MRSA", "special_mrsa_note"), ("VRE", "special_vre_note"), ("CRE", "special_cre_note"))
+          if (item.get(k) or "").strip()),
+    ]).upper()
+    return [tag for tag in ORGANISM_TAGS if tag in text]
+
+
+def detected_organisms_by_consultation(consultation_ids):
+    """{상담id: [균…]} — 재원 명단 행은 상담 요약 컬럼만 들고 있어(list_consultations) 특수관리 항목이 없다.
+    필요한 칸만 따로 읽어 detected_organisms로 판정한다(대시보드 입원 환자 현황과 같은 기준)."""
+    ids = [int(c) for c in set(consultation_ids or []) if c]
+    if not ids:
+        return {}
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            f"""SELECT id, special_care, diseases, primary_diagnosis, secondary_diagnosis, disease_detail,
+                       special_mrsa_note, special_vre_note, special_cre_note
+                  FROM consultations WHERE id IN ({",".join("?" * len(ids))})""", ids).fetchall()
+    finally:
+        conn.close()
+    out = {}
+    for r in rows:
+        d = _deserialize_consultation(dict(r))
+        out[d["id"]] = detected_organisms(d)
+    return out
+
+
+def isolation_state(consultation_ids):
+    """{상담id: {균: {"status","event_date","note","created_by"}}} — 균별 최신 이벤트."""
+    ids = [int(c) for c in set(consultation_ids or []) if c]
+    if not ids:
+        return {}
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            f"""SELECT consultation_id, organism, status, event_date, note, created_by
+                  FROM isolation_events
+                 WHERE consultation_id IN ({",".join("?" * len(ids))})
+                 ORDER BY consultation_id, organism, date(event_date), id""", ids).fetchall()
+    finally:
+        conn.close()
+    out = {}
+    for r in rows:   # 정렬이 오래된 → 최신이라 마지막 것이 남는다
+        out.setdefault(r["consultation_id"], {})[r["organism"]] = {
+            "status": r["status"], "event_date": str(r["event_date"])[:10],
+            "note": r["note"], "created_by": r["created_by"]}
+    return out
+
+
+def isolation_events(consultation_id):
+    conn = get_db()
+    try:
+        return [dict(r) for r in conn.execute(
+            "SELECT * FROM isolation_events WHERE consultation_id = ? ORDER BY date(event_date) DESC, id DESC",
+            (consultation_id,)).fetchall()]
+    finally:
+        conn.close()
+
+
+def add_isolation_event(consultation_id, organism, status, event_date, note=None, created_by=None):
+    organism = (organism or "").strip().upper()
+    status = (status or "").strip()
+    if organism not in ORGANISM_TAGS:
+        raise ValueError("균 종류는 " + "·".join(ORGANISM_TAGS) + " 중 하나입니다.")
+    if status not in ISOLATION_STATUSES:
+        raise ValueError("상태는 검출 또는 해제입니다.")
+    try:
+        d = datetime.strptime(str(event_date or "")[:10], "%Y-%m-%d").date()
+    except ValueError:
+        raise ValueError("날짜 형식 오류 (YYYY-MM-DD)")
+    if d > date.today():
+        raise ValueError("날짜가 미래입니다.")
+    conn = get_db()
+    try:
+        with conn:
+            if not conn.execute("SELECT 1 FROM consultations WHERE id = ?", (consultation_id,)).fetchone():
+                raise ValueError("상담을 찾을 수 없습니다.")
+            cur = conn.execute(
+                "INSERT INTO isolation_events (consultation_id, organism, status, event_date, note, created_by) VALUES (?,?,?,?,?,?)",
+                (consultation_id, organism, status, d.isoformat(), (note or "").strip() or None, created_by))
+            return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def apply_isolation(rows, key="organisms", cid_key="id"):
+    """행 목록의 균 배지에 격리 상태를 입힌다 — 최신 이벤트가 '해제'인 균은 key에서 빼고
+    rows[i][key + "_cleared"]에 [{"organism","event_date","note"}]로 남긴다. '검출'(재격리) 이벤트는 균을 다시 넣는다."""
+    rows = list(rows or [])
+    state = isolation_state([r.get(cid_key) for r in rows if r.get(cid_key)])
+    for r in rows:
+        st = state.get(r.get(cid_key)) or {}
+        active = [o for o in (r.get(key) or []) if st.get(o, {}).get("status") != "해제"]
+        active += [o for o, ev in st.items() if ev["status"] == "검출" and o not in active]
+        r[key] = [o for o in ORGANISM_TAGS if o in active]
+        r[key + "_cleared"] = [{"organism": o, "event_date": ev["event_date"], "note": ev.get("note")}
+                               for o, ev in st.items() if ev["status"] == "해제"]
+    return rows
+
+
 def set_app_meta(key, value):
     conn = get_db()
     conn.execute("""INSERT INTO app_meta(key,value,updated_at) VALUES(?,?,CURRENT_TIMESTAMP)
@@ -4356,6 +4488,9 @@ def dashboard_summary(admission_lookup_from: str | None = None,
         d for d in admission_schedule
         if not (d.get("admission_kind") == "return" and d.get("admission_bucket") == "planned"
                 and completed_after.get(d.get("patient_id"), "") > (d.get("away_event_date") or "")[:10])]
+
+    # 격리 상태 — 해제된 균은 빨간 배지에서 빼고 회색 이력으로(오경자 님: 입원 시 VRE → 해제 후에도 계속 빨갛게 보였다, 2026-09-17)
+    apply_isolation(admission_schedule, key="admission_organisms", cid_key="id")
 
     # 재입원 표시 — 이 입원보다 앞서 퇴원한 회차가 있으면 그 입원·퇴원일을 함께 보여준다
     # (2026-09-16 요청: 재입원 환자는 기존 입원일과 신규 입원일을 다 파악할 수 있게).

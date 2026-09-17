@@ -539,6 +539,10 @@ def consult_detail(cid):
     return render_template("consult_detail.html", c=c, history=history,
                            admission_events=models.list_admission_events(cid),
                            admission_episodes=models.patient_admission_history(c["patient_id"]),
+                           isolation={"detected": models.detected_organisms(c),
+                                      "state": models.isolation_state([cid]).get(cid, {}),
+                                      "events": models.isolation_events(cid),
+                                      "tags": models.ORGANISM_TAGS},
                            patient_todos=patient_todos, today_str=date.today().isoformat(),
                            LIFECYCLE_EVENT_TYPES=LIFECYCLE_EVENT_TYPES)
 
@@ -1238,6 +1242,25 @@ def api_consult_update(cid):
 
 
 # ───────────────────── API:결과(입원진행단계)변경 ─────────────────────
+
+@bp.route("/api/consult/<int:cid>/isolation", methods=["POST"])
+@login_required
+def api_consult_isolation(cid):
+    """격리 상태 이벤트 — {organism, status: 검출|해제, event_date, note}. 재원관리 배지의 [해제]/[재격리]와 상담 상세가 쓴다."""
+    payload = request.get_json(silent=True) or {}
+    try:
+        eid = models.add_isolation_event(
+            cid, payload.get("organism"), payload.get("status"), payload.get("event_date") or date.today().isoformat(),
+            note=payload.get("note"), created_by=g.user.get("display_name"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="isolation_event", target_type="consultation", target_id=cid,
+        detail=f"{str(payload.get('organism')).upper()} {payload.get('status')} {str(payload.get('event_date') or '')[:10]}",
+        ip=request.remote_addr)
+    return jsonify({"ok": True, "id": eid, "state": models.isolation_state([cid]).get(cid, {})})
+
 
 def _planned_missing_msg(missing):
     return "입원예정에는 입원예정일·주치의·병실이 모두 필요합니다. 누락: " + ", ".join(missing)

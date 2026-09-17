@@ -917,6 +917,12 @@ def ward_view():
 
     # KPI/태그/균 세부 필터 — 목록 표시에 적용
     filt_label = _WARD_FILTS[filt][0] if filt in _WARD_FILTS else None
+    # 내성균 배지 — 명단 행에는 특수관리 항목이 없어(요약 컬럼) 상담일지에서 따로 판정해 얹는다(대시보드와 같은 기준)
+    _detected = models.detected_organisms_by_consultation([c.get("id") for c in admitted if c.get("id")])
+    for c in admitted:
+        _have = set(c.get("organisms") or []) | set(_detected.get(c.get("id"), []))
+        c["organisms"] = [o for o in models.ORGANISM_TAGS if o in _have]
+    models.apply_isolation(admitted, key="organisms")      # 해제된 균은 배지·'균 보유' 필터에서 빠진다(이력은 회색)
     admitted_list = _apply_ward_filters(admitted, filt, ward_f, tag_f, organism_f)
     admitted_list = _apply_ward_column_filters(admitted_list)
     if filt == "recdue" and sort == "dday":

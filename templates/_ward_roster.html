@@ -91,7 +91,7 @@
                     <td class="nowrap">{{ c.attending_doctor or '-' }}</td>
                     <td class="wd-dx" title="주 {{ c.dx_primary|join(', ') }}{% if c.dx_secondary %} / 부 {{ c.dx_secondary|join(', ') }}{% endif %}">
                         <div class="wd-dx-main">
-                            {% for org in c.organisms %}<span class="wd-org">{{ org }}</span>{% endfor %}
+                            {% for org in c.organisms %}<span class="wd-org" title="격리 중 — 해제되면 [해제]로 날짜와 근거(카톡·아마란스 공유)를 남긴다">{{ org }}</span>{% if c.id %}<button type="button" class="wd-iso wd-iso-clear" data-cid="{{ c.id }}" data-org="{{ org }}" data-name="{{ c.patient_name }}" title="{{ org }} 격리 해제 기록">해제</button>{% endif %}{% endfor %}{% for x in (c.organisms_cleared or []) %}<span class="wd-org off" title="{{ x.organism }} 해제 {{ x.event_date }}{% if x.note %} — {{ x.note }}{% endif %}">{{ x.organism }} 해제 {{ x.event_date[5:] }}</span>{% if c.id %}<button type="button" class="wd-iso wd-iso-redetect" data-cid="{{ c.id }}" data-org="{{ x.organism }}" data-name="{{ c.patient_name }}" title="{{ x.organism }} 재검출 — 다시 격리">재격리</button>{% endif %}{% endfor %}
                             {% if c.dx_primary %}{{ c.dx_primary[:2]|join(', ') }}{% if c.dx_primary|length > 2 %} 외{{ c.dx_primary|length - 2 }}{% endif %}
                             {% else %}<span class="muted-sm">주진단 미기재</span>{% endif %}
                         </div>
