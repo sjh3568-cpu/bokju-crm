@@ -1277,6 +1277,16 @@ def api_consult_status(cid):
             return jsonify({"error": "허용되지 않은 입원 진행값"}), 400
         fields["admission_status"] = status or None
         audit.append(f"입원:{status or '미정'}")
+        # 주치의·병실은 어느 단계에서든 키가 온 것만 반영, 빈값이면 비운다(2026-09-15 → 2026-09-17 전 단계로 확장:
+        # 입원예정으로 잡은 뒤에도, 입원완료 뒤에도 상담 상세 카드에서 바로 고칠 수 있어야 한다).
+        for key, label in (("attending_doctor", "주치의"), ("room_number", "병실")):
+            if key in payload:
+                val = (payload.get(key) or "").strip()
+                if len(val) > 60:
+                    return jsonify({"error": f"{label} 값이 너무 깁니다."}), 400
+                fields[key] = val or None
+                if val:
+                    audit.append(f"{label}:{val}")
         if status == "입원완료":
             adate = (payload.get("admission_date") or "").strip()
             if adate:
@@ -1307,15 +1317,6 @@ def api_consult_status(cid):
                 if ptime and not re.fullmatch(r"\d{2}:\d{2}", ptime):
                     return jsonify({"error": "입원예정 시간 형식 오류(HH:MM)"}), 400
                 fields["planned_admission_time"] = ptime or None
-            # 주치의·병실도 같은 자리에서(2026-09-15). 키가 온 것만 반영, 빈값이면 비운다.
-            for key, label in (("attending_doctor", "주치의"), ("room_number", "병실")):
-                if key in payload:
-                    val = (payload.get(key) or "").strip()
-                    if len(val) > 60:
-                        return jsonify({"error": f"{label} 값이 너무 깁니다."}), 400
-                    fields[key] = val or None
-                    if val:
-                        audit.append(f"{label}:{val}")
             if status == "입원예정":
                 merged = {**existing, **fields}
                 missing = models.planned_admission_missing(merged)
