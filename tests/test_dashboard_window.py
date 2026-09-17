@@ -128,6 +128,40 @@ class DashboardWindowTests(unittest.TestCase):
         self.assertIn("소개 (지인추천)", html)
         self.assertIn("홍길동 · 안동병원 사회사업실", html)
 
+    def test_editing_admission_date_after_away_closes_the_away_event(self):
+        """오경자 님(2026-09-17): 8/29 응급전원 중 → 9/16 재입원을 상담 실제입원일 정정으로만 기록.
+        외진 기록이 열린 채 남아 '복귀예정 9/17'이 따로 보였다 → 입원일이 외진 이후면 그날 복귀로 자동 닫는다."""
+        with models.get_db() as conn:
+            conn.execute("INSERT INTO patients (id,name,gender) VALUES (9,'오경자','F')")
+            conn.execute("""INSERT INTO consultations (id, patient_id, consult_date, admission_status, actual_admission_date,
+                            attending_doctor, room_number, patient_age)
+                            VALUES (9, 9, ?, '입원완료', ?, 'RM1 이성범 부장', '510호', 74)""", (d(-100), d(-60)))
+            conn.execute("""INSERT INTO admission_events (consultation_id, event_type, event_date, hospital, expected_return_date)
+                            VALUES (9, '응급전원', ?, '안동병원', ?)""", (d(-20), d(1)))
+        models.sync_admission_episode(9)
+        before = [r for r in models.dashboard_summary(d(-1), d(1))["admission_schedule"] if r["patient_id"] == 9]
+        self.assertEqual([(r["admission_kind"], r["admission_bucket"], r["admission_display_date"]) for r in before],
+                         [("return", "planned", d(1))])
+        # 상담 상세에서 실제입원일만 오늘로 정정
+        r = self.client.post("/api/consult/9", json={"consultation": {"actual_admission_date": d(0), "admission_date": d(0)}})
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.assertIsNone(models.open_away_event(9), "외진 기록이 그날 복귀로 자동으로 닫혀야 한다")
+        rows = [r for r in models.dashboard_summary(d(-1), d(1))["admission_schedule"] if r["patient_id"] == 9]
+        self.assertEqual([(r["admission_kind"], r["admission_bucket"], r["admission_display_date"]) for r in rows],
+                         [("return", "completed", d(0))])   # 복귀 9/16 한 줄, 9/17 예정 행 없음
+
+    def test_stale_planned_return_row_is_hidden_when_readmitted(self):
+        """저장 훅 이전에 들어온 데이터 — 외진 기록은 열려 있어도 외진 이후 입원완료 행이 있으면 복귀예정 행은 숨긴다."""
+        with models.get_db() as conn:
+            conn.execute("INSERT INTO patients (id,name,gender) VALUES (10,'옛데이터','F')")
+            conn.execute("""INSERT INTO consultations (id, patient_id, consult_date, admission_status, actual_admission_date,
+                            attending_doctor, room_number, patient_age)
+                            VALUES (10, 10, ?, '입원완료', ?, 'RM1 이성범 부장', '511호', 70)""", (d(-100), d(0)))
+            conn.execute("""INSERT INTO admission_events (consultation_id, event_type, event_date, hospital, expected_return_date)
+                            VALUES (10, '응급전원', ?, '안동병원', ?)""", (d(-20), d(1)))
+        rows = [r for r in models.dashboard_summary(d(-1), d(1))["admission_schedule"] if r["patient_id"] == 10]
+        self.assertEqual([(r.get("admission_kind"), r["admission_bucket"]) for r in rows], [(None, "completed")])
+
     def test_week_in_counts_return_and_consultation_once(self):
         with main.app.test_request_context():
             strip = main._ward_status_strip()

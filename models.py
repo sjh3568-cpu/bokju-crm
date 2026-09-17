@@ -2465,7 +2465,32 @@ def sync_admission_episode(cid: int):
                  (eid, cid))
     conn.commit()
     conn.close()
+    _auto_return_from_away(cid, r)
     return eid
+
+
+def _auto_return_from_away(cid, row):
+    """외진 중(복귀 기록 없음)인데 상담의 입원일이 외진 나간 날보다 뒤로 잡히면, 그 입원일에 복귀한 것으로 닫는다.
+
+    오경자 님(2026-09-17): 8/29 응급전원으로 나간 뒤 9/16 재입원을 상담 상세에서 실제입원일만 9/16으로
+    '정정'해 기록했다. 외진 기록은 열린 채라 재원 관리 '외진 중'에 남고, 대시보드에는 상담의 '완료 9/16' 행과
+    외진의 '복귀예정 9/17' 행이 따로 보였다. 복귀 처리 버튼과 같은 경로(mark_admission_event_returned)로 닫는다.
+    같은 날(입원일 == 외진일)은 입원 뒤 그날 외진을 나간 정상 상황일 수 있어 건드리지 않는다.
+    """
+    if (row.get("admission_status") or "").strip() != "입원완료":
+        return
+    admitted = (row.get("actual_admission_date") or row.get("admission_date") or "")[:10]
+    if not admitted:
+        return
+    ev = open_away_event(cid)
+    if not ev:
+        return
+    event_date = (ev.get("event_date") or "")[:10]
+    if not event_date or admitted <= event_date:
+        return
+    mark_admission_event_returned(
+        ev["id"], return_date=admitted, returned_by="자동(입원일 정정)",
+        return_note=f"상담 입원일이 외진일({event_date}) 이후인 {admitted}로 기록되어 그날 복귀로 자동 처리")
 
 
 def list_admission_episodes(patient_id=None):
@@ -4319,6 +4344,18 @@ def dashboard_summary(admission_lookup_from: str | None = None,
         d for d in admission_schedule
         if d.get("admission_kind") == "return"
         or (d.get("patient_id"), (d.get("admission_display_date") or "")[:10]) not in return_keys]
+    # 복귀 '예정' 행인데 같은 환자가 외진 나간 날 이후의 입원완료 행을 갖고 있으면 이미 돌아온 것 —
+    # 상담 입원일만 고쳐 정정한 경우 외진 기록이 열린 채 남아 '복귀예정'이 따로 보였다(오경자 님, 2026-09-17).
+    # 저장 시점엔 _auto_return_from_away가 닫아 주지만, 그 전에 들어온 데이터도 화면에서는 한 줄로.
+    completed_after = {}
+    for d in admission_schedule:
+        if d.get("admission_kind") != "return" and d.get("admission_bucket") == "completed":
+            pid = d.get("patient_id"); day = (d.get("admission_display_date") or "")[:10]
+            completed_after[pid] = max(completed_after.get(pid, ""), day)
+    admission_schedule = [
+        d for d in admission_schedule
+        if not (d.get("admission_kind") == "return" and d.get("admission_bucket") == "planned"
+                and completed_after.get(d.get("patient_id"), "") > (d.get("away_event_date") or "")[:10])]
 
     # 재입원 표시 — 이 입원보다 앞서 퇴원한 회차가 있으면 그 입원·퇴원일을 함께 보여준다
     # (2026-09-16 요청: 재입원 환자는 기존 입원일과 신규 입원일을 다 파악할 수 있게).
