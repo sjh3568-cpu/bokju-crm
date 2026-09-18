@@ -101,26 +101,43 @@
 
 {# ── 목록 ── #}
 <div class="card">
-    <h2 class="iq-h2">문의 목록 <span class="muted-sm">{{ rows|length }}건</span></h2>
+    <div class="iq-list-head">
+        <h2 class="iq-h2">문의 목록 <span class="muted-sm">{{ rows|length }}건</span></h2>
+        {# 내용은 기본 한 줄(목록을 훑기 좋게). 전부 펼치거나, 칸을 눌러 한 건만 펼친다(2026-09-18 요청) #}
+        <button type="button" class="btn btn-secondary btn-xs" id="iq-expand"
+                title="문의 내용을 한 줄로 줄이지 않고 전부 보여줍니다 — 내용 칸을 눌러 한 건만 펼칠 수도 있습니다">내용 전체 보기</button>
+    </div>
     <div class="tbl-wrap"><table class="tbl tbl-compact iq-list">
         <thead><tr><th>일시</th><th>채널</th><th>환자 / 연락처</th><th>내용</th><th>단계</th><th>처리</th><th>액션</th></tr></thead>
         <tbody>
         {% for r in rows %}
         <tr data-comm="{{ r.id }}" class="iq-{{ r.stage }}">
-            <td class="nowrap muted-sm">{{ r.when }}</td>
-            <td class="nowrap"><span class="badge badge-pending">{{ channel_labels.get(r.channel, r.channel or '기타') }}</span>{% if r.board_no %} <span class="muted-sm">#{{ r.board_no }}</span>{% endif %}</td>
+            {# 일시·채널·처리는 두 줄로 나눠 잘리지 않게 한다(2026-09-18 요청) #}
+            <td class="iq-2line iq-when muted-sm">
+                <div class="iq-l1">{{ r.when[:10] }}</div>   {# 날짜 한 줄 #}
+                <div class="iq-l2">{{ r.when[11:] }}</div>   {# 그 아래 시각 한 줄 #}
+            </td>
+            <td class="iq-2line">
+                <div class="iq-l1"><span class="badge badge-pending">{{ channel_labels.get(r.channel, r.channel or '기타') }}</span></div>
+                {% if r.board_no %}<div class="iq-l2">#{{ r.board_no }}</div>{% endif %}
+            </td>
             <td class="nowrap">
                 {% if r.blacklist %}<span class="bl-mark" title="블랙리스트">⚠</span> {% endif %}
                 {% if r.patient_id %}<a href="/patients/{{ r.patient_id }}">{{ r.patient_name }}</a>{% else %}<span class="muted">미연결</span>{% endif %}
                 {% if r.contact %}<a href="tel:{{ r.contact }}" class="iq-tel">📞 {{ r.contact }}</a>{% endif %}
             </td>
-            <td class="iq-body"><div class="iq-line" title="{{ r.summary or '' }}{% if r.body %} — {{ r.body }}{% endif %}"><span class="iq-sum">{{ r.summary or '' }}</span>{% if r.body %} <span class="iq-txt">{{ r.body }}</span>{% endif %}</div></td>
+            <td class="iq-body" title="클릭하면 이 문의의 전체 내용을 펼칩니다"><div class="iq-line"><span class="iq-sum">{{ r.summary or '' }}</span>{% if r.body %} <span class="iq-txt">{{ r.body }}</span>{% endif %}</div></td>
             <td class="nowrap"><span class="iq-stage s-{{ r.stage }}">{{ r.stage }}</span></td>
-            <td class="muted-sm iq-proc">
-                <div class="iq-line">
-                {%- if r.consultation_id %}<a href="/consult/{{ r.consultation_id }}">상담 #{{ r.consultation_id }}</a> · {{ r.consult_date or '' }}{% if r.counselor %} · {{ r.counselor }}{% endif %}{% if r.admitted %} · <b class="iq-admit">입원완료</b>{% elif r.admission_status %} · {{ r.admission_status }}{% elif r.consult_result %} · {{ r.consult_result }}{% endif %}
+            <td class="muted-sm iq-proc iq-2line">
+                {# 1줄: 연결된 상담과 그 결과 · 2줄: 담당 상담사와 답변 내역 #}
+                <div class="iq-l1">
+                {%- if r.consultation_id %}<a href="/consult/{{ r.consultation_id }}">상담 #{{ r.consultation_id }}</a> · {{ r.consult_date or '' }}{% if r.admitted %} · <b class="iq-admit">입원완료</b>{% elif r.admission_status %} · {{ r.admission_status }}{% elif r.consult_result %} · {{ r.consult_result }}{% endif %}
                 {%- elif r.stage == '처리완료' %}완료 {{ (r.resolved_local or '')[:16] }}{% endif %}
-                {%- if r.answered %} · 답변 {{ (r.answered_at or '')[:16] }}{% if r.answered_by %} · {{ r.answered_by }}{% endif %}{% elif r.homepage_idx and r.site_status == '답변완료' %} · 홈페이지 답변완료{% endif %}
+                </div>
+                <div class="iq-l2">
+                {%- if r.consultation_id and r.counselor %}{{ r.counselor }}{% endif %}
+                {%- if r.answered %}{% if r.consultation_id and r.counselor %} · {% endif %}답변 {{ (r.answered_at or '')[:16] }}{% if r.answered_by %} · {{ r.answered_by }}{% endif %}
+                {%- elif r.homepage_idx and r.site_status == '답변완료' %}{% if r.consultation_id and r.counselor %} · {% endif %}홈페이지 답변완료{% endif %}
                 </div>
             </td>
             <td class="nowrap dash-action-cell">
@@ -167,22 +184,41 @@
    주: 템플릿의 class="nowrap"·"btn-xs"는 style.css에 정의가 없어 무효였다 — 그래서 칸이 접히고
    액션 버튼이 큰 크기로 나와 표가 넓어졌다. 이 표 안에서만 실제 규칙을 준다. */
 .iq-list{table-layout:fixed}
-.iq-list th,.iq-list td{white-space:nowrap;vertical-align:middle;padding-inline:8px;
-                        overflow:hidden;text-overflow:ellipsis}
-.iq-list .iq-line{overflow:hidden;text-overflow:ellipsis}
+/* 칸 내용은 잘라내지 않고 줄바꿈으로 전부 보여준다(2026-09-18 요청) — 줄 수가 달라지므로 위 정렬 */
+.iq-list th,.iq-list td{white-space:normal;overflow-wrap:break-word;vertical-align:top;
+                        padding-block:7px;padding-inline:8px;line-height:1.4}
+/* 배지·버튼·전화번호는 가운데서 끊기면 못 읽으므로 이것만 한 줄 유지 */
+.iq-list .badge,.iq-list .btn,.iq-list .iq-stage,.iq-list .iq-tel,.iq-list .bl-mark{white-space:nowrap}
+/* 두 줄 칸(일시·채널·처리) — 1줄과 2줄을 각자 줄로 */
+.iq-list .iq-l2{font-size:.86em;color:#5b6d63}
+.iq-list .iq-l1:empty,.iq-list .iq-l2:empty{display:none}
+/* 일시 — 날짜가 '2026-09-' / '18'로 쪼개지지 않게 각 줄을 통째로 유지한다(2026-09-18) */
+.iq-list .iq-when .iq-l1,.iq-list .iq-when .iq-l2{white-space:nowrap}
 /* 작은 글자·작은 버튼 클래스가 style.css에 없어(대시보드 전용으로만 정의) 이 표에서는 본문 크기로
    나오고 있었다. 그래서 일시·처리가 제 폭을 넘겨 잘렸다 — 여기서 실제 크기를 준다. */
 .iq-list .muted-sm{font-size:.82em}
 .iq-list .btn-xs{padding:3px 9px;font-size:.78em;border-radius:7px}
 /* 중요한 6열은 값이 다 보이는 폭으로 고정(운영 11건 실측 + 여유), '내용'은 남는 폭만 쓰고 말줄임 */
-.iq-list th:nth-child(1),.iq-list td:nth-child(1){width:120px}   /* 일시 2026-09-16 06:52 */
-.iq-list th:nth-child(2),.iq-list td:nth-child(2){width:104px}   /* 채널 배지 + 게시글 번호 */
-.iq-list th:nth-child(3),.iq-list td:nth-child(3){width:186px}   /* 환자 / 연락처 */
+.iq-list th:nth-child(1),.iq-list td:nth-child(1){width:104px}   /* 일시 — 날짜 한 줄 + 그 아래 시각 한 줄 */
+.iq-list th:nth-child(2),.iq-list td:nth-child(2){width:92px}    /* 채널 배지 / 게시글 번호 두 줄 */
+.iq-list th:nth-child(3),.iq-list td:nth-child(3){width:132px}   /* 환자 / 연락처 — 두 줄로 내려간다 */
 /* 4열 '내용' — 폭 지정 없음 = 남는 폭 전부 */
 .iq-list th:nth-child(5),.iq-list td:nth-child(5){width:86px}    /* 단계 배지 */
-.iq-list th:nth-child(6),.iq-list td:nth-child(6){width:200px}   /* 처리 — 상담 연결이면 가장 긺 */
+.iq-list th:nth-child(6),.iq-list td:nth-child(6){width:176px}   /* 처리 — 두 줄로 내려간다 */
 .iq-list th:nth-child(7),.iq-list td:nth-child(7){width:176px;overflow:visible}  /* 액션 — 버튼이 잘리면 못 누르므로 안 자름 */
-.iq-sum{font-weight:700;font-size:.9em}.iq-txt{color:#5b6d63;font-size:.82em}
+.iq-sum{font-weight:700;font-size:.9em}
+.iq-txt{color:#5b6d63;font-size:.82em}
+/* 내용 — 기본은 한 줄 말줄임. [내용 전체 보기]를 켜거나 칸을 누르면 줄바꿈해 전부 보여준다.
+   펼칠 때 pre-wrap이라 본문에 저장된 줄바꿈([연락가능시간] 등 라벨)도 그대로 살아난다. */
+.iq-list .iq-body{cursor:pointer}
+.iq-list .iq-body .iq-line{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.iq-list.iq-full .iq-body .iq-line,
+.iq-list .iq-body.on .iq-line{white-space:pre-wrap;overflow:visible;text-overflow:clip}
+.iq-list.iq-full .iq-body .iq-txt,
+.iq-list .iq-body.on .iq-txt{display:block;margin-top:2px}
+.iq-list-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+.iq-list-head .iq-h2{margin:0}
+#iq-expand.on{background:#dcfce7;border-color:#22c55e;color:#166534}
 .iq-stage{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.76em;font-weight:800}
 .iq-stage.s-미처리{background:#fef3c7;color:#92400e}.iq-stage.s-상담등록{background:#dcfce7;color:#166534}.iq-stage.s-처리완료{background:#e5e7eb;color:#374151}
 .iq-admit{color:#15803d}
@@ -203,6 +239,23 @@ document.querySelectorAll('.iq-list .ib-done').forEach(btn => {
         } catch (e) { alert('처리 실패: ' + e.message); btn.disabled = false; }
     });
 });
+// 내용 전체 보기 — 표 전체를 펼치거나(버튼, 선택 기억) 내용 칸을 눌러 그 한 건만 펼친다.
+const iqTable = document.querySelector('.iq-list'), iqExpand = document.getElementById('iq-expand');
+if (iqTable && iqExpand) {
+    const KEY = 'bokju:inquiry-full';
+    const setFull = (full, save) => {
+        iqTable.classList.toggle('iq-full', full);
+        iqExpand.classList.toggle('on', full);
+        iqExpand.textContent = full ? '내용 한 줄로' : '내용 전체 보기';
+        if (save) { try { full ? localStorage.setItem(KEY, '1') : localStorage.removeItem(KEY); } catch (e) {} }
+    };
+    let remembered = false; try { remembered = localStorage.getItem(KEY) === '1'; } catch (e) {}
+    if (remembered) setFull(true, false);
+    iqExpand.addEventListener('click', () => setFull(!iqTable.classList.contains('iq-full'), true));
+    iqTable.querySelectorAll('.iq-body').forEach(td => {
+        td.addEventListener('click', () => td.classList.toggle('on'));
+    });
+}
 // 홈페이지 답변 등록 성공 시 공용 대화상자는 행을 지우는데, 여기서는 단계가 바뀌므로 다시 읽는다.
 document.addEventListener('hp-reply-done', () => location.reload());
 </script>
