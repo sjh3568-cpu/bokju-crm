@@ -170,14 +170,18 @@
 .iq-list th,.iq-list td{white-space:nowrap;vertical-align:middle;padding-inline:8px;
                         overflow:hidden;text-overflow:ellipsis}
 .iq-list .iq-line{overflow:hidden;text-overflow:ellipsis}
-.iq-list th:nth-child(1),.iq-list td:nth-child(1){width:112px}   /* 일시 */
-.iq-list th:nth-child(2),.iq-list td:nth-child(2){width:84px}    /* 채널 */
-.iq-list th:nth-child(3),.iq-list td:nth-child(3){width:172px}   /* 환자 / 연락처 */
-/* 4열 '내용' — 폭 지정 없음 = 남는 폭 전부 */
-.iq-list th:nth-child(5),.iq-list td:nth-child(5){width:78px}    /* 단계 */
-.iq-list th:nth-child(6),.iq-list td:nth-child(6){width:150px}   /* 처리 */
-.iq-list th:nth-child(7),.iq-list td:nth-child(7){width:180px;overflow:visible}  /* 액션 — 버튼이 잘리면 못 누르므로 안 자름 */
+/* 작은 글자·작은 버튼 클래스가 style.css에 없어(대시보드 전용으로만 정의) 이 표에서는 본문 크기로
+   나오고 있었다. 그래서 일시·처리가 제 폭을 넘겨 잘렸다 — 여기서 실제 크기를 준다. */
+.iq-list .muted-sm{font-size:.82em}
 .iq-list .btn-xs{padding:3px 9px;font-size:.78em;border-radius:7px}
+/* 중요한 6열은 값이 다 보이는 폭으로 고정(운영 11건 실측 + 여유), '내용'은 남는 폭만 쓰고 말줄임 */
+.iq-list th:nth-child(1),.iq-list td:nth-child(1){width:120px}   /* 일시 2026-09-16 06:52 */
+.iq-list th:nth-child(2),.iq-list td:nth-child(2){width:104px}   /* 채널 배지 + 게시글 번호 */
+.iq-list th:nth-child(3),.iq-list td:nth-child(3){width:186px}   /* 환자 / 연락처 */
+/* 4열 '내용' — 폭 지정 없음 = 남는 폭 전부 */
+.iq-list th:nth-child(5),.iq-list td:nth-child(5){width:86px}    /* 단계 배지 */
+.iq-list th:nth-child(6),.iq-list td:nth-child(6){width:200px}   /* 처리 — 상담 연결이면 가장 긺 */
+.iq-list th:nth-child(7),.iq-list td:nth-child(7){width:176px;overflow:visible}  /* 액션 — 버튼이 잘리면 못 누르므로 안 자름 */
 .iq-sum{font-weight:700;font-size:.9em}.iq-txt{color:#5b6d63;font-size:.82em}
 .iq-stage{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.76em;font-weight:800}
 .iq-stage.s-미처리{background:#fef3c7;color:#92400e}.iq-stage.s-상담등록{background:#dcfce7;color:#166534}.iq-stage.s-처리완료{background:#e5e7eb;color:#374151}
