@@ -161,13 +161,23 @@
 .tbl td.r,.tbl th.r{text-align:right}
 .iq-grid .tbl th,.iq-grid .tbl td{white-space:nowrap;padding-inline:8px}   /* 9열 표에서 '홈페이지'가 세로로 깨지지 않게 */
 .iq-bar-cell{width:45%}.iq-bar{height:12px;border-radius:6px;background:linear-gradient(90deg,#14b8a6,#0f766e);min-width:2px}
-/* 목록은 한 행 = 한 줄. 표의 모든 칸을 한 줄로 고정하고, 길어지는 '내용'·'처리'만 말줄임한다.
-   (템플릿 곳곳의 class="nowrap"은 style.css에 정의가 없어 아무 효과가 없었다 — 그래서 칸이 제멋대로 접혔다.)
-   전체 문구는 마우스를 올리면 title로 보이고, 표가 화면보다 넓어지면 .tbl-wrap이 가로로 스크롤한다. */
-.iq-list th,.iq-list td{white-space:nowrap;vertical-align:middle}
+/* 목록은 한 행 = 한 줄, 그리고 표는 화면 폭을 넘지 않는다(가로 스크롤 없이).
+   table-layout:fixed + 나머지 6열 고정폭 → '내용'이 남는 폭을 전부 가져가고, 길면 말줄임한다.
+   화면이 좁아지면 내용 열만 줄어든다. 전체 문구는 마우스를 올리면 title로 보인다.
+   주: 템플릿의 class="nowrap"·"btn-xs"는 style.css에 정의가 없어 무효였다 — 그래서 칸이 접히고
+   액션 버튼이 큰 크기로 나와 표가 넓어졌다. 이 표 안에서만 실제 규칙을 준다. */
+.iq-list{table-layout:fixed}
+.iq-list th,.iq-list td{white-space:nowrap;vertical-align:middle;padding-inline:8px;
+                        overflow:hidden;text-overflow:ellipsis}
 .iq-list .iq-line{overflow:hidden;text-overflow:ellipsis}
-.iq-list .iq-body,.iq-list .iq-body .iq-line{max-width:min(560px,40vw)}
-.iq-list .iq-proc,.iq-list .iq-proc .iq-line{max-width:min(280px,20vw)}
+.iq-list th:nth-child(1),.iq-list td:nth-child(1){width:112px}   /* 일시 */
+.iq-list th:nth-child(2),.iq-list td:nth-child(2){width:84px}    /* 채널 */
+.iq-list th:nth-child(3),.iq-list td:nth-child(3){width:172px}   /* 환자 / 연락처 */
+/* 4열 '내용' — 폭 지정 없음 = 남는 폭 전부 */
+.iq-list th:nth-child(5),.iq-list td:nth-child(5){width:78px}    /* 단계 */
+.iq-list th:nth-child(6),.iq-list td:nth-child(6){width:150px}   /* 처리 */
+.iq-list th:nth-child(7),.iq-list td:nth-child(7){width:180px;overflow:visible}  /* 액션 — 버튼이 잘리면 못 누르므로 안 자름 */
+.iq-list .btn-xs{padding:3px 9px;font-size:.78em;border-radius:7px}
 .iq-sum{font-weight:700;font-size:.9em}.iq-txt{color:#5b6d63;font-size:.82em}
 .iq-stage{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.76em;font-weight:800}
 .iq-stage.s-미처리{background:#fef3c7;color:#92400e}.iq-stage.s-상담등록{background:#dcfce7;color:#166534}.iq-stage.s-처리완료{background:#e5e7eb;color:#374151}
