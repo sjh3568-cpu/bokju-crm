@@ -1,22 +1,21 @@
-"""EasyQR 전화상담 접수 폴링 → 인박스 (2026-09-17).
+"""EasyQR 전화상담 접수 폴링 → 인박스 (2026-09-17, 2026-09-18 API 전환).
 
-EasyQR MariaDB는 테스트 환경에 없으므로 _connect()를 가짜 커서로 갈아끼운다.
+EasyQR API 서버는 테스트 환경에 없으므로 _fetch()를 가짜(메모리 목록)로 갈아끼운다.
 검증 대상은 '무엇을 가져오는가'가 아니라 '무엇을 인박스에 넣는가'다.
+_fetch 자체(헤더·파라미터·success 판정)는 requests.get을 흉내내 따로 본다.
 """
 import json
 import os
 import tempfile
 import unittest
-from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import easyqr_inbox
 import models
 
 _ENV = {
-    "EASYQR_DB_HOST": "127.0.0.1",
-    "EASYQR_DB_USER": "bokjucrm_ro",
-    "EASYQR_DB_PASS": "pw",
+    "EASYQR_API_URL": "http://172.16.1.250/Developer/EasyQR/api/consult_export.php",
+    "EASYQR_API_KEY": "test-key",
 }
 
 
@@ -24,49 +23,20 @@ def _row(rid, name="홍길동", phone="01012345678", content="재활 입원 문�
     row = {
         "id": rid, "name": name, "phone": phone, "content": content,
         "available_time": "오후(13~17시)", "address": "안동시 풍산읍",
-        "patient_age": 78, "created_at": datetime(2026, 9, 17, 10, 30, 0),
+        "patient_age": 78, "status": "pending", "memo": None,
+        "created_at": "2026-09-17 10:30:00",           # API는 문자열로 준다
+        "updated_at": "2026-09-17 10:30:00",
     }
     row.update(kw)
     return row
 
 
-class _FakeCursor:
-    """easyqr_inbox가 실제로 쓰는 두 질의만 흉내낸다."""
-
-    def __init__(self, rows):
-        self._rows = rows
-        self._result = []
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-    def execute(self, sql, params=()):
-        if "MAX(id)" in sql:
-            self._result = [{"m": max([r["id"] for r in self._rows], default=0)}]
-        else:
-            last_id, limit = int(params[0]), int(params[1])
-            self._result = [r for r in sorted(self._rows, key=lambda r: r["id"])
-                            if r["id"] > last_id][:limit]
-
-    def fetchone(self):
-        return self._result[0] if self._result else None
-
-    def fetchall(self):
-        return list(self._result)
-
-
-class _FakeConn:
-    def __init__(self, rows):
-        self._rows = rows
-
-    def cursor(self):
-        return _FakeCursor(self._rows)
-
-    def close(self):
-        pass
+def _fake_fetch(rows):
+    """API의 after_id/limit 의미를 그대로 흉내낸다 — id > after_id, 오름차순, limit개."""
+    def fetch(after_id, limit=easyqr_inbox.BATCH_LIMIT):
+        return [r for r in sorted(rows, key=lambda r: r["id"])
+                if r["id"] > int(after_id)][:int(limit)]
+    return fetch
 
 
 class EasyQRInboxTests(unittest.TestCase):
@@ -84,7 +54,7 @@ class EasyQRInboxTests(unittest.TestCase):
         self.env.stop(); self.sp.stop(); self.db_patch.stop(); self.tmp.cleanup()
 
     def _poll(self, rows):
-        with patch.object(easyqr_inbox, "_connect", return_value=_FakeConn(rows)):
+        with patch.object(easyqr_inbox, "_fetch", side_effect=_fake_fetch(rows)):
             return easyqr_inbox.poll_once()
 
     def _comms(self):
@@ -114,7 +84,7 @@ class EasyQRInboxTests(unittest.TestCase):
         self.assertEqual(comm["created_by"], "EasyQR")
         self.assertEqual(comm["summary"], "전화상담 신청 #19 · 홍길동")
         self.assertEqual(comm["contact"], "010-1234-5678")        # 하이픈 정규화
-        self.assertEqual(comm["occurred_at"], "2026-09-17 10:30:00")   # 수집 시각 아님
+        self.assertEqual(comm["occurred_at"], "2026-09-17 10:30:00")   # 접수 시각(문자열 그대로), 수집 시각 아님
         for line in ("재활 입원 문의드립니다", "[연락가능시간] 오후(13~17시)",
                      "[거주지] 안동시 풍산읍", "[환자나이] 78"):
             self.assertIn(line, comm["body"])
@@ -172,6 +142,12 @@ class EasyQRInboxTests(unittest.TestCase):
         self.assertEqual(self._comms(), [])
         self.assertEqual(self._status()["last_id"], 3)
 
+    def test_first_run_pages_past_one_full_batch(self):
+        """API엔 MAX(id)가 없어 페이지를 넘겨 끝을 찾는다 — 한 페이지(500)보다 많아도."""
+        rows = [_row(i) for i in range(1, easyqr_inbox.BOOTSTRAP_LIMIT + 3)]
+        self.assertEqual(self._poll(rows), 0)
+        self.assertEqual(self._status()["last_id"], easyqr_inbox.BOOTSTRAP_LIMIT + 2)
+
     def test_backfill_from_zero_takes_everything(self):
         self.assertEqual(self._seed([_row(1), _row(2)], from_id=0), 2)
 
@@ -180,16 +156,19 @@ class EasyQRInboxTests(unittest.TestCase):
 
     # ── 장애 내성 ──────────────────────────────────────────────
 
-    def test_disabled_without_credentials(self):
-        with patch.dict(os.environ, {"EASYQR_DB_HOST": ""}):
+    def test_disabled_without_api_key(self):
+        with patch.dict(os.environ, {"EASYQR_API_KEY": ""}):
             self.assertEqual(easyqr_inbox.poll_once(), 0)
 
     def test_query_failure_keeps_watermark(self):
         self._seed([_row(1)])
         before = self._status()["last_id"]
-        with patch.object(easyqr_inbox, "_connect", side_effect=OSError("down")):
+        with patch.object(easyqr_inbox, "_fetch", side_effect=OSError("down")):
             self.assertEqual(easyqr_inbox.poll_once(), 0)
-        self.assertEqual(before, self._status()["last_id"])
+        st = self._status()
+        self.assertEqual(before, st["last_id"])
+        self.assertFalse(st["ok"])
+        self.assertIn("down", st["error"])
 
     def test_failing_row_is_retried_then_skipped(self):
         """한 건이 계속 실패해도 뒤에 쌓인 접수까지 막히면 안 된다."""
@@ -209,6 +188,50 @@ class EasyQRInboxTests(unittest.TestCase):
                 self._poll(rows)                            # MAX_STRIKES번째 — 건너뛴다
         self.assertEqual([c["summary"] for c in self._comms()],
                          ["전화상담 신청 #2 · 이순신"])       # #1은 버려지고 #2만 들어온다
+
+
+class EasyQRFetchTests(unittest.TestCase):
+    """_fetch — API 명세대로 부르고, HTTP 코드가 아니라 success 필드로 판단하는지."""
+
+    def setUp(self):
+        self.env = patch.dict(os.environ, _ENV); self.env.start()
+
+    def tearDown(self):
+        self.env.stop()
+
+    def _get(self, payload, status=200):
+        resp = MagicMock()
+        resp.status_code = status
+        resp.json.return_value = payload
+        resp.raise_for_status.side_effect = None if status < 400 else OSError(f"HTTP {status}")
+        return patch("requests.get", return_value=resp)
+
+    def test_sends_key_header_and_after_id(self):
+        with self._get({"success": True, "count": 1, "max_id": 7, "items": [_row(7)]}) as get:
+            rows = easyqr_inbox._fetch(6, 50)
+        self.assertEqual([r["id"] for r in rows], [7])
+        kwargs = get.call_args.kwargs
+        self.assertEqual(get.call_args.args[0], _ENV["EASYQR_API_URL"])
+        self.assertEqual(kwargs["headers"]["X-API-Key"], "test-key")
+        self.assertIn("User-Agent", kwargs["headers"])                 # 외부 도메인(Cloudflare) 대비
+        self.assertEqual(kwargs["params"], {"after_id": 6, "limit": 50, "client": "bokju-crm"})
+        self.assertLessEqual(kwargs["timeout"], 15)
+
+    def test_success_false_is_an_error_even_with_http_200(self):
+        """서버 nginx가 4xx를 가로채므로 인증 실패도 200으로 온다."""
+        with self._get({"success": False, "error": "인증 실패", "code": "unauthorized"}):
+            with self.assertRaises(RuntimeError) as cm:
+                easyqr_inbox._fetch(0)
+        self.assertIn("unauthorized", str(cm.exception))
+
+    def test_empty_items_is_not_an_error(self):
+        with self._get({"success": True, "count": 0, "max_id": 0, "items": []}):
+            self.assertEqual(easyqr_inbox._fetch(99), [])
+
+    def test_http_error_raises(self):
+        with self._get({}, status=502):
+            with self.assertRaises(OSError):
+                easyqr_inbox._fetch(0)
 
 
 if __name__ == "__main__":

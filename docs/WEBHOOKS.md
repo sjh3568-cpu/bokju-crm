@@ -134,6 +134,12 @@ curl_exec($ch); curl_close($ch);
 
 ### 3-1. EasyQR '빠른 전화상담 신청' (walk.induk.ai.kr/Developer/EasyQR/consult.php)
 
+> **2026-09-18 현재 실제 운영 경로는 이 웹훅이 아니라 `easyqr_inbox.py`의 API 폴링**이다 — 기획실이
+> EasyQR 쪽에 읽기 전용 JSON API(`api/consult_export.php`, X-API-Key)를 열어 줘 CRM이 3분마다 가져간다
+> (`.env` `EASYQR_API_URL`/`EASYQR_API_KEY`, 명세는 NAS 미전실 `EasyQR_상담데이터_API명세.md`).
+> 아래 PHP 스니펫은 EasyQR이 즉시 푸시하는 방식으로 바꾸고 싶을 때의 대안으로 남겨 둔다. 두 경로의
+> 카드 모양은 같으므로 상담사 화면은 달라지지 않는다.
+
 카카오 채널의 **전화하기(상담 예약)** 버튼이 여는 페이지. 직원이 만든 PHP 페이지로,
 NAS Web Station에서 돌며 `api/consult.php`가 접수번호를 만들어 자체 저장한다.
 CRM도 같은 NAS의 Docker(8003)에 있으므로 **NAS 안에서 127.0.0.1로 호출**하면 된다 —

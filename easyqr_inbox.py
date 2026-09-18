@@ -1,16 +1,18 @@
 """EasyQR 전화상담 접수 → 인박스 브릿지 (옴니채널).
 
 walk.induk.ai.kr 랜딩페이지의 '빠른 전화상담 신청'(consult.php)은 접수를 같은 NAS의
-MariaDB(`easyqr_db.consultations`)에 쌓는다. EasyQR은 별도 담당 소관이라 PHP를 고쳐
-우리 웹훅으로 쏘게 만들 수 없다. 대신 이 워커가 그 테이블을 **읽기 전용**으로 폴링해
-CRM 인박스에 등록한다(채널=웹문의, 인바운드).
+MariaDB(`easyqr_db.consultations`)에 쌓는다. 기획실(EasyQR 담당)이 그 표를 **읽기 전용
+JSON API**(`api/consult_export.php`, X-API-Key 인증)로 열어 주었고(2026-09-18,
+EasyQR_상담데이터_API명세.md), 이 워커가 그 API를 폴링해 CRM 인박스에 등록한다
+(채널=웹문의, 인바운드). 2026-09-17의 첫 판은 pymysql로 DB에 직접 붙었는데, 기획실이
+DB 계정 대신 API를 제공하기로 해 접속부만 바꿨다 — 폴링·워터마크·환자매칭·카드 모양은 그대로.
 
-SELECT 권한만 있는 계정 하나면 되고 EasyQR 코드는 한 줄도 건드리지 않는다. 같은 NAS
-안이라 사내망 밖으로 나가지도, 외부 포트를 열지도 않는다 — CLAUDE.md의 사내망 원칙에 부합.
+같은 NAS 안이라 내부 IP(172.16.1.250)로 부르며 사내망 밖으로 나가지도, 외부 포트를 열지도
+않는다 — CLAUDE.md의 사내망 원칙에 부합. 이 API로는 EasyQR 데이터가 바뀌지 않는다(단방향).
 
 동작:
-  · EASYQR_DB_HOST/USER/PASS 가 모두 설정돼야 활성 (하나라도 없으면 no-op)
-  · EASYQR_POLL_SECONDS(기본 180초)마다 `id > last_id` 인 접수만 조회
+  · EASYQR_API_URL / EASYQR_API_KEY 가 모두 설정돼야 활성 (하나라도 없으면 no-op)
+  · EASYQR_POLL_SECONDS(기본 180초)마다 `after_id=last_id` 로 신규 접수만 조회
   · 처리한 마지막 id를 `data/easyqr_sync_status.json`에 기록 → 중복 등록 방지
   · 첫 기동 시에는 현재 최대 id부터 시작한다(옛 접수 수백 건이 한꺼번에 쏟아지지 않게).
     과거분이 필요하면 EASYQR_BACKFILL_FROM=<id> (0이면 전체)
@@ -38,8 +40,8 @@ logger = logging.getLogger(__name__)
 POLL_SECONDS = int(os.getenv("EASYQR_POLL_SECONDS", "180"))
 BATCH_LIMIT = 50                    # 한 주기에 가져올 최대 건수 — 밀려 있어도 조금씩 따라잡는다
 MAX_STRIKES = 5                     # 같은 건이 이만큼 연속 실패하면 건너뛴다
-_DB_NAME = "easyqr_db"
-_TABLE = "consultations"
+BOOTSTRAP_LIMIT = 500               # 첫 기동 기준점(현재 최대 id) 찾을 때 한 페이지 — API 최대치
+_USER_AGENT = "bokju-crm-sync/1.0"  # 외부 도메인(Cloudflare) 경유 시 필수 — 내부 IP에서도 무해
 _SUMMARY_PREFIX = "전화상담 신청"
 
 # 웹훅(_HOMEPAGE_EXTRA_FIELDS)과 같은 라벨 — 두 경로가 같은 본문을 만들도록.
@@ -64,7 +66,7 @@ STATUS_PATH = _status_path()
 
 
 def _enabled() -> bool:
-    return all(os.getenv(k) for k in ("EASYQR_DB_HOST", "EASYQR_DB_USER", "EASYQR_DB_PASS"))
+    return all(os.getenv(k) for k in ("EASYQR_API_URL", "EASYQR_API_KEY"))
 
 
 def status() -> dict:
@@ -94,21 +96,27 @@ def _norm_phone(raw: str) -> str:
     return (raw or "").strip()
 
 
-def _connect():
-    """EasyQR MariaDB 읽기 전용 접속. pymysql은 여기서만 쓰므로 지연 import한다
-    (미설치 환경에서 app import 자체가 깨지지 않도록)."""
-    import pymysql
-    return pymysql.connect(
-        host=os.getenv("EASYQR_DB_HOST"),
-        port=int(os.getenv("EASYQR_DB_PORT", "3307")),
-        user=os.getenv("EASYQR_DB_USER"),
-        password=os.getenv("EASYQR_DB_PASS"),
-        database=os.getenv("EASYQR_DB_NAME", _DB_NAME),
-        charset="utf8mb4",
-        cursorclass=pymysql.cursors.DictCursor,
-        connect_timeout=5,
-        read_timeout=15,
+def _fetch(after_id: int, limit: int = BATCH_LIMIT) -> list[dict]:
+    """EasyQR API에서 id > after_id 인 신규 접수를 id 오름차순으로 가져온다. 실패하면 예외.
+
+    항목 키(id·name·phone·patient_age·address·available_time·content·created_at …)는
+    옛 DictCursor 행과 같아 이후 파싱·매칭 코드가 그대로 쓴다. 단 created_at은
+    datetime이 아니라 'YYYY-MM-DD HH:MM:SS' 문자열로 온다(_register가 둘 다 받는다).
+    """
+    import requests
+    r = requests.get(
+        os.environ["EASYQR_API_URL"],
+        params={"after_id": int(after_id), "limit": int(limit), "client": "bokju-crm"},
+        headers={"X-API-Key": os.environ["EASYQR_API_KEY"], "User-Agent": _USER_AGENT},
+        timeout=15,
     )
+    r.raise_for_status()
+    data = r.json()
+    # 실패해도 HTTP 200으로 온다(서버 nginx가 PHP 4xx를 자체 에러 페이지로 바꿔 버려서).
+    # 그래서 HTTP 코드가 아니라 success 필드로 판단한다.
+    if not data.get("success"):
+        raise RuntimeError(f"EasyQR API 오류: {data.get('code')} {data.get('error')}")
+    return list(data.get("items") or [])
 
 
 def _summary(receipt_no: int, name: str) -> str:
@@ -160,44 +168,41 @@ def _register(row: dict) -> int | None:
     )
 
 
-def _initial_last_id(cur) -> int:
-    """첫 기동 기준점. 기본은 '지금부터' — 옛 접수가 인박스를 덮지 않게 한다."""
+def _initial_last_id() -> int:
+    """첫 기동 기준점. 기본은 '지금부터' — 옛 접수가 인박스를 덮지 않게 한다.
+
+    API에 MAX(id) 질의가 없으므로 after_id=0 부터 페이지를 넘겨 마지막 id를 찾는다
+    (한 페이지가 꽉 찼으면 아직 남은 것이므로 이어서). 접수가 수십 건 규모라 1~2번이면 끝."""
     backfill = (os.getenv("EASYQR_BACKFILL_FROM") or "").strip()
     if backfill.isdigit():
         logger.info("EasyQR 백필 지정 — id > %s 부터 가져온다", backfill)
         return int(backfill)
-    cur.execute(f"SELECT COALESCE(MAX(id), 0) AS m FROM {_TABLE}")
-    last = int(cur.fetchone()["m"])
+    last = 0
+    while True:
+        rows = _fetch(last, BOOTSTRAP_LIMIT)
+        if not rows:
+            break
+        last = max(last, max(int(r["id"]) for r in rows))
+        if len(rows) < BOOTSTRAP_LIMIT:
+            break
     logger.info("EasyQR 첫 동기화 — 현재 최대 id %d 이후 접수부터 등록한다", last)
     return last
 
 
 def _fetch_new(last_id):
     """(rows, last_id) 반환. 접속·조회 실패는 여기서 삼키고 (None, last_id)."""
-    conn = None
     try:
-        conn = _connect()
-        with conn.cursor() as cur:
-            if last_id is None:
-                last_id = _initial_last_id(cur)
-                _write_status(last_id=last_id, ok=True, reason="bootstrap", registered=0)
-            cur.execute(
-                f"SELECT id, name, phone, available_time, address, patient_age, "
-                f"content, created_at FROM {_TABLE} "
-                f"WHERE id > %s ORDER BY id LIMIT %s",
-                (int(last_id), BATCH_LIMIT),
-            )
-            return cur.fetchall(), last_id
-    except Exception:
+        if last_id is None:
+            last_id = _initial_last_id()
+            _write_status(last_id=last_id, ok=True, reason="bootstrap", registered=0)
+        rows = _fetch(int(last_id), BATCH_LIMIT)
+        # API는 id 오름차순으로 주지만, 워터마크가 순서에 기대므로 한 번 더 못박는다.
+        rows.sort(key=lambda r: int(r["id"]))
+        return rows, last_id
+    except Exception as exc:
         logger.exception("EasyQR 접수 조회 실패 — 다음 주기 재시도")
-        _write_status(ok=False, error="connect_or_query")
+        _write_status(ok=False, error=f"{type(exc).__name__}: {exc}"[:200])
         return None, last_id
-    finally:
-        if conn is not None:
-            try:
-                conn.close()
-            except Exception:
-                pass
 
 
 def poll_once() -> int:
@@ -225,7 +230,7 @@ def poll_once() -> int:
             stuck_id = rid
             if strikes >= MAX_STRIKES:
                 logger.error("EasyQR 접수 #%d를 %d회 등록 실패 — 건너뛴다. "
-                             "easyqr_db.consultations에서 직접 확인 필요", rid, strikes)
+                             "EasyQR consult_admin에서 직접 확인 필요", rid, strikes)
                 last_id, strikes, stuck_id = rid, 0, None
                 continue
             logger.exception("EasyQR 접수 #%d 등록 실패(%d/%d) — 다음 주기 재시도",
@@ -251,10 +256,10 @@ def _loop():
 def start_worker():
     """EasyQR 접수 브릿지 데몬 스레드 시작. 설정이 없으면 조용히 건너뛴다."""
     if not _enabled():
-        logger.info("EasyQR 접수 연동 비활성 — .env EASYQR_DB_HOST/USER/PASS 미설정")
+        logger.info("EasyQR 접수 연동 비활성 — .env EASYQR_API_URL/EASYQR_API_KEY 미설정")
         return
     poll_once()                          # 기동 시 1회
     t = threading.Thread(target=_loop, name="easyqr-inbox", daemon=True)
     t.start()
-    logger.info("EasyQR 접수 연동 시작 — %d초마다 %s.%s 폴링",
-                POLL_SECONDS, os.getenv("EASYQR_DB_NAME", _DB_NAME), _TABLE)
+    logger.info("EasyQR 접수 연동 시작 — %d초마다 %s 폴링",
+                POLL_SECONDS, os.getenv("EASYQR_API_URL"))
