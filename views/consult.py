@@ -696,9 +696,17 @@ def api_quick_filters():
     return jsonify({"ok": True, "filters": models.list_quick_filters(include_inactive=True)})
 
 def _inquiry_filters():
-    """채널 문의 내역 필터 — 기간 기본값은 이번 달."""
+    """채널 문의 내역 필터 — 기간 기본값은 이번 달. 단 이번 달보다 오래된 미처리 문의가 있으면
+    그 접수일까지 기본 시작일을 넓힌다(미처리는 기본 화면에서 절대 빠지지 않게). 처리되면 다시 좁아진다."""
     today = date.today()
-    date_from = _valid_date(request.args.get("from")) or today.replace(day=1).isoformat()
+    month_start = today.replace(day=1).isoformat()
+    widened = False
+    date_from = _valid_date(request.args.get("from"))
+    if not date_from:
+        date_from = month_start
+        oldest_open = models.oldest_open_inquiry_date()
+        if oldest_open and oldest_open < month_start:
+            date_from, widened = oldest_open, True
     date_to = _valid_date(request.args.get("to")) or today.isoformat()
     if date_from > date_to:
         date_from, date_to = date_to, date_from
@@ -708,7 +716,7 @@ def _inquiry_filters():
     stage = (request.args.get("stage") or "").strip()
     if stage not in ("미처리", "상담등록", "처리완료"):
         stage = ""
-    return {"date_from": date_from, "date_to": date_to, "channel": channel,
+    return {"date_from": date_from, "date_to": date_to, "channel": channel, "widened": widened,
             "stage": stage, "q": (request.args.get("q") or "").strip()[:100]}
 
 @bp.route("/consultations/inquiries")

@@ -138,6 +138,25 @@ class InquiryTests(unittest.TestCase):
         self.assertIn('상담 #', html2)
         self.assertNotIn('data-comm="%d"' % self.c_open, html2)
 
+    def test_default_period_widens_to_oldest_open_inquiry(self):
+        """이번 달보다 오래된 미처리 문의(EasyQR 백필 등)는 기본 화면에서 빠지면 안 된다 (2026-09-18)."""
+        old = models.create_communication(channel="웹문의", direction="in", contact="010-7777-8888",
+                                          summary="전화상담 신청 #12 · 정진수", body="교통사고 재활 문의",
+                                          occurred_at="2026-06-19 10:12:33", created_by="EasyQR")
+        r = self.client.get("/consultations/inquiries")
+        html = r.get_data(as_text=True)
+        self.assertIn("전화상담 신청 #12", html)
+        self.assertIn("2026-06-19 ~", html)                 # 기본 시작일이 그 접수일까지 넓혀짐
+        self.assertIn("미처리 포함 확장", html)
+        # 기간을 직접 주면 그대로 존중
+        r = self.client.get("/consultations/inquiries?from=2026-09-01")
+        self.assertNotIn("전화상담 신청 #12", r.get_data(as_text=True))
+        # 처리하면 기본 기간이 이번 달로 돌아간다
+        models.update_communication(old, status="done")
+        html = self.client.get("/consultations/inquiries").get_data(as_text=True)
+        self.assertNotIn("미처리 포함 확장", html)
+        self.assertNotIn("전화상담 신청 #12", html)
+
     def test_csv_export(self):
         r = self.client.get('/consultations/inquiries.csv')
         self.assertEqual(r.status_code, 200)

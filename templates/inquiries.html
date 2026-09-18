@@ -52,7 +52,7 @@
 {# ── 기간 집계 — 문의 → 상담 깔때기 ── #}
 <div class="iq-cards">
     {# 왼쪽=아직 안 된 것 → 오른쪽=목표에 가까운 것. 문의 = 미처리 + 처리완료 + 상담등록 #}
-    <div class="iq-card"><div class="iq-k">문의</div><div class="iq-v">{{ summary.total }}<small>건</small></div><div class="iq-s">{{ f.date_from }} ~ {{ f.date_to }}</div></div>
+    <div class="iq-card"><div class="iq-k">문의</div><div class="iq-v">{{ summary.total }}<small>건</small></div><div class="iq-s">{{ f.date_from }} ~ {{ f.date_to }}{% if f.widened %} <span class="muted" title="이번 달보다 오래된 미처리 문의가 있어 그 접수일부터 보여줍니다. 처리하면 기간이 이번 달로 돌아갑니다.">(미처리 포함 확장)</span>{% endif %}</div></div>
     <div class="iq-card iq-warn"><div class="iq-k">미처리</div><div class="iq-v">{{ summary.open }}<small>건</small></div><div class="iq-s">전화·답변 대기</div></div>
     <div class="iq-card"><div class="iq-k">처리 완료 · 상담 미등록</div><div class="iq-v">{{ summary.done_only }}<small>건</small></div><div class="iq-s">답변만 하고 끝난 문의 포함</div></div>
     <div class="iq-card iq-good"><div class="iq-k">상담 등록</div><div class="iq-v">{{ summary.converted }}<small>건</small></div><div class="iq-s">상담 전환율 {{ summary.rate }}% <span class="muted">(문의 대비)</span></div></div>

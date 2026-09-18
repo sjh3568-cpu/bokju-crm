@@ -6762,6 +6762,20 @@ def inquiry_rows(*, date_from=None, date_to=None, channel="", stage="", q="", li
     return out
 
 
+def oldest_open_inquiry_date() -> str | None:
+    """가장 오래된 미처리(open/in_progress/waiting) 인바운드 문의의 접수일(YYYY-MM-DD). 없으면 None.
+    채널 문의 내역의 기본 기간을 이 날짜까지 넓혀, 이번 달보다 오래된 미처리 문의가 기본 화면에서
+    빠지지 않게 한다(EasyQR 백필처럼 몇 달 지난 접수가 한꺼번에 들어오는 경우)."""
+    conn = get_db()
+    row = conn.execute(
+        """SELECT MIN(date(COALESCE(m.occurred_at, datetime(m.created_at,'localtime')))) AS d
+           FROM communications m
+           WHERE (m.direction = 'in' OR m.direction IS NULL)
+             AND m.status IN ('open', 'in_progress', 'waiting')""").fetchone()
+    conn.close()
+    return row["d"] if row and row["d"] else None
+
+
 def inquiry_summary(rows: list[dict]) -> dict:
     """문의 목록 → 채널별·전체 집계. {total, open, converted, done_only, answered, rate, avg_hours, by_channel}"""
     def bucket(items):
