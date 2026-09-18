@@ -4,7 +4,8 @@ walk.induk.ai.kr 랜딩페이지의 '빠른 전화상담 신청'(consult.php)은
 MariaDB(`easyqr_db.consultations`)에 쌓는다. 기획실(EasyQR 담당)이 그 표를 **읽기 전용
 JSON API**(`api/consult_export.php`, X-API-Key 인증)로 열어 주었고(2026-09-18,
 EasyQR_상담데이터_API명세.md), 이 워커가 그 API를 폴링해 CRM 인박스에 등록한다
-(채널=웹문의, 인바운드). 2026-09-17의 첫 판은 pymysql로 DB에 직접 붙었는데, 기획실이
+(채널=**카카오**, 인바운드 — 이 페이지는 카카오 비즈채널의 '전화하기(상담 예약)' 버튼이 여는
+것이라 홈페이지 게시판 문의와 구분해 카카오톡 채널로 분류한다. 사용자 결정 2026-09-18). 2026-09-17의 첫 판은 pymysql로 DB에 직접 붙었는데, 기획실이
 DB 계정 대신 API를 제공하기로 해 접속부만 바꿨다 — 폴링·워터마크·환자매칭·카드 모양은 그대로.
 
 같은 NAS 안이라 내부 IP(172.16.1.250)로 부르며 사내망 밖으로 나가지도, 외부 포트를 열지도
@@ -43,6 +44,7 @@ MAX_STRIKES = 5                     # 같은 건이 이만큼 연속 실패하�
 BOOTSTRAP_LIMIT = 500               # 첫 기동 기준점(현재 최대 id) 찾을 때 한 페이지 — API 최대치
 _USER_AGENT = "bokju-crm-sync/1.0"  # 외부 도메인(Cloudflare) 경유 시 필수 — 내부 IP에서도 무해
 _SUMMARY_PREFIX = "전화상담 신청"
+CHANNEL = "카카오"                 # 카카오 채널 버튼 → EasyQR 페이지. 대시보드·문의 내역에서 "카카오톡"으로 표시
 
 # 웹훅(_HOMEPAGE_EXTRA_FIELDS)과 같은 라벨 — 두 경로가 같은 본문을 만들도록.
 _EXTRA_FIELDS = [
@@ -140,8 +142,8 @@ def _already_registered(receipt_no: int) -> bool:
     head = f"{_SUMMARY_PREFIX} #{receipt_no}"
     conn = models.get_db()
     row = conn.execute(
-        "SELECT 1 FROM communications WHERE channel = '웹문의' AND created_by = 'EasyQR' "
-        "AND (summary = ? OR summary LIKE ?) LIMIT 1",
+        "SELECT 1 FROM communications WHERE created_by = 'EasyQR' "
+        "AND (summary = ? OR summary LIKE ?) LIMIT 1",     # 채널은 안 본다(9/18 웹문의→카카오 전환 전 행도 잡히게)
         (head, f"{head} · %"),
     ).fetchone()
     conn.close()
@@ -159,7 +161,7 @@ def _register(row: dict) -> int | None:
     occurred = row.get("created_at")
     return models.create_communication(
         patient_id=models.match_patient_by_phone(phone),
-        channel="웹문의", direction="in",
+        channel=CHANNEL, direction="in",
         contact=phone or name or None,
         summary=_summary(receipt_no, name), body=_build_body(row),
         status="open", created_by="EasyQR",

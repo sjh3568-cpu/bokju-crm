@@ -127,6 +127,15 @@ def _migrate_legacy_stages(conn):
         )
 
 
+def _migrate_easyqr_channel(conn):
+    """EasyQR 전화상담 접수를 웹문의 → 카카오로 (1회성, 2026-09-18 사용자 결정).
+    EasyQR 페이지는 카카오 비즈채널 버튼이 여는 것이라 홈페이지 게시판과 구분해야 한다.
+    9/18 오전 첫 동기화로 들어온 10건이 웹문의로 저장돼 있어 여기서 바꾼다. 멱등."""
+    conn.execute(
+        "UPDATE communications SET channel = '카카오' "
+        "WHERE created_by = 'EasyQR' AND channel = '웹문의'")
+
+
 def _migrate_pair_legacy_returns(conn):
     """기존 '복귀' 이벤트 행 → 직전 나감 이벤트의 returned_at으로 이관 (1회성).
     과거 데이터도 '미복귀' 판정에 바로 쓰이게 한다. 복귀 행 자체는 이력으로 보존.
@@ -783,6 +792,7 @@ def init_db():
     conn.execute("CREATE INDEX IF NOT EXISTS idx_admevent_episode ON admission_events(episode_id)")
     _migrate_pair_legacy_returns(conn)
     _migrate_legacy_stages(conn)
+    _migrate_easyqr_channel(conn)
     _ensure_columns(conn, "source_hospitals", {
         "kind": "TEXT",           # 종별: 상급종합/종합병원/병원/요양병원 등
         "address": "TEXT",

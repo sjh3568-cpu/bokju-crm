@@ -289,7 +289,7 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
   추가해 준다**(처음엔 '별도 소관이라 못 고친다'고 보고 DB 직접 폴링으로 만들었으나, 기획실이 DB 계정 대신
   읽기 전용 JSON API `GET /Developer/EasyQR/api/consult_export.php`(헤더 `X-API-Key`, `after_id`/`since`/`limit`)를
   열어 줘 접속부만 API로 바꿨다. 명세: NAS 미전실 공유폴더 `EasyQR_상담데이터_API명세.md`).
-  워커가 **3분마다 `after_id=last_id`로 신규 접수만 조회**해 communications(웹문의/in, created_by=EasyQR)로
+  워커가 **3분마다 `after_id=last_id`로 신규 접수만 조회**해 communications(**카카오**/in, created_by=EasyQR)로
   등록한다. 컨테이너가 같은 NAS에 있으므로 내부 IP(172.16.1.250)로 부른다 — 외부 도메인은 Cloudflare가
   User-Agent 없는 요청을 403으로 막는다(워커는 UA를 항상 보냄). **실패 응답도 HTTP 200**(서버 nginx가 PHP 4xx를
   가로챔)이라 `success` 필드로 판단한다. `created_at`은 문자열로 온다(`_register`가 datetime·문자열 둘 다 받음).
@@ -297,6 +297,9 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
   중복 방지는 `data/easyqr_sync_status.json`의 `last_id` 워터마크 + 요약의 접수번호(`#N`) 대조 2중.
   첫 기동은 현재 최대 id부터(옛 접수 폭탄 방지; API엔 MAX가 없어 500건씩 페이지를 넘겨 끝을 찾는다) —
   과거분은 `EASYQR_BACKFILL_FROM=<id>`(0이면 전체). 카드 모양은 `/api/webhook/homepage`와 동일.
+  **채널은 '카카오'**(2026-09-18 사용자 결정) — EasyQR 페이지는 카카오 비즈채널의 '전화하기(상담 예약)' 버튼이 여는 것이라
+  홈페이지 게시판(웹문의)과 구분한다. 대시보드 '카카오채널' 탭·채널 문의 내역 '카카오톡'·유입경로 '카카오톡 채널'로 이어진다.
+  첫 동기화(9/18 오전) 10건은 웹문의로 들어갔던 것을 `models._migrate_easyqr_channel`(init_db 1회성)이 카카오로 이관.
   **주의: 단방향이다.** CRM에서 처리 완료해도 EasyQR `consult_admin`에는 pending으로 남는다(API가 읽기 전용).
   양방향이 필요하면 '어느 쪽이 원본인가'부터 기획실과 협의. 조회 이력은 EasyQR 쪽 `export_log`에 남는다.
 - **홈페이지 상담게시판 직접 연동 (2026-09-15)** ([homepage_board.py](homepage_board.py)) — 병원 홈페이지

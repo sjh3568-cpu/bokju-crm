@@ -78,7 +78,7 @@ class EasyQRInboxTests(unittest.TestCase):
     def test_new_row_becomes_inbox_card(self):
         self.assertEqual(self._seed([_row(19)]), 1)
         comm = self._comms()[0]
-        self.assertEqual(comm["channel"], "웹문의")
+        self.assertEqual(comm["channel"], "카카오")          # 카카오 채널 버튼이 여는 페이지 → 카카오톡으로 분류
         self.assertEqual(comm["direction"], "in")
         self.assertEqual(comm["status"], "open")
         self.assertEqual(comm["created_by"], "EasyQR")
@@ -126,6 +126,17 @@ class EasyQRInboxTests(unittest.TestCase):
         os.remove(self.status_path)
         self.assertEqual(self._seed(rows), 0)
         self.assertEqual(len(self._comms()), 2)
+
+    def test_rows_saved_as_web_before_channel_switch_are_not_duplicated(self):
+        """9/18 웹문의→카카오 전환 전에 들어온 행도 접수번호 대조에 걸려야 한다 + init_db가 카카오로 이관."""
+        self._seed([_row(5, name="신사임당")])
+        conn = models.get_db()
+        conn.execute("UPDATE communications SET channel = '웹문의' WHERE created_by = 'EasyQR'")
+        conn.commit(); conn.close()
+        os.remove(self.status_path)
+        self.assertEqual(self._seed([_row(5, name="신사임당")]), 0)
+        models.init_db()                                     # 재기동 = 1회성 이관
+        self.assertEqual([c["channel"] for c in self._comms()], ["카카오"])
 
     def test_receipt_number_prefix_is_not_confused(self):
         """#1 이 등록돼 있어도 #12 는 새 건으로 들어가야 한다."""
