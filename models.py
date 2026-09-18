@@ -7357,13 +7357,64 @@ def admission_flow_counts(week_from, week_to, month_from, month_to):
         return {
             "week_in": _count("admitted_at", week_from, week_to) + _crm_count("admitted_at", week_from, week_to)
                        + _away_return_count(conn, week_from, week_to),
-            "week_out": _count("discharged_at", week_from, week_to) + _crm_count("discharged_at", week_from, week_to),
+            "week_out": _count("discharged_at", week_from, week_to) + _crm_count("discharged_at", week_from, week_to)
+                        + _away_departure_count(conn, week_from, week_to),
             "month_in": _count("admitted_at", month_from, month_to) + _crm_count("admitted_at", month_from, month_to)
                         + _away_return_count(conn, month_from, month_to),
-            "month_out": _count("discharged_at", month_from, month_to) + _crm_count("discharged_at", month_from, month_to),
+            "month_out": _count("discharged_at", month_from, month_to) + _crm_count("discharged_at", month_from, month_to)
+                         + _away_departure_count(conn, month_from, month_to),
         }
     finally:
         conn.close()
+
+
+# 외진 나감 = 그날의 퇴원 (2026-09-18 사용자 정의: "외진 나갔으면 이것도 퇴원으로 잡혀야 한다").
+# 원무 명부도 외진 나간 날 퇴원, 복귀한 날 새 입원으로 적는다 — 복귀를 입원으로 세는 것과 대칭이다.
+# 명부가 이미 그날 퇴원으로 적었으면 두 번 세지 않는다. 타 병원 전원(return_outcome='전원')은
+# 종결 처리가 따로 회차를 닫으므로 여기서 빼서 중복을 막는다.
+_AWAY_DEPARTURE_NOT_IN_ROSTER = """
+    ae.event_type IN ('응급전원', '모병원 외래치료')
+    AND ae.event_date IS NOT NULL AND ae.event_date != ''
+    AND COALESCE(ae.return_outcome, '복귀') = '복귀'
+    AND NOT EXISTS (SELECT 1 FROM admission_episodes e
+                     WHERE e.patient_id = c.patient_id
+                       AND date(e.discharged_at) = date(ae.event_date))
+"""
+
+
+def _away_departure_count(conn, lo, hi):
+    return conn.execute(
+        f"""SELECT COUNT(*) FROM admission_events ae
+             JOIN consultations c ON c.id = ae.consultation_id
+            WHERE {_AWAY_DEPARTURE_NOT_IN_ROSTER} AND date(ae.event_date) BETWEEN ? AND ?""",
+        (lo, hi)).fetchone()[0]
+
+
+def away_departures_as_discharges(d_from, d_to):
+    """기간에 외진 나간 건 중 명부에 그날 퇴원이 없는 것 — 입원·퇴원 이력의 '퇴원(외진)' 행."""
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            f"""SELECT ae.id AS event_id, ae.event_type, ae.event_date, ae.hospital, ae.returned_at,
+                       ae.memo AS away_memo,
+                       c.id AS consultation_id, c.patient_id, c.counselor, c.attending_doctor AS c_doctor,
+                       c.patient_age, c.primary_diagnosis, c.room_number AS c_room,
+                       p.name AS patient_name, p.gender, p.birth_year,
+                       e.id AS episode_id, e.admitted_at AS ep_admitted_at, e.ward, e.room_number AS ep_room,
+                       e.attending_doctor AS ep_doctor, e.care_type, e.diagnosis_name
+                  FROM admission_events ae
+                  JOIN consultations c ON c.id = ae.consultation_id
+                  JOIN patients p ON p.id = c.patient_id
+                  LEFT JOIN admission_episodes e ON e.id = (
+                       SELECT e2.id FROM admission_episodes e2
+                        WHERE e2.patient_id = c.patient_id AND e2.roster_key IS NOT NULL
+                          AND date(e2.admitted_at) <= date(ae.event_date)
+                        ORDER BY e2.admitted_at DESC, e2.id DESC LIMIT 1)
+                 WHERE {_AWAY_DEPARTURE_NOT_IN_ROSTER} AND date(ae.event_date) BETWEEN ? AND ?
+                 ORDER BY ae.event_date DESC, ae.id DESC""", (d_from, d_to)).fetchall()
+    finally:
+        conn.close()
+    return [dict(r) for r in rows]
 
 
 # 외진(응급전원·모병원 외래치료) 복귀는 병동 입장에서 그날의 입원이다(2026-09-15 사용자 요청).
