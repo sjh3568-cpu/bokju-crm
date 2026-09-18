@@ -357,14 +357,11 @@
 /* 재입원 — 이전 입원·퇴원일은 툴팁(마우스 올리면), 상세 화면의 '입원 회차 이력'에 전부 */
 .page-dashboard .dash-adm-tbl .adm-readmit { margin-left: 3px; padding: 1px 4px; font-size: .66rem; font-weight: 800; background: #fef3c7; color: #92400e; vertical-align: middle; cursor: help; }
 .page-dashboard .dash-adm-tbl .dash-adm-rh .badge { display: inline-block; line-height: 1.2; }
-/* 중증도 — 등급 알약(높음 빨강·중간 주황) + 내성균 빨간 배지(.dash-org) + 항목 칩. 무게 3짜리(호흡기·삽관·혼수)는 붉게, 2짜리(반혼수·기관절개)는 주황, 나머지는 회색 */
+/* 상태·처치 — 상담일지에 적힌 항목을 적힌 표기 그대로 칩으로. 내성균만 빨간 배지(.dash-org)로 도드라지고
+   나머지 칩은 전부 같은 회색이다. 앱이 무게를 더해 '높음/중간' 등급을 매기던 알약은 걷어냈다
+   (2026-09-18 요청: 중증도는 앱이 평가하지 말고 상담일지 내용만 그대로) — 색으로 경중을 가리는 것도 평가라서 함께 뺐다. */
 .page-dashboard .dash-adm-tbl .dash-adm-sev { white-space: normal; line-height: 1.55; }
-.page-dashboard .dash-adm-tbl .sev { display: inline-block; margin-right: 4px; padding: 1px 7px; border-radius: 999px; font-size: .72rem; font-weight: 800; vertical-align: middle; }
-.page-dashboard .dash-adm-tbl .sev-high { background: #fee2e2; color: #b91c1c; }
-.page-dashboard .dash-adm-tbl .sev-mid { background: #fef3c7; color: #92400e; }
 .page-dashboard .dash-adm-tbl .sev-tag { display: inline-block; margin-right: 3px; padding: 0 5px; border-radius: 5px; font-style: normal; font-size: .72rem; font-weight: 700; background: var(--dgrid, #eef2f0); color: var(--dtext); vertical-align: middle; cursor: help; }
-.page-dashboard .dash-adm-tbl .sev-vent, .page-dashboard .dash-adm-tbl .sev-intub, .page-dashboard .dash-adm-tbl .sev-coma { background: #fde2e2; color: #991b1b; }
-.page-dashboard .dash-adm-tbl .sev-semicoma, .page-dashboard .dash-adm-tbl .sev-trach { background: #fef3c7; color: #92400e; }
 /* 주병명·모병원·유입경로 — 줄바꿈 허용(긴 병명은 두세 줄로). td 자체에 -webkit-box 말줄임을 걸면 표 셀이 아니게 돼
    행 테두리 선이 셀마다 다른 높이에 그려졌다(2026-09-16) — td는 표 셀 그대로 둔다. 전체 문구는 툴팁. */
 .page-dashboard .dash-adm-tbl .dash-dx, .page-dashboard .dash-adm-tbl .dash-note, .page-dashboard .dash-adm-tbl .dash-adm-ref { max-width: none; white-space: normal; line-height: 1.25;

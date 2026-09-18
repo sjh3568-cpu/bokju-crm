@@ -370,7 +370,8 @@ def dashboard():
     if admission_from > admission_to:
         admission_from, admission_to = admission_to, admission_from
     admission_scope = (request.args.get("admission_scope") or "all").strip()
-    if admission_scope not in ("all", "planned", "completed"):
+    # discharged = 퇴원만 (2026-09-18: 입원 환자 현황 표에 퇴원 행을 같이 넣고 구분으로 거른다)
+    if admission_scope not in ("all", "planned", "completed", "discharged"):
         admission_scope = "all"
     admission_weekdays = "월화수목금토일"
     def admission_date_label(value):
@@ -534,7 +535,6 @@ def dashboard():
     data["ward_occupancy"] = dashboard_metrics.ward_occupancy()
     data["unassigned_planned"] = dashboard_metrics.unassigned_planned(2, today_d)
     data["consult_heat"] = dashboard_metrics.consult_weekday_matrix(8, today_d)
-    data["discharges_today"] = dashboard_metrics.discharges_on(today_d.isoformat())
     data["recovery_projection"] = _recovery_projection(
         data["ward_strip"], recovery_transition_due, discharge_due)
     # 인바운드 경과 — 1시간 넘긴 문의는 화면에서 따로 강조한다.

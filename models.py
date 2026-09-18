@@ -2633,6 +2633,134 @@ ORGANISM_TAGS = ("CRE", "VRE", "CPE", "MRSA", "MRAB", "MRPA")
 ISOLATION_STATUSES = ("검출", "해제")
 
 
+# ───────── 상태·처치 항목 (2026-09-18) ─────────
+# 대시보드 입원·퇴원 현황의 '상태·처치' 칸 — 상담일지에 적힌 것만 적힌 표기 그대로 올린다.
+# 앱이 무게를 더해 중증도 높음/중간을 매기던 것을 걷어냈다(2026-09-18 요청: 중증도는 평가하지 말고
+# 상담일지내 넣은 내용만 그대로).
+#
+# 근거가 두 곳이다.
+#  ① 체크박스 — 의식(consciousness_main)·활동(activity_others)·식사(diet_types)·
+#     상처소독(wound_care)·특수처치(special_care). 웹 폼으로 적은 상담.
+#  ② 병명 상세 자유 기재(disease_detail) — 실제 운영 자료는 거의 전부 여기 있다. 체크박스는
+#     상담 8천 건 중 한 건만 채워져 있고, 섬망 55건·홈벤트 33건·목관 23건이 이 칸에 글로 적혀 있다
+#     ("만성호흡부전.홈벤트", "요양 / 섬망" 같은 형태). 그래서 자유 기재에서도 같은 항목을 찾는다.
+#
+# 자유 기재에서 찾은 항목은 상담일지에 적힌 글자 그대로 칩에 쓴다 — '홈벤트'로 적었으면 홈벤트,
+# '인공호흡기'로 적었으면 인공호흡기. 같은 묶음(key)이 두 곳에서 잡히면 한 번만 올린다.
+# 내성균(CRE·VRE…)은 detected_organisms + 격리 해제 반영(apply_isolation)을 거친 빨간 배지가
+# 따로 있어 여기서는 뺀다.
+CARE_TERM_GROUPS = (
+    # (묶음 키, 자유 기재에서 찾을 표기 — 긴 표기부터)
+    ("uncon", ("반무의식", "무의식")),
+    ("coma", ("간성혼수", "반혼수", "혼수")),
+    ("delirium", ("섬망",)),
+    ("bedridden", ("와상",)),
+    ("ltube", ("비강영양", "콧줄", "L-tube", "Ltube", "L tube")),
+    ("peg", ("위루술", "위루", "PEG")),
+    ("trach", ("기관절개", "목관", "T-cannula")),
+    ("vent", ("인공호흡기", "홈벤트", "home vent")),
+    ("intubation", ("기관내삽관", "삽관")),
+    ("suction", ("석션", "흡인")),
+    ("oxygen", ("산소요법", "산소")),
+    ("sore", ("욕창",)),
+    ("tpn", ("중심정맥영양", "TPN")),
+    ("foley", ("유치도뇨", "Foley")),
+    ("dialysis", ("혈액투석", "복막투석", "투석")),
+    ("nebulizer", ("네블라이저",)),
+    ("transfusion", ("수혈",)),
+    ("picc", ("PICC",)),
+    ("fluid", ("수액요법",)),
+    ("colostomy", ("장루", "colostomy")),
+    ("urostomy", ("요루", "ureterostomy")),
+    ("burn", ("화상",)),
+    ("dmfoot", ("당뇨발",)),
+    ("wound", ("수술절상", "단순상처")),
+    ("airmat", ("에어매트리스",)),
+)
+# 같은 글자가 다른 뜻으로 쓰인 문구 — 이 단어 안에 든 것은 그 항목이 아니다.
+# 실제 자료에서 확인한 것만 넣는다. '산소'가 든 37건 중 대부분이 진단명 '저산소성 뇌손상'·'무산소증'이고,
+# '흡인'이 든 8건은 전부 진단명 '흡인성폐렴'이다(산소요법·석션 기록이 아니다).
+# '목관절'은 자료에 없지만 손목·발목 골절 표기가 늘면 기관절개로 잡히므로 미리 막아둔다.
+CARE_TERM_EXCLUDES = {
+    "산소": ("저산소", "무산소"),
+    "흡인": ("흡인성",),
+    "목관": ("목관절",),
+}
+# 체크박스 값 → 묶음 키. 위 표기 목록으로 찾으므로 폼 문구가 바뀌어도 같이 따라간다.
+CARE_CHECKBOX_FIELDS = (
+    "consciousness_main", "activity_others", "diet_types", "wound_care", "special_care",
+)
+
+
+def _term_position(lowered, term):
+    """lowered에서 term이 제 뜻으로 쓰인 첫 자리. 제외 문구 안에 든 것만 있으면 None."""
+    term = term.lower()
+    blocked = []
+    for word in CARE_TERM_EXCLUDES.get(term, ()):
+        word = word.lower()
+        at = lowered.find(word)
+        while at != -1:
+            blocked.append((at, at + len(word)))
+            at = lowered.find(word, at + 1)
+    at = lowered.find(term)
+    while at != -1:
+        if not any(lo <= at and at + len(term) <= hi for lo, hi in blocked):
+            return at
+        at = lowered.find(term, at + 1)
+    return None
+
+
+def _care_group_of(text):
+    """문구 하나가 어느 상태·처치 묶음인지 — (묶음 키, 적힌 표기). 해당 없으면 None."""
+    lowered = (text or "").lower()
+    for key, terms in CARE_TERM_GROUPS:
+        for term in terms:
+            if _term_position(lowered, term) is not None:
+                return key, term
+    return None
+
+
+def care_items(item):
+    """상담일지에 적힌 상태·처치 항목 — [{key, label, title}]. 등급·점수는 매기지 않는다.
+
+    체크박스에 든 값은 폼 문구 그대로, 자유 기재(병명 상세)에서 찾은 것은 적힌 표기 그대로.
+    항목별 인라인 수기 메모(산소 3L, 욕창 부위 등)는 툴팁(title)에 붙인다.
+    """
+    from config import SPECIAL_CARE_NOTE_FIELDS, WOUND_CARE_NOTE_FIELDS
+    note_fields = {**WOUND_CARE_NOTE_FIELDS, **SPECIAL_CARE_NOTE_FIELDS}
+    found = {}   # 묶음 키 → (라벨, 메모)
+
+    def _add(key, label, note=""):
+        if key not in found:
+            found[key] = (label, note)
+
+    for field in CARE_CHECKBOX_FIELDS:
+        value = item.get(field) or []
+        for checked in ([value] if isinstance(value, str) else list(value)):
+            checked = str(checked).strip()
+            if not checked or checked.upper() in ORGANISM_TAGS:
+                continue      # 내성균은 빨간 배지가 따로 보여준다
+            group = _care_group_of(checked)
+            if not group:
+                continue      # '정상' 의식·'스스로' 활동처럼 병동이 챙길 것 없는 값은 칩에 올리지 않는다
+            note = (item.get(note_fields.get(checked) or "") or "").strip()
+            _add(group[0], checked, note)
+
+    detail = (item.get("disease_detail") or "").strip()
+    lowered = detail.lower()
+    for key, terms in CARE_TERM_GROUPS:
+        for term in terms:
+            start = _term_position(lowered, term)
+            if start is not None:
+                _add(key, detail[start:start + len(term)])   # 적힌 글자 그대로
+                break
+
+    order = [key for key, _ in CARE_TERM_GROUPS]
+    return [{"key": key, "label": found[key][0],
+             "title": f"{found[key][0]} — {found[key][1]}" if found[key][1] else found[key][0]}
+            for key in order if key in found]
+
+
 def detected_organisms(item):
     """상담일지에 적힌 내성균 — 특수관리 항목·균 비고·진단/질환 문구 어디에 있든 잡는다(입원 시 보균 사실)."""
     special_care = item.get("special_care") or []
@@ -4046,6 +4174,57 @@ def dashboard_summary(admission_lookup_from: str | None = None,
         (*AWAY_EVENT_TYPES, range_lo, range_hi, range_lo, range_hi),
     ).fetchall()
 
+    # ── 퇴원 (2026-09-18 요청: 입원 환자 현황에 퇴원도 같은 표에) ──
+    # 근거가 둘이다. ① 원무 명부 회차(roster_key)의 discharged_at — 원무가 찍은 실제 퇴원일.
+    # ② CRM에서 퇴원 처리한 상담의 discharge_date. 앱에서 처리하면 상담·CRM 회차·명부 회차가
+    # 모두 닫혀 한 사람이 세 줄이 되므로 (환자, 퇴원일)로 묶어 한 줄만 남긴다.
+    # 조회 창은 '오늘'과 사용자가 고른 기간까지 — 입원과 달리 앞날 예정이 없으므로 미래는 안 본다.
+    # 9/17 퇴원을 9/18에 적어도 기본 창(어제~내일)에서 9/17 자리에 보인다(그 전엔 어디에도 없었다).
+    discharge_lo = min(today, admission_lookup_from)
+    discharge_hi = max(today, admission_lookup_to)
+    discharge_episode_rows = conn.execute(
+        """
+        SELECT e.id AS episode_id, e.patient_id, e.consultation_id, e.roster_key,
+               e.admitted_at, e.discharged_at,
+               e.room_number AS ep_room, e.ward AS ep_ward,
+               e.attending_doctor AS ep_doctor, e.diagnosis_name AS ep_diagnosis,
+               e.discharge_destination AS ep_destination, e.discharge_reason AS ep_reason,
+               p.name AS patient_name, p.gender, p.insurance_type, p.blacklist
+        FROM admission_episodes e
+        JOIN patients p ON p.id = e.patient_id
+        WHERE date(NULLIF(e.discharged_at, '')) BETWEEN date(?) AND date(?)
+        ORDER BY e.discharged_at, e.id
+        """,
+        (discharge_lo, discharge_hi),
+    ).fetchall()
+    discharge_consult_rows = conn.execute(
+        """
+        SELECT c.id, c.consult_date, c.consult_time, c.counselor,
+               c.planned_admission_date, c.planned_admission_time,
+               c.actual_admission_date, c.admission_date, c.admission_status,
+               c.discharge_date, c.discharge_destination, c.discharge_reason,
+               c.attending_doctor, c.room_number, c.patient_age,
+               c.primary_diagnosis, c.secondary_diagnosis,
+               c.diseases, c.disease_detail, c.disease_onset, c.special_care,
+               c.special_mrsa_note, c.special_vre_note, c.special_cre_note,
+               c.consciousness_main, c.activity_others, c.diet_types, c.wound_care, c.wound_site,
+               c.tracheostomy_detail, c.wound_op_note, c.wound_foley_note, c.wound_dmfoot_note,
+               c.wound_burn_note, c.wound_simple_note, c.wound_urostomy_note, c.wound_colostomy_note,
+               c.oxygen_lpm, c.special_vent_note, c.special_intubation_note, c.special_suction_note,
+               c.special_tpn_note, c.special_transfusion_note, c.special_picc_note,
+               c.special_fluid_note, c.special_nebulizer_note,
+               c.referral_source_type, c.referral_source_detail, c.referrer_person, c.referrer_institution,
+               c.admission_purpose, c.external_referral_note,
+               c.source_hospital, c.current_location_type, c.current_location_name,
+               p.id AS patient_id, p.name AS patient_name, p.gender, p.insurance_type,
+               p.guardian_name, p.guardian_phone, p.blacklist
+        FROM consultations c JOIN patients p ON p.id = c.patient_id
+        WHERE date(NULLIF(c.discharge_date, '')) BETWEEN date(?) AND date(?)
+        ORDER BY c.discharge_date, c.id
+        """,
+        (discharge_lo, discharge_hi),
+    ).fetchall()
+
     hold_rows = conn.execute(
         """
         SELECT c.id, c.consult_date, c.consult_time, c.counselor,
@@ -4366,47 +4545,13 @@ def dashboard_summary(admission_lookup_from: str | None = None,
             main_disease = next(iter(_consult_disease_labels(item)), "")
         return main_disease
 
-    # 중증도 — 상담일지의 의식·활동·식사·상처·특수처치 항목에서 병동이 미리 준비할 것을 뽑아 칩으로 보여주고,
-    # 무게를 더해 높음(3 이상)/중간(1~2)으로 등급을 매긴다(2026-09-16 요청: 이 환자가 얼마나 중증한지 한눈에).
-    # 내성균(CRE·VRE…)은 admission_organisms 빨간 배지로 같은 칸에 놓고 여기서는 점수에만 더한다.
-    def _sev_list(item, key):
-        v = item.get(key) or []
-        return [v] if isinstance(v, str) else list(v)
-
-    def _sev_note(item, key):
-        return (item.get(key) or "").strip() if key else ""
-
-    _SEVERITY_RULES = (
-        # (칩, css 키, 무게, 판정, 메모 필드, 툴팁 이름) — 무게 3짜리 하나면 곧 '높음'
-        ("호흡기", "vent", 3, lambda it: "인공호흡기" in _sev_list(it, "special_care"), "special_vent_note", "인공호흡기"),
-        ("삽관", "intub", 3, lambda it: "기관내삽관" in _sev_list(it, "special_care"), "special_intubation_note", "기관내삽관"),
-        ("혼수", "coma", 3, lambda it: (it.get("consciousness_main") or "").strip() == "혼수", None, "의식 혼수"),
-        ("반혼수", "semicoma", 2, lambda it: (it.get("consciousness_main") or "").strip() == "반혼수", None, "의식 반혼수"),
-        ("기관절개", "trach", 2, lambda it: "기관절개" in _sev_list(it, "wound_care") or bool(_sev_note(it, "tracheostomy_detail")), "tracheostomy_detail", "기관절개"),
-        ("와상", "bed", 1, lambda it: "와상" in _sev_list(it, "activity_others"), None, "와상"),
-        ("콧줄", "ltube", 1, lambda it: "비강영양(L-tube)" in _sev_list(it, "diet_types"), None, "비강영양(L-tube)"),
-        ("PEG", "peg", 1, lambda it: "위루술(PEG)" in _sev_list(it, "diet_types"), None, "위루술(PEG)"),
-        ("흡인", "suction", 1, lambda it: "흡인" in _sev_list(it, "special_care"), "special_suction_note", "흡인"),
-        ("산소", "o2", 1, lambda it: "산소요법" in _sev_list(it, "special_care") or bool(_sev_note(it, "oxygen_lpm")), "oxygen_lpm", "산소요법"),
-        ("욕창", "sore", 1, lambda it: "욕창" in _sev_list(it, "wound_care"), "wound_site", "욕창"),
-        ("TPN", "tpn", 1, lambda it: "중심정맥영양" in _sev_list(it, "special_care"), "special_tpn_note", "중심정맥영양"),
-    )
-
-    def _admission_severity(item):
-        tags, score = [], 0
-        for chip, key, weight, hit, note_key, name in _SEVERITY_RULES:
-            if not hit(item):
-                continue
-            note = _sev_note(item, note_key)
-            tags.append({"key": key, "label": chip, "title": f"{name} — {note}" if note else name})
-            score += weight
+    def _admission_care(item):
+        """상태·처치 칸 — 상담일지에 적힌 항목만 그대로(care_items). 툴팁에 내성균까지 묶어 적는다."""
+        tags = care_items(item)
         organisms = item.get("admission_organisms") or []
-        score += len(organisms)
-        level, label = (("high", "높음") if score >= 3 else ("mid", "중간") if score else (None, ""))
         parts = [f"내성균 {' · '.join(organisms)}"] if organisms else []
         parts += [t["title"] for t in tags]
-        title = f"중증도 {label} — " + " · ".join(parts) if level else ""
-        return {"level": level, "label": label, "score": score, "tags": tags, "title": title}
+        return {"tags": tags, "title": " · ".join(parts)}
 
     admission_schedule = []
     for r in admission_schedule_rows:
@@ -4426,7 +4571,7 @@ def dashboard_summary(admission_lookup_from: str | None = None,
         d["admission_time"] = d.get("planned_admission_time") or ""
         d["admission_disease_summary"] = _admission_disease_summary(d)
         d["admission_organisms"] = _admission_organisms(d)
-        d["admission_severity"] = _admission_severity(d)
+        d["admission_care"] = _admission_care(d)
         # '모병원·외진' 칸 — 일반 입원은 어느 병원(또는 자택)에서 오는지. 병명은 왼쪽 병명 열에 있고
         # 입원목적은 84%가 '회복기재활'이라 회복기 배지와 겹쳐, 표에 없던 모병원을 올린다(2026-09-16 결정).
         # 입원목적·연계 메모는 툴팁으로.
@@ -4464,7 +4609,7 @@ def dashboard_summary(admission_lookup_from: str | None = None,
         d["admission_time"] = ""
         d["admission_disease_summary"] = _admission_disease_summary(d)
         d["admission_organisms"] = _admission_organisms(d)
-        d["admission_severity"] = _admission_severity(d)
+        d["admission_care"] = _admission_care(d)
         # 복귀 행 — 외진 종류 · 다녀온 병원 (같은 칸에서 모병원과 같은 결로 읽히게)
         away_label = {"모병원 외래치료": "모병원 진료"}.get(d.get("away_event_type") or "", d.get("away_event_type") or "외진")
         d["other_note"] = " · ".join(v for v in (away_label, (d.get("away_hospital") or "").strip()) if v)
@@ -4499,15 +4644,104 @@ def dashboard_summary(admission_lookup_from: str | None = None,
         if not (d.get("admission_kind") == "return" and d.get("admission_bucket") == "planned"
                 and completed_after.get(d.get("patient_id"), "") > (d.get("away_event_date") or "")[:10])]
 
+    # ── 퇴원 행 ──
+    # (환자, 퇴원일) 하나가 한 줄이다. 명부 회차가 원무 사실이라 병실·병동·주치의·행선지는 명부 값을
+    # 먼저 쓰고, 상태·처치·상담사·보험·유입경로는 붙은 상담에서 가져온다. 상담 없이 입원한 환자는
+    # 명부 값만으로 줄을 만든다(환자 링크 없음).
+    discharge_consults = {}
+    for r in discharge_consult_rows:
+        d = _deserialize_consultation(dict(r))
+        discharge_consults[(d["patient_id"], str(d.get("discharge_date") or "")[:10])] = d
+
+    discharge_merged = {}
+    for r in discharge_episode_rows:
+        key = (r["patient_id"], str(r["discharged_at"])[:10])
+        cur = discharge_merged.setdefault(key, {"sources": set()})
+        roster = bool(r["roster_key"])
+        cur["sources"].add("명부" if roster else "CRM")
+        for src, dst in (("ep_room", "room_number"), ("ep_ward", "ward"),
+                         ("ep_doctor", "attending_doctor"), ("ep_diagnosis", "diagnosis_name"),
+                         ("ep_destination", "discharge_destination"), ("ep_reason", "discharge_reason"),
+                         ("admitted_at", "admitted_at")):
+            value = r[src]
+            value = value.strip() if isinstance(value, str) else value
+            if value and (roster or not cur.get(dst)):
+                cur[dst] = str(value)[:10] if dst == "admitted_at" else value
+        if r["consultation_id"] and not cur.get("consultation_id"):
+            cur["consultation_id"] = r["consultation_id"]
+        for k in ("patient_name", "gender", "insurance_type", "blacklist"):
+            cur.setdefault(k, r[k])
+    for key in discharge_consults:
+        discharge_merged.setdefault(key, {"sources": {"CRM"}})
+
+    discharge_schedule = []
+    for (pid, day), merged in sorted(discharge_merged.items(), key=lambda kv: (kv[0][1], kv[0][0])):
+        if not _in_admission_window(day):
+            continue
+        con = discharge_consults.get((pid, day))
+        if con is None and merged.get("consultation_id"):
+            con = _deserialize_consultation(get_consultation(merged["consultation_id"]) or {}) or None
+        d = dict(con or {})
+        d["patient_id"] = pid
+        d["id"] = d.get("id") or merged.get("consultation_id")
+        for k in ("patient_name", "gender", "insurance_type", "blacklist"):
+            if merged.get(k) is not None and not d.get(k):
+                d[k] = merged[k]
+        # 명부 값 우선 — 병실·주치의는 상담에도 있지만 원무 명부가 마지막 사실이다.
+        for k in ("room_number", "attending_doctor", "discharge_destination", "discharge_reason"):
+            if merged.get(k):
+                d[k] = merged[k]
+        admitted_at = merged.get("admitted_at") or d.get("actual_admission_date") or d.get("admission_date")
+        d["admission_kind"] = "discharge"
+        d["admission_bucket"] = "discharged"
+        d["admission_bucket_label"] = "퇴원"
+        d["admission_date_kind"] = "퇴원"
+        d["admission_display_date"] = day
+        d["day_label"] = _day_label(day)
+        d["planned_admission_time"] = None
+        d["admission_time"] = ""
+        d["discharge_date"] = day
+        d["discharge_admitted_at"] = str(admitted_at)[:10] if admitted_at else None
+        d["discharge_source"] = " · ".join(sorted(merged.get("sources") or ()))
+        # 재원일수 — 입원일부터 퇴원일까지. 병동이 '얼마나 있다 나갔나'를 바로 본다.
+        stay = None
+        if d["discharge_admitted_at"]:
+            start, end = _date_value(d["discharge_admitted_at"]), _date_value(day)
+            if start and end and end >= start:
+                stay = (end - start).days
+        d["discharge_stay_days"] = stay
+        d["admission_disease_summary"] = (
+            _admission_disease_summary(d) or (merged.get("diagnosis_name") or "").strip())
+        d["admission_organisms"] = _admission_organisms(d)
+        d["admission_care"] = _admission_care(d)
+        # '모병원·외진' 칸을 퇴원 행에서는 행선지로 쓴다 — 어디로 나갔는지가 같은 자리의 사실.
+        destination = (d.get("discharge_destination") or "").strip()
+        d["other_note"] = f"→ {destination}" if destination else ""
+        d["other_note_title"] = " · ".join(v for v in (
+            f"퇴원 {day}",
+            f"행선 {destination}" if destination else "",
+            f"사유 {d['discharge_reason']}" if (d.get("discharge_reason") or "").strip() else "",
+            f"입원 {d['discharge_admitted_at']}" if d["discharge_admitted_at"] else "",
+            f"재원 {stay}일" if stay is not None else "",
+            f"근거 {d['discharge_source']}" if d["discharge_source"] else "",
+        ) if v)
+        d["ward"] = merged.get("ward") or _ward_label(d.get("room_number"))
+        # 재입원 배지는 이 입원보다 앞선 퇴원만 봐야 한다 — 퇴원 행은 퇴원일이 기준일이라
+        # 자기 입원이 '이전 입원'으로 잡힌다. 그래서 자기 입원일을 기준일로 따로 준다.
+        d["prior_cutoff"] = d["discharge_admitted_at"] or day
+        discharge_schedule.append(d)
+
     # 격리 상태 — 해제된 균은 빨간 배지에서 빼고 회색 이력으로(오경자 님: 입원 시 VRE → 해제 후에도 계속 빨갛게 보였다, 2026-09-17)
     apply_isolation(admission_schedule, key="admission_organisms", cid_key="id")
+    apply_isolation(discharge_schedule, key="admission_organisms", cid_key="id")
 
     # 재입원 표시 — 이 입원보다 앞서 퇴원한 회차가 있으면 그 입원·퇴원일을 함께 보여준다
     # (2026-09-16 요청: 재입원 환자는 기존 입원일과 신규 입원일을 다 파악할 수 있게).
     prior_by_patient = prior_admissions_by_patient(
-        d.get("patient_id") for d in admission_schedule)
-    for d in admission_schedule:
-        cutoff = (d.get("admission_display_date") or "9999-12-31")[:10]
+        d.get("patient_id") for d in admission_schedule + discharge_schedule)
+    for d in admission_schedule + discharge_schedule:
+        # 퇴원 행은 기준일이 퇴원일이라 자기 입원이 '이전 입원'으로 잡힌다 — prior_cutoff(자기 입원일)로 끊는다.
+        cutoff = (d.get("prior_cutoff") or d.get("admission_display_date") or "9999-12-31")[:10]
         stays = [s for s in prior_by_patient.get(d.get("patient_id"), [])
                  if s["admitted_at"] < cutoff]
         d["prior_stays"] = stays
@@ -4552,14 +4786,35 @@ def dashboard_summary(admission_lookup_from: str | None = None,
         }
         for name, rows in admission_by_status.items()
     }
-    admission_selected = [
-        row for row in admission_schedule
+    # 조회 기간의 입원 + 퇴원을 한 표에. 구분(scope)은 이 표만 거른다 —
+    # KPI·업무 큐가 쓰는 admission_window_schedule에는 퇴원 행을 섞지 않아 '오늘 입원' 수가 부풀지 않는다.
+    selected_in_range = [
+        row for row in admission_schedule + discharge_schedule
         if admission_lookup_from <= (row.get("admission_display_date") or "") <= admission_lookup_to
-        and (admission_lookup_scope == "all" or row.get("admission_bucket") == admission_lookup_scope)
-        and (admission_lookup_scope != "planned"
-             or row.get("admission_kind") == "return"
-             or row.get("admission_status") in ("입원예정", "입원대기"))
     ]
+
+    def _in_scope(row, scope):
+        if scope == "all":
+            return True
+        if row.get("admission_bucket") != scope:
+            return False
+        # '입원예정' 구분에서는 예정일만 지난 입원완료 상담이 섞이지 않게 상태까지 본다(기존 규칙).
+        return (scope != "planned" or row.get("admission_kind") == "return"
+                or row.get("admission_status") in ("입원예정", "입원대기"))
+
+    # 구분 탭 숫자 — 기간만 적용한 목록으로 센다(탭을 눌러도 다른 탭 숫자가 그대로여야 한다).
+    summary["admission_selected_counts"] = {
+        scope: sum(1 for row in selected_in_range if _in_scope(row, scope))
+        for scope in ("all", "planned", "completed", "discharged")
+    }
+    admission_selected = [row for row in selected_in_range
+                          if _in_scope(row, admission_lookup_scope)]
+    admission_selected.sort(key=lambda row: (
+        row.get("admission_display_date") or "",
+        {"planned": 0, "completed": 1, "discharged": 2}.get(row.get("admission_bucket"), 3),
+        row.get("planned_admission_time") or row.get("consult_time") or "",
+        row.get("id") or 0,
+    ))
     admission_selected_groups = {
         "counselor": _group_admissions(admission_selected, "counselor"),
         "doctor": _group_admissions(admission_selected, "attending_doctor"),
@@ -4580,6 +4835,13 @@ def dashboard_summary(admission_lookup_from: str | None = None,
     summary["admission_completed_week"] = len(admission_by_status["completed"])
     summary["admission_today"] = sum(
         1 for r in admission_schedule if r.get("admission_display_date") == today)
+    # 조회 기간 표의 구분별 수 — 제목 옆 '입원 N · 퇴원 M' 표기와 탭 숫자에 쓴다.
+    summary["admission_selected_in"] = sum(
+        1 for r in admission_selected if r.get("admission_bucket") != "discharged")
+    summary["admission_selected_out"] = sum(
+        1 for r in admission_selected if r.get("admission_bucket") == "discharged")
+    summary["discharge_today"] = sum(
+        1 for r in discharge_schedule if r.get("admission_display_date") == today)
     summary["admission_today_planned"] = sum(
         1 for r in admission_by_status["planned"] if r.get("admission_display_date") == today)
     summary["admission_today_completed"] = sum(
@@ -4626,6 +4888,7 @@ def dashboard_summary(admission_lookup_from: str | None = None,
         "admission_groups_by_status": admission_groups_by_status,
         "admission_selected": admission_selected,
         "admission_selected_groups": admission_selected_groups,
+        "discharge_schedule": discharge_schedule,
         "holds": hold_list,
         "week_trend": week_trend,
         "week_flow_summary": week_flow_summary,

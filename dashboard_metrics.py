@@ -228,22 +228,6 @@ def away_by_date(dates):
     return out
 
 
-def discharges_on(d):
-    """d에 퇴원한 명부 회차 목록 — 오늘 입·퇴원 일정의 '퇴원' 행."""
-    conn = get_db()
-    try:
-        rows = conn.execute(
-            f"""SELECT e.id, e.patient_id, e.consultation_id, e.room_number, e.ward,
-                       e.discharged_at, e.discharge_destination, e.attending_doctor,
-                       e.diagnosis_name, p.name AS patient_name
-                FROM admission_episodes e JOIN patients p ON p.id = e.patient_id
-                WHERE {ROSTER} AND date(e.discharged_at) = ?
-                ORDER BY e.ward, e.room_number""", (d,)).fetchall()
-    finally:
-        conn.close()
-    return [dict(r) for r in rows]
-
-
 def _norm_room(room):
     """'316호 ★'·'316' → '316호' — 명부 표기 흔들림을 config 키와 맞춘다."""
     digits = "".join(ch for ch in (room or "") if ch.isdigit())
