@@ -112,14 +112,16 @@
             <td class="nowrap">
                 {% if r.blacklist %}<span class="bl-mark" title="블랙리스트">⚠</span> {% endif %}
                 {% if r.patient_id %}<a href="/patients/{{ r.patient_id }}">{{ r.patient_name }}</a>{% else %}<span class="muted">미연결</span>{% endif %}
-                {% if r.contact %}<br><a href="tel:{{ r.contact }}" class="iq-tel">📞 {{ r.contact }}</a>{% endif %}
+                {% if r.contact %}<a href="tel:{{ r.contact }}" class="iq-tel">📞 {{ r.contact }}</a>{% endif %}
             </td>
-            <td class="iq-body"><div class="iq-sum">{{ r.summary or '' }}</div>{% if r.body %}<div class="iq-txt" title="{{ r.body }}">{{ r.body }}</div>{% endif %}</td>
+            <td class="iq-body"><div class="iq-line" title="{{ r.summary or '' }}{% if r.body %} — {{ r.body }}{% endif %}"><span class="iq-sum">{{ r.summary or '' }}</span>{% if r.body %} <span class="iq-txt">{{ r.body }}</span>{% endif %}</div></td>
             <td class="nowrap"><span class="iq-stage s-{{ r.stage }}">{{ r.stage }}</span></td>
             <td class="muted-sm">
-                {% if r.consultation_id %}<a href="/consult/{{ r.consultation_id }}">상담 #{{ r.consultation_id }}</a> · {{ r.consult_date or '' }}{% if r.counselor %} · {{ r.counselor }}{% endif %}{% if r.admitted %}<br><b class="iq-admit">입원완료</b>{% elif r.admission_status %}<br>{{ r.admission_status }}{% elif r.consult_result %}<br>{{ r.consult_result }}{% endif %}
-                {% elif r.stage == '처리완료' %}완료 {{ (r.resolved_local or '')[:16] }}{% endif %}
-                {% if r.answered %}<br>답변 {{ (r.answered_at or '')[:16] }}{% if r.answered_by %} · {{ r.answered_by }}{% endif %}{% elif r.homepage_idx and r.site_status == '답변완료' %}<br>홈페이지 답변완료{% endif %}
+                <div class="iq-line">
+                {%- if r.consultation_id %}<a href="/consult/{{ r.consultation_id }}">상담 #{{ r.consultation_id }}</a> · {{ r.consult_date or '' }}{% if r.counselor %} · {{ r.counselor }}{% endif %}{% if r.admitted %} · <b class="iq-admit">입원완료</b>{% elif r.admission_status %} · {{ r.admission_status }}{% elif r.consult_result %} · {{ r.consult_result }}{% endif %}
+                {%- elif r.stage == '처리완료' %}완료 {{ (r.resolved_local or '')[:16] }}{% endif %}
+                {%- if r.answered %} · 답변 {{ (r.answered_at or '')[:16] }}{% if r.answered_by %} · {{ r.answered_by }}{% endif %}{% elif r.homepage_idx and r.site_status == '답변완료' %} · 홈페이지 답변완료{% endif %}
+                </div>
             </td>
             <td class="nowrap dash-action-cell">
                 {% if r.stage == '미처리' %}
@@ -159,7 +161,11 @@
 .tbl td.r,.tbl th.r{text-align:right}
 .iq-grid .tbl th,.iq-grid .tbl td{white-space:nowrap;padding-inline:8px}   /* 9열 표에서 '홈페이지'가 세로로 깨지지 않게 */
 .iq-bar-cell{width:45%}.iq-bar{height:12px;border-radius:6px;background:linear-gradient(90deg,#14b8a6,#0f766e);min-width:2px}
-.iq-list .iq-body{max-width:420px}.iq-sum{font-weight:700;font-size:.9em}.iq-txt{color:#5b6d63;font-size:.82em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:420px}
+/* 목록은 한 행 = 한 줄. 넘치는 내용은 말줄임하고 전체는 title(마우스 올림)로 본다. */
+.iq-list td{vertical-align:middle}
+.iq-list .iq-line{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.iq-list .iq-body{max-width:520px}.iq-list .iq-body .iq-line{max-width:520px}
+.iq-sum{font-weight:700;font-size:.9em}.iq-txt{color:#5b6d63;font-size:.82em}
 .iq-stage{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.76em;font-weight:800}
 .iq-stage.s-미처리{background:#fef3c7;color:#92400e}.iq-stage.s-상담등록{background:#dcfce7;color:#166534}.iq-stage.s-처리완료{background:#e5e7eb;color:#374151}
 .iq-admit{color:#15803d}
