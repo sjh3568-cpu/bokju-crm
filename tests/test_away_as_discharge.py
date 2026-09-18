@@ -13,6 +13,7 @@ import app as main
 import models
 import partnerships
 import support_requests
+import ward_moves
 
 
 def d(n):
@@ -73,6 +74,25 @@ class AwayAsDischargeTests(unittest.TestCase):
             strip = main._ward_status_strip()
         self.assertEqual(strip["week_out"], 2)     # 권현수(외진 나감) + 명부퇴원
         self.assertEqual(strip["month_out"], 2)
+
+    def test_flow_events_has_it_as_a_discharge_row(self):
+        """입원·퇴원 이력·대시보드 입·퇴원 현황이 함께 쓰는 근거(admission_flow_events)에 '퇴원(외진)' 행이 선다."""
+        out = {e["patient_name"]: e for e in models.admission_flow_events(d(-7), d(0))
+               if e["kind"] == models.ADMISSION_EVENT_OUT}
+        self.assertIn("권현수", out)
+        row = out["권현수"]
+        self.assertEqual((row["date"], row["sources"]), (d(-2), ["외진"]))
+        self.assertEqual((row["discharge_destination"], row["discharge_reason"]), ("안동병원", "응급전원"))
+        self.assertTrue(row.get("away_out"))
+        self.assertEqual(row["room_number"], "309호")
+        self.assertEqual(out["명부퇴원"]["sources"], ["명부"])      # 두 줄이 되면 안 된다
+        self.assertNotIn("전원환자", out)
+
+    def test_history_tab_lists_it_as_a_discharge(self):
+        report = ward_moves.report({"from": d(-7), "to": d(0), "kind": "out"})
+        row = next(r for r in report["rows"] if r["patient_name"] == "권현수")
+        self.assertEqual((row["kind"], row["date"], row["destination"]), ("out", d(-2), "안동병원"))
+        self.assertEqual(row["source"], "외진")
 
 
 if __name__ == "__main__":
