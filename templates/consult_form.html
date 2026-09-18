@@ -677,7 +677,8 @@
     {% if inbox_comm.summary or inbox_comm.body %}
     <div class="inbox-banner-body">{{ inbox_comm.summary or '' }}{% if inbox_comm.summary and inbox_comm.body %} — {% endif %}{{ inbox_comm.body or '' }}</div>
     {% endif %}
-    <div class="muted-sm">상담 저장 시 이 인바운드는 자동으로 '처리완료'로 표시되고 상담에 연결됩니다.</div>
+    <div class="muted-sm">이름·나이·거주지·연락처·유입경로를 미리 채웠습니다{% if ai_memo_prefill %}. 문의 내용은 아래 'AI로 채우기'에 넣어 병명·상태·입원목적까지 자동으로 정리합니다 — 저장 전 검토하세요{% endif %}.
+        상담 저장 시 이 문의는 자동으로 '상담등록'으로 표시되고 상담에 연결됩니다.</div>
 </div>
 <style>
 .inbox-banner { padding:10px 14px; margin:6px 0 12px; background:#fef3c7;
@@ -689,7 +690,7 @@
 </style>
 {% endif %}
 
-{% if prefill and not is_edit %}
+{% if prefill and not is_edit and not inbox_comm and not fax_doc %}
 <div class="prefill-banner">
     <strong>🔁 재상담 등록</strong>
     <span class="muted">— {{ patient.name }} 환자의 이전 상담에서 일부 정보를 미리 채웠습니다</span>
@@ -713,12 +714,12 @@
 
 {% if not is_edit %}
 <!-- ───────── AI 통화 메모 → 상담일지 자동 채움 ───────── -->
-<div class="ai-memo" id="ai-memo">
+<div class="ai-memo" id="ai-memo" data-autofill="{{ '1' if ai_memo_prefill else '' }}">
     <div class="ai-memo-head">
         <strong>🎧 통화 메모 → 상담일지 자동 채움</strong>
         <span class="muted-sm">통화하며 키워드만 적고 [AI로 채우기]를 누르면 아래 양식을 채워드립니다. 저장 전 꼭 검토하세요.</span>
     </div>
-    <textarea id="ai-memo-text" rows="3" placeholder="예) 78세 남 뇌경색 후 우측 편마비, 연하곤란. 보호자 딸 김보호 010-1234-5678. 포항 거주, 장기요양. 재활 입원 문의 — 예정일 미정."></textarea>
+    <textarea id="ai-memo-text" rows="3" placeholder="예) 78세 남 뇌경색 후 우측 편마비, 연하곤란. 보호자 딸 김보호 010-1234-5678. 포항 거주, 장기요양. 재활 입원 문의 — 예정일 미정.">{{ ai_memo_prefill or '' }}</textarea>
     <div class="ai-memo-actions">
         <button type="button" class="btn btn-primary" id="ai-memo-fill">✨ AI로 채우기</button>
         <span id="ai-memo-status" class="muted-sm" aria-live="polite"></span>
@@ -852,7 +853,7 @@ input.room-invalid { border-color:#ef4444 !important; box-shadow:0 0 0 2px rgba(
         <div class="field">
             <label>나이</label>
             <input type="number" name="consultation.patient_age" id="patient-age" min="0" max="120"
-                   value="{{ consultation.patient_age if is_edit and consultation.patient_age is not none else '' }}">
+                   value="{{ consultation.patient_age if is_edit and consultation.patient_age is not none else ((prefill.patient_age if prefill and prefill.patient_age else '') or '') }}">
             <div class="age-helper">
                 <select id="age-input-mode" title="보호자가 말한 나이 형식">
                     <option value="age">나이</option>
@@ -1930,6 +1931,12 @@ input.room-invalid { border-color:#ef4444 !important; box-shadow:0 0 0 2px rgba(
             btn.disabled = false;
         }
     });
+    // 채널 문의(카카오톡·홈페이지)에서 '상담 등록'으로 들어오면 문의 내용이 메모에 들어와 있다 — 한 번 자동으로 채운다.
+    // (AI 미설정이면 서버가 503을 주고 상태 문구만 남는다. 메모는 그대로 있으니 손으로 눌러도 된다.)
+    if (panel.dataset.autofill === '1' && (document.getElementById('ai-memo-text').value || '').trim()) {
+        statusEl.textContent = '문의 내용으로 상담일지를 채우는 중…';
+        setTimeout(() => btn.click(), 0);
+    }
     function escapeHtml(s) {
         return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     }

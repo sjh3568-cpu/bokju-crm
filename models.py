@@ -6772,16 +6772,26 @@ def inquiry_rows(*, date_from=None, date_to=None, channel="", stage="", q="", li
     return out
 
 
-def oldest_open_inquiry_date() -> str | None:
-    """가장 오래된 미처리(open/in_progress/waiting) 인바운드 문의의 접수일(YYYY-MM-DD). 없으면 None.
-    채널 문의 내역의 기본 기간을 이 날짜까지 넓혀, 이번 달보다 오래된 미처리 문의가 기본 화면에서
-    빠지지 않게 한다(EasyQR 백필처럼 몇 달 지난 접수가 한꺼번에 들어오는 경우)."""
+def inquiry_default_start(recent_days: int = 7) -> str | None:
+    """채널 문의 내역 기본 기간의 시작일 후보(YYYY-MM-DD). 없으면 None.
+    ① 가장 오래된 미처리(open/in_progress/waiting) 문의의 접수일 — 미처리는 기본 화면에서 절대 빠지지 않게
+    ② 최근 recent_days일 안에 처리(완료·상담등록)된 문의의 접수일 — 방금 완료한 6월 접수가 화면에서
+       바로 사라져 "지워졌나?" 하지 않게. 일주일 지나면 자연히 이번 달 범위로 돌아간다.
+    둘 중 이른 날짜를 돌려주며, 호출 쪽에서 이번 달 1일과 비교해 더 이르면 그 날짜로 넓힌다."""
     conn = get_db()
     row = conn.execute(
-        """SELECT MIN(date(COALESCE(m.occurred_at, datetime(m.created_at,'localtime')))) AS d
-           FROM communications m
-           WHERE (m.direction = 'in' OR m.direction IS NULL)
-             AND m.status IN ('open', 'in_progress', 'waiting')""").fetchone()
+        """SELECT MIN(d) AS d FROM (
+             SELECT date(COALESCE(occurred_at, datetime(created_at,'localtime'))) AS d
+               FROM communications
+              WHERE (direction = 'in' OR direction IS NULL)
+                AND status IN ('open', 'in_progress', 'waiting')
+             UNION ALL
+             SELECT date(COALESCE(occurred_at, datetime(created_at,'localtime'))) AS d
+               FROM communications
+              WHERE (direction = 'in' OR direction IS NULL)
+                AND status = 'done' AND resolved_at IS NOT NULL
+                AND datetime(resolved_at, 'localtime') >= datetime('now', 'localtime', ?)
+           )""", (f"-{int(recent_days)} days",)).fetchone()
     conn.close()
     return row["d"] if row and row["d"] else None
 

@@ -147,15 +147,53 @@ class InquiryTests(unittest.TestCase):
         html = r.get_data(as_text=True)
         self.assertIn("전화상담 신청 #12", html)
         self.assertIn("2026-06-19 ~", html)                 # 기본 시작일이 그 접수일까지 넓혀짐
-        self.assertIn("미처리 포함 확장", html)
+        self.assertIn("미처리·최근 완료 포함 확장", html)
         # 기간을 직접 주면 그대로 존중
         r = self.client.get("/consultations/inquiries?from=2026-09-01")
         self.assertNotIn("전화상담 신청 #12", r.get_data(as_text=True))
-        # 처리하면 기본 기간이 이번 달로 돌아간다
+        # 완료해도 일주일은 남는다 — "완료 눌렀더니 사라졌다"가 되지 않게. 처리완료 카드에 세어진다.
         models.update_communication(old, status="done")
         html = self.client.get("/consultations/inquiries").get_data(as_text=True)
-        self.assertNotIn("미처리 포함 확장", html)
+        self.assertIn("최근 완료 포함 확장", html)
+        self.assertIn("전화상담 신청 #12", html)
+        self.assertIn("stage=처리완료", html)                # 카드가 단계 필터 링크
+        # 일주일 넘게 지난 완료 건은 기본 기간(이번 달)으로 돌아간다
+        conn = models.get_db()
+        conn.execute("UPDATE communications SET resolved_at = datetime('now', '-10 days') WHERE id = ?", (old,))
+        conn.commit(); conn.close()
+        html = self.client.get("/consultations/inquiries").get_data(as_text=True)
+        self.assertNotIn("포함 확장", html)
         self.assertNotIn("전화상담 신청 #12", html)
+
+    def test_consult_new_from_easyqr_inquiry_prefills_name_age_region_and_ai_memo(self):
+        """EasyQR 문의 → 상담 등록: 이름·나이·거주지·연락처가 칸에 들어가고 문의 내용은 AI 채우기 입력에 (2026-09-18)."""
+        cid = models.create_communication(
+            channel="카카오", direction="in", contact="010-7118-4526",
+            summary="전화상담 신청 #12 · 정진수",
+            body="교통사고 환자도 재활로 입원가능한지 궁금합니다\n\n[연락가능시간] 언제든 가능\n[거주지] 포항시\n[환자나이] 78",
+            occurred_at="2026-06-19 10:12:33", created_by="EasyQR")
+        html = self.client.get(f"/consult/new?comm_id={cid}").get_data(as_text=True)
+        self.assertRegex(html, r'name="patient.name"\s+value="정진수"')
+        self.assertRegex(html, r'id="patient-age"[^>]*value="78"')
+        self.assertRegex(html, r'name="patient.residence_sigungu"\s+value="포항시"')
+        self.assertRegex(html, r'value="경상북도"\s+selected')                 # 시/군/구 → 시/도 자동
+        self.assertRegex(html, r'name="patient.guardian_phone"[^>]*value="010-7118-4526"')
+        self.assertRegex(html, r'value="카카오톡 채널"\s+checked')
+        self.assertIn('data-autofill="1"', html)
+        self.assertIn("교통사고 환자도 재활로 입원가능한지 궁금합니다", html)   # AI 메모 입력
+        self.assertIn("환자 나이 78세", html)
+        self.assertNotIn("[환자나이]", html.split('id="ai-memo-text"')[1].split("</textarea>")[0])  # 라벨 줄은 뺀다
+        self.assertNotIn("재상담 등록", html)                                   # 재상담 배너는 안 뜬다
+
+    def test_inquiry_prefill_parser(self):
+        from views.inbound import inquiry_prefill
+        p = inquiry_prefill({"summary": "[상담게시판 #12] 입원 문의 · 홍길동", "body": "본문만", "contact": "010-1-2"})
+        self.assertEqual((p["name"], p["patient_age"], p["residence_sido"], p["residence_sigungu"]), ("홍길동", None, "", ""))
+        self.assertIn("본문만", p["memo"]); self.assertIn("연락처 010-1-2", p["memo"])
+        p = inquiry_prefill({"summary": "전화상담 신청 #16", "body": "x\n[거주지] 경상북도 의성읍\n[환자나이] 0"})
+        self.assertEqual((p["name"], p["patient_age"], p["residence_sido"], p["residence_sigungu"]), ("", None, "경상북도", ""))
+        p = inquiry_prefill({"summary": "전화상담 신청 #17 · 김은경", "body": "[거주지] 고성군"})   # 두 시/도에 있는 이름 → 시/도 비움
+        self.assertEqual((p["residence_sigungu"], p["residence_sido"], p["memo"]), ("고성군", "", ""))
 
     def test_csv_export(self):
         r = self.client.get('/consultations/inquiries.csv')

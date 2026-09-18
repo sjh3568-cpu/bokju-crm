@@ -98,7 +98,7 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
 | `GET /consult/new` `POST /api/consult` | 상담일지 등록 |
 | `GET /consult/<id>` `GET /consult/<id>/edit` `POST /api/consult/<id>` | 상세 / 수정 |
 | `GET /consultations` `GET /consultations.csv` | 목록 / CSV (admin) |
-| `GET /consultations/inquiries` (+`.csv`) | **채널 문의 내역** — 홈페이지·카카오톡·EasyQR 등 인바운드 문의(communications direction=in) 전체 기록·기간별 '문의→상담' 전환 집계 (상담목록 하위 메뉴). **2026-09-18부터 채널 문의의 단일 화면**(통합 인박스 폐기). 기본 기간은 이번 달이되, 더 오래된 미처리 문의가 있으면 그 접수일까지 자동 확장(`models.oldest_open_inquiry_date`) — 미처리는 기본 화면에서 빠지지 않는다. 미처리 큐는 대시보드 '오늘 처리 필요'(0~7일)·'오래 방치'(8일+)가 같은 행을 보여준다 |
+| `GET /consultations/inquiries` (+`.csv`) | **채널 문의 내역** — 홈페이지·카카오톡·EasyQR 등 인바운드 문의(communications direction=in) 전체 기록·기간별 '문의→상담' 전환 집계 (상담목록 하위 메뉴). **2026-09-18부터 채널 문의의 단일 화면**(통합 인박스 폐기). 기본 기간은 이번 달이되, 더 오래된 **미처리** 또는 **최근 7일 안에 처리된** 문의가 있으면 그 접수일까지 자동 확장(`models.inquiry_default_start`) — 미처리는 기본 화면에서 빠지지 않고, 방금 완료한 건도 일주일은 남는다. 상단 카드(문의·미처리·처리완료·상담등록)는 그 조회 조건의 단계별 집계이며 누르면 단계 필터가 된다. 미처리 큐는 대시보드 '오늘 처리 필요'(0~7일)·'오래 방치'(8일+)가 같은 행을 보여준다 |
 | `GET /patients/<id>` | 환자 상세 + 생애주기 타임라인 |
 | `GET /ward` | **재원 관리** — 외진 중 · 재원 환자 · 입원일 미확정 3섹션 |
 | `POST /api/bed-reservation` · `POST /api/bed-reservation/<id>/release` | **병상 예약(사용 예정자)** — `bed_reservations`. 빈 침상에 이름을 적어 자리만 잡아 둔다: 가용 병상(대시보드 띠 `ward_occupancy`·상담일지 `room_status`)에서는 빼고 재원(KPI·명부)에는 안 센다. 상담을 이어 두면 `/api/consult/<id>/admit`에서 자동 해제. 병실 뷰는 조건(q·doctor) 없을 때 `ROOM_BED_CAPACITIES`의 빈 방도 다 그린다(2026-09-17) |
@@ -322,7 +322,10 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
   완료(상담 미등록)·평균 처리 시간), 채널별 표, 최근 12개월 월별 막대(필터 무관), 목록(전화 링크·✎ 답변·상담 등록·완료).
   `models.inquiry_rows/inquiry_summary/inquiry_monthly`. 답변 대화상자는 `_hp_reply_dialog.html`로 대시보드와 공용.
   **집계 원칙**: 여기서는 '문의 → 상담' 깔때기만 센다. 상담·입원 통계는 상담일지 하나만 기준(같은 건 이중 계산 금지).
-  문의에서 '상담 등록'으로 넘어가면 `INBOUND_CHANNEL_REFERRAL`(웹문의→홈페이지, 카카오→카카오톡 채널)로 유입경로가
+  문의에서 '상담 등록'(`/consult/new?comm_id=`)으로 넘어가면 `views.inbound.inquiry_prefill`이 요약의 이름·본문의
+  `[환자나이]`·`[거주지]`(→ 시/도·시/군/구, config 명부 대조)·연락처를 폼에 바로 채우고, 문의 내용은 'AI로 채우기'
+  입력(`ai_memo_prefill`, `#ai-memo[data-autofill=1]`)에 넣어 페이지 로드 시 한 번 자동 실행해 병명·상태·입원목적까지
+  채운다(2026-09-18 사용자 요청; AI 미설정이면 메모만 남음). `INBOUND_CHANNEL_REFERRAL`(웹문의→홈페이지, 카카오→카카오톡 채널)로 유입경로가
   자동 체크되고 상담방법은 전화상담으로 프리필 → 기존 통계 유입경로 차트에서 채널 문의의 상담·입원 전환이 그대로 비교된다.
   원칙: 전화를 했으면 상담일지를 등록한다(그래야 '통화 완료'='상담등록'). 답변만 남긴 문의는 '처리완료'로 남는다.
 - **인바운드 알림** — 새 문의(홈페이지·카카오)가 들어오면 로그인한 상담사 브라우저가

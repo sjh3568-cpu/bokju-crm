@@ -84,6 +84,53 @@ from app import (  # noqa: E402 — app.py 공용 헬퍼·상수 (app.py 맨 아
 logger = logging.getLogger(__name__)
 bp = Blueprint("inbound", __name__)
 
+# ───────────────────── 채널 문의 → 상담일지 초기값 ─────────────────────
+
+# EasyQR·홈페이지 웹훅이 본문 끝에 붙이는 라벨 줄 — easyqr_inbox._EXTRA_FIELDS / _HOMEPAGE_EXTRA_FIELDS 와 같은 라벨.
+_INQUIRY_LABEL_RE = re.compile(r"^\[(연락가능시간|거주지|환자나이)\]\s*(.*)$", re.M)
+
+
+def inquiry_prefill(comm: dict) -> dict:
+    """채널 문의(communications 행) → 상담일지 신규 폼 초기값 (2026-09-18 사용자 요청: 이름·나이·증상까지).
+
+    · 이름: 요약 '… · 홍길동'의 구분자 뒤 (EasyQR '전화상담 신청 #12 · 정진수', 게시판 '[상담게시판 #12] 입원 문의 · 홍길동')
+    · 나이·거주지·연락가능시간: 본문 끝 '[환자나이] 78' 식 라벨 줄
+    · 거주지 → 시/도·시/군/구: config 명부에서 가장 긴 일치. 시/군/구가 한 시/도에만 있으면 시/도도 채움
+    · memo: 라벨 줄을 뺀 문의 내용 + 위 항목을 한 덩어리로 — 폼의 'AI로 채우기' 입력으로 넣어
+      병명·상태·입원목적 등 나머지 칸을 AI가 채우게 한다(결정적으로 뽑을 수 없는 것들).
+    문의 원문이 없으면 memo도 비어, 폼은 이름·연락처만 채우고 조용히 끝난다."""
+    from config import SIDO_LIST, SIGUNGU_LIST, SIGUNGU_INDEX
+    summary = (comm.get("summary") or "").strip()
+    body = (comm.get("body") or "").strip()
+    name = summary.rsplit(" · ", 1)[1].strip() if " · " in summary else ""
+    labels = {k: v.strip() for k, v in _INQUIRY_LABEL_RE.findall(body)}
+    age = None
+    m = re.search(r"\d+", labels.get("환자나이", ""))
+    if m and 0 < int(m.group()) <= 120:
+        age = int(m.group())
+    address = labels.get("거주지", "")
+    sido = next((s for s in sorted(SIDO_LIST, key=len, reverse=True) if s in address), "")
+    sigungu = next((s for s in sorted(SIGUNGU_LIST, key=len, reverse=True) if s in address), "")
+    if sigungu and not sido:
+        cands = SIGUNGU_INDEX.get(sigungu) or []
+        sido = cands[0] if len(cands) == 1 else ""
+    content = _INQUIRY_LABEL_RE.sub("", body).strip()
+    memo_lines = [content] if content else []
+    if name:
+        memo_lines.append(f"문의자 이름 {name}")
+    if age:
+        memo_lines.append(f"환자 나이 {age}세")
+    if address:
+        memo_lines.append(f"거주지 {address}")
+    if labels.get("연락가능시간"):
+        memo_lines.append(f"연락 가능 시간 {labels['연락가능시간']}")
+    if (comm.get("contact") or "").strip():
+        memo_lines.append(f"연락처 {comm['contact'].strip()}")
+    return {"name": name, "patient_age": age, "residence_sido": sido, "residence_sigungu": sigungu,
+            "address": address, "content": content,
+            "memo": "\n".join(memo_lines) if content else ""}
+
+
 # ───────────────────── 옴니채널—커뮤니케이션 ─────────────────────
 
 @bp.route('/inbox',methods=['GET','POST'])

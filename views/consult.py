@@ -93,7 +93,7 @@ from app import (  # noqa: E402 — app.py 공용 헬퍼·상수 (app.py 맨 아
     noncns_stay_days,
     recovery_window_days,
 )
-from views.inbound import _norm_phone
+from views.inbound import _norm_phone, inquiry_prefill
 from views.todos import _annotate_todos
 
 logger = logging.getLogger(__name__)
@@ -437,6 +437,7 @@ def consult_new():
     inbox_comm = None
     patient = None
     prefill_consult = None  # 재상담: 같은 환자의 가장 최근 상담에서 일부 필드 prefill
+    ai_memo_prefill = ""    # 채널 문의에서 왔을 때 'AI로 채우기' 입력에 미리 넣을 문의 내용
     try:
         comm_id = int(request.args.get("comm_id") or 0)
     except (ValueError, TypeError):
@@ -451,14 +452,22 @@ def consult_new():
             prefill_consult = {"referral_source_detail": [ref] if ref else [],
                                "consult_channel": "전화상담"}
             if comm.get("patient_id"):
-                patient = models.get_patient(comm["patient_id"])
-            else:
+                patient = dict(models.get_patient(comm["patient_id"]) or {}) or None
+            if not patient:
                 # 환자 미연결 — contact(연락처)·body로 보호자 정보 추론하여 가상 patient
                 contact = (comm.get("contact") or "").strip()
                 patient = {
                     "id": None, "name": "",
                     "guardian_phone": contact if contact else "",
                 }
+            # 문의에 담긴 이름·나이·거주지는 바로 채우고(빈 칸만), 문의 내용은 AI 채우기 입력으로 넘긴다.
+            iq = inquiry_prefill(comm)
+            for key in ("name", "residence_sido", "residence_sigungu"):
+                if iq.get(key) and not (patient.get(key) or "").strip():
+                    patient[key] = iq[key]
+            if iq.get("patient_age"):
+                prefill_consult["patient_age"] = iq["patient_age"]
+            ai_memo_prefill = iq.get("memo") or ""
 
     # 팩스 자료함에서 '상담 등록' — AI가 읽은 이름·주병명·모병원을 미리 채운다 (doc_id)
     fax_doc = None
@@ -520,6 +529,7 @@ def consult_new():
 
     return render_template("consult_form.html", consultation=None, patient=patient,
                            inbox_comm=inbox_comm, prefill=prefill_consult, fax_doc=fax_doc,
+                           ai_memo_prefill=ai_memo_prefill,
                            top_hospitals=models.top_source_hospitals())
 
 @bp.route("/consult/<int:cid>")
@@ -696,17 +706,18 @@ def api_quick_filters():
     return jsonify({"ok": True, "filters": models.list_quick_filters(include_inactive=True)})
 
 def _inquiry_filters():
-    """채널 문의 내역 필터 — 기간 기본값은 이번 달. 단 이번 달보다 오래된 미처리 문의가 있으면
-    그 접수일까지 기본 시작일을 넓힌다(미처리는 기본 화면에서 절대 빠지지 않게). 처리되면 다시 좁아진다."""
+    """채널 문의 내역 필터 — 기간 기본값은 이번 달. 단 이번 달보다 오래된 '미처리' 또는
+    '최근 7일 안에 처리된' 문의가 있으면 그 접수일까지 기본 시작일을 넓힌다(미처리는 기본 화면에서
+    절대 빠지지 않고, 방금 완료한 건도 일주일은 남는다). 기간을 직접 주면 그대로 따른다."""
     today = date.today()
     month_start = today.replace(day=1).isoformat()
     widened = False
     date_from = _valid_date(request.args.get("from"))
     if not date_from:
         date_from = month_start
-        oldest_open = models.oldest_open_inquiry_date()
-        if oldest_open and oldest_open < month_start:
-            date_from, widened = oldest_open, True
+        earliest = models.inquiry_default_start()
+        if earliest and earliest < month_start:
+            date_from, widened = earliest, True
     date_to = _valid_date(request.args.get("to")) or today.isoformat()
     if date_from > date_to:
         date_from, date_to = date_to, date_from
