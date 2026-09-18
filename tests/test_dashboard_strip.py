@@ -185,7 +185,7 @@ class DashboardDueQueueTests(DashboardStripTests):
         self.assertEqual(counts["퇴원 예정 D-30"], 1)
         html = self.client.get("/").get_data(as_text=True)
         self.assertIn("5일 초과", html)
-        self.assertIn("퇴원 예정일이 지남", html)
+        self.assertIn("퇴원 예정일 5일 지남", html)   # 지난 지 1주일 안 — 큐에 남는다(2026-09-18)
 
     def test_queue_and_due_rows_show_who_and_primary_dx(self):
         """오늘 처리 필요·기한 임박의 환자 이름 옆에 성별/나이, 별도 열에 주상병이 붙는다."""
