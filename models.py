@@ -4174,56 +4174,13 @@ def dashboard_summary(admission_lookup_from: str | None = None,
         (*AWAY_EVENT_TYPES, range_lo, range_hi, range_lo, range_hi),
     ).fetchall()
 
-    # ── 퇴원 (2026-09-18 요청: 입원 환자 현황에 퇴원도 같은 표에) ──
-    # 근거가 둘이다. ① 원무 명부 회차(roster_key)의 discharged_at — 원무가 찍은 실제 퇴원일.
-    # ② CRM에서 퇴원 처리한 상담의 discharge_date. 앱에서 처리하면 상담·CRM 회차·명부 회차가
-    # 모두 닫혀 한 사람이 세 줄이 되므로 (환자, 퇴원일)로 묶어 한 줄만 남긴다.
-    # 조회 창은 '오늘'과 사용자가 고른 기간까지 — 입원과 달리 앞날 예정이 없으므로 미래는 안 본다.
+    # ── 입·퇴원 조회 창 (2026-09-18) ──
+    # 표에 넣을 입원·퇴원 사건은 models.admission_flow_events()에서 한 번에 받는다
+    # (명부 회차 + CRM 회차 + 상담). 재원관리 '입원·퇴원 이력'이 같은 함수를 쓰므로 두 화면이 어긋나지 않는다.
+    # 창은 '오늘'과 사용자가 고른 기간까지 — 회차·퇴원은 앞날 예정이 없으므로 미래는 안 본다.
     # 9/17 퇴원을 9/18에 적어도 기본 창(어제~내일)에서 9/17 자리에 보인다(그 전엔 어디에도 없었다).
-    discharge_lo = min(today, admission_lookup_from)
-    discharge_hi = max(today, admission_lookup_to)
-    discharge_episode_rows = conn.execute(
-        """
-        SELECT e.id AS episode_id, e.patient_id, e.consultation_id, e.roster_key,
-               e.admitted_at, e.discharged_at,
-               e.room_number AS ep_room, e.ward AS ep_ward,
-               e.attending_doctor AS ep_doctor, e.diagnosis_name AS ep_diagnosis,
-               e.discharge_destination AS ep_destination, e.discharge_reason AS ep_reason,
-               p.name AS patient_name, p.gender, p.insurance_type, p.blacklist
-        FROM admission_episodes e
-        JOIN patients p ON p.id = e.patient_id
-        WHERE date(NULLIF(e.discharged_at, '')) BETWEEN date(?) AND date(?)
-        ORDER BY e.discharged_at, e.id
-        """,
-        (discharge_lo, discharge_hi),
-    ).fetchall()
-    discharge_consult_rows = conn.execute(
-        """
-        SELECT c.id, c.consult_date, c.consult_time, c.counselor,
-               c.planned_admission_date, c.planned_admission_time,
-               c.actual_admission_date, c.admission_date, c.admission_status,
-               c.discharge_date, c.discharge_destination, c.discharge_reason,
-               c.attending_doctor, c.room_number, c.patient_age,
-               c.primary_diagnosis, c.secondary_diagnosis,
-               c.diseases, c.disease_detail, c.disease_onset, c.special_care,
-               c.special_mrsa_note, c.special_vre_note, c.special_cre_note,
-               c.consciousness_main, c.activity_others, c.diet_types, c.wound_care, c.wound_site,
-               c.tracheostomy_detail, c.wound_op_note, c.wound_foley_note, c.wound_dmfoot_note,
-               c.wound_burn_note, c.wound_simple_note, c.wound_urostomy_note, c.wound_colostomy_note,
-               c.oxygen_lpm, c.special_vent_note, c.special_intubation_note, c.special_suction_note,
-               c.special_tpn_note, c.special_transfusion_note, c.special_picc_note,
-               c.special_fluid_note, c.special_nebulizer_note,
-               c.referral_source_type, c.referral_source_detail, c.referrer_person, c.referrer_institution,
-               c.admission_purpose, c.external_referral_note,
-               c.source_hospital, c.current_location_type, c.current_location_name,
-               p.id AS patient_id, p.name AS patient_name, p.gender, p.insurance_type,
-               p.guardian_name, p.guardian_phone, p.blacklist
-        FROM consultations c JOIN patients p ON p.id = c.patient_id
-        WHERE date(NULLIF(c.discharge_date, '')) BETWEEN date(?) AND date(?)
-        ORDER BY c.discharge_date, c.id
-        """,
-        (discharge_lo, discharge_hi),
-    ).fetchall()
+    flow_lo = min(today, admission_lookup_from)
+    flow_hi = max(today, admission_lookup_to)
 
     hold_rows = conn.execute(
         """
@@ -4644,92 +4601,120 @@ def dashboard_summary(admission_lookup_from: str | None = None,
         if not (d.get("admission_kind") == "return" and d.get("admission_bucket") == "planned"
                 and completed_after.get(d.get("patient_id"), "") > (d.get("away_event_date") or "")[:10])]
 
-    # ── 퇴원 행 ──
-    # (환자, 퇴원일) 하나가 한 줄이다. 명부 회차가 원무 사실이라 병실·병동·주치의·행선지는 명부 값을
-    # 먼저 쓰고, 상태·처치·상담사·보험·유입경로는 붙은 상담에서 가져온다. 상담 없이 입원한 환자는
-    # 명부 값만으로 줄을 만든다(환자 링크 없음).
-    discharge_consults = {}
-    for r in discharge_consult_rows:
-        d = _deserialize_consultation(dict(r))
-        discharge_consults[(d["patient_id"], str(d.get("discharge_date") or "")[:10])] = d
+    # ── 명부·CRM 회차에서 온 입원·퇴원 행 (2026-09-18) ──
+    # 위의 admission_schedule은 상담만 보고 만든다. 상담 없이 입원한 환자(운영 명부 회차 1,553건 중
+    # 1,552건이 상담 미연결)는 그 표에 아예 없었고, 퇴원은 어느 줄도 만들어지지 않았다.
+    # admission_flow_events()가 명부 회차·CRM 회차·상담을 (환자, 날짜, 입원/퇴원)으로 묶어 주므로
+    # 여기서는 그 사건을 표 행으로 옮기기만 한다. 재원관리 '입원·퇴원 이력'과 같은 근거다.
+    flow_events = admission_flow_events(flow_lo, flow_hi)
 
-    discharge_merged = {}
-    for r in discharge_episode_rows:
-        key = (r["patient_id"], str(r["discharged_at"])[:10])
-        cur = discharge_merged.setdefault(key, {"sources": set()})
-        roster = bool(r["roster_key"])
-        cur["sources"].add("명부" if roster else "CRM")
-        for src, dst in (("ep_room", "room_number"), ("ep_ward", "ward"),
-                         ("ep_doctor", "attending_doctor"), ("ep_diagnosis", "diagnosis_name"),
-                         ("ep_destination", "discharge_destination"), ("ep_reason", "discharge_reason"),
-                         ("admitted_at", "admitted_at")):
-            value = r[src]
-            value = value.strip() if isinstance(value, str) else value
-            if value and (roster or not cur.get(dst)):
-                cur[dst] = str(value)[:10] if dst == "admitted_at" else value
-        if r["consultation_id"] and not cur.get("consultation_id"):
-            cur["consultation_id"] = r["consultation_id"]
-        for k in ("patient_name", "gender", "insurance_type", "blacklist"):
-            cur.setdefault(k, r[k])
-    for key in discharge_consults:
-        discharge_merged.setdefault(key, {"sources": {"CRM"}})
-
-    discharge_schedule = []
-    for (pid, day), merged in sorted(discharge_merged.items(), key=lambda kv: (kv[0][1], kv[0][0])):
-        if not _in_admission_window(day):
-            continue
-        con = discharge_consults.get((pid, day))
-        if con is None and merged.get("consultation_id"):
-            con = _deserialize_consultation(get_consultation(merged["consultation_id"]) or {}) or None
+    def _flow_row(event):
+        """입·퇴원 사건 하나 → 표 행. 붙은 상담이 있으면 그 상담 값을 바탕으로 세운다."""
+        con = None
+        if event.get("consultation_id"):
+            con = get_consultation(event["consultation_id"]) or None
         d = dict(con or {})
-        d["patient_id"] = pid
-        d["id"] = d.get("id") or merged.get("consultation_id")
-        for k in ("patient_name", "gender", "insurance_type", "blacklist"):
-            if merged.get(k) is not None and not d.get(k):
-                d[k] = merged[k]
-        # 명부 값 우선 — 병실·주치의는 상담에도 있지만 원무 명부가 마지막 사실이다.
-        for k in ("room_number", "attending_doctor", "discharge_destination", "discharge_reason"):
-            if merged.get(k):
-                d[k] = merged[k]
-        admitted_at = merged.get("admitted_at") or d.get("actual_admission_date") or d.get("admission_date")
-        d["admission_kind"] = "discharge"
-        d["admission_bucket"] = "discharged"
-        d["admission_bucket_label"] = "퇴원"
-        d["admission_date_kind"] = "퇴원"
-        d["admission_display_date"] = day
-        d["day_label"] = _day_label(day)
+        d["patient_id"] = event["patient_id"]
+        d["id"] = d.get("id") or event.get("consultation_id")
+        for key in ("patient_name", "gender", "insurance_type", "blacklist"):
+            if event.get(key) is not None and not d.get(key):
+                d[key] = event[key]
+        if d.get("patient_age") is None and event.get("patient_age") is not None:
+            d["patient_age"] = event["patient_age"]
+        # 명부가 이긴다 — 병실·주치의·행선지는 상담에도 있지만 원무 명부가 마지막 사실이다.
+        for key in ("room_number", "attending_doctor", "discharge_destination", "discharge_reason"):
+            if event.get(key):
+                d[key] = event[key]
+        d["flow_sources"] = list(event.get("sources") or ())
+        d["flow_source_label"] = " · ".join(d["flow_sources"])
+        d["admission_display_date"] = event["date"]
+        d["day_label"] = _day_label(event["date"])
         d["planned_admission_time"] = None
         d["admission_time"] = ""
-        d["discharge_date"] = day
-        d["discharge_admitted_at"] = str(admitted_at)[:10] if admitted_at else None
-        d["discharge_source"] = " · ".join(sorted(merged.get("sources") or ()))
-        # 재원일수 — 입원일부터 퇴원일까지. 병동이 '얼마나 있다 나갔나'를 바로 본다.
-        stay = None
-        if d["discharge_admitted_at"]:
-            start, end = _date_value(d["discharge_admitted_at"]), _date_value(day)
-            if start and end and end >= start:
-                stay = (end - start).days
-        d["discharge_stay_days"] = stay
         d["admission_disease_summary"] = (
-            _admission_disease_summary(d) or (merged.get("diagnosis_name") or "").strip())
+            _admission_disease_summary(d) or (event.get("diagnosis_name") or "").strip())
         d["admission_organisms"] = _admission_organisms(d)
         d["admission_care"] = _admission_care(d)
-        # '모병원·외진' 칸을 퇴원 행에서는 행선지로 쓴다 — 어디로 나갔는지가 같은 자리의 사실.
-        destination = (d.get("discharge_destination") or "").strip()
-        d["other_note"] = f"→ {destination}" if destination else ""
+        d["ward"] = event.get("ward") or _ward_label(d.get("room_number"))
+        return d
+
+    def _stay_days(admitted, discharged):
+        start, end = _date_value(admitted), _date_value(discharged)
+        return (end - start).days if start and end and end >= start else None
+
+    discharge_schedule = []
+    roster_admissions = []
+    # 상담으로 이미 줄이 만들어진 (환자, 날짜)는 다시 만들지 않는다 — 상담 행이 처리 버튼·유입경로까지 들고 있다.
+    consult_admission_keys = {(d.get("patient_id"), (d.get("admission_display_date") or "")[:10])
+                              for d in admission_schedule}
+    # 명부에 입원일이 있으면 그 날짜가 사실이다 — 상담에 적힌 입원일이 다르면 상담 행을 물린다.
+    roster_in_by_patient = {}
+    for event in flow_events:
+        if event["kind"] == ADMISSION_EVENT_IN and "명부" in (event.get("sources") or ()):
+            roster_in_by_patient.setdefault(event["patient_id"], set()).add(event["date"])
+
+    for event in flow_events:
+        day = event["date"]
+        if not _in_admission_window(day):
+            continue
+        d = _flow_row(event)
+        if event["kind"] == ADMISSION_EVENT_OUT:
+            admitted_at = event.get("admitted_at") or d.get("actual_admission_date") or d.get("admission_date")
+            admitted_at = str(admitted_at)[:10] if admitted_at else None
+            stay = _stay_days(admitted_at, day)
+            d["admission_kind"] = "discharge"
+            d["admission_bucket"] = "discharged"
+            d["admission_bucket_label"] = "퇴원"
+            d["admission_date_kind"] = "퇴원"
+            d["discharge_date"] = day
+            d["discharge_admitted_at"] = admitted_at
+            d["discharge_stay_days"] = stay
+            d["discharge_source"] = d["flow_source_label"]
+            # '모병원·외진' 칸을 퇴원 행에서는 행선지로 쓴다 — 어디로 나갔는지가 같은 자리의 사실.
+            destination = (d.get("discharge_destination") or "").strip()
+            d["other_note"] = f"→ {destination}" if destination else ""
+            d["other_note_title"] = " · ".join(v for v in (
+                f"퇴원 {day}",
+                f"행선 {destination}" if destination else "",
+                f"사유 {d['discharge_reason']}" if (d.get("discharge_reason") or "").strip() else "",
+                f"입원 {admitted_at}" if admitted_at else "",
+                f"재원 {stay}일" if stay is not None else "",
+                f"근거 {d['flow_source_label']}" if d["flow_source_label"] else "",
+            ) if v)
+            # 재입원 배지는 이 입원보다 앞선 퇴원만 봐야 한다 — 퇴원 행은 퇴원일이 기준일이라
+            # 자기 입원이 '이전 입원'으로 잡힌다. 그래서 자기 입원일을 기준일로 따로 준다.
+            d["prior_cutoff"] = admitted_at or day
+            discharge_schedule.append(d)
+            continue
+        # 입원 — 상담으로 이미 나온 줄이면 건너뛴다.
+        if (event["patient_id"], day) in consult_admission_keys:
+            continue
+        d["admission_kind"] = "roster"
+        d["admission_bucket"] = "completed"
+        d["admission_bucket_label"] = "입원완료"
+        d["admission_date_kind"] = "실입원"
+        d["admission_status"] = d.get("admission_status") or "입원완료"
+        d["actual_admission_date"] = day
+        origin = (d.get("source_hospital") or d.get("current_location_name") or "").strip()
+        if not origin and (d.get("current_location_type") or "").strip() == "집":
+            origin = "자택"
+        d["other_note"] = origin
         d["other_note_title"] = " · ".join(v for v in (
-            f"퇴원 {day}",
-            f"행선 {destination}" if destination else "",
-            f"사유 {d['discharge_reason']}" if (d.get("discharge_reason") or "").strip() else "",
-            f"입원 {d['discharge_admitted_at']}" if d["discharge_admitted_at"] else "",
-            f"재원 {stay}일" if stay is not None else "",
-            f"근거 {d['discharge_source']}" if d["discharge_source"] else "",
+            f"입원 {day}",
+            f"모병원 {origin}" if origin else "",
+            f"근거 {d['flow_source_label']}" if d["flow_source_label"] else "",
         ) if v)
-        d["ward"] = merged.get("ward") or _ward_label(d.get("room_number"))
-        # 재입원 배지는 이 입원보다 앞선 퇴원만 봐야 한다 — 퇴원 행은 퇴원일이 기준일이라
-        # 자기 입원이 '이전 입원'으로 잡힌다. 그래서 자기 입원일을 기준일로 따로 준다.
-        d["prior_cutoff"] = d["discharge_admitted_at"] or day
-        discharge_schedule.append(d)
+        roster_admissions.append(d)
+
+    # 명부 입원일과 상담에 적힌 입원일이 다르면 명부 날짜만 남긴다 — 한 사람이 두 날 입원한 것처럼 보이면 안 된다.
+    if roster_in_by_patient:
+        admission_schedule = [
+            d for d in admission_schedule
+            if not (d.get("admission_bucket") == "completed" and d.get("admission_kind") != "return"
+                    and (d.get("admission_display_date") or "")[:10]
+                        not in roster_in_by_patient.get(d.get("patient_id"), set())
+                    and d.get("patient_id") in roster_in_by_patient)]
+    admission_schedule.extend(roster_admissions)
 
     # 격리 상태 — 해제된 균은 빨간 배지에서 빼고 회색 이력으로(오경자 님: 입원 시 VRE → 해제 후에도 계속 빨갛게 보였다, 2026-09-17)
     apply_isolation(admission_schedule, key="admission_organisms", cid_key="id")
@@ -7368,6 +7353,21 @@ def admission_flow_counts(week_from, week_to, month_from, month_to):
         conn.close()
 
 
+# 외진(응급전원·모병원 외래치료) 복귀는 병동 입장에서 그날의 입원이다(2026-09-15 사용자 요청).
+# 원무 명부는 보통 외진 나간 날 퇴원, 복귀한 날 새 회차로 적히므로 명부가 갱신되면
+# 회차만으로도 잡히지만, 명부가 아직 안 올라왔거나 회차를 나누지 않은 건은 빠진다.
+# 그래서 복귀 처리된 외진 중 '같은 환자의 명부 회차가 복귀일에 시작하지 않는' 건만
+# 더해 센다 — 명부에 이미 있으면 두 번 세지 않는다.
+_AWAY_RETURN_NOT_IN_ROSTER = """
+    ae.event_type IN ('응급전원', '모병원 외래치료')
+    AND ae.returned_at IS NOT NULL AND ae.returned_at != ''
+    AND COALESCE(ae.return_outcome, '복귀') = '복귀'
+    AND NOT EXISTS (SELECT 1 FROM admission_episodes e
+                     WHERE e.patient_id = c.patient_id AND e.roster_key IS NOT NULL
+                       AND date(e.admitted_at) = date(ae.returned_at))
+"""
+
+
 # 외진 나감 = 그날의 퇴원 (2026-09-18 사용자 정의: "외진 나갔으면 이것도 퇴원으로 잡혀야 한다").
 # 원무 명부도 외진 나간 날 퇴원, 복귀한 날 새 입원으로 적는다 — 복귀를 입원으로 세는 것과 대칭이다.
 # 명부가 이미 그날 퇴원으로 적었으면 두 번 세지 않는다. 타 병원 전원(return_outcome='전원')은
@@ -7415,21 +7415,6 @@ def away_departures_as_discharges(d_from, d_to):
     finally:
         conn.close()
     return [dict(r) for r in rows]
-
-
-# 외진(응급전원·모병원 외래치료) 복귀는 병동 입장에서 그날의 입원이다(2026-09-15 사용자 요청).
-# 원무 명부는 보통 외진 나간 날 퇴원, 복귀한 날 새 회차로 적히므로 명부가 갱신되면
-# 회차만으로도 잡히지만, 명부가 아직 안 올라왔거나 회차를 나누지 않은 건은 빠진다.
-# 그래서 복귀 처리된 외진 중 '같은 환자의 명부 회차가 복귀일에 시작하지 않는' 건만
-# 더해 센다 — 명부에 이미 있으면 두 번 세지 않는다.
-_AWAY_RETURN_NOT_IN_ROSTER = """
-    ae.event_type IN ('응급전원', '모병원 외래치료')
-    AND ae.returned_at IS NOT NULL AND ae.returned_at != ''
-    AND COALESCE(ae.return_outcome, '복귀') = '복귀'
-    AND NOT EXISTS (SELECT 1 FROM admission_episodes e
-                     WHERE e.patient_id = c.patient_id AND e.roster_key IS NOT NULL
-                       AND date(e.admitted_at) = date(ae.returned_at))
-"""
 
 
 def _away_return_count(conn, lo, hi):
@@ -7555,6 +7540,199 @@ def _link_episodes(episodes, by_patient):
         taken.add(pick[1])
         by_consultation[pick[1]] = ep
     return by_consultation, orphans
+
+
+# ───────── 입원·퇴원 사건 (2026-09-18) ─────────
+# 대시보드 '입·퇴원 현황'과 재원관리 '입원·퇴원 이력'이 같이 쓰는 하나의 근거다.
+# 두 화면이 각자 따로 세다가 사람을 놓쳤다(2026-09-18 사용자: 어느 화면에서도 놓치면 안 된다).
+#   - 이력 화면은 원무 명부 회차(roster_key)만 셌다. 명부는 9/11까지만 적재돼 있어 그 뒤 CRM에서
+#     입원 처리한 15명이 화면에 아예 없었다(외진 복귀로 잡힌 2명 제외).
+#   - 대시보드는 반대로 상담만 봤다. 상담 없이 입원한 환자(명부 회차 1,553건 중 대부분이 상담 미연결)는
+#     입원 행이 만들어지지 않았다.
+# 그래서 근거 셋을 모두 읽고 (환자, 날짜, 입원/퇴원)으로 묶는다. 한 사람이 한 날 한 줄이고,
+# 어느 근거에서 나왔는지는 sources에 남겨 화면이 보여준다.
+ADMISSION_EVENT_IN = "in"
+ADMISSION_EVENT_OUT = "out"
+
+
+def ward_of_room(room):
+    """병실 표기 → 병동. 원무 명부 표기와 같은 규칙(1001호→10병동, 201호→2병동, 609→6병동).
+
+    명부에 병동이 적혀 있으면 그 값을 쓰고, CRM에서만 만든 회차·상담처럼 병동이 없을 때만
+    이걸로 채운다 — 병동 필터·병동별 묶어 보기에서 그 행만 '미지정'으로 빠지지 않게.
+    """
+    digits = "".join(ch for ch in (room or "") if ch.isdigit())
+    if len(digits) >= 4:
+        return f"{int(digits[:2])}병동"
+    if len(digits) == 3:
+        return f"{int(digits[0])}병동"
+    return ""
+
+
+def admission_flow_events(date_from, date_to):
+    """기간 안의 입원·퇴원 사건 — 명부 회차 + CRM 회차 + 상담 기록을 합쳐 빠짐없이.
+
+    한 회차가 기간 안에 입원도 퇴원도 했으면 두 건(in/out)이 된다.
+    같은 (환자, 날짜, 구분)이 여러 근거에 있으면 한 건으로 묶고 sources에 다 적는다.
+    값이 엇갈리면 원무 명부가 이긴다 — 병실·병동·주치의·행선지는 명부가 마지막 사실이다.
+    상담사·보험·유입경로처럼 명부에 없는 것은 상담에서 온다.
+
+    Returns [{kind, date, patient_id, patient_name, gender, birth_year, chart_no, insurance_type,
+              blacklist, episode_id, consultation_id, sources(list), room_number, ward,
+              attending_doctor, diagnosis_name, care_type, admitted_at, discharged_at,
+              discharge_destination, discharge_reason, counselor, patient_age, primary_diagnosis}]
+    """
+    lo, hi = str(date_from)[:10], str(date_to)[:10]
+    if lo > hi:
+        lo, hi = hi, lo
+    events = {}
+
+    def event(patient_id, day, kind, source):
+        key = (patient_id, day, kind)
+        row = events.get(key)
+        if row is None:
+            row = events[key] = {"kind": kind, "date": day, "patient_id": patient_id, "sources": []}
+        if source not in row["sources"]:
+            row["sources"].append(source)
+        return row
+
+    def fill(row, values, strong):
+        """strong=True면 덮어쓴다(명부). 아니면 비어 있을 때만 채운다."""
+        for key, value in values.items():
+            if isinstance(value, str):
+                value = value.strip()
+            if value in (None, "", []):
+                continue
+            if strong or not row.get(key):
+                row[key] = value
+
+    conn = get_db()
+    try:
+        episodes = [dict(r) for r in conn.execute(
+            """SELECT e.id AS episode_id, e.patient_id, e.consultation_id, e.roster_key,
+                      e.admitted_at, e.discharged_at, e.room_number, e.ward,
+                      e.attending_doctor, e.diagnosis_name, e.care_type,
+                      e.discharge_destination, e.discharge_reason,
+                      p.name AS patient_name, p.gender, p.birth_year, p.chart_no,
+                      p.insurance_type, p.blacklist
+               FROM admission_episodes e JOIN patients p ON p.id = e.patient_id
+               WHERE date(NULLIF(e.admitted_at, '')) BETWEEN date(?) AND date(?)
+                  OR date(NULLIF(e.discharged_at, '')) BETWEEN date(?) AND date(?)
+               ORDER BY e.roster_key IS NULL, e.id""", (lo, hi, lo, hi))]
+        consults = [dict(r) for r in conn.execute(
+            """SELECT c.id AS consultation_id, c.patient_id, c.counselor, c.admission_status,
+                      c.actual_admission_date, c.admission_date, c.discharge_date,
+                      c.discharge_destination, c.discharge_reason, c.attending_doctor,
+                      c.room_number, c.patient_age, c.primary_diagnosis, c.diseases,
+                      p.name AS patient_name, p.gender, p.birth_year, p.chart_no,
+                      p.insurance_type, p.blacklist
+               FROM consultations c JOIN patients p ON p.id = c.patient_id
+               WHERE date(COALESCE(NULLIF(c.actual_admission_date, ''),
+                                   NULLIF(c.admission_date, ''))) BETWEEN date(?) AND date(?)
+                  OR date(NULLIF(c.discharge_date, '')) BETWEEN date(?) AND date(?)
+               ORDER BY c.id""", (lo, hi, lo, hi))]
+    finally:
+        conn.close()
+
+    # 회차 — 명부가 먼저 들어가고(정렬), CRM 회차는 빈 칸만 채운다.
+    for ep in episodes:
+        roster = bool(ep["roster_key"])
+        source = "명부" if roster else "CRM"
+        admitted = str(ep["admitted_at"] or "")[:10]
+        discharged = str(ep["discharged_at"] or "")[:10]
+        shared = {
+            "patient_name": ep["patient_name"], "gender": ep["gender"],
+            "birth_year": ep["birth_year"], "chart_no": ep["chart_no"],
+            "insurance_type": ep["insurance_type"], "blacklist": ep["blacklist"],
+            "episode_id": ep["episode_id"], "consultation_id": ep["consultation_id"],
+            "room_number": ep["room_number"], "ward": ep["ward"],
+            "attending_doctor": ep["attending_doctor"], "diagnosis_name": ep["diagnosis_name"],
+            "care_type": ep["care_type"], "discharge_destination": ep["discharge_destination"],
+            "discharge_reason": ep["discharge_reason"],
+            "admitted_at": admitted, "discharged_at": discharged,
+        }
+        if admitted and lo <= admitted <= hi:
+            fill(event(ep["patient_id"], admitted, ADMISSION_EVENT_IN, source), shared, roster)
+        if discharged and lo <= discharged <= hi:
+            fill(event(ep["patient_id"], discharged, ADMISSION_EVENT_OUT, source), shared, roster)
+
+    # 상담 — 회차가 없는 입·퇴원을 살리고, 명부에 없는 항목(상담사·보험·유입경로)을 채운다.
+    for con in consults:
+        admitted = str(con["actual_admission_date"] or con["admission_date"] or "")[:10]
+        discharged = str(con["discharge_date"] or "")[:10]
+        shared = {
+            "patient_name": con["patient_name"], "gender": con["gender"],
+            "birth_year": con["birth_year"], "chart_no": con["chart_no"],
+            "insurance_type": con["insurance_type"], "blacklist": con["blacklist"],
+            "consultation_id": con["consultation_id"], "counselor": con["counselor"],
+            "room_number": con["room_number"], "attending_doctor": con["attending_doctor"],
+            "patient_age": con["patient_age"], "primary_diagnosis": con["primary_diagnosis"],
+            "discharge_destination": con["discharge_destination"],
+            "discharge_reason": con["discharge_reason"],
+            "admitted_at": admitted, "discharged_at": discharged,
+        }
+        if admitted and lo <= admitted <= hi:
+            fill(event(con["patient_id"], admitted, ADMISSION_EVENT_IN, "상담"), shared, False)
+        if discharged and lo <= discharged <= hi:
+            fill(event(con["patient_id"], discharged, ADMISSION_EVENT_OUT, "상담"), shared, False)
+
+    # 회차에 상담을 붙인다 — 상담일과 입원일이 달라 (환자, 날짜)로 안 묶이는 경우까지.
+    # 명부 회차는 consultation_id가 비어 있는 게 보통이라(운영 1,553건 중 1,552건) 이 연결이 없으면
+    # 퇴원 장소·사유·담당 상담사가 빈칸이 된다 — 그 값들은 명부가 아니라 상담이 들고 있다.
+    if events:
+        owner = {sp["episode_id"]: sp["consultation_id"] for sp in admission_spans()
+                 if sp.get("consultation_id")}
+        linked = set()
+        for row in events.values():
+            if not row.get("consultation_id") and row.get("episode_id") in owner:
+                row["consultation_id"] = owner[row["episode_id"]]
+            if row.get("consultation_id"):
+                linked.add(row["consultation_id"])
+        loaded = {c["consultation_id"] for c in consults}
+        missing = sorted(linked - loaded)
+        if missing:
+            conn = get_db()
+            try:
+                extra = {}
+                for chunk in (missing[i:i + 900] for i in range(0, len(missing), 900)):
+                    ph = ",".join("?" * len(chunk))
+                    for r in conn.execute(
+                            f"""SELECT id, counselor, patient_age, primary_diagnosis, attending_doctor,
+                                       room_number, discharge_destination, discharge_reason
+                                FROM consultations WHERE id IN ({ph})""", chunk):
+                        extra[r["id"]] = dict(r)
+            finally:
+                conn.close()
+            for row in events.values():
+                con = extra.get(row.get("consultation_id"))
+                if con:
+                    fill(row, {k: v for k, v in con.items() if k != "id"}, False)
+
+    # 외진 나감 = 그날의 퇴원 (2026-09-18). 명부·CRM이 그날 퇴원으로 이미 적었으면 SQL에서 걸러진다.
+    for a in away_departures_as_discharges(lo, hi):
+        day = str(a["event_date"])[:10]
+        row = event(a["patient_id"], day, ADMISSION_EVENT_OUT, "외진")
+        fill(row, {
+            "patient_name": a["patient_name"], "gender": a["gender"], "birth_year": a["birth_year"],
+            "consultation_id": a["consultation_id"], "counselor": a["counselor"],
+            "episode_id": a.get("episode_id"), "ward": a.get("ward"),
+            "room_number": a.get("ep_room") or a.get("c_room"),
+            "attending_doctor": a.get("ep_doctor") or a.get("c_doctor"),
+            "care_type": a.get("care_type"), "diagnosis_name": a.get("diagnosis_name"),
+            "patient_age": a.get("patient_age"), "primary_diagnosis": a.get("primary_diagnosis"),
+            "admitted_at": a.get("ep_admitted_at"), "discharged_at": day,
+            "discharge_destination": a.get("hospital"),
+            "discharge_reason": a.get("event_type") or "외진",
+        }, False)
+        row["away_out"] = True
+        row["away_type"] = a.get("event_type") or ""
+        row["away_returned_at"] = (a.get("returned_at") or "")[:10]
+
+    for row in events.values():
+        if not row.get("ward"):
+            row["ward"] = ward_of_room(row.get("room_number"))
+        row["sources"] = sorted(set(row["sources"]), key=("명부", "CRM", "상담", "외진").index)
+    return sorted(events.values(), key=lambda r: (r["date"], r["kind"], r.get("patient_name") or ""))
 
 
 def recent_discharges(limit=100):

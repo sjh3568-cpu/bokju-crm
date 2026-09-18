@@ -55,10 +55,10 @@
                 <td class="dash-adm-state">
                     {% set kind = '퇴원' if is_discharge else (('복귀예정' if is_planned else '복귀') if is_return else ('예정' if is_planned else '완료')) %}
                     <span class="badge adm-kind adm-kind-{{ {'예정':'planned','완료':'done','복귀':'return','복귀예정':'return-planned','퇴원':'out'}[kind] }}"
-                          title="{% if is_discharge %}퇴원{% if r.discharge_source %} ({{ r.discharge_source }} 기준){% endif %}{% if r.other_note %} {{ r.other_note }}{% endif %}{% elif is_return %}외진 복귀{% if r.other_note %} — {{ r.other_note }}{% endif %} · {% if is_planned %}입원예정{% else %}입원완료{% endif %}{% else %}신규 입원 · {% if is_planned %}입원예정{% else %}입원완료{% endif %}{% endif %}">{{ kind }}</span>
+                          title="{% if is_discharge %}퇴원{% if r.discharge_source %} ({{ r.discharge_source }} 기준){% endif %}{% if r.other_note %} {{ r.other_note }}{% endif %}{% elif r.admission_kind == 'roster' %}입원완료 · 근거 {{ r.flow_source_label }}{% if '명부' not in r.flow_source_label %} — 원무 명부에 아직 없는 건입니다{% endif %}{% elif is_return %}외진 복귀{% if r.other_note %} — {{ r.other_note }}{% endif %} · {% if is_planned %}입원예정{% else %}입원완료{% endif %}{% else %}신규 입원 · {% if is_planned %}입원예정{% else %}입원완료{% endif %}{% endif %}">{{ kind }}</span>
                 </td>
                 <td class="dash-adm-who" title="{{ r.patient_name }}{% if r.blacklist %} · 블랙리스트{% endif %}{% if r.readmission %} · 재입원{% endif %}">
-                    {% if r.blacklist %}<span class="bl-mark">블랙</span> {% endif %}{% if r.id %}<a href="/consult/{{ r.id }}">{{ r.patient_name }}</a>{% else %}<span title="상담 기록 없이 원무 명부로만 있는 환자">{{ r.patient_name }}</span>{% endif %}{% if r.readmission %}<span class="badge adm-readmit" title="재입원 — 이전 입원 {% for s in r.prior_stays %}{{ s.admitted_at|krdate_short }}~{{ s.discharged_at|krdate_short }}{% if s.room_number %} {{ s.room_number }}{% endif %}({{ s.source }}){% if not loop.last %} · {% endif %}{% endfor %}">재입원</span>{% endif %}
+                    {% if r.blacklist %}<span class="bl-mark">블랙</span> {% endif %}{% if r.id %}<a href="/consult/{{ r.id }}">{{ r.patient_name }}</a>{% else %}<a href="/patients/{{ r.patient_id }}" title="상담 기록 없이 원무 명부로만 있는 환자 — 상담을 등록하면 외진·퇴원 관리를 할 수 있습니다">{{ r.patient_name }}</a><span class="badge adm-noconsult" title="상담일지가 없는 환자">상담없음</span>{% endif %}{% if r.readmission %}<span class="badge adm-readmit" title="재입원 — 이전 입원 {% for s in r.prior_stays %}{{ s.admitted_at|krdate_short }}~{{ s.discharged_at|krdate_short }}{% if s.room_number %} {{ s.room_number }}{% endif %}({{ s.source }}){% if not loop.last %} · {% endif %}{% endfor %}">재입원</span>{% endif %}
                 </td>
                 <td class="dash-adm-sex" title="{% if r.gender == 'M' %}남성{% elif r.gender == 'F' %}여성{% else %}성별 미기재{% endif %}{% if r.patient_age is not none %} · {{ r.patient_age }}세{% else %} · 나이 미기재{% endif %}">{% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% else %}-{% endif %}/{% if r.patient_age is not none %}{{ r.patient_age }}{% else %}-{% endif %}</td>
                 <td class="dash-note dash-adm-hosp" title="{{ r.other_note_title or r.other_note or '' }}">{{ r.other_note or '-' }}</td>
@@ -786,6 +786,7 @@
 .adm-kind-return { background:#ede9fe; color:#6d28d9; }
 .adm-kind-return-planned { background:#fef3c7; color:#92400e; outline:1px dashed currentColor; outline-offset:-1px; }
 .adm-kind-out { background:#e2e8f0; color:#334155; }
+.adm-noconsult { margin-left:3px; padding:1px 4px; font-size:.66rem; font-weight:800; background:#fff; color:#92400e; outline:1px solid #fcd34d; vertical-align:middle; }
 .dash-adm-state .muted-sm { display:block; margin-top:2px; }
 .badge-callback { background:#fef3c7; color:#92400e; }
 .badge-callback-due { background:#fee2e2; color:#991b1b; font-weight:600; }

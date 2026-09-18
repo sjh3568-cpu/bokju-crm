@@ -1,9 +1,11 @@
-"""재원관리 → 「입원·퇴원 이력」 탭 — 기간별 입원·퇴원 명부(원무 명부 회차 기준) + 필터 + 엑셀.
+"""재원관리 → 「입원·퇴원 이력」 탭 — 기간별 입원·퇴원 명부 + 필터 + 엑셀.
 
-원무 명부 회차(admission_episodes.roster_key)가 실제 입·퇴원일을 들고 있으므로 상담 상태가
-아니라 회차로 센다. 상담이 붙은 회차는 퇴원 장소·사유·담당 상담사·진단을 상담에서 가져온다.
-외진(응급전원·모병원 외래치료) 복귀는 그날의 입원으로 센다(2026-09-15) — 명부가 복귀일에
-새 회차를 열어 두었으면 그 회차 행으로, 아직 없으면 복귀 기록으로 '입원(복귀)' 행을 만든다.
+근거는 models.admission_flow_events() 하나다 — 원무 명부 회차 + CRM 회차 + 상담 기록을 합쳐
+(환자, 날짜, 입원/퇴원)으로 묶는다. 대시보드 '입·퇴원 현황'이 같은 함수를 쓰므로 두 화면의
+명단이 어긋나지 않는다(2026-09-18 요청: 어느 화면에서도 놓치면 안 된다).
+값이 엇갈리면 원무 명부가 이긴다. 상담사·나이·유입경로처럼 명부에 없는 것은 상담에서 온다.
+외진(응급전원·모병원 외래치료) 복귀는 그날의 입원으로 센다(2026-09-15) — 같은 날 입원 줄이
+이미 있으면 복귀 줄로 갈아 끼운다.
 
   report(args)  → {filters, rows, summary, options}
   /ward/moves.xlsx  현재 필터 그대로 엑셀
@@ -61,69 +63,46 @@ def _filters(args) -> dict:
 
 
 def _load(d_from: str, d_to: str) -> list[dict]:
-    """기간에 입원했거나 퇴원한 회차 — 한 회차가 둘 다면 두 줄(입원·퇴원)로 나온다."""
-    conn = models.get_db()
-    try:
-        eps = [dict(r) for r in conn.execute(
-            """SELECT e.id AS episode_id, e.patient_id, e.admitted_at, e.discharged_at, e.room_number, e.ward,
-                      e.attending_doctor, e.diagnosis_name, e.care_type,
-                      p.name AS patient_name, p.gender, p.birth_year
-               FROM admission_episodes e JOIN patients p ON p.id = e.patient_id
-               WHERE e.roster_key IS NOT NULL AND e.admitted_at IS NOT NULL AND e.admitted_at != ''
-                 AND ((substr(e.admitted_at,1,10) BETWEEN ? AND ?)
-                      OR (e.discharged_at IS NOT NULL AND e.discharged_at != '' AND substr(e.discharged_at,1,10) BETWEEN ? AND ?))
-               ORDER BY e.admitted_at DESC""", (d_from, d_to, d_from, d_to))]
-        if not eps:
-            return _return_rows(d_from, d_to, date.today())   # 명부 회차가 없어도 복귀 행은 낸다
-        # 회차에 붙은 상담 — 퇴원 장소·사유·담당자·진단은 상담이 들고 있다
-        owner = {sp["episode_id"]: sp["consultation_id"] for sp in models.admission_spans() if sp.get("consultation_id")}
-        cids = sorted({owner[e["episode_id"]] for e in eps if e["episode_id"] in owner})
-        cons = {}
-        if cids:
-            ph = ",".join("?" * len(cids))
-            for r in conn.execute(
-                    f"""SELECT id, counselor, discharge_destination, discharge_reason, attending_doctor, patient_age,
-                               primary_diagnosis, diseases
-                        FROM consultations WHERE id IN ({ph})""", cids):
-                cons[r["id"]] = dict(r)
-    finally:
-        conn.close()
+    """기간의 입원·퇴원 — 한 사람이 한 날 한 줄. 기간 안에 입원도 퇴원도 했으면 두 줄.
 
+    근거는 models.admission_flow_events() 하나다(명부 회차 + CRM 회차 + 상담). 전에는 이 화면이
+    명부 회차만 셌는데, 명부 적재가 늦으면 그 사이 CRM에서 입원 처리한 환자가 통째로 빠졌다
+    (2026-09-18: 명부가 9/11까지만 올라와 9/14~9/18 입원 13명이 화면에 없었다).
+    대시보드 '입·퇴원 현황'도 같은 함수를 쓰므로 두 화면이 어긋나지 않는다.
+    """
     today = date.today()
-    out = []
-    for e in eps:
-        con = cons.get(owner.get(e["episode_id"])) or {}
-        adm = _parse_date(e["admitted_at"]); dis = _parse_date(e.get("discharged_at") or "")
-        age = con.get("patient_age")
+    rows = []
+    for e in models.admission_flow_events(d_from, d_to):
+        adm = _parse_date(e.get("admitted_at") or "")
+        dis = _parse_date(e.get("discharged_at") or "")
+        age = e.get("patient_age")
         if age is None and e.get("birth_year"):
             age = today.year - int(e["birth_year"])
-        dx = e.get("diagnosis_name") or con.get("primary_diagnosis") or ""
-        if not dx and con.get("diseases"):
-            try:
-                import json
-                dz = json.loads(con["diseases"]) if isinstance(con["diseases"], str) else con["diseases"]
-                dx = ", ".join(dz[:2]) if isinstance(dz, list) else ""
-            except Exception:
-                dx = ""
-        base = {
-            "episode_id": e["episode_id"], "consultation_id": con.get("id"), "patient_id": e["patient_id"],
-            "patient_name": e["patient_name"], "gender": e.get("gender"), "age": age,
+        rows.append({
+            "episode_id": e.get("episode_id"), "consultation_id": e.get("consultation_id"),
+            "patient_id": e["patient_id"], "patient_name": e.get("patient_name") or "",
+            "gender": e.get("gender"), "age": age,
             "ward": e.get("ward") or "", "room": e.get("room_number") or "",
-            "doctor": (e.get("attending_doctor") or con.get("attending_doctor") or "").strip(),
-            "care": _care_label(e.get("care_type")), "dx": dx,
-            "admitted_at": adm.isoformat() if adm else "", "discharged_at": dis.isoformat() if dis else "",
-            "counselor": (con.get("counselor") or "").strip(),
-            "destination": (con.get("discharge_destination") or "").strip(),
-            "reason": (con.get("discharge_reason") or "").strip(),
+            "doctor": (e.get("attending_doctor") or "").strip(),
+            "care": _care_label(e.get("care_type")),
+            "dx": (e.get("diagnosis_name") or e.get("primary_diagnosis") or "").strip(),
+            "admitted_at": adm.isoformat() if adm else "",
+            "discharged_at": dis.isoformat() if dis else "",
+            "counselor": (e.get("counselor") or "").strip(),
+            "destination": (e.get("discharge_destination") or "").strip(),
+            "reason": (e.get("discharge_reason") or "").strip(),
             "stay_days": ((dis or today) - adm).days + 1 if adm else None,
-        }
-        if adm and d_from <= adm.isoformat() <= d_to:
-            out.append({**base, "kind": "in", "date": adm.isoformat()})
-        if dis and d_from <= dis.isoformat() <= d_to:
-            out.append({**base, "kind": "out", "date": dis.isoformat()})
-    out.extend(_return_rows(d_from, d_to, today))
-    out.sort(key=lambda r: (r["date"], r["kind"] == "in", r["patient_name"]), reverse=True)
-    return out
+            "kind": e["kind"], "date": e["date"],
+            "source": " · ".join(e.get("sources") or ()),
+        })
+    # 외진 복귀 — 그날의 입원으로 센다. 명부 회차가 복귀일에 열려 있으면 위에서 이미 나왔으므로
+    # 같은 (환자, 날짜)에 입원 줄이 있으면 복귀 줄로 갈아 끼운다(복귀가 더 구체적인 사실이다).
+    returns = _return_rows(d_from, d_to, today)
+    keys = {(r["patient_id"], r["date"]) for r in returns}
+    rows = [r for r in rows if not (r["kind"] == "in" and (r["patient_id"], r["date"]) in keys)]
+    rows.extend(returns)
+    rows.sort(key=lambda r: (r["date"], r["kind"] == "in", r["patient_name"]), reverse=True)
+    return rows
 
 
 def _return_rows(d_from: str, d_to: str, today) -> list[dict]:
@@ -145,7 +124,7 @@ def _return_rows(d_from: str, d_to: str, today) -> list[dict]:
             "admitted_at": ret.isoformat(), "discharged_at": "",
             "counselor": (r.get("counselor") or "").strip(), "destination": "", "reason": "",
             "stay_days": (today - ret).days + 1,
-            "kind": "in", "date": ret.isoformat(),
+            "kind": "in", "date": ret.isoformat(), "source": "외진 복귀",
             "is_return": True, "away_type": r.get("event_type") or "", "away_from": r.get("event_date") or "",
         })
     return rows

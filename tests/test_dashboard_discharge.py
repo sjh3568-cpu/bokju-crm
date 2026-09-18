@@ -89,7 +89,7 @@ class DashboardDischargeTests(unittest.TestCase):
         data, _ = self.rows()
         mine = [r for r in data["admission_selected"] if r["patient_id"] == 1]
         self.assertEqual(len(mine), 1, [r["admission_kind"] for r in mine])
-        self.assertEqual(mine[0]["discharge_source"], "CRM · 명부")   # 두 근거를 다 표시
+        self.assertEqual(mine[0]["discharge_source"], "명부 · CRM · 상담")   # 근거 셋을 다 표시
 
     def test_discharge_row_carries_stay_days_destination_and_roster_fields(self):
         _, rows = self.rows()
@@ -169,6 +169,47 @@ class DashboardDischargeTests(unittest.TestCase):
         """기간을 지난 날짜로 잡아도 그 기간의 퇴원이 나온다."""
         _, rows = self.rows(lo=d(-2), hi=d(-1))
         self.assertEqual(sorted(rows), [1, 2])
+
+    def test_admission_without_a_consultation_still_shows(self):
+        """상담 없이 명부에만 있는 입원도 대시보드에 나온다.
+
+        전에는 이 표를 상담만 보고 만들어, 상담 없이 입원한 환자(운영 명부 회차 대부분)는
+        입원 줄 자체가 없었다(2026-09-18 요청: 어느 화면에서도 놓치면 안 된다).
+        """
+        with models.get_db() as conn:
+            conn.execute("INSERT INTO patients (id,name,gender,chart_no) VALUES (5,'명부만입원','F','0005')")
+            conn.execute("""INSERT INTO admission_episodes
+                            (patient_id, episode_no, status, admitted_at, room_number, ward,
+                             attending_doctor, diagnosis_name, roster_key)
+                            VALUES (5, 1, 'admitted', ?, '1301호', '13병동', '변현숙', '뇌출혈', ?)""",
+                         (d(0), "0005|%s" % d(0)))
+        data, rows = self.rows()
+        self.assertIn(5, rows, "명부에만 있는 입원이 표에 있어야 한다")
+        row = rows[5]
+        self.assertEqual(row["admission_kind"], "roster")
+        self.assertEqual(row["admission_bucket"], "completed")
+        self.assertEqual(row["admission_display_date"], d(0))
+        self.assertEqual(row["ward"], "13병동")
+        self.assertIsNone(row.get("id"))                       # 상담이 없으니 링크도 없다
+        self.assertEqual(data["summary"]["admission_today_completed"], 2)   # 오늘입원(3번) + 명부만입원
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertIn("명부만입원", html)
+
+    def test_both_screens_list_the_same_people(self):
+        """대시보드 입·퇴원 현황과 재원관리 입원·퇴원 이력이 같은 명단을 낸다."""
+        import ward_moves
+        with models.get_db() as conn:   # 명부에만 있는 입원 하나를 더 넣어 두 화면을 맞대어 본다
+            conn.execute("INSERT INTO patients (id,name,gender) VALUES (6,'명부만입원2','M')")
+            conn.execute("""INSERT INTO admission_episodes
+                            (patient_id, episode_no, status, admitted_at, room_number, roster_key)
+                            VALUES (6, 1, 'admitted', ?, '402호', ?)""", (d(-1), "0006|%s" % d(-1)))
+        data, _ = self.rows(lo=d(-1), hi=d(0))
+        dash = {(r["patient_id"], r["admission_display_date"],
+                 "out" if r.get("admission_kind") == "discharge" else "in")
+                for r in data["admission_selected"]}
+        moves = {(r["patient_id"], r["date"], r["kind"])
+                 for r in ward_moves.report({"date_from": d(-1), "date_to": d(0)})["rows"]}
+        self.assertEqual(dash, moves)
 
 
 if __name__ == "__main__":
