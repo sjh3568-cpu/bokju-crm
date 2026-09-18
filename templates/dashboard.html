@@ -300,7 +300,7 @@
 {% endmacro %}
 {% macro action_tr(item, stale=False) %}
 <tr class="aq-row {{ item.tone }}{% if stale %} stale{% endif %}">
-    {% set kslug = {'퇴원예정':'discharge','재연락':'callback','문의':'inquiry','입원준비':'prep','담당자':'staff','운행':'transport','입원예정일':'planned'}.get(item.group, 'hold-adm' if item.kind == '입원보류' else 'hold') %}
+    {% set kslug = {'퇴원지연':'discharge','퇴원예정':'discharge','재연락':'callback','문의':'inquiry','입원준비':'prep','담당자':'staff','운행':'transport','입원예정일':'planned'}.get(item.group, 'hold-adm' if item.kind == '입원보류' else 'hold') %}
     <td class="nowrap"><span class="aq-kind k-{{ kslug }}">{{ item.kind }}</span></td>
     <td class="nowrap"><a href="{{ item.href or '#' }}">{{ item.title }}</a>{% if item.who %} <span class="dash-who">{{ item.who }}</span>{% endif %}</td>
     <td class="dash-dx" title="{{ item.dx }}">{{ item.dx or '-' }}</td>

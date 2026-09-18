@@ -1071,6 +1071,10 @@ def _admission_expiry(consultation):
     return out
 
 
+# 퇴원 예정일이 지난 뒤 '오늘 처리 필요'에 띄우는 기간. 이 기간이 지나도 재원이면 연장으로 본다.
+DISCHARGE_OVERDUE_GRACE_DAYS = 7
+
+
 @app.template_filter("discharge_watch")
 def _discharge_watch(consultation):
     """입원완료 상담의 퇴원 임박 여부 — 상담목록 '퇴원예정' 표기/액션용.
@@ -1096,9 +1100,31 @@ def _discharge_watch(consultation):
         return None
     days_left = (dd - datetime.now().date()).days
     ax_flag = _admission_expiry(consultation) or {}
+    # 예정일이 지나고 1주일까지는 '퇴원지연' — 퇴원 처리나 연장을 확인할 기간.
+    # 그 뒤까지 재원이면 연장해서 머무는 것이다(퇴원예정일 = 입원 1년 만료일). 재원 관리의
+    # 연장 배지와 같은 구간으로 본다 — 1년 초과 연장1회, 1년 6개월 초과 연장2회 (2026-09-18 사용자 정의).
+    ext_tier = 0
+    if days_left > 30:
+        state = None
+    elif days_left >= 0:
+        state = "퇴원예정"
+    elif days_left >= -DISCHARGE_OVERDUE_GRACE_DAYS:
+        state = "퇴원지연"
+    else:
+        stayed = None
+        adm = (consultation.get("actual_admission_date")
+               or consultation.get("admission_date") or "").strip()
+        if adm:
+            try:
+                stayed = (datetime.now().date() - datetime.strptime(adm[:10], "%Y-%m-%d").date()).days
+            except (ValueError, TypeError):
+                stayed = None
+        ext_tier = 2 if (stayed is not None and stayed > TOTAL_STAY_DAYS + 180) else 1
+        state = f"연장{ext_tier}회"
     return {
         "mandatory": bool(ax_flag.get("mandatory")),
-        "state": "퇴원예정" if days_left <= 30 else None,
+        "state": state,
+        "ext_tier": ext_tier,
         "due_date": dd.isoformat(),
         "days_left": days_left,
     }
@@ -1294,7 +1320,7 @@ _ACTION_GROUP_MAP = {
     "입원준비": "입원준비",
     "담당자": "담당자",
     "전환체크": "전환체크",
-    "퇴원예정": "퇴원예정",
+    "퇴원지연": "퇴원지연",
     "입원보류": "보류",
     "상담보류": "보류",
     "보류": "보류",
@@ -1302,7 +1328,7 @@ _ACTION_GROUP_MAP = {
     "운행": "운행",
 }
 # 순서·묶음은 아래 KPI 카드 줄과 맞춘다 — 오늘(파랑) → 기한(주황) → 대기(회색).
-_ACTION_GROUP_ORDER = ("입원준비", "운행", "담당자", "퇴원예정",
+_ACTION_GROUP_ORDER = ("입원준비", "운행", "담당자", "퇴원지연",
                        "문의", "재연락", "보류", "입원예정일")
 _ACTION_GROUP_BAND = {
     "입원준비": "today", "담당자": "today",
@@ -1453,16 +1479,18 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
 
     # 회복기 전환(전환체크)은 아래 '기한 임박' 카드와 겹치므로 큐에 넣지 않는다 (2026-09-13).
 
-    # 퇴원예정: 예정일이 지났는데 아직 재원인 환자만(확인·연장 필요). 앞으로 올 D-30은 '기한 임박' 카드가 맡는다.
+    # 퇴원지연: 예정일이 지난 지 1주일 안인 재원 환자만 — 퇴원 처리나 연장을 확인할 시점이다.
+    # 앞으로 올 D-30은 오른쪽 '기한 임박' 카드가 맡고(이름이 같아 헷갈렸다),
+    # 1주일이 지나도 재원이면 연장해서 머무는 것이므로 큐에서 빼고 재원 관리의 연장 배지로 본다(2026-09-18).
     for d in discharge_due:
         left = d["watch"].get("days_left")
-        if left is None or left >= 0:
+        if left is None or left >= 0 or left < -DISCHARGE_OVERDUE_GRACE_DAYS:
             continue
         add(
-            "퇴원예정",
+            "퇴원지연",
             "danger",
             d["con"].get("patient_name") or "환자 미지정",
-            "퇴원 예정일이 지남 — 퇴원·연장 확인",
+            f"퇴원 예정일 {-left}일 지남 — 퇴원 처리 또는 연장 확인",
             f"{-left}일 초과",
             f"/consult/{d['con'].get('id')}" if d["con"].get("id") else None,
             10,
