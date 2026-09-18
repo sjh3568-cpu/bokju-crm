@@ -116,7 +116,7 @@
             </td>
             <td class="iq-body"><div class="iq-line" title="{{ r.summary or '' }}{% if r.body %} — {{ r.body }}{% endif %}"><span class="iq-sum">{{ r.summary or '' }}</span>{% if r.body %} <span class="iq-txt">{{ r.body }}</span>{% endif %}</div></td>
             <td class="nowrap"><span class="iq-stage s-{{ r.stage }}">{{ r.stage }}</span></td>
-            <td class="muted-sm">
+            <td class="muted-sm iq-proc">
                 <div class="iq-line">
                 {%- if r.consultation_id %}<a href="/consult/{{ r.consultation_id }}">상담 #{{ r.consultation_id }}</a> · {{ r.consult_date or '' }}{% if r.counselor %} · {{ r.counselor }}{% endif %}{% if r.admitted %} · <b class="iq-admit">입원완료</b>{% elif r.admission_status %} · {{ r.admission_status }}{% elif r.consult_result %} · {{ r.consult_result }}{% endif %}
                 {%- elif r.stage == '처리완료' %}완료 {{ (r.resolved_local or '')[:16] }}{% endif %}
@@ -161,10 +161,13 @@
 .tbl td.r,.tbl th.r{text-align:right}
 .iq-grid .tbl th,.iq-grid .tbl td{white-space:nowrap;padding-inline:8px}   /* 9열 표에서 '홈페이지'가 세로로 깨지지 않게 */
 .iq-bar-cell{width:45%}.iq-bar{height:12px;border-radius:6px;background:linear-gradient(90deg,#14b8a6,#0f766e);min-width:2px}
-/* 목록은 한 행 = 한 줄. 넘치는 내용은 말줄임하고 전체는 title(마우스 올림)로 본다. */
-.iq-list td{vertical-align:middle}
-.iq-list .iq-line{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.iq-list .iq-body{max-width:520px}.iq-list .iq-body .iq-line{max-width:520px}
+/* 목록은 한 행 = 한 줄. 표의 모든 칸을 한 줄로 고정하고, 길어지는 '내용'·'처리'만 말줄임한다.
+   (템플릿 곳곳의 class="nowrap"은 style.css에 정의가 없어 아무 효과가 없었다 — 그래서 칸이 제멋대로 접혔다.)
+   전체 문구는 마우스를 올리면 title로 보이고, 표가 화면보다 넓어지면 .tbl-wrap이 가로로 스크롤한다. */
+.iq-list th,.iq-list td{white-space:nowrap;vertical-align:middle}
+.iq-list .iq-line{overflow:hidden;text-overflow:ellipsis}
+.iq-list .iq-body,.iq-list .iq-body .iq-line{max-width:min(560px,40vw)}
+.iq-list .iq-proc,.iq-list .iq-proc .iq-line{max-width:min(280px,20vw)}
 .iq-sum{font-weight:700;font-size:.9em}.iq-txt{color:#5b6d63;font-size:.82em}
 .iq-stage{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.76em;font-weight:800}
 .iq-stage.s-미처리{background:#fef3c7;color:#92400e}.iq-stage.s-상담등록{background:#dcfce7;color:#166534}.iq-stage.s-처리완료{background:#e5e7eb;color:#374151}
