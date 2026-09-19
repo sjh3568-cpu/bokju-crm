@@ -56,7 +56,7 @@ from config import (
     PERM_HIDDEN, PERM_VIEW, PERM_EDIT, PERM_CREATE,
     PERM_LEVELS, PERM_LEVEL_LABELS,
     INSURANCE_TYPES, OTHERS_CHECKLIST, REFERRAL_SOURCE_GROUPS, REFERRAL_TYPES,
-    INBOUND_CHANNEL_REFERRAL, INBOUND_CHANNEL_LABELS,
+    INBOUND_CHANNEL_REFERRAL, INBOUND_CHANNEL_LABELS, KAKAO_ADMIN_URL,
     STAFF_REFERRAL_ORGS, STAFF_REFERRAL_DEPTS,
     LIFECYCLE_STAGES, LIFECYCLE_EVENT_TYPES, LEGACY_STAGE_MAP, CARE_PHASES,
     SIDO_LIST, SIGUNGU_INDEX, SIGUNGU_LIST,
@@ -752,6 +752,9 @@ def inquiry_list():
         channel_labels=INBOUND_CHANNEL_LABELS,
         monthly_max=max([m["total"] for m in monthly] + [1]),
         admin_ready=homepage_board.admin_configured(),
+        # 문의 원본을 확인하러 나가는 외부 관리자 화면 — 각 사이트에 따로 로그인해야 한다.
+        hp_admin_url=homepage_board.admin_list_url(),
+        kakao_admin_url=KAKAO_ADMIN_URL,
     )
 
 @bp.route("/consultations/inquiries.csv")

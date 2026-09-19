@@ -9,6 +9,11 @@
     <div class="consult-head-actions">
         <a class="btn btn-secondary btn-sm" href="/#action-queue">오늘 처리 필요 →</a>
         <a class="btn btn-secondary btn-sm" href="/consultations/inquiries.csv?from={{ f.date_from }}&to={{ f.date_to }}&channel={{ f.channel }}&stage={{ f.stage }}&q={{ f.q|urlencode }}">CSV</a>
+        {# 문의 원본 확인·직접 답변용 외부 관리자 화면. CRM과 로그인이 별개라 각 사이트에서 따로 로그인한다. #}
+        <a class="btn btn-secondary btn-sm" href="{{ hp_admin_url }}" target="_blank" rel="noopener"
+           title="홈페이지 상담게시판 관리자 — 문의 원본·직접 답변. 새 탭으로 열리며 홈페이지 계정으로 따로 로그인합니다">홈페이지 관리자 ↗</a>
+        <a class="btn btn-secondary btn-sm" href="{{ kakao_admin_url }}" target="_blank" rel="noopener"
+           title="카카오비즈니스 파트너센터 — 채팅 원본·카나나 상담매니저 답변 관리. 새 탭으로 열리며 카카오 계정으로 따로 로그인합니다">카카오채널 관리자 ↗</a>
     </div>
 </div>
 

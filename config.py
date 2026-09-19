@@ -11,6 +11,10 @@ APP_DEVELOPER = "미래전략실 신재희"
 # 녹음 파일은 CRM에 저장하지 않고 이 사이트에서 직접 내려받는다(계정 별도).
 CALL_RECORDING_URL = "https://biz070rec.lghellovision.net/"
 
+# 카카오비즈니스 파트너센터. 채널 문의 내역에서 카카오 문의 원본(채팅)을 확인하러 새 탭으로 연다.
+# 카나나 상담매니저 답변 관리도 여기 → 채팅 → Kanana 상담매니저.
+KAKAO_ADMIN_URL = "https://business.kakao.com/space/268808/dashboard"
+
 # 보험유형 — 사용자 정의 10종
 INSURANCE_TYPES = [
     "건강보험",

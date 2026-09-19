@@ -71,6 +71,11 @@ def admin_view_url(idx: int) -> str:
     return f"{BASE_URL}{ADMIN_VIEW}?idx={int(idx)}"
 
 
+def admin_list_url() -> str:
+    """홈페이지 관리자 상담게시판 목록. 로그인 안 돼 있으면 홈페이지가 로그인 화면으로 보낸다."""
+    return f"{BASE_URL}{ADMIN_LIST}"
+
+
 # ───────────────────── HTML 파싱 ─────────────────────
 
 def _text(fragment: str) -> str:
