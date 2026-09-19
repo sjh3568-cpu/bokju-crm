@@ -77,6 +77,27 @@ class PerfLazyTests(unittest.TestCase):
         self.assertIn('async function partialRefresh()', html)
         self.assertIn("main.replaceWith(next)", html)
 
+    def test_static_is_revalidated_not_refetched(self):
+        """정적 자산은 no-cache(재검증) — 화면마다 통째로 다시 받지 않는다.
+        환자 정보가 없는 css·js에까지 no-store를 걸어 대시보드 1회에 420KB가 새로 나가던 것을 고쳤다.
+        max-age를 주지 않는 이유는 배포로 파일이 바뀌면 ETag가 달라져 그 자리에서 새로 받게 하기 위함."""
+        first = self.client.get('/static/css/style.css')
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.headers.get('Cache-Control'), 'no-cache')
+        self.assertIsNone(first.headers.get('Pragma'))                  # no-store 시절 잔재가 남으면 안 됨
+        etag = first.headers.get('ETag')
+        self.assertTrue(etag)                                           # 재검증의 근거
+        again = self.client.get('/static/css/style.css', headers={'If-None-Match': etag})
+        self.assertEqual(again.status_code, 304)
+        self.assertEqual(len(again.data), 0)                            # 본문이 다시 나가지 않는다
+
+    def test_pages_still_no_store(self):
+        """환자 정보 화면의 no-store는 그대로 — 로그아웃 후 뒤로가기 노출 방지가 이 훅의 원래 목적이다."""
+        for path in ('/', '/consultations', '/ward'):
+            with self.subTest(path=path):
+                r = self.client.get(path)
+                self.assertEqual(r.headers.get('Cache-Control'), 'no-store, private, must-revalidate')
+                self.assertEqual(r.headers.get('Pragma'), 'no-cache')
 
 if __name__ == "__main__":
     unittest.main()
