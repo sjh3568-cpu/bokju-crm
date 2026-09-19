@@ -156,14 +156,16 @@ def _dashboard_calendar_context(uid, year, month, counselor=None):
         name = ev.get("patient_name") or "환자 미지정"
         href = f"/consult/{ev['consultation_id']}"
         sub = patient_sub(ev)
-        kind_txt = ev.get("event_type") or "외진"
+        # 복귀 줄에는 나간 종류를 적지 않는다 — '응급전원'은 돌아온 건지 나간 건지 헷갈리고
+        # '모병원 외래치료'는 글자가 길어 환자 이름이 잘린다(2026-09-19 사용자 요청).
+        # 달력 칸은 좁으니 '외진 복귀' 넉 자로 고정하고, 종류는 상담 상세·외진 명부에서 본다.
         if ev.get("returned_at"):
             if (ev.get("return_outcome") or "") == "전원":
                 add(ev["returned_at"], "discharged", name, f"외진 → 전원 · {ev.get('return_hospital') or ''}".rstrip(" ·"), href, sub=sub)
             else:
-                add(ev["returned_at"], "admitted", name, f"외진 복귀 · {kind_txt}", href, sub=sub)
+                add(ev["returned_at"], "admitted", name, "외진 복귀", href, sub=sub)
         elif ev.get("expected_return_date"):
-            add(ev["expected_return_date"], "admission", name, f"외진 복귀예정 · {kind_txt}", href, sub=sub)
+            add(ev["expected_return_date"], "admission", name, "외진 복귀예정", href, sub=sub)
 
     todos = models.list_todos_range(uid, start.isoformat(), last.isoformat())
     for todo in todos:
