@@ -359,7 +359,6 @@
                 <td class="admission-date-cell">
                     {% set actual = r.actual_admission_date or r.admission_date %}
                     {% if actual %}<span class="admission-date-main" title="{{ actual|krdate_short_wd }}">{{ actual|krdate_short }}</span>{% endif %}
-                    {% if status == '퇴원완료' and r.discharge_date %}<span class="muted-sm" title="퇴원 {{ r.discharge_date|krdate_short_wd }}">퇴원 {{ r.discharge_date|krdate_short }}</span>{% endif %}
                 </td>
                 <td class="admexp-cell">
                     {% set ax = r|admission_expiry %}
@@ -740,7 +739,8 @@ body .container { max-width: none; padding: 0 12px; }
     white-space:nowrap; padding:4px 0; }
 
 /* 퇴원 워크플로 — 퇴원완료 배지 / 퇴원예정 알림 + 액션 버튼 */
-.badge.st-discharge-done { background: #cffafe; color: #155e75; }
+/* 퇴원완료 — 붉은색으로 통일(2026-09-19 요청). 입원취소도 붉은 계열이라 진한 글자·테두리로 구분한다. */
+.badge.st-discharge-done { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; font-weight: 800; }
 .badge.st-discharge-due  { background: #fed7aa; color: #9a3412; }
 /* 퇴원예정 D-7 임박 — 빨간 펄스 강조 */
 .badge.st-discharge-due.dc-urgent { background: #fee2e2; color: #b91c1c;

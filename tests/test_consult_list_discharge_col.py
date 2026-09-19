@@ -84,6 +84,19 @@ class ConsultListDischargeColumnTests(unittest.TestCase):
         text = [re.sub(r"<[^>]+>|[▲▼⇅\s]", "", h) for h in heads]
         self.assertEqual(text[15:20], ["발병일", "입원완료일", "입원기간만료일", "퇴원완료일", "상담자"])
 
+    def test_admission_date_cell_no_longer_repeats_the_discharge_date(self):
+        """입원완료일 칸에 붙어 있던 '퇴원 26.08.30'은 퇴원완료일 열과 중복이라 뺐다(2026-09-19)."""
+        html = self.client.get("/consultations").get_data(as_text=True)
+        cell = re.search(r'<td class="admission-date-cell">(.*?)</td>', html, re.S).group(1)
+        self.assertNotIn("퇴원", cell)
+
+    def test_discharged_badge_is_red(self):
+        html = self.client.get("/consultations").get_data(as_text=True)
+        self.assertIn('<span class="badge st-discharge-done">퇴원완료</span>', html)
+        css = re.search(r"\.badge\.st-discharge-done \{([^}]*)\}", html).group(1)
+        self.assertIn("#fee2e2", css); self.assertIn("#b91c1c", css)
+        self.assertNotIn("#cffafe", css)         # 옛 하늘색은 사라졌다(다른 배지의 하늘색과는 무관)
+
     def test_column_toggle_covers_the_new_column(self):
         html = self.client.get("/consultations").get_data(as_text=True)
         self.assertIn("hide-c20", html)     # 상담자까지 숨길 수 있어야 한다
