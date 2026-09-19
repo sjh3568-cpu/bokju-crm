@@ -101,20 +101,25 @@ class CancelDischargeTests(unittest.TestCase):
         self.assertEqual(again.status_code, 400)
         self.assertIn("퇴원완료", again.get_json()["error"])
 
-    def test_list_offers_the_cancel_button(self):
-        html = self.client.get("/consultations").get_data(as_text=True)
-        self.assertIn('data-act="cancel"', html)
+    def test_detail_offers_the_cancel_button(self):
+        """되돌리는 자리는 환자를 여는 상담 상세다 — 퇴원한 환자는 재원 명단에 없다(2026-09-19 요청)."""
+        html = self.client.get("/consult/1").get_data(as_text=True)
+        self.assertIn('id="dc-undo"', html)
         self.assertIn("퇴원 취소", html)
+        self.assertIn("/api/consult/${cid}/discharge", html)
+        # 상담목록에서는 뺐다 — 목록의 [날짜 수정]은 그대로
+        lst = self.client.get("/consultations").get_data(as_text=True)
+        self.assertNotIn('data-act="cancel"', lst)
+        self.assertIn('data-act="fix-date"', lst)
 
     def test_list_script_keeps_multiline_messages_escaped(self):
-        """안내 문구의 줄바꿈은 \n이어야 한다 — 생 줄바꿈이 들어가 스크립트가 통째로 죽었었다.
+        """안내 문구의 줄바꿈은 \\n이어야 한다 — 생 줄바꿈이 들어가 스크립트가 통째로 죽었었다.
 
         '날짜 수정' 안내문에 줄바꿈이 그대로 들어가 SyntaxError가 나면서 상담목록 인라인
         스크립트의 모든 기능(상태 변경·퇴원 버튼·행 선택)이 멈췄다. 같은 실수를 막는다.
         """
         html = self.client.get("/consultations").get_data(as_text=True)
         self.assertIn("(YYYY-MM-DD)\\n여기 값이", html)
-        self.assertIn("되돌립니다.\\n회차에 적힌", html)
 
 
 if __name__ == "__main__":

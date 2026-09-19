@@ -71,7 +71,16 @@
             {% endif %}
         </div>
         {% if _status == '퇴원완료' %}
-        <p class="muted" style="font-size:0.84em; margin:4px 0">입원 후 단계(퇴원)는 상담목록에서 관리합니다. 여기서는 상담 결과만 저장됩니다.</p>
+        <p class="muted" style="font-size:0.84em; margin:4px 0">
+            퇴원한 상담입니다{% if c.discharge_date %} — 퇴원일 {{ c.discharge_date|krdate_wd_full }}{% endif %}.
+            여기서는 상담 결과만 저장됩니다.
+        </p>
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:4px 0 2px">
+            <button type="button" id="dc-undo" class="btn btn-secondary btn-sm"
+                    data-cur="{{ c.discharge_date or '' }}">퇴원 취소</button>
+            <span class="muted" style="font-size:0.82em">퇴원이 잘못 처리됐을 때 — 상담과 입원 회차의 퇴원일을 지우고 다시 재원으로 올립니다.</span>
+            <span class="dc-undo-msg" style="font-size:0.82em"></span>
+        </div>
         {% endif %}
         <div class="status-completed-row {% if _status != '입원완료' %}hide{% endif %}">
             <label>실제 입원일자
@@ -346,6 +355,33 @@
         }
     }
     [plannedDate, plannedTime, plannedDoctor, plannedRoom].filter(Boolean).forEach(el => el.addEventListener('change', () => saveField(el)));
+
+    // 퇴원 취소 — 잘못 처리한 퇴원을 되돌려 다시 재원으로 (2026-09-19 사용자 요청).
+    // 퇴원한 환자는 재원 명단에서 빠져 있으니, 되돌리는 자리는 그 환자를 여는 이 화면이다.
+    const undoBtn = document.getElementById('dc-undo');
+    if (undoBtn) {
+        const undoMsg = card.querySelector('.dc-undo-msg');
+        undoBtn.addEventListener('click', async () => {
+            const cur = undoBtn.dataset.cur || '날짜 없음';
+            if (!confirm(`퇴원(${cur})을 취소하고 다시 재원으로 되돌립니다. 입원 회차에 적힌 퇴원일도 함께 지워집니다. 계속할까요?`)) return;
+            const due = prompt('퇴원예정일을 아시면 입력하세요 (YYYY-MM-DD). 모르면 비워 두세요.', '');
+            const body = { action: 'cancel' };
+            if (due && due.trim()) body.discharge_due_date = due.trim();
+            undoBtn.disabled = true;
+            if (undoMsg) { undoMsg.className = 'dc-undo-msg muted'; undoMsg.textContent = '되돌리는 중...'; }
+            try {
+                const r = await fetch(`/api/consult/${cid}/discharge`, {
+                    method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(body),
+                });
+                const j = await r.json();
+                if (!r.ok) throw new Error(j.error || r.status);
+                location.reload();
+            } catch (e) {
+                undoBtn.disabled = false;
+                if (undoMsg) { undoMsg.className = 'dc-undo-msg err'; undoMsg.textContent = '실패: ' + e.message; }
+            }
+        });
+    }
 })();
 </script>
 
