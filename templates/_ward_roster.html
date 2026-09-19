@@ -148,7 +148,12 @@
                         </span>
                         {% elif c.id %}
                         <button type="button" class="btn btn-secondary btn-xs wd-away-btn" data-cid="{{ c.id }}" data-name="{{ c.patient_name }}">🚑 외진</button>
-                        <button type="button" class="btn btn-secondary btn-xs wd-dis" data-cid="{{ c.id }}" data-name="{{ c.patient_name }}">퇴원</button>
+                        <button type="button" class="btn btn-secondary btn-xs wd-dplan" data-cid="{{ c.id }}" data-name="{{ c.patient_name }}"
+                                data-due="{{ c.discharge_due or '' }}"
+                                title="퇴원 예정일만 잡아 둔다 — 재원에는 그대로 있고 '퇴원 예정' 칸에 D-day가 뜬다">{% if c.discharge_due %}예정 변경{% else %}퇴원 예정{% endif %}</button>
+                        <button type="button" class="btn btn-secondary btn-xs wd-dis" data-cid="{{ c.id }}" data-name="{{ c.patient_name }}"
+                                data-due="{{ c.discharge_due or '' }}"
+                                title="최종 퇴원 — 재원에서 빠진다">퇴원</button>
                         {% else %}
                         <a class="btn btn-secondary btn-xs" href="/consult/new?patient_id={{ c.patient_id }}">상담 등록</a>
                         {% endif %}
@@ -171,8 +176,8 @@
                             <button type="button" class="btn btn-secondary btn-xs wd-af-cancel">취소</button>
                         </div>
                         <div class="wd-inline wd-inline-discharge" data-cid="{{ c.id }}" hidden>
-                            <span class="muted-sm">🚪 {{ c.patient_name }} 퇴원</span>
-                            <input type="date" class="wd-dis-date" value="{{ today_str }}">
+                            <span class="muted-sm">🚪 {{ c.patient_name }} 최종 퇴원 <b>— 재원에서 빠집니다</b></span>
+                            <input type="date" class="wd-dis-date" value="{{ c.discharge_due or today_str }}">
                             <input type="text" class="wd-dis-destination" placeholder="퇴원 기관·장소">
                             <input type="text" class="wd-dis-reason" placeholder="퇴원 사유">
                             <button type="button" class="btn btn-primary btn-xs wd-dis-save">퇴원 처리</button>

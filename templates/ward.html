@@ -1293,6 +1293,22 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
         } catch (err) { btn.disabled = false; alert('격리 상태 저장 실패: ' + err.message); }
     }));
 
+    // 퇴원 예정 — 날짜만 잡아 둔다. 재원에는 그대로 있고 '퇴원 예정' 칸에 D-day가 뜬다.
+    // 최종 퇴원은 [퇴원] 버튼(아래 saveDischarge)이 맡는다 — 그때 재원에서 빠진다(2026-09-19 요청).
+    root.querySelectorAll('.wd-dplan').forEach(btn => btn.addEventListener('click', async (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const cur = btn.dataset.due || todayISO();
+        const d = prompt(`${btn.dataset.name || ''} 퇴원 예정일 (YYYY-MM-DD)\n재원에는 그대로 있고, 실제로 나가면 [퇴원]을 눌러 확정합니다.`, cur);
+        if (d === null) return;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(d.trim())) { alert('날짜는 YYYY-MM-DD 형식으로 입력하세요.'); return; }
+        btn.disabled = true;
+        try {
+            await api.post(`/api/consult/${btn.dataset.cid}/discharge`, { action: 'extend', discharge_due_date: d.trim() });
+            toast(`퇴원 예정 ${d.trim()} 저장 — 실제 퇴원은 [퇴원]으로 확정`, 'success');
+            setTimeout(() => location.reload(), 400);
+        } catch (err) { btn.disabled = false; alert('퇴원 예정 저장 실패: ' + err.message); }
+    }));
+
     // 외진 기록 — 행 아래 인라인 폼
     root.querySelectorAll('.wd-away-btn').forEach(btn => {
         if (btn.closest('.rm-bed')) return;
