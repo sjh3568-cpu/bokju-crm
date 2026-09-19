@@ -152,6 +152,7 @@
                 {{ sort_th('status', '입원진행') }}
                 <th>발병일</th>
                 <th>입원완료일</th>
+                <th>퇴원완료일</th>
                 <th>입원기간 만료일</th>
                 {{ sort_th('counselor', '상담자') }}
             </tr>
@@ -220,6 +221,7 @@
                     {% endfor %}
                     <option value="퇴원완료" {% if filters.admission_status == '퇴원완료' %}selected{% endif %}>퇴원완료</option>
                 </select></th>
+                <th></th>
                 <th></th>
                 <th></th>
                 <th><select form="consult-filter" name="stay_period" class="cf-in cf-sm" title="입원기간 상태">
@@ -359,6 +361,11 @@
                     {% if actual %}<span class="admission-date-main" title="{{ actual|krdate_short_wd }}">{{ actual|krdate_short }}</span>{% endif %}
                     {% if status == '퇴원완료' and r.discharge_date %}<span class="muted-sm" title="퇴원 {{ r.discharge_date|krdate_short_wd }}">퇴원 {{ r.discharge_date|krdate_short }}</span>{% endif %}
                 </td>
+                <td class="discharge-date-cell">
+                    {% set dis = r.discharge_date or r.roster_discharged_at %}
+                    {% if dis %}<span class="discharge-date-main" title="퇴원 {{ dis|krdate_short_wd }}{% if not r.discharge_date %} · 원무 명부 기준(상담에는 아직 안 적힘){% endif %}">{{ dis|krdate_short }}</span>{% if not r.discharge_date %}<span class="dc-roster" title="원무 입퇴원 명부에서 온 값">명부</span>{% endif %}
+                    {% else %}<span class="muted-sm">-</span>{% endif %}
+                </td>
                 <td class="admexp-cell">
                     {% set ax = r|admission_expiry %}
                     {% if ax %}
@@ -460,7 +467,7 @@ body .container { max-width: none; padding: 0 12px; }
    thead의 position:sticky를 무력화한다 → 목록에선 풀어서 헤더 고정이 동작하게. */
 /* 최소폭 1300px: 1440px 화면(사이드바 접힘 1346·상단메뉴 1416)엔 가로 스크롤 없이 들어가고,
    1366px 노트북+사이드바(1272)처럼 더 좁을 때만 살짝 가로 스크롤 — 열을 더 눌러 못 읽게 만드는 것보다 낫다. */
-.tbl-compact { table-layout: fixed; width: 100%; min-width: 1300px; overflow: visible; border-radius: 0; }
+.tbl-compact { table-layout: fixed; width: 100%; min-width: 1380px; overflow: visible; border-radius: 0; }
 .tbl-compact th, .tbl-compact td {
     padding: 3px 2px; font-size:0.84em; line-height:1.3; vertical-align:middle;
     text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
@@ -497,8 +504,9 @@ body .container { max-width: none; padding: 0 12px; }
 .tbl-compact th:nth-child(15), .tbl-compact td:nth-child(15) { width:96px; }  /* 입원진행 (퇴원 임박 액션은 hover 팝오버) */
 .tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:66px; }  /* 발병일 */
 .tbl-compact th:nth-child(17), .tbl-compact td:nth-child(17) { width:78px; }  /* 입원완료일 */
-.tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:118px; } /* 입원기간 만료일 — 가장 가까운 기한 1개 */
-.tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:50px; }  /* 상담자 */
+.tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:78px; }  /* 퇴원완료일 */
+.tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:118px; } /* 입원기간 만료일 — 가장 가까운 기한 1개 */
+.tbl-compact th:nth-child(20), .tbl-compact td:nth-child(20) { width:50px; }  /* 상담자 */
 .guardian-cell .phone { margin-left:2px; font-feature-settings:"tnum"; }
 .guardian-cell .rel { display:inline-block; padding:0 3px; margin-right:1px; border-radius:6px; background:#f1f5f9; color:var(--text-light); font-size:0.78em; line-height:1.5; vertical-align:middle; }
 /* 좁은 화면(노트북)에선 글자만 한 단계 줄이고 한 줄 규칙은 유지 */
@@ -518,8 +526,9 @@ body .container { max-width: none; padding: 0 12px; }
     .tbl-compact th:nth-child(15), .tbl-compact td:nth-child(15) { width:88px; }
     .tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:60px; }
     .tbl-compact th:nth-child(17), .tbl-compact td:nth-child(17) { width:70px; }
-    .tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:108px; }
-    .tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:44px; }
+    .tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:70px; }
+    .tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:108px; }
+    .tbl-compact th:nth-child(20), .tbl-compact td:nth-child(20) { width:44px; }
 }
 
 /* 넓은 화면(1800px 이상, 사무실 FHD 모니터) — 2026-09-15 사용자 요청: 열 사이 빈 공간 줄이고 글자를 키우고 열 간격을 고르게.
@@ -545,8 +554,9 @@ body .container { max-width: none; padding: 0 12px; }
     .tbl-compact th:nth-child(15), .tbl-compact td:nth-child(15) { width:104px; } /* 입원진행 */
     .tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:74px; }  /* 발병일 */
     .tbl-compact th:nth-child(17), .tbl-compact td:nth-child(17) { width:86px; }  /* 입원완료일 */
-    .tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:128px; } /* 입원기간 만료일 */
-    .tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:56px; }  /* 상담자 */
+    .tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:86px; }  /* 퇴원완료일 */
+    .tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:128px; } /* 입원기간 만료일 */
+    .tbl-compact th:nth-child(20), .tbl-compact td:nth-child(20) { width:56px; }  /* 상담자 */
     .cf-in { font-size:0.9em; }
     .cf-sm { font-size:0.84em; }
 }
@@ -779,7 +789,7 @@ body .container { max-width: none; padding: 0 12px; }
 .col-chooser label { display: flex; gap: 5px; align-items: center; white-space: nowrap; cursor: pointer; }
 .col-chooser .cc-actions { grid-column: 1 / -1; display: flex; gap: 8px; justify-content: flex-end;
     margin-top: 6px; padding-top: 8px; border-top: 1px dashed #e2e8f0; }
-{% for n in range(4, 20) %}.tbl-compact.hide-c{{ n }} th:nth-child({{ n }}), .tbl-compact.hide-c{{ n }} td:nth-child({{ n }}) { display: none; }
+{% for n in range(4, 21) %}.tbl-compact.hide-c{{ n }} th:nth-child({{ n }}), .tbl-compact.hide-c{{ n }} td:nth-child({{ n }}) { display: none; }
 {% endfor %}
 .qf-edit { border-style: dashed; }
 .quick-filter-editor {
@@ -858,6 +868,10 @@ body .container { max-width: none; padding: 0 12px; }
 .tbl-compact td.onset-date-cell.onset-roster { color: var(--text-light); }
 .tbl-compact td.admission-date-cell, .tbl-compact td.admexp-cell { white-space:normal; }
 .admission-date-main { display:block; white-space:nowrap; }
+/* 퇴원완료일 — 상담에 없으면 원무 명부 회차 값을 '명부' 꼬리표와 함께 보여준다(2026-09-19) */
+.tbl-compact td.discharge-date-cell { white-space:normal; }
+.discharge-date-main { display:block; white-space:nowrap; color:var(--text); }
+.discharge-date-cell .dc-roster { display:inline-block; margin-top:1px; padding:0 4px; border-radius:5px; background:#eef2f7; color:#64748b; font-size:.76em; font-weight:700; }
 .admexp-kind { display:inline-block; padding:1px 4px; border-radius:7px; font-weight:700; white-space:nowrap; }
 .admexp-kind.billing { background:#dcfce7; color:#166534; }
 .admexp-kind.total { background:#dbeafe; color:#1e40af; }

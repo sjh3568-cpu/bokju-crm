@@ -3247,14 +3247,14 @@ def list_consultations(*, date_from=None, date_to=None,
     # 실제 발병일은 원무 명부 backfill로 admission_episodes.onset_date에 들어 있으므로,
     # 재원 census와 같은 회차↔상담 매칭 규칙(_link_episodes)으로 이 페이지 상담에 얹는다.
     # 표시 전용 필드(onset_display)로만 넘겨 회복기 자동판정(disease_onset 사용)은 건드리지 않는다.
-    onset_by_consult = {}
+    onset_by_consult, discharge_by_consult = {}, {}
     if patient_ids:
         pid_ph = ",".join("?" * len(patient_ids))
         onset_eps = [dict(r) for r in conn.execute(
-            f"""SELECT id, patient_id, admitted_at, onset_date
+            f"""SELECT id, patient_id, admitted_at, onset_date, discharged_at
                 FROM admission_episodes
                 WHERE roster_key IS NOT NULL
-                  AND onset_date IS NOT NULL AND onset_date != ''
+                  AND (COALESCE(onset_date,'') <> '' OR COALESCE(discharged_at,'') <> '')
                   AND admitted_at IS NOT NULL AND admitted_at != ''
                   AND patient_id IN ({pid_ph})""", patient_ids)]
         if onset_eps:
@@ -3267,7 +3267,10 @@ def list_consultations(*, date_from=None, date_to=None,
                 by_patient.setdefault(row["patient_id"], []).append(
                     (row["consult_date"][:10], row["id"]))
             linked, _ = _link_episodes(onset_eps, by_patient)
-            onset_by_consult = {cid: ep["onset_date"] for cid, ep in linked.items()}
+            onset_by_consult = {cid: ep["onset_date"] for cid, ep in linked.items() if ep.get("onset_date")}
+            # 퇴원일도 같은 매칭으로 — 상담에 퇴원일이 안 내려온 건이 많다(명부가 사실).
+            discharge_by_consult = {cid: ep["discharged_at"] for cid, ep in linked.items()
+                                    if ep.get("discharged_at")}
     conn.close()
 
     out = []
@@ -3280,6 +3283,11 @@ def list_consultations(*, date_from=None, date_to=None,
             od = onset_by_consult.get(r["id"])
             if od:
                 d["onset_display"] = od
+        # 퇴원일도 마찬가지 — 상담에 없으면 명부 회차 값을 표시용으로(상담목록 '퇴원완료일' 칸)
+        if not (d.get("discharge_date") or "").strip():
+            dd = discharge_by_consult.get(r["id"])
+            if dd:
+                d["roster_discharged_at"] = dd
         out.append(d)
     return out
 
