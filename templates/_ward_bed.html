@@ -53,7 +53,7 @@
         <button type="button" class="btn btn-primary btn-xs rm-back-btn">↩ 복귀</button>
         {% else %}
         <button type="button" class="btn btn-secondary btn-xs rm-away-btn">🚑 외진</button>
-        <button type="button" class="btn btn-secondary btn-xs wd-dplan" data-cid="{{ c.id }}" data-name="{{ c.patient_name }}" data-due="{{ c.discharge_due or '' }}" title="퇴원 예정일만 잡아 둔다 — 재원에는 그대로 있다">예정</button>
+        <button type="button" class="btn btn-secondary btn-xs wd-dplan" data-cid="{{ c.id }}" data-name="{{ c.patient_name }}" data-due="{{ c.discharge_due or '' }}" title="퇴원 예정일만 잡아 둔다 — 재원에는 그대로 있다">퇴원예정</button>
         <button type="button" class="btn btn-secondary btn-xs rm-dis" title="최종 퇴원 — 재원에서 빠진다">퇴원</button>
         <button type="button" class="btn btn-secondary btn-xs rm-move">호실</button>
         {% endif %}

@@ -63,14 +63,14 @@ class AwayManagementTests(unittest.TestCase):
         self.assertEqual(models.away_record_stats([])['patient_rate'], 0)
 
     def test_away_badges_on_status_and_away_tabs(self):
-        """재원 현황 '외진 중'과 외진 환자 탭 머리에 총 외진·복귀·미복귀 배지가 같은 정의로 붙는다."""
+        """외진 환자 탭 머리에 총 외진·복귀·미복귀 배지. 재원 현황에서는 '외진 중'을 뺐다(2026-09-19 요청)."""
         counts = models.away_summary_counts()
         self.assertEqual((counts['patients'], counts['returned_patients'], counts['open_patients']), (2, 2, 2))
-        for url in ('/ward', '/ward?tab=away'):
-            html = self.client.get(url).get_data(as_text=True)
-            self.assertIn('총 외진 <b>2</b>명', html, url)
-            self.assertIn('복귀 <b>2</b>명', html, url)
-            self.assertIn('미복귀 <b>2</b>명', html, url)
+        html = self.client.get('/ward?tab=away').get_data(as_text=True)
+        self.assertIn('총 외진 <b>2</b>명', html)
+        self.assertIn('복귀 <b>2</b>명', html)
+        self.assertIn('미복귀 <b>2</b>명', html)
+        self.assertNotIn('id="sec-away"', self.client.get('/ward').get_data(as_text=True))
         # 담당의 필터는 '외진 중' 배지도 함께 좁힌다.
         with models.get_db() as conn:
             conn.execute("UPDATE consultations SET attending_doctor='김의사' WHERE id=1")
@@ -388,16 +388,17 @@ class AwayManagementTests(unittest.TestCase):
         self.assertIn('id="wd-filter-panel">', html)
         self.assertNotIn('id="wd-filter-panel" hidden', html)
         self.assertIn('aria-controls="wd-filter-panel" title="검색·필터 열기/닫기">🔍 검색·필터 ▴', html)
-        self.assertIn('id="wd-roster-body" hidden data-lazy="1"', html)
-        self.assertRegex(html, r'aria-controls="wd-roster-body">\s*명단 펼치기<')
-        # 조건을 주면 명단은 자동으로 펼쳐진다(기존 동작 유지)
-        html_q = self.client.get('/ward?q=테스트').get_data(as_text=True)
-        self.assertRegex(html_q, r'aria-controls="wd-roster-body">\s*명단 접기<')
-        # 외진 중 표: 경과 앞 연번 열 + 1부터 번호
-        away = html.split('id="sec-away"', 1)[1]
-        self.assertIn('<th class="wd-seq">연번</th><th>환자</th><th>호실</th><th>이송 일시</th><th>경과</th>', away)
-        self.assertIn('<td class="wd-seq">1</td>', away)
-        self.assertIn('<td class="wd-seq">2</td>', away)
+        # 병실 명단은 상시 펼침 — 접기 버튼도 지연 로딩도 없다(2026-09-19 요청)
+        self.assertIn('id="wd-roster-body"', html)
+        self.assertNotIn('data-lazy="1"', html)
+        self.assertNotIn('명단 펼치기', html)
+        # 외진 중은 재원 현황에서 빼고 외진 환자 탭에서만 본다
+        self.assertNotIn('id="sec-away"', html)
+        # 외진 표: 경과 앞 연번 열 + 1부터 번호
+        away = self.client.get('/ward?tab=away').get_data(as_text=True)
+        self.assertIn('<th>#</th><th>환자</th>', away)      # 외진 환자 탭 표의 연번 열
+        self.assertIn('>1</td>', away)
+        self.assertIn('>2</td>', away)
 
 
 if __name__ == '__main__':

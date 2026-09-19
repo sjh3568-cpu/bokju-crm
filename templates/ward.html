@@ -264,7 +264,7 @@
         <span class="wd-k-n">{{ kpis.recovery_ratio|pct2 }}<small>%</small></span>
         <span class="wd-k-l">회복기 비율 {% if kpis.recovery_ratio_ok %}<b>✓ 40%↑</b>{% else %}<b>⚠ 40%↓</b>{% endif %}</span>
     </a>
-    <a class="wd-k {% if not kpis.away %}zero{% elif kpis.away_overdue %}danger{% else %}warn{% endif %}" href="#sec-away">
+    <a class="wd-k {% if not kpis.away %}zero{% elif kpis.away_overdue %}danger{% else %}warn{% endif %}" href="/ward?tab=away">
         <span class="wd-k-n">{{ kpis.away }}</span>
         <span class="wd-k-l">🚑 외진 중{% if kpis.away_overdue %} <b>지연 {{ kpis.away_overdue }}</b>{% endif %}</span>
     </a>
@@ -346,9 +346,7 @@
             {% if view == 'list' %}<label class="wd-page-size">표시 <select onchange="location.href='{{ url_with(page=1, page_size='__N__') }}#sec-ward'.replace('__N__',this.value)">{% for n in (30,50,100,200) %}<option value="{{ n }}" {% if page_size == n %}selected{% endif %}>{{ n }}명</option>{% endfor %}</select></label>{% endif %}
             <button type="button" class="wd-roster-toggle wd-filter-toggle" id="wd-filter-toggle"
                     aria-expanded="true" aria-controls="wd-filter-panel" title="검색·필터 열기/닫기">🔍 검색·필터 ▴</button>
-            <button type="button" class="wd-roster-toggle" id="wd-roster-toggle"
-                    aria-expanded="{{ 'true' if roster_open else 'false' }}" aria-controls="wd-roster-body">
-                {{ '명단 접기' if roster_open else '명단 펼치기' }}</button>
+            
         </div>
     </div>
     {# 검색·필터는 펼친 채로 시작하고 명단은 접힌 채로 시작(2026-09-17 사용자 요청) — 조건을 고르면 명단이 자동으로 펼쳐진다 #}
@@ -389,55 +387,9 @@
         </form>
         <div class="wd-filter-foot"><span>입원일 기준 도달 전 D- · 당일 D-Day · 도달 후 D+ (±30일 포함). 표 제목을 누르면 정렬됩니다.</span><a href="{{ ward_csv_url }}" class="btn btn-secondary btn-sm">⬇ CSV</a></div>
     </div>
-    <div id="wd-roster-body" {% if not roster_open %}hidden data-lazy="1"{% endif %}>
-    {% if roster_open %}{% include "_ward_roster.html" %}{% endif %}
+    <div id="wd-roster-body">
+    {% include "_ward_roster.html" %}
     </div>
-</div>
-
-{# ─── ② 외진 중 (KPI '외진' 카드) ─── #}
-<div class="card wd-sec" id="sec-away">
-    <div class="wd-sec-head">
-        <h3>🚑 외진 중 <span class="wd-n">{{ away|length }}</span></h3>
-        {% if away_counts %}{% set away_badge_stats = away_counts %}{% include '_away_badges.html' %}{% endif %}
-        <span class="muted-sm">지금 나가 있는 환자만 — 이력·복귀율·기관별 통계는 <a href="/ward?tab=away">외진 환자</a></span>
-    </div>
-    {% if away %}
-    <div class="tbl-wrap">
-        <table class="tbl wd-tbl wd-away-tbl">
-            <thead><tr>
-                <th class="wd-seq">연번</th><th>환자</th><th>호실</th><th>이송 일시</th><th>경과</th><th>유형</th><th>이송기관</th><th>사유</th><th>복귀</th>
-            </tr></thead>
-            <tbody>
-                {% for c in away %}
-                {% set a = c.away %}
-                <tr class="{% if a.overdue %}wd-over{% endif %}">
-                    <td class="wd-seq">{{ loop.index }}</td>
-                    <td class="nowrap"><a href="/consult/{{ c.id }}">{{ c.patient_name }}</a></td>
-                    <td class="nowrap">{{ c.room_number or '-' }}</td>
-                    <td class="nowrap">{{ a.event_date|krdate if a.event_date else '-' }}{% if a.event_time %} {{ a.event_time[:5] }}{% endif %}</td>
-                    {# 경과는 이송 일시에서 계산된 값이라 그 옆에 둔다(2026-09-17). 지연 강조는 행 색·정렬(오래된 순)이 맡는다 #}
-                    <td class="nowrap">
-                        {% if a.days_out is not none %}
-                        <span class="wd-days {% if a.overdue %}over{% endif %}">{{ a.days_out }}일차</span>
-                        {% else %}<span class="muted-sm">일자 미기재</span>{% endif %}
-                    </td>
-                    <td class="nowrap">{{ a.event_type }}</td><td class="nowrap">{{ a.hospital or '-' }}</td><td class="wd-memo" title="{{ a.memo or '' }}">{{ a.memo or '-' }}</td>
-                    <td class="nowrap wd-back-cell">
-                        {% if a.expected_return_date %}<span class="wd-exp-badge" title="대시보드 입원 처리에서 [완료]하면 입원 완료로 집계">복귀 예정 {{ a.expected_return_date|krdate }}</span>{% endif %}
-                        <input type="date" class="wd-back-date" value="{{ a.expected_return_date or today_str }}"
-                               min="{{ a.event_date or '' }}" title="복귀 예정일">
-                        <input type="text" class="wd-back-room" value="{{ a.return_room or c.room_number or '' }}" placeholder="복귀 병실" maxlength="50" size="7" title="복귀 병실">
-                        <button type="button" class="btn {% if a.expected_return_date %}btn-secondary{% else %}btn-primary{% endif %} btn-xs wd-back" data-aevent="{{ a.id }}">{% if a.expected_return_date %}예정 변경{% else %}↩ 복귀 예정{% endif %}</button>
-                        {% if a.expected_return_date %}<button type="button" class="btn btn-primary btn-xs wd-back-done" data-aevent="{{ a.id }}" title="실제 복귀 — 날짜칸이 지난 날짜면 그날로, 아니면 오늘로 입원 완료 집계">완료</button><button type="button" class="btn btn-secondary btn-xs wd-back-clear" data-aevent="{{ a.id }}" data-name="{{ c.patient_name }}" title="잘못 누른 복귀 예정을 지운다 — 외진 중으로만 남는다">예정 취소</button>{% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    {% else %}
-    <div class="empty">미복귀 외진 기록이 없습니다.</div>
-    {% endif %}
 </div>
 
 {# ─── ③ 입원일 미확정 — 명부를 실제와 맞추는 입력 큐 ─── #}
@@ -916,37 +868,7 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
         filterBtn.textContent = filterPanel.hidden ? '🔍 검색·필터 ▾' : '🔍 검색·필터 ▴';
         if (!filterPanel.hidden) filterPanel.querySelector('.wd-q')?.focus();
     });
-    const rosterBtn = document.getElementById('wd-roster-toggle');
-    const rosterBody = document.getElementById('wd-roster-body');
-    const ROSTER_KEY = 'bokju:ward-roster-open';
-    const setRosterUi = () => {
-        rosterBtn.setAttribute('aria-expanded', String(!rosterBody.hidden));
-        rosterBtn.textContent = rosterBody.hidden ? '명단 펼치기' : '명단 접기';
-    };
-    const loadRoster = async () => {
-        // 명단(침상 카드 263장)은 처음 펼칠 때만 서버에서 받아 끼운다 — 접힌 채 여는 첫 화면이 가벼워진다.
-        if (!rosterBody.dataset.lazy) return;
-        rosterBody.innerHTML = '<div class="empty">명단을 불러오는 중…</div>';
-        const params = new URLSearchParams(location.search); params.set('partial', 'roster');
-        try {
-            const r = await fetch(location.pathname + '?' + params.toString(), { credentials: 'same-origin' });
-            if (!r.ok) throw new Error('HTTP ' + r.status);
-            rosterBody.innerHTML = await r.text();
-            delete rosterBody.dataset.lazy;
-            bindRoster(rosterBody);
-        } catch (e) { rosterBody.innerHTML = '<div class="empty">명단을 불러오지 못했습니다 (' + e.message + ') — 새로고침 후 다시 시도해 주세요.</div>'; }
-    };
-    if (rosterBtn && rosterBody) {
-        rosterBtn.addEventListener('click', () => {
-            rosterBody.hidden = !rosterBody.hidden;
-            setRosterUi();
-            try { if (rosterBody.hidden) sessionStorage.removeItem(ROSTER_KEY); else sessionStorage.setItem(ROSTER_KEY, '1'); } catch (e) {}
-            if (!rosterBody.hidden) loadRoster();
-        });
-        // 30초 부분 갱신으로 본문이 다시 그려져도 펼쳐 둔 명단은 그대로 펼친다
-        let remembered = false; try { remembered = sessionStorage.getItem(ROSTER_KEY) === '1'; } catch (e) {}
-        if (remembered && rosterBody.hidden) { rosterBody.hidden = false; setRosterUi(); loadRoster(); }
-    }
+    // 병실 명단은 상시 펼침이라 토글·지연 로딩이 없다(2026-09-19 요청). 서버가 처음부터 그려 준다.
     const openHashDetails = () => {
         const target = location.hash && document.querySelector(location.hash);
         if (target && target.tagName === 'DETAILS') target.open = true;

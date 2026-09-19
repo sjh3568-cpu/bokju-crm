@@ -989,7 +989,7 @@ def ward_view():
         discharge_from=discharge_from, discharge_to=discharge_to,
         age_min=age_min, age_max=age_max, stay_min=stay_min, stay_max=stay_max,
         column_filter=column_filter,
-        roster_open=bool(q or doctor or any_filter or request.args.get("view")),
+        roster_open=True,      # 병실 명단은 상시 펼침 — 재원관리의 본문이다(2026-09-19 요청)
         page=page, page_size=page_size, total_pages=total_pages,
         total_filtered=total_filtered, quality_report=quality_report,
         backup_status=backup_status,

@@ -476,8 +476,9 @@ class WardCensusTests(unittest.TestCase):
             self.assertEqual([r['patient_id'] for r in ctx['away']], [2])
             self.assertEqual(ctx['kpis']['away'], 1)
             self.assertEqual(ctx['away'][0]['away']['event_time'], '13:30')
-        html = self.client.get("/ward?view=list").get_data(as_text=True)
-        panel = html.split('id="sec-away"')[1].split('id="sec-discharged"')[0]
+        # 외진 중은 재원 현황에서 빼고 외진 환자 탭에서 본다(2026-09-19 요청)
+        self.assertNotIn('id="sec-away"', self.client.get("/ward?view=list").get_data(as_text=True))
+        panel = self.client.get("/ward?tab=away").get_data(as_text=True)
         self.assertIn('이미퇴원한사람', panel)
         self.assertIn('확인병원', panel)
         self.assertIn('13:30', panel)

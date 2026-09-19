@@ -70,7 +70,8 @@ class WardMovesTests(unittest.TestCase):
         self.assertEqual([r['patient_name'] for r in ward_moves.report({'date_from': '2026-06-01', 'date_to': '2026-06-30', 'ward': '5병동'})['rows']], ['퇴원자'])
         status = self.c.get('/ward').get_data(as_text=True)
         self.assertIn('href="/ward?tab=moves"', status)
-        self.assertNotIn('<th>보호자</th>', status.split('id="sec-away"')[1].split('</table>')[0])   # 외진 중 표에서 보호자 열 제거
+        away = self.c.get('/ward?tab=away').get_data(as_text=True)      # 외진은 외진 환자 탭에서(2026-09-19)
+        self.assertNotIn('<th>보호자</th>', away)                            # 외진 표에서 보호자 열 제거
         x = self.c.get('/ward/moves.xlsx?date_from=2026-06-01&date_to=2026-06-30')
         self.assertEqual(x.status_code, 200); self.assertIn('spreadsheetml', x.mimetype)
 
