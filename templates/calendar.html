@@ -77,6 +77,9 @@
 .dash-calendar.hide-todo .dash-cal-event.todo,.dash-calendar.hide-shared .dash-cal-event.shared{display:none}
 /* 칸에는 4건까지만, 나머지는 "+N건"으로 접고 날짜 패널에서 전체를 본다 (칸 안 스크롤 없음) */
 .dash-cal-events{max-height:none;overflow:visible}
+/* 접힌 게 없는 날의 '일정 N건 보기'는 옅게 — 달력이 버튼으로 시끄러워지지 않게 */
+.dash-cal-more.few{border-style:solid;border-color:#e2e8f0;color:#94a3b8;font-weight:600}
+.dash-cal-more.few:hover{border-color:var(--primary);color:var(--primary);background:#f1f5f9}
 .dash-cal-event.cal-folded{display:none!important}
 .dash-cal-more{display:block;width:100%;margin-top:2px;padding:3px 5px;border:1px dashed #94a3b8;border-radius:5px;background:#fff;color:#334155;font:700 .68rem inherit;cursor:pointer;text-align:center}
 .dash-cal-more:hover{background:#f1f5f9;border-color:var(--primary);color:var(--primary)}
@@ -117,7 +120,13 @@
             vis.slice(LIMIT).forEach(ev=>ev.classList.add('cal-folded'));
             let btn=cell.querySelector('.dash-cal-more');
             const extra=vis.length-LIMIT;
-            if(extra>0){if(!btn){btn=document.createElement('button');btn.type='button';btn.className='dash-cal-more';cell.querySelector('.dash-cal-events').after(btn);}btn.textContent='+'+extra+'건 더보기 (전체 '+vis.length+')';}
+            // 일정이 1~4건인 날도 우측 패널을 열 수 있게 버튼을 항상 둔다 (2026-09-19 요청).
+            // 접힌 게 있으면 '+N건 더보기', 없으면 '일정 N건 보기'로 글씨만 바꾼다.
+            if(vis.length){
+                if(!btn){btn=document.createElement('button');btn.type='button';btn.className='dash-cal-more';cell.querySelector('.dash-cal-events').after(btn);}
+                btn.textContent = extra>0 ? '+'+extra+'건 더보기 (전체 '+vis.length+')' : '일정 '+vis.length+'건 보기';
+                btn.classList.toggle('few', extra<=0);   // 접힌 게 없는 날은 옅게
+            }
             else if(btn)btn.remove();
         });
     }
@@ -149,8 +158,9 @@
     document.addEventListener('keydown',e=>{if(panel.hidden)return;if(e.key==='Escape')closeDay();else if(e.key==='ArrowLeft')shiftDay(-1);else if(e.key==='ArrowRight')shiftDay(1);});
     filters.forEach(b=>b.addEventListener('click',foldCells));
     foldCells();
+    // 칸의 빈 곳을 누르면 예전처럼 ToDo 등록. 우측 패널은 칸 아래 버튼으로 연다.
     calendar.addEventListener('click',function(e){
-        if(e.target.closest('.dash-cal-event'))return;
+        if(e.target.closest('.dash-cal-event')||e.target.closest('.dash-cal-more'))return;
         const cell=e.target.closest('td[data-date]');
         if(!cell)return;
         document.dispatchEvent(new CustomEvent('bokju:todo-open',{detail:{date:cell.dataset.date}}));
