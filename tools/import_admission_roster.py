@@ -451,7 +451,9 @@ def run(path, *, apply=False, create_missing=False, report=None, out=print, clos
         print()
         print("── 회차 → 환자·상담 백필 ──")
         # promote: 상담 상태가 미정인데 30일 내 명부 입원이 있으면 입원완료로 — 원무 기록이 기준(사용자 결정).
-        backfill_run(conn, apply=True, promote=True, close=close_discharged)
+        # out을 넘겨야 백필 문구도 적재 리포트에 함께 남는다 — 안 넘기면 컨테이너 stdout으로
+        # 새어 화면에서 사라지고, Windows 콘솔에서는 cp949로 터진다(2026-09-19).
+        backfill_run(conn, apply=True, promote=True, close=close_discharged, out=out)
 
     patients_seen = len(resolved)
     matched = sum(1 for p in resolved.values() if p is not None)

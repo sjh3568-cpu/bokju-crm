@@ -223,7 +223,25 @@ def close_discharged(conn, *, apply=False) -> dict:
     return {"stats": stats, "updates": updates, "residents": len(resident)}
 
 
-def run(conn, *, apply=False, overwrite_insurance=False, promote=False, quiet=False, close=False):
+def run(conn, *, apply=False, overwrite_insurance=False, promote=False, quiet=False, close=False,
+        out=None):
+    """회차에 들어간 값을 환자·상담 행으로 옮겨 적는다.
+
+    out: 진행 문구를 받는 콜백(기본은 stdout). 관리 화면(/admin/import)은 리스트에 모아
+    리포트로 보여주고, 명부 적재(import_admission_roster)는 자기 out으로 그대로 넘긴다.
+    기본값을 그냥 print로 두지 않는 것은, Windows 콘솔(cp949)에서 '—' 같은 글자가
+    UnicodeEncodeError로 터지기 때문이다 — 서버는 UTF-8이라 컨테이너 밖에서만 터진다.
+    """
+    def emit(line=""):
+        if out is not None:
+            out(line)
+            return
+        try:
+            print(line)
+        except UnicodeEncodeError:      # cp949 콘솔 — 못 쓰는 글자는 버리고 계속한다
+            enc = sys.stdout.encoding or "utf-8"
+            print(line.encode(enc, "replace").decode(enc, "replace"))
+
     ins = backfill_insurance(conn, overwrite=overwrite_insurance, apply=apply)
     adm = backfill_admission_dates(conn, apply=apply)
     pro = promote_undecided(conn, apply=apply) if promote else None
@@ -232,30 +250,30 @@ def run(conn, *, apply=False, overwrite_insurance=False, promote=False, quiet=Fa
         conn.commit()
     if quiet:
         return ins, adm, pro, clo
-    print("보험유형 — 명부에 보험이 있는 환자 %d명" % ins["patients"])
+    emit("보험유형 — 명부에 보험이 있는 환자 %d명" % ins["patients"])
     for k, n in ins["stats"].most_common():
-        print("  %-16s %5d명" % (k, n))
+        emit("  %-16s %5d명" % (k, n))
     if ins["values"]:
-        print("  " + ", ".join("%s %d" % kv for kv in ins["values"].most_common()))
-    print()
-    print("입원완료일 — 입원완료인데 날짜 없는 상담 %d건" % adm["targets"])
+        emit("  " + ", ".join("%s %d" % kv for kv in ins["values"].most_common()))
+    emit()
+    emit("입원완료일 — 입원완료인데 날짜 없는 상담 %d건" % adm["targets"])
     for k, n in adm["stats"].most_common():
-        print("  %-28s %5d건" % (k, n))
+        emit("  %-28s %5d건" % (k, n))
     for cid, cd, dates in adm["samples"].get("기간 밖", []):
-        print("    예) 상담 #%d %s — 명부 입원일 %s" % (cid, cd, ", ".join(d.isoformat() for d in dates)))
+        emit("    예) 상담 #%d %s — 명부 입원일 %s" % (cid, cd, ", ".join(d.isoformat() for d in dates)))
     if pro is not None:
-        print()
-        print("미정 → 입원완료 승격 — 상태 없는 상담 %d건 중" % pro["targets"])
+        emit()
+        emit("미정 → 입원완료 승격 — 상태 없는 상담 %d건 중" % pro["targets"])
         for k, n in pro["stats"].most_common():
-            print("  %-28s %5d건" % (k, n))
+            emit("  %-28s %5d건" % (k, n))
     if clo is not None:
-        print()
-        print("퇴원완료 전환 — 현재 재원 %d명은 제외" % clo["residents"])
+        emit()
+        emit("퇴원완료 전환 — 현재 재원 %d명은 제외" % clo["residents"])
         for k, n in clo["stats"].most_common():
-            print("  %-28s %5d건" % (k, n))
+            emit("  %-28s %5d건" % (k, n))
     if not apply:
-        print()
-        print("  ** dry-run이라 DB는 건드리지 않았다. 반영하려면 --apply **")
+        emit()
+        emit("  ** dry-run이라 DB는 건드리지 않았다. 반영하려면 --apply **")
     return ins, adm, pro, clo
 
 

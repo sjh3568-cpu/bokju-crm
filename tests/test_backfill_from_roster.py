@@ -106,5 +106,33 @@ class BackfillTests(unittest.TestCase):
         self.assertEqual(self.conn.execute("SELECT insurance_type FROM patients WHERE id=2").fetchone()[0], "건강보험")
 
 
+    def test_report_goes_to_the_out_callback_not_stdout(self):
+        """진행 문구는 out으로 — 관리 화면 리포트에 실려야 하고, cp949 콘솔에서 터지면 안 된다.
+
+        전에는 run()이 stdout으로 바로 찍어서 ① /admin/import 리포트에서 그 대목이 통째로
+        빠지고 ② Windows 콘솔(cp949)에서 '—' 때문에 UnicodeEncodeError로 죽었다(2026-09-19).
+        """
+        import io
+        from contextlib import redirect_stdout
+        lines = []
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            bf.run(self.conn, apply=True, promote=True, close=True, out=lines.append)
+        self.assertEqual(buf.getvalue(), "", "out을 주면 stdout으로는 아무것도 안 나간다")
+        text = chr(10).join(lines)
+        for expected in ("보험유형", "입원완료일", "미정 → 입원완료 승격", "퇴원완료 전환"):
+            self.assertIn(expected, text)
+
+    def test_stdout_survives_a_cp949_console(self):
+        """out 없이 CLI로 돌 때도 콘솔 인코딩 때문에 죽지 않는다 — 글자만 바뀌고 계속 간다."""
+        import io
+        from contextlib import redirect_stdout
+        buf = io.TextIOWrapper(io.BytesIO(), encoding="cp949", errors="strict", write_through=True)
+        with redirect_stdout(buf):
+            bf.run(self.conn, apply=False)           # '—'가 든 문구가 그대로 나간다
+        buf.seek(0)
+        self.assertIn("보험유형", buf.buffer.getvalue().decode("cp949", "replace"))
+
+
 if __name__ == '__main__':
     unittest.main()
