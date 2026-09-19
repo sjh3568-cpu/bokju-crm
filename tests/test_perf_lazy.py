@@ -1,4 +1,4 @@
-"""속도·크기 개선 (2026-09-15) — 상담 ids 조회, 재원 명단 지연 로딩, 침상 편집 폼 템플릿, 부분 갱신, gzip."""
+"""속도·크기 개선 (2026-09-15) — 상담 ids 조회, 재원 명단 조각 렌더, 침상 편집 폼 템플릿, 부분 갱신, gzip."""
 import gzip
 import os
 import tempfile
@@ -46,19 +46,25 @@ class PerfLazyTests(unittest.TestCase):
         many = list(range(1, 2000)) + self.cids
         self.assertEqual({c["id"] for c in models.list_consultations(ids=many, limit=100000)}, set(self.cids))
 
-    def test_ward_roster_is_lazy_by_default_and_served_as_partial(self):
+    def test_ward_roster_renders_inline_and_is_still_served_as_partial(self):
+        """병실 명단은 늘 펼쳐 둔다 — 재원관리의 본문이라 접을 이유가 없다(2026-09-19 요청, b23ea00).
+
+        전에는 접어 두고 열 때 조각으로 불러왔는데(지연 로딩), 그 단계가 사라졌다.
+        조각 경로는 30초 부분 갱신이 계속 쓰므로 그대로 살아 있어야 한다.
+        """
         html = self.client.get('/ward').get_data(as_text=True)
-        self.assertIn('id="wd-roster-body" hidden data-lazy="1"', html)
-        self.assertNotIn('class="rm-bed', html)                      # 접힌 명단은 보내지 않는다
+        self.assertIn('id="wd-roster-body">', html)
+        self.assertNotIn('data-lazy', html)                            # 접어 두지 않는다
+        self.assertIn('class="rm-bed', html)                           # 명단이 처음부터 들어 있다
         self.assertIn('id="rm-editor-tpl"', html)                      # 편집 폼 템플릿은 1벌만
         part = self.client.get('/ward?partial=roster&view=room').get_data(as_text=True)
         self.assertNotIn('<html', part)                                 # 조각만
         self.assertIn('class="rm-bed', part)
         self.assertNotIn('rm-inline-away', part)                        # 카드 안에 편집 폼 없음(data 속성만)
         self.assertIn('data-room="200호"', part)
-        # 필터·view가 있으면 예전처럼 바로 렌더 (검색 결과 화면)
+        # 필터·view를 줘도 같은 자리에 그대로 (검색 결과 화면)
         full = self.client.get('/ward?view=room').get_data(as_text=True)
-        self.assertIn('id="wd-roster-body" >', full)
+        self.assertIn('id="wd-roster-body">', full)
         self.assertIn('class="rm-bed', full)
 
     def test_gzip_for_large_html_only(self):
