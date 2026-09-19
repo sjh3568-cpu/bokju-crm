@@ -76,13 +76,14 @@ class DashboardWindowTests(unittest.TestCase):
         self.assertEqual(rows[0]["admission_kind"], "return")
 
     def test_kind_badges(self):
+        """구분은 상담실이 쓰는 말 그대로 — 입원예정·입원완료·외진복귀 (2026-09-19 요청)."""
         html = self.client.get("/").get_data(as_text=True)
-        self.assertIn('adm-kind-planned', html)   # 예정
-        self.assertIn('adm-kind-done', html)      # 완료
-        self.assertIn('adm-kind-return', html)    # 복귀
-        self.assertIn('>복귀</span>', html)
-        self.assertIn('>예정</span>', html)
-        self.assertIn('>완료</span>', html)
+        self.assertIn('adm-kind-planned', html)   # 입원예정
+        self.assertIn('adm-kind-done', html)      # 입원완료
+        self.assertIn('adm-kind-return', html)    # 외진복귀
+        self.assertIn('>외진복귀</span>', html)
+        self.assertIn('>입원예정</span>', html)
+        self.assertIn('>입원완료</span>', html)
 
     def test_origin_column_shows_source_hospital_or_home_and_away_type(self):
         """'모병원·외진' 칸 — 일반 입원은 모병원(집이면 자택), 복귀는 외진 종류·병원. 병명·입원목적은 안 겹친다."""

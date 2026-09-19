@@ -317,7 +317,7 @@ class AwayManagementTests(unittest.TestCase):
         self.assertEqual(self._today_admission_counts(), (1, 0, 1))
         data = models.dashboard_summary()
         row = next(x for x in data['admission_by_status']['planned'] if x.get('admission_kind') == 'return')
-        self.assertEqual((row['id'], row['away_event_id'], row['admission_bucket_label']), (2, 3, '복귀 예정'))
+        self.assertEqual((row['id'], row['away_event_id'], row['admission_bucket_label']), (2, 3, '복귀예정'))
         self.assertEqual(models.away_now([2])[0]['expected_return_date'], today)
         # 재원 관리 [복귀 예정]은 병실·기타 사항을 미리 받아 두기만 한다 — 아직 병실 이동 없음
         r = self.client.post('/api/admission-event/3/expected-return',

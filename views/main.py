@@ -373,7 +373,7 @@ def dashboard():
         admission_from, admission_to = admission_to, admission_from
     admission_scope = (request.args.get("admission_scope") or "all").strip()
     # discharged = 퇴원만 (2026-09-18: 입원 환자 현황 표에 퇴원 행을 같이 넣고 구분으로 거른다)
-    if admission_scope not in ("all", "planned", "completed", "discharged"):
+    if admission_scope not in ("all", "planned", "completed", "discharge_planned", "discharged"):
         admission_scope = "all"
     admission_weekdays = "월화수목금토일"
     def admission_date_label(value):

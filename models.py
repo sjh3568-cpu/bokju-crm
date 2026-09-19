@@ -4184,6 +4184,20 @@ def dashboard_summary(admission_lookup_from: str | None = None,
          admission_lookup_from, admission_lookup_to),
     ).fetchall()
 
+    # ── 퇴원예정 — 재원관리 [퇴원예정]으로 잡아 둔 날(discharge_due_date) ──
+    # 2026-09-19 요청: 입·퇴원 현황의 구분에 '퇴원예정'이 따로 서야 한다. 아직 안 나간 사람만
+    # 세운다 — 퇴원일이 적히는 순간 아래의 '퇴원완료' 행이 대신하므로 두 줄이 되지 않는다.
+    discharge_plan_rows = conn.execute(
+        """SELECT c.*, p.id AS patient_id, p.name AS patient_name, p.gender,
+               p.insurance_type, p.guardian_name, p.guardian_phone, p.blacklist
+          FROM consultations c JOIN patients p ON p.id = c.patient_id
+         WHERE COALESCE(c.admission_status, '') = '입원완료'
+           AND COALESCE(c.discharge_date, '') = ''
+           AND date(NULLIF(c.discharge_due_date, '')) BETWEEN date(?) AND date(?)
+         ORDER BY date(c.discharge_due_date), c.id""",
+        (admission_lookup_from, admission_lookup_to),
+    ).fetchall()
+
     # 외진 복귀(예정·완료) — 아래에서 admission_schedule에 상담 행과 같은 모양으로 합친다.
     ph_away = ",".join("?" * len(AWAY_EVENT_TYPES))
     return_rows = conn.execute(
@@ -4565,6 +4579,8 @@ def dashboard_summary(admission_lookup_from: str | None = None,
             continue
         d["admission_bucket"] = "completed" if is_completed else "planned"
         d["admission_bucket_label"] = "입원완료" if is_completed else "입원예정"
+        # 구분 배지의 색 — 라벨과 색을 한곳(여기)에서 정한다. 화면은 클래스만 붙인다.
+        d["admission_kind_class"] = "done" if is_completed else "planned"
         d["admission_date_kind"] = "실입원" if is_completed and actual_date else "예정"
         d["admission_display_date"] = display_date
         d["day_label"] = _day_label(display_date)
@@ -4601,7 +4617,8 @@ def dashboard_summary(admission_lookup_from: str | None = None,
             continue
         d["admission_kind"] = "return"
         d["admission_bucket"] = "completed" if returned else "planned"
-        d["admission_bucket_label"] = "외진 복귀" if returned else "복귀 예정"
+        d["admission_bucket_label"] = "외진복귀" if returned else "복귀예정"
+        d["admission_kind_class"] = "return" if returned else "return-planned"
         d["admission_date_kind"] = "복귀" if returned else "복귀예정"
         d["admission_display_date"] = display_date
         d["day_label"] = _day_label(display_date)
@@ -4710,15 +4727,21 @@ def dashboard_summary(admission_lookup_from: str | None = None,
             stay = _stay_days(admitted_at, day)
             d["admission_kind"] = "discharge"
             d["admission_bucket"] = "discharged"
-            d["admission_bucket_label"] = "퇴원"
+            d["admission_bucket_label"] = "퇴원완료"
+            d["admission_kind_class"] = "out"
             d["admission_date_kind"] = "퇴원"
+            # 회복기 인정 종료일(명부 재활종료일자)을 넘겨 나갔으면 비회복기 구간에서 퇴원한 것이다.
+            # 상담 기준 추정(recovery_status)보다 이쪽이 사실에 가까워 화면이 이 값을 먼저 쓴다.
+            rehab_end = str(event.get("rehab_end_date") or "")[:10]
+            d["discharge_phase"] = ("회복기" if day <= rehab_end else "비회복기") if rehab_end else None
             d["discharge_date"] = day
             d["discharge_admitted_at"] = admitted_at
             d["discharge_stay_days"] = stay
             d["discharge_source"] = d["flow_source_label"]
             # '모병원·외진' 칸을 퇴원 행에서는 행선지로 쓴다 — 어디로 나갔는지가 같은 자리의 사실.
             destination = (d.get("discharge_destination") or "").strip()
-            d["other_note"] = f"→ {destination}" if destination else ""
+            # 화살표 없이 행선지만 — 구분 배지가 이미 '퇴원완료'라 방향은 중복이다(2026-09-19 요청).
+            d["other_note"] = destination
             d["other_note_title"] = " · ".join(v for v in (
                 f"퇴원 {day}",
                 f"행선 {destination}" if destination else "",
@@ -4738,6 +4761,7 @@ def dashboard_summary(admission_lookup_from: str | None = None,
         d["admission_kind"] = "roster"
         d["admission_bucket"] = "completed"
         d["admission_bucket_label"] = "입원완료"
+        d["admission_kind_class"] = "done"
         d["admission_date_kind"] = "실입원"
         d["admission_status"] = d.get("admission_status") or "입원완료"
         d["actual_admission_date"] = day
@@ -4751,6 +4775,42 @@ def dashboard_summary(admission_lookup_from: str | None = None,
             f"근거 {d['flow_source_label']}" if d["flow_source_label"] else "",
         ) if v)
         roster_admissions.append(d)
+
+    # ── 퇴원예정 행 ──
+    # 퇴원 행과 같은 모양이되 날짜가 '나갈 날'이고 재원일수는 그날까지의 예상이다.
+    discharge_planned_schedule = []
+    for r in discharge_plan_rows:
+        d = _deserialize_consultation(dict(r))
+        due = str(d.get("discharge_due_date") or "")[:10]
+        if not due or not _in_admission_window(due):
+            continue
+        admitted_at = str(d.get("actual_admission_date") or d.get("admission_date") or "")[:10] or None
+        d["admission_kind"] = "discharge_plan"
+        d["admission_bucket"] = "discharge_planned"
+        d["admission_bucket_label"] = "퇴원예정"
+        d["admission_kind_class"] = "out-planned"
+        d["admission_date_kind"] = "퇴원예정"
+        d["admission_display_date"] = due
+        d["day_label"] = _day_label(due)
+        d["admission_time"] = ""
+        d["planned_admission_time"] = None
+        d["discharge_admitted_at"] = admitted_at
+        d["discharge_stay_days"] = _stay_days(admitted_at, due)
+        d["admission_disease_summary"] = _admission_disease_summary(d)
+        d["admission_organisms"] = _admission_organisms(d)
+        d["admission_care"] = _admission_care(d)
+        d["ward"] = _ward_label(d.get("room_number"))
+        destination = (d.get("discharge_destination") or "").strip()
+        d["other_note"] = destination
+        d["other_note_title"] = " · ".join(v for v in (
+            f"퇴원예정 {due}",
+            f"행선 {destination}" if destination else "",
+            f"입원 {admitted_at}" if admitted_at else "",
+            f"예상 재원 {d['discharge_stay_days']}일" if d["discharge_stay_days"] is not None else "",
+        ) if v)
+        # 재입원 배지는 이 입원보다 앞선 퇴원만 본다 — 퇴원 행과 같은 규칙.
+        d["prior_cutoff"] = admitted_at or due
+        discharge_planned_schedule.append(d)
 
     # 명부 입원일과 상담에 적힌 입원일이 다르면 명부 날짜만 남긴다 — 한 사람이 두 날 입원한 것처럼 보이면 안 된다.
     if roster_in_by_patient:
@@ -4768,9 +4828,9 @@ def dashboard_summary(admission_lookup_from: str | None = None,
 
     # 재입원 표시 — 이 입원보다 앞서 퇴원한 회차가 있으면 그 입원·퇴원일을 함께 보여준다
     # (2026-09-16 요청: 재입원 환자는 기존 입원일과 신규 입원일을 다 파악할 수 있게).
-    prior_by_patient = prior_admissions_by_patient(
-        d.get("patient_id") for d in admission_schedule + discharge_schedule)
-    for d in admission_schedule + discharge_schedule:
+    flow_rows_all = admission_schedule + discharge_schedule + discharge_planned_schedule
+    prior_by_patient = prior_admissions_by_patient(d.get("patient_id") for d in flow_rows_all)
+    for d in flow_rows_all:
         # 퇴원 행은 기준일이 퇴원일이라 자기 입원이 '이전 입원'으로 잡힌다 — prior_cutoff(자기 입원일)로 끊는다.
         cutoff = (d.get("prior_cutoff") or d.get("admission_display_date") or "9999-12-31")[:10]
         stays = [s for s in prior_by_patient.get(d.get("patient_id"), [])
@@ -4820,7 +4880,7 @@ def dashboard_summary(admission_lookup_from: str | None = None,
     # 조회 기간의 입원 + 퇴원을 한 표에. 구분(scope)은 이 표만 거른다 —
     # KPI·업무 큐가 쓰는 admission_window_schedule에는 퇴원 행을 섞지 않아 '오늘 입원' 수가 부풀지 않는다.
     selected_in_range = [
-        row for row in admission_schedule + discharge_schedule
+        row for row in admission_schedule + discharge_schedule + discharge_planned_schedule
         if admission_lookup_from <= (row.get("admission_display_date") or "") <= admission_lookup_to
     ]
 
@@ -4836,13 +4896,14 @@ def dashboard_summary(admission_lookup_from: str | None = None,
     # 구분 탭 숫자 — 기간만 적용한 목록으로 센다(탭을 눌러도 다른 탭 숫자가 그대로여야 한다).
     summary["admission_selected_counts"] = {
         scope: sum(1 for row in selected_in_range if _in_scope(row, scope))
-        for scope in ("all", "planned", "completed", "discharged")
+        for scope in ("all", "planned", "completed", "discharge_planned", "discharged")
     }
     admission_selected = [row for row in selected_in_range
                           if _in_scope(row, admission_lookup_scope)]
     admission_selected.sort(key=lambda row: (
         row.get("admission_display_date") or "",
-        {"planned": 0, "completed": 1, "discharged": 2}.get(row.get("admission_bucket"), 3),
+        {"planned": 0, "completed": 1, "discharge_planned": 2, "discharged": 3}.get(
+            row.get("admission_bucket"), 4),
         row.get("planned_admission_time") or row.get("consult_time") or "",
         row.get("id") or 0,
     ))
@@ -4867,10 +4928,13 @@ def dashboard_summary(admission_lookup_from: str | None = None,
     summary["admission_today"] = sum(
         1 for r in admission_schedule if r.get("admission_display_date") == today)
     # 조회 기간 표의 구분별 수 — 제목 옆 '입원 N · 퇴원 M' 표기와 탭 숫자에 쓴다.
+    # 제목 옆 '입원 N · 퇴원 M' — 퇴원예정은 아직 안 나간 사람이라 어느 쪽에도 넣지 않는다(탭 숫자로 본다).
     summary["admission_selected_in"] = sum(
-        1 for r in admission_selected if r.get("admission_bucket") != "discharged")
+        1 for r in admission_selected if r.get("admission_bucket") in ("planned", "completed"))
     summary["admission_selected_out"] = sum(
         1 for r in admission_selected if r.get("admission_bucket") == "discharged")
+    summary["admission_selected_out_planned"] = sum(
+        1 for r in admission_selected if r.get("admission_bucket") == "discharge_planned")
     summary["discharge_today"] = sum(
         1 for r in discharge_schedule if r.get("admission_display_date") == today)
     summary["admission_today_planned"] = sum(
@@ -7841,7 +7905,7 @@ def admission_flow_events(date_from, date_to):
         episodes = [dict(r) for r in conn.execute(
             """SELECT e.id AS episode_id, e.patient_id, e.consultation_id, e.roster_key,
                       e.admitted_at, e.discharged_at, e.room_number, e.ward,
-                      e.attending_doctor, e.diagnosis_name, e.care_type,
+                      e.attending_doctor, e.diagnosis_name, e.care_type, e.rehab_end_date,
                       e.discharge_destination, e.discharge_reason,
                       p.name AS patient_name, p.gender, p.birth_year, p.chart_no,
                       p.insurance_type, p.blacklist
@@ -7877,7 +7941,8 @@ def admission_flow_events(date_from, date_to):
             "episode_id": ep["episode_id"], "consultation_id": ep["consultation_id"],
             "room_number": ep["room_number"], "ward": ep["ward"],
             "attending_doctor": ep["attending_doctor"], "diagnosis_name": ep["diagnosis_name"],
-            "care_type": ep["care_type"], "discharge_destination": ep["discharge_destination"],
+            "care_type": ep["care_type"], "rehab_end_date": ep["rehab_end_date"],
+            "discharge_destination": ep["discharge_destination"],
             "discharge_reason": ep["discharge_reason"],
             "admitted_at": admitted, "discharged_at": discharged,
         }

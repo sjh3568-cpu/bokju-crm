@@ -46,16 +46,23 @@
             {% set rec = r|recovery_status %}
             {% set is_return = r.admission_kind == 'return' %}
             {% set is_discharge = r.admission_kind == 'discharge' %}
+            {% set is_discharge_plan = r.admission_kind == 'discharge_plan' %}
             {% set is_planned = r.admission_bucket == 'planned' %}
             <tr{% if r.admission_organisms %} class="has-organism" title="내성균 {{ r.admission_organisms|join(', ') }} — 격리·병실 배정 확인"{% endif %}>
-                <td class="dash-adm-when" title="{{ r.admission_display_date|krdate }}{% if r.planned_admission_time %} {{ r.planned_admission_time }}{% endif %}{% if is_discharge and r.discharge_stay_days is not none %} · 재원 {{ r.discharge_stay_days }}일{% endif %}">
-                    {# 퇴원 행은 예정시각이 없어 그 자리에 재원일수를 — 얼마나 있다 나갔는지 한눈에 읽힌다 #}
-                    <b>{{ (r.admission_display_date|krdate_short_wd)[3:] }}</b><small>{% if is_discharge %}{% if r.discharge_stay_days is not none %}{{ r.discharge_stay_days }}일{% else %} {% endif %}{% else %}{{ r.planned_admission_time or ' ' }}{% endif %}</small>
+                {# 일자 아래 줄은 '시간'만 — 재원일수가 이 자리에 오면 시간으로 오인된다(2026-09-19 요청).
+                   재원일수는 구분 칸 아래로 옮겼다. 시간을 모르는 행(실입원·퇴원)은 빈칸으로 둔다. #}
+                {% set when_time = r.planned_admission_time or r.admission_time or '' %}
+                <td class="dash-adm-when" title="{{ r.admission_display_date|krdate }}{% if when_time %} {{ when_time }}{% endif %}{% if r.discharge_stay_days is not none %} · {% if is_discharge %}재원 {{ r.discharge_stay_days }}일{% else %}예상 재원 {{ r.discharge_stay_days }}일{% endif %}{% endif %}">
+                    <b>{{ (r.admission_display_date|krdate_short_wd)[3:] }}</b><small>{{ when_time or ' ' }}</small>
                 </td>
+                {# 구분은 models가 정한 라벨·색을 그대로 쓴다(입원예정·입원완료·퇴원예정·퇴원완료·외진복귀·복귀예정).
+                   퇴원 행은 그 아래에 재원기간을 — 얼마나 있다 나갔는지가 퇴원 줄에서 가장 먼저 읽고 싶은 값이다. #}
                 <td class="dash-adm-state">
-                    {% set kind = '퇴원' if is_discharge else (('복귀예정' if is_planned else '복귀') if is_return else ('예정' if is_planned else '완료')) %}
-                    <span class="badge adm-kind adm-kind-{{ {'예정':'planned','완료':'done','복귀':'return','복귀예정':'return-planned','퇴원':'out'}[kind] }}"
-                          title="{% if is_discharge %}퇴원{% if r.discharge_source %} ({{ r.discharge_source }} 기준){% endif %}{% if r.other_note %} {{ r.other_note }}{% endif %}{% elif r.admission_kind == 'roster' %}입원완료 · 근거 {{ r.flow_source_label }}{% if '명부' not in r.flow_source_label %} — 원무 명부에 아직 없는 건입니다{% endif %}{% elif is_return %}외진 복귀{% if r.other_note %} — {{ r.other_note }}{% endif %} · {% if is_planned %}입원예정{% else %}입원완료{% endif %}{% else %}신규 입원 · {% if is_planned %}입원예정{% else %}입원완료{% endif %}{% endif %}">{{ kind }}</span>
+                    <span class="badge adm-kind adm-kind-{{ r.admission_kind_class or 'planned' }}"
+                          title="{% if is_discharge %}퇴원완료{% if r.discharge_source %} ({{ r.discharge_source }} 기준){% endif %}{% if r.other_note %} · 행선 {{ r.other_note }}{% endif %}{% elif is_discharge_plan %}퇴원예정 — 아직 나가지 않았습니다. 실제로 나가면 '퇴원완료'로 바뀝니다{% elif r.admission_kind == 'roster' %}입원완료 · 근거 {{ r.flow_source_label }}{% if '명부' not in r.flow_source_label %} — 원무 명부에 아직 없는 건입니다{% endif %}{% elif is_return %}외진 복귀{% if r.other_note %} — {{ r.other_note }}{% endif %} · {% if is_planned %}입원예정{% else %}입원완료{% endif %}{% else %}신규 입원 · {% if is_planned %}입원예정{% else %}입원완료{% endif %}{% endif %}">{{ r.admission_bucket_label or '-' }}</span>
+                    {% if r.discharge_stay_days is not none %}
+                    <small class="muted-sm adm-stay" title="입원 {{ r.discharge_admitted_at|krdate if r.discharge_admitted_at else '미상' }} ~ {{ r.admission_display_date|krdate }}{% if not is_discharge %} (예정){% endif %} · 입·퇴원일을 모두 세는 원무 명부와 같은 셈법">{% if is_discharge %}재원{% else %}예상{% endif %} {{ r.discharge_stay_days }}일</small>
+                    {% endif %}
                 </td>
                 <td class="dash-adm-who" title="{{ r.patient_name }}{% if r.blacklist %} · 블랙리스트{% endif %}{% if r.readmission %} · 재입원{% endif %}">
                     {% if r.blacklist %}<span class="bl-mark">블랙</span> {% endif %}{% if r.id %}<a href="/consult/{{ r.id }}">{{ r.patient_name }}</a>{% else %}<a href="/patients/{{ r.patient_id }}" title="상담 기록 없이 원무 명부로만 있는 환자 — 상담을 등록하면 외진·퇴원 관리를 할 수 있습니다">{{ r.patient_name }}</a><span class="badge adm-noconsult" title="상담일지가 없는 환자">상담없음</span>{% endif %}{% if r.readmission %}<span class="badge adm-readmit" title="재입원 — 이전 입원 {% for s in r.prior_stays %}{{ s.admitted_at|krdate_short }}~{{ s.discharged_at|krdate_short }}{% if s.room_number %} {{ s.room_number }}{% endif %}({{ s.source }}){% if not loop.last %} · {% endif %}{% endfor %}">재입원</span>{% endif %}
@@ -67,10 +74,14 @@
                 <td class="dash-adm-sev" title="{{ care.title or '상담일지에 적힌 상태·처치 항목이 없다' }}">{% for o in r.admission_organisms %}<span class="dash-org">{{ o }}</span>{% endfor %}{% for t in care.tags %}<i class="sev-tag sev-{{ t.key }}" title="{{ t.title }}">{{ t.label }}</i>{% endfor %}{% if not care.tags and not r.admission_organisms %}-{% endif %}</td>
                 <td class="dash-adm-onset" title="발병일{% if r.disease_onset %} {{ r.disease_onset }}{% endif %}">{{ r.disease_onset|krdate_short if r.disease_onset else '-' }}</td>
                 <td class="dash-adm-room" title="병실 {{ r.room_number or '미배정' }}"><b>{{ r.room_number or '-' }}</b></td>
-                <td class="dash-adm-rh" title="회복기 여부{% if rec.label %} — {{ rec.label }}{% if rec.source == 'auto' %} (* 병명·발병일로 자동 판정){% endif %}{% else %} — 판정 전{% endif %}">
-                    {% if rec.label == '회복기' %}<span class="badge rh-yes">회복기{% if rec.source == 'auto' %}*{% endif %}</span>
-                    {% elif rec.label == '비회복기' %}<span class="badge rh-no">비회복기{% if rec.source == 'auto' %}*{% endif %}</span>
-                    {% elif rec.label %}<span class="badge badge-pending">{{ rec.label }}</span>
+                {# 퇴원 행은 '나간 시점'이 무슨 구간이었는지가 사실이다 — 명부 재활종료일자(회복기 인정 종료일)를
+                   넘겨 나갔으면 비회복기 퇴원이다. 그 값이 없는 건만 상담 기준 추정(rec)으로 내려간다. #}
+                {% set rh_label = r.discharge_phase or rec.label %}
+                {% set rh_auto = rec.source == 'auto' and not r.discharge_phase %}
+                <td class="dash-adm-rh" title="{% if r.discharge_phase %}퇴원 시점 {{ r.discharge_phase }} — 원무 명부의 회복기 인정 종료일 기준{% elif rec.label %}회복기 여부 — {{ rec.label }}{% if rec.source == 'auto' %} (* 병명·발병일로 자동 판정){% endif %}{% else %}회복기 여부 — 판정 전{% endif %}">
+                    {% if rh_label == '회복기' %}<span class="badge rh-yes">회복기{% if rh_auto %}*{% endif %}</span>
+                    {% elif rh_label == '비회복기' %}<span class="badge rh-no">비회복기{% if rh_auto %}*{% endif %}</span>
+                    {% elif rh_label %}<span class="badge badge-pending">{{ rh_label }}</span>
                     {% else %}-{% endif %}
                 </td>
                 {% set doc_name, _sep, doc_code = (r.attending_doctor|doctor_short if r.attending_doctor else '').partition('(') %}
@@ -81,7 +92,8 @@
                 {% set ref_who = [r.referrer_person, r.referrer_institution]|select|join(' · ') %}
                 <td class="dash-adm-ref" title="{{ ref_main }}{% if ref_who %} · 소개 {{ ref_who }}{% endif %}"><span class="ref-main">{{ ref_main or '-' }}</span>{% if ref_who %}<small>{{ ref_who }}</small>{% endif %}</td>
                 <td class="dash-action-cell">
-                    {% if is_discharge %}<span class="adm-done adm-done-out" title="퇴원 {{ r.admission_display_date|krdate }}{% if r.discharge_source %} · {{ r.discharge_source }} 기준{% endif %}">퇴원</span>
+                    {% if is_discharge %}<span class="adm-done adm-done-out" title="퇴원완료 {{ r.admission_display_date|krdate }}{% if r.discharge_source %} · {{ r.discharge_source }} 기준{% endif %}">퇴원</span>
+                    {% elif is_discharge_plan %}<span class="adm-done adm-done-outplan" title="퇴원예정 {{ r.admission_display_date|krdate }} — 재원 관리에서 [퇴원]으로 확정합니다">예정</span>
                     {% elif is_return and is_planned %}
                     <select class="adm-action-sel" data-kind="return" data-aevent="{{ r.away_event_id }}" data-name="{{ r.patient_name }}" title="외진 복귀 처리 — 복귀(오늘 복귀 완료) / 취소(복귀 예정 취소). 날짜·병실 지정은 재원 관리 외진 중에서">
                         <option value="">처리</option>
@@ -508,8 +520,8 @@
 <section class="dash-grid2">
 <div class="card" id="admission-schedule">
     <div class="dash-section-head">
-        <h3>입·퇴원 현황 <small class="dash-adm-scope">{{ {'planned':'입원예정','completed':'실제 입원','discharged':'퇴원','all':'전체'}.get(admission_lookup_scope,'전체') }}</small></h3>
-        <span class="muted">{{ admission_lookup_label }} · 입원 {{ summary.admission_selected_in or 0 }} · 퇴원 {{ summary.admission_selected_out or 0 }}</span>
+        <h3>입·퇴원 현황 <small class="dash-adm-scope">{{ {'planned':'입원예정','completed':'입원완료','discharge_planned':'퇴원예정','discharged':'퇴원완료','all':'전체'}.get(admission_lookup_scope,'전체') }}</small></h3>
+        <span class="muted">{{ admission_lookup_label }} · 입원 {{ summary.admission_selected_in or 0 }} · 퇴원 {{ summary.admission_selected_out or 0 }}{% if summary.admission_selected_out_planned %} · 퇴원예정 {{ summary.admission_selected_out_planned }}{% endif %}</span>
     </div>
     <div class="dash-admission-datebar">
         {# 빠른 조회 버튼은 뺐다(2026-09-14) — 기간은 이 입력·빠른 달력으로 바꾼다. 구분은 아래 탭으로(2026-09-18) #}
@@ -527,7 +539,7 @@
            숫자는 기간만 적용해 세므로 탭을 눌러도 다른 탭 숫자가 바뀌지 않는다. #}
         {% set scope_counts = summary.admission_selected_counts or {} %}
         <div class="dash-scope-tabs" role="tablist" aria-label="입·퇴원 구분">
-            {% for key, label in [('all', '전체'), ('planned', '입원예정'), ('completed', '실제 입원'), ('discharged', '퇴원')] %}
+            {% for key, label in [('all', '전체'), ('planned', '입원예정'), ('completed', '입원완료'), ('discharge_planned', '퇴원예정'), ('discharged', '퇴원완료')] %}
             <a class="dash-scope-btn{% if admission_lookup_scope == key %} active{% endif %}"
                href="/?admission_from={{ admission_lookup_from }}&amp;admission_to={{ admission_lookup_to }}&amp;admission_scope={{ key }}#admission-schedule"
                aria-pressed="{{ 'true' if admission_lookup_scope == key else 'false' }}">{{ label }} <span>{{ scope_counts.get(key, 0) }}</span></a>
@@ -785,7 +797,10 @@
 .adm-kind-done { background:#dcfce7; color:#047857; }
 .adm-kind-return { background:#ede9fe; color:#6d28d9; }
 .adm-kind-return-planned { background:#fef3c7; color:#92400e; outline:1px dashed currentColor; outline-offset:-1px; }
-.adm-kind-out { background:#e2e8f0; color:#334155; }
+.adm-kind-out-planned { background:#ffedd5; color:#c2410c; outline:1px dashed currentColor; outline-offset:-1px; }
+.adm-kind-out { background:#fee2e2; color:#b91c1c; }
+.dash-adm-state .adm-stay { display:block; margin-top:2px; font-size:.72em; font-weight:700; letter-spacing:-.02em; }
+.dash-adm-tbl .adm-done-outplan { background:#ffedd5; color:#c2410c; }
 .adm-noconsult { margin-left:3px; padding:1px 4px; font-size:.66rem; font-weight:800; background:#fff; color:#92400e; outline:1px solid #fcd34d; vertical-align:middle; }
 .dash-adm-state .muted-sm { display:block; margin-top:2px; }
 .badge-callback { background:#fef3c7; color:#92400e; }

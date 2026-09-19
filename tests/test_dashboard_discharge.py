@@ -96,7 +96,7 @@ class DashboardDischargeTests(unittest.TestCase):
         row = rows[1]
         self.assertEqual(row["discharge_admitted_at"], d(-60))
         self.assertEqual(row["discharge_stay_days"], 60)   # 입원일·퇴원일 모두 셈(원무 명부 총일수와 같은 규칙, 2026-09-19)
-        self.assertEqual(row["other_note"], "→ 자택")
+        self.assertEqual(row["other_note"], "자택")   # 화살표 없이 행선지만 (2026-09-19 요청)
         self.assertEqual(row["ward"], "3병동")                    # 명부 병동
         self.assertEqual(row["attending_doctor"], "변현숙")        # 명부 주치의가 상담 값을 덮는다
         self.assertIn("재원 60일", row["other_note_title"])
@@ -143,9 +143,79 @@ class DashboardDischargeTests(unittest.TestCase):
         self.assertIn("명부만퇴원", html)
         self.assertIn("dash-scope-btn", html)        # 구분 탭
         self.assertIn("admission_scope=discharged", html)
-        self.assertIn(">60일</small>", html)          # 시간 자리에 재원일수
+        self.assertIn("재원 60일</small>", html)      # 재원기간은 구분 칸 아래(2026-09-19 요청)
+        self.assertNotIn(">60일</small>", html)       # 일시의 시간 자리에는 오지 않는다
         # 따로 있던 '오늘 퇴원' 소제목 표는 이 표에 합쳤다(KPI 카드의 오늘 입·퇴원 수는 그대로 둔다)
         self.assertNotIn("dash-discharge-today", html)
+
+    def test_bucket_labels_are_the_words_staff_use(self):
+        """구분은 입원예정·입원완료·퇴원예정·퇴원완료·외진복귀 그대로 (2026-09-19 요청)."""
+        _, rows = self.rows()
+        self.assertEqual((rows[1]["admission_bucket_label"], rows[1]["admission_kind_class"]),
+                         ("퇴원완료", "out"))
+        self.assertEqual((rows[3]["admission_bucket_label"], rows[3]["admission_kind_class"]),
+                         ("입원완료", "done"))
+
+    def test_planned_discharge_gets_its_own_row_and_scope(self):
+        """재원관리 [퇴원예정]으로 잡은 날이 그날의 '퇴원예정' 줄로 선다 — 아직 나가지 않은 사람."""
+        with models.get_db() as conn:
+            conn.execute("INSERT INTO patients (id,name,gender) VALUES (5,'퇴원예정','F')")
+            conn.execute("""INSERT INTO consultations (id, patient_id, consult_date, admission_status,
+                            actual_admission_date, discharge_due_date, attending_doctor, room_number, patient_age)
+                            VALUES (5, 5, ?, '입원완료', ?, ?, 'RM1 이성범 부장', '308호', 77)""",
+                         (d(-40), d(-9), d(1)))
+        data, rows = self.rows()
+        self.assertIn(5, rows)
+        row = rows[5]
+        self.assertEqual(row["admission_bucket"], "discharge_planned")
+        self.assertEqual((row["admission_bucket_label"], row["admission_kind_class"]),
+                         ("퇴원예정", "out-planned"))
+        self.assertEqual(row["admission_display_date"], d(1))
+        self.assertEqual(row["discharge_stay_days"], 11)       # 입원일~예정일, 양끝 포함
+        counts = data["summary"]["admission_selected_counts"]
+        self.assertEqual(counts["discharge_planned"], 1)
+        self.assertEqual(counts["discharged"], 2)              # 퇴원완료와 섞이지 않는다
+        # 제목 옆 '입원 N'에도 안 들어간다 — 아직 들어온 것도 나간 것도 아니다
+        self.assertEqual(data["summary"]["admission_selected_out_planned"], 1)
+        _, only = self.rows(scope="discharge_planned")
+        self.assertEqual(sorted(only), [5])
+
+    def test_planned_discharge_row_disappears_once_the_patient_actually_leaves(self):
+        """퇴원일이 적히면 '퇴원완료' 행이 대신한다 — 한 사람이 두 줄로 서지 않는다."""
+        with models.get_db() as conn:
+            conn.execute("INSERT INTO patients (id,name,gender) VALUES (5,'퇴원예정','F')")
+            conn.execute("""INSERT INTO consultations (id, patient_id, consult_date, admission_status,
+                            actual_admission_date, discharge_due_date, discharge_date, patient_age)
+                            VALUES (5, 5, ?, '퇴원완료', ?, ?, ?, 77)""",
+                         (d(-40), d(-9), d(1), d(0)))
+        _, rows = self.rows()
+        self.assertEqual(rows[5]["admission_bucket"], "discharged")
+        self.assertEqual(rows[5]["admission_display_date"], d(0))
+
+    def test_discharge_phase_uses_the_roster_recovery_end_date(self):
+        """회복기 인정 종료일을 넘겨 나갔으면 비회복기 퇴원이다(2026-09-19 요청)."""
+        with models.get_db() as conn:
+            conn.execute("UPDATE admission_episodes SET rehab_end_date=? WHERE roster_key=?",
+                         (d(-10), "0001|%s" % d(-60)))
+            conn.execute("UPDATE admission_episodes SET rehab_end_date=? WHERE roster_key=?",
+                         (d(10), "0002|%s" % d(-30)))
+        _, rows = self.rows()
+        self.assertEqual(rows[1]["discharge_phase"], "비회복기")   # 종료일 지나 퇴원
+        self.assertEqual(rows[2]["discharge_phase"], "회복기")     # 인정기간 안에 퇴원
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertIn("비회복기</span>", html)
+
+    def test_when_column_shows_time_not_days(self):
+        """일시 아래 줄은 시간 — 예정시각이 있으면 그 값이, 없으면 빈칸이 온다."""
+        with models.get_db() as conn:
+            conn.execute("INSERT INTO patients (id,name,gender) VALUES (6,'입원예정','M')")
+            conn.execute("""INSERT INTO consultations (id, patient_id, consult_date, admission_status,
+                            planned_admission_date, planned_admission_time, attending_doctor,
+                            room_number, patient_age)
+                            VALUES (6, 6, ?, '입원예정', ?, '10:30', 'RM1 이성범 부장', '309호', 66)""",
+                         (d(-3), d(1)))
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertIn(">10:30</small>", html)
 
     def test_today_discharge_kpi_counts_crm_only_discharges(self):
         """KPI '오늘 입원·퇴원'의 퇴원 수 — 명부 회차가 없는 CRM 퇴원도 센다.

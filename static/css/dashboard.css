@@ -329,7 +329,7 @@
    1400px 이하에서는 발병일 열을 접어야 주병명이 140px을 지킨다. 그 이상은 툴팁·배지·상세 화면으로. */
 .page-dashboard .dash-adm-tbl { width: 100%; table-layout: fixed; }
 .page-dashboard .dash-adm-tbl col.c-when { width: 84px; }   /* '09.14(월)' / '10:30' */
-.page-dashboard .dash-adm-tbl col.c-state { width: 64px; }  /* '예정' / '완료' / '복귀' / '복귀예정' */
+.page-dashboard .dash-adm-tbl col.c-state { width: 88px; }  /* '입원완료'·'퇴원예정' 배지 + 아래 '재원 123일' */
 .page-dashboard .dash-adm-tbl col.c-who { width: 104px; }   /* '김영희' + 블랙·재입원 배지 */
 .page-dashboard .dash-adm-tbl col.c-sex { width: 66px; }    /* '여/78' — 머리글 '성별/나이'가 한 줄에 들어가는 폭 */
 .page-dashboard .dash-adm-tbl col.c-hosp { width: 150px; }  /* '서울아산병원' / 복귀 '응급전원 · ○○병원'(길면 줄바꿈) */
@@ -377,7 +377,7 @@
 @media (max-width: 1500px) {
     /* 노트북(표 ≈1,250px) — 전체 폭이라 열을 접지 않고 폭·글자만 한 단계 줄인다 */
     .page-dashboard .dash-adm-tbl col.c-when { width: 74px; }
-    .page-dashboard .dash-adm-tbl col.c-state { width: 56px; }
+    .page-dashboard .dash-adm-tbl col.c-state { width: 78px; }
     .page-dashboard .dash-adm-tbl col.c-who { width: 92px; }
     .page-dashboard .dash-adm-tbl col.c-sex { width: 58px; }
     .page-dashboard .dash-adm-tbl col.c-hosp { width: 130px; }
@@ -397,7 +397,7 @@
     /* 1366px 노트북(표 ≈1,045px) — 고정 열을 한 번 더 조이고 유입경로도 고정해, 남는 폭은 주병명 하나가 갖는다(≈145px).
        그냥 두면 주병명·유입경로가 107px씩이라 병명이 서너 줄로 접혔다(2026-09-16 확인). 발병일 열(8번째)은 접는다 — 병명 툴팁에 있다. */
     .page-dashboard .dash-adm-tbl col.c-when { width: 70px; }
-    .page-dashboard .dash-adm-tbl col.c-state { width: 52px; }
+    .page-dashboard .dash-adm-tbl col.c-state { width: 72px; }
     .page-dashboard .dash-adm-tbl col.c-who { width: 82px; }
     .page-dashboard .dash-adm-tbl col.c-sex { width: 52px; }    /* 머리글 '성별/나이'는 두 줄로 */
     .page-dashboard .dash-adm-tbl col.c-hosp { width: 104px; }
