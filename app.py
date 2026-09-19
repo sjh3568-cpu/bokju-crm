@@ -379,7 +379,18 @@ def _require_announcement_acknowledgement():
 def _no_store(resp):
     """환자 정보 페이지가 브라우저 캐시에 남지 않도록.
     로그아웃 후 뒤로가기로 노출되는 것 방지.
+
+    단 /static/ 자산(css·js·이미지)에는 환자 정보가 없다. 여기까지 no-store를 걸면
+    화면을 넘길 때마다 같은 파일을 통째로 다시 받는다(대시보드 1회 420KB — 정적 파일은
+    direct_passthrough라 _gzip_response도 건너뛰어 압축조차 안 된다).
+    no-cache는 '저장하되 쓰기 전에 재검증'이라, 안 바뀌었으면 304로 본문 없이 끝난다.
+    max-age를 주지 않는 이유는 배포로 파일이 바뀌었을 때 옛 css가 남지 않게 하기 위함 —
+    ETag가 달라지면 그 자리에서 새로 받는다.
     """
+    if request.endpoint == "static":
+        resp.headers["Cache-Control"] = "no-cache"
+        resp.headers.pop("Pragma", None)
+        return _gzip_response(resp)
     resp.headers["Cache-Control"] = "no-store, private, must-revalidate"
     resp.headers["Pragma"] = "no-cache"
     if getattr(g, "clear_remember_cookie", False):
