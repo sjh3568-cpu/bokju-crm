@@ -152,8 +152,8 @@
                 {{ sort_th('status', '입원진행') }}
                 <th>발병일</th>
                 <th>입원완료일</th>
-                <th>퇴원완료일</th>
                 <th>입원기간 만료일</th>
+                <th>퇴원완료일</th>
                 {{ sort_th('counselor', '상담자') }}
             </tr>
             <tr class="filter-row{% if not active_filters %} detail-collapsed{% endif %}">
@@ -223,13 +223,13 @@
                 </select></th>
                 <th></th>
                 <th></th>
-                <th></th>
                 <th><select form="consult-filter" name="stay_period" class="cf-in cf-sm" title="입원기간 상태">
                     <option value="">전체</option>
                     <option value="ext1" {% if filters.stay_period == 'ext1' %}selected{% endif %}>연장 1회 (입원 1년 초과)</option>
                     <option value="ext2" {% if filters.stay_period == 'ext2' %}selected{% endif %}>연장 2회 (1년 6개월 초과)</option>
                     <option value="extended_6m" {% if filters.stay_period == 'extended_6m' %}selected{% endif %}>6개월 연장 중 (중추·1~1.5년)</option>
                 </select></th>
+                <th></th>
                 <th><select form="consult-filter" name="counselor" class="cf-in cf-sm">
                     <option value="">전체</option>
                     {% for c in COUNSELORS %}
@@ -361,11 +361,6 @@
                     {% if actual %}<span class="admission-date-main" title="{{ actual|krdate_short_wd }}">{{ actual|krdate_short }}</span>{% endif %}
                     {% if status == '퇴원완료' and r.discharge_date %}<span class="muted-sm" title="퇴원 {{ r.discharge_date|krdate_short_wd }}">퇴원 {{ r.discharge_date|krdate_short }}</span>{% endif %}
                 </td>
-                <td class="discharge-date-cell">
-                    {% set dis = r.discharge_date or r.roster_discharged_at %}
-                    {% if dis %}<span class="discharge-date-main" title="퇴원 {{ dis|krdate_short_wd }}{% if not r.discharge_date %} · 원무 명부 기준(상담에는 아직 안 적힘){% endif %}">{{ dis|krdate_short }}</span>{% if not r.discharge_date %}<span class="dc-roster" title="원무 입퇴원 명부에서 온 값">명부</span>{% endif %}
-                    {% else %}<span class="muted-sm">-</span>{% endif %}
-                </td>
                 <td class="admexp-cell">
                     {% set ax = r|admission_expiry %}
                     {% if ax %}
@@ -382,6 +377,11 @@
                         {% endif %}
                         </span>
                     {% endif %}
+                </td>
+                <td class="discharge-date-cell">
+                    {% set dis = r.discharge_date or r.roster_discharged_at %}
+                    {% if dis %}<span class="discharge-date-main" title="퇴원 {{ dis|krdate_short_wd }}{% if not r.discharge_date %} · 원무 명부 기준(상담에는 아직 안 적힘){% endif %}">{{ dis|krdate_short }}</span>{% if not r.discharge_date %}<span class="dc-roster" title="원무 입퇴원 명부에서 온 값">명부</span>{% endif %}
+                    {% else %}<span class="muted-sm">-</span>{% endif %}
                 </td>
                 <td class="nowrap">{{ r.counselor or '' }}</td>
             </tr>
@@ -504,8 +504,8 @@ body .container { max-width: none; padding: 0 12px; }
 .tbl-compact th:nth-child(15), .tbl-compact td:nth-child(15) { width:96px; }  /* 입원진행 (퇴원 임박 액션은 hover 팝오버) */
 .tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:66px; }  /* 발병일 */
 .tbl-compact th:nth-child(17), .tbl-compact td:nth-child(17) { width:78px; }  /* 입원완료일 */
-.tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:78px; }  /* 퇴원완료일 */
-.tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:118px; } /* 입원기간 만료일 — 가장 가까운 기한 1개 */
+.tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:118px; } /* 입원기간 만료일 — 가장 가까운 기한 1개 */
+.tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:78px; }  /* 퇴원완료일 */
 .tbl-compact th:nth-child(20), .tbl-compact td:nth-child(20) { width:50px; }  /* 상담자 */
 .guardian-cell .phone { margin-left:2px; font-feature-settings:"tnum"; }
 .guardian-cell .rel { display:inline-block; padding:0 3px; margin-right:1px; border-radius:6px; background:#f1f5f9; color:var(--text-light); font-size:0.78em; line-height:1.5; vertical-align:middle; }
@@ -526,8 +526,8 @@ body .container { max-width: none; padding: 0 12px; }
     .tbl-compact th:nth-child(15), .tbl-compact td:nth-child(15) { width:88px; }
     .tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:60px; }
     .tbl-compact th:nth-child(17), .tbl-compact td:nth-child(17) { width:70px; }
-    .tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:70px; }
-    .tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:108px; }
+    .tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:108px; }
+    .tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:70px; }
     .tbl-compact th:nth-child(20), .tbl-compact td:nth-child(20) { width:44px; }
 }
 
@@ -554,8 +554,8 @@ body .container { max-width: none; padding: 0 12px; }
     .tbl-compact th:nth-child(15), .tbl-compact td:nth-child(15) { width:104px; } /* 입원진행 */
     .tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:74px; }  /* 발병일 */
     .tbl-compact th:nth-child(17), .tbl-compact td:nth-child(17) { width:86px; }  /* 입원완료일 */
-    .tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:86px; }  /* 퇴원완료일 */
-    .tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:128px; } /* 입원기간 만료일 */
+    .tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:128px; } /* 입원기간 만료일 */
+    .tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:86px; }  /* 퇴원완료일 */
     .tbl-compact th:nth-child(20), .tbl-compact td:nth-child(20) { width:56px; }  /* 상담자 */
     .cf-in { font-size:0.9em; }
     .cf-sm { font-size:0.84em; }

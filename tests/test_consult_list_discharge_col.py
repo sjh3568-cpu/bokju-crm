@@ -79,6 +79,10 @@ class ConsultListDischargeColumnTests(unittest.TestCase):
         first = re.search(r"<tr[^>]*data-cid=.*?</tr>", body, re.S).group(0)
         n_body = len(re.findall(r"<td", first))
         self.assertEqual((n_head, n_filter, n_body), (20, 20, 20))
+        # 순서 — 발병일 · 입원완료일 · 입원기간 만료일 · 퇴원완료일 (2026-09-19 요청)
+        heads = re.findall(r"<th[^>]*>(.*?)</th>", rows[0], re.S)
+        text = [re.sub(r"<[^>]+>|[▲▼⇅\s]", "", h) for h in heads]
+        self.assertEqual(text[15:20], ["발병일", "입원완료일", "입원기간만료일", "퇴원완료일", "상담자"])
 
     def test_column_toggle_covers_the_new_column(self):
         html = self.client.get("/consultations").get_data(as_text=True)
