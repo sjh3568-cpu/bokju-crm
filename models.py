@@ -2928,6 +2928,37 @@ def data_quality_report():
     """).fetchall()]
     result.append({"title": "중복 재원", "description": "한 환자에게 미퇴원 입원 회차가 둘 이상입니다.",
                    "count": len(dupes), "rows": dupes})
+    # 퇴원일이 근거마다 다른 건 — 명부 퇴원일과 외진 나간 날이 어긋나면 화면에 퇴원이 두 번 잡힌다.
+    # 권현수 님(명부 9/15 · 외진 9/16)이 이 경우였다. 화면에서는 한 줄로 합쳐 보여주지만 값은 고쳐야 한다.
+    dis_mismatch = [dict(r) for r in conn.execute("""
+        SELECT c.id, c.patient_id, p.name AS patient_name, c.consult_date,
+               e.discharged_at AS roster_discharged_at, ae.event_date AS away_date,
+               ae.event_type AS away_type, ae.hospital AS away_hospital
+          FROM admission_events ae
+          JOIN consultations c ON c.id = ae.consultation_id
+          JOIN patients p ON p.id = c.patient_id
+          JOIN admission_episodes e ON e.patient_id = c.patient_id AND e.roster_key IS NOT NULL
+         WHERE ae.event_type IN ('응급전원', '모병원 외래치료')
+           AND COALESCE(ae.returned_at, '') = ''
+           AND COALESCE(e.discharged_at, '') <> '' AND COALESCE(ae.event_date, '') <> ''
+           AND date(e.discharged_at) <> date(ae.event_date)
+           AND ABS(julianday(date(e.discharged_at)) - julianday(date(ae.event_date))) <= 7
+         ORDER BY ae.event_date DESC LIMIT 100""").fetchall()]
+    result.append({"title": "퇴원일 불일치", "rows": dis_mismatch, "count": len(dis_mismatch),
+                   "description": "원무 명부 퇴원일과 외진 나간 날이 다릅니다 — 어느 쪽이 맞는지 정하고 한쪽을 고치세요."})
+    # 미복귀 외진인데 명부에 퇴원 기록이 없는 건 — 나간 사실이 원무에 아직 안 올라왔다는 뜻.
+    open_away = [dict(r) for r in conn.execute("""
+        SELECT c.id, c.patient_id, p.name AS patient_name, c.consult_date,
+               ae.event_date AS away_date, ae.event_type AS away_type, ae.hospital AS away_hospital
+          FROM admission_events ae
+          JOIN consultations c ON c.id = ae.consultation_id
+          JOIN patients p ON p.id = c.patient_id
+         WHERE ae.event_type IN ('응급전원', '모병원 외래치료')
+           AND COALESCE(ae.returned_at, '') = ''
+           AND date(ae.event_date) <= date('now', 'localtime', '-14 days')
+         ORDER BY ae.event_date LIMIT 100""").fetchall()]
+    result.append({"title": "장기 미복귀 외진", "rows": open_away, "count": len(open_away),
+                   "description": "나간 지 2주가 넘도록 복귀·전원 처리가 없습니다 — 복귀했는지 확인하세요."})
     # 명부 회차의 입원일이 roster_key(차트번호|입원일)와 다르면 상담값이 덮어쓴 것이다.
     # 기동 시 _repair_roster_admitted_at이 되돌리지만, 다시 생기면 여기서 바로 보인다(2026-09-15 박성락 건).
     mismatch = [dict(r) for r in conn.execute("""
@@ -4647,8 +4678,11 @@ def dashboard_summary(admission_lookup_from: str | None = None,
         return d
 
     def _stay_days(admitted, discharged):
+        """재원일수 — 입원일·퇴원일을 모두 센다. 원무 명부의 '총일수'와 같은 셈법이고
+        재원관리 입원·퇴원 이력도 이 규칙이다. 전에는 빼기만 해서 하루 적었고,
+        당일 입퇴원이 '0일'로 보였다(2026-09-19)."""
         start, end = _date_value(admitted), _date_value(discharged)
-        return (end - start).days if start and end and end >= start else None
+        return (end - start).days + 1 if start and end and end >= start else None
 
     discharge_schedule = []
     roster_admissions = []
@@ -7376,11 +7410,27 @@ _AWAY_RETURN_NOT_IN_ROSTER = """
 """
 
 
+# 외진 나감과 명부 퇴원이 이 날수 안에 있으면 한 사건으로 본다(2026-09-19: 명부 9/15 · 외진 9/16으로
+# 퇴원이 두 줄이 된 권현수 님 사례). 원무가 퇴원 처리한 날과 환자가 실제로 나간 날이 하루 이틀 어긋난다.
+AWAY_DISCHARGE_MERGE_DAYS = 3
+
 # 외진 나감 = 그날의 퇴원 (2026-09-18 사용자 정의: "외진 나갔으면 이것도 퇴원으로 잡혀야 한다").
 # 원무 명부도 외진 나간 날 퇴원, 복귀한 날 새 입원으로 적는다 — 복귀를 입원으로 세는 것과 대칭이다.
 # 명부가 이미 그날 퇴원으로 적었으면 두 번 세지 않는다. 타 병원 전원(return_outcome='전원')은
 # 종결 처리가 따로 회차를 닫으므로 여기서 빼서 중복을 막는다.
 _AWAY_DEPARTURE_NOT_IN_ROSTER = """
+    ae.event_type IN ('응급전원', '모병원 외래치료')
+    AND ae.event_date IS NOT NULL AND ae.event_date != ''
+    AND COALESCE(ae.return_outcome, '복귀') = '복귀'
+    AND NOT EXISTS (SELECT 1 FROM admission_episodes e
+                     WHERE e.patient_id = c.patient_id
+                       AND ABS(julianday(date(e.discharged_at)) - julianday(date(ae.event_date)))
+                           <= """ + str(AWAY_DISCHARGE_MERGE_DAYS) + """)
+"""
+
+# 목록용 — 같은 날 퇴원이 이미 있을 때만 뺀다. 하루 이틀 차이는 행을 만들고 화면에서 명부 줄과 합친다
+# (외진 기록이 사유·행선지까지 있는 더 구체적인 사실이라 그쪽 날짜를 남긴다, 2026-09-19).
+_AWAY_DEPARTURE_FOR_LIST = """
     ae.event_type IN ('응급전원', '모병원 외래치료')
     AND ae.event_date IS NOT NULL AND ae.event_date != ''
     AND COALESCE(ae.return_outcome, '복귀') = '복귀'
@@ -7396,6 +7446,14 @@ def _away_departure_count(conn, lo, hi):
              JOIN consultations c ON c.id = ae.consultation_id
             WHERE {_AWAY_DEPARTURE_NOT_IN_ROSTER} AND date(ae.event_date) BETWEEN ? AND ?""",
         (lo, hi)).fetchone()[0]
+
+
+def _iso_date(value):
+    """'YYYY-MM-DD' → date. 잘못된 값은 1900-01-01로 — 날짜 차이 비교용."""
+    try:
+        return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return date(1900, 1, 1)
 
 
 def away_departures_as_discharges(d_from, d_to):
@@ -7418,7 +7476,7 @@ def away_departures_as_discharges(d_from, d_to):
                         WHERE e2.patient_id = c.patient_id AND e2.roster_key IS NOT NULL
                           AND date(e2.admitted_at) <= date(ae.event_date)
                         ORDER BY e2.admitted_at DESC, e2.id DESC LIMIT 1)
-                 WHERE {_AWAY_DEPARTURE_NOT_IN_ROSTER} AND date(ae.event_date) BETWEEN ? AND ?
+                 WHERE {_AWAY_DEPARTURE_FOR_LIST} AND date(ae.event_date) BETWEEN ? AND ?
                  ORDER BY ae.event_date DESC, ae.id DESC""", (d_from, d_to)).fetchall()
     finally:
         conn.close()
@@ -7719,6 +7777,12 @@ def admission_flow_events(date_from, date_to):
     # 외진 나감 = 그날의 퇴원 (2026-09-18). 명부·CRM이 그날 퇴원으로 이미 적었으면 SQL에서 걸러진다.
     for a in away_departures_as_discharges(lo, hi):
         day = str(a["event_date"])[:10]
+        # 며칠 차이로 이미 만들어진 퇴원 줄이 있으면 그 줄을 지우고 외진 날짜로 다시 세운다 —
+        # 사유·행선지가 있는 외진 기록이 더 구체적인 사실이다(2026-09-19).
+        for (pid_k, day_k, kind_k) in [k for k in events
+                                       if k[0] == a["patient_id"] and k[2] == ADMISSION_EVENT_OUT and k[1] != day]:
+            if abs((_iso_date(day_k) - _iso_date(day)).days) <= AWAY_DISCHARGE_MERGE_DAYS:
+                events.pop((pid_k, day_k, kind_k), None)
         row = event(a["patient_id"], day, ADMISSION_EVENT_OUT, "외진")
         fill(row, {
             "patient_name": a["patient_name"], "gender": a["gender"], "birth_year": a["birth_year"],

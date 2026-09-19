@@ -95,11 +95,11 @@ class DashboardDischargeTests(unittest.TestCase):
         _, rows = self.rows()
         row = rows[1]
         self.assertEqual(row["discharge_admitted_at"], d(-60))
-        self.assertEqual(row["discharge_stay_days"], 59)
+        self.assertEqual(row["discharge_stay_days"], 60)   # 입원일·퇴원일 모두 셈(원무 명부 총일수와 같은 규칙, 2026-09-19)
         self.assertEqual(row["other_note"], "→ 자택")
         self.assertEqual(row["ward"], "3병동")                    # 명부 병동
         self.assertEqual(row["attending_doctor"], "변현숙")        # 명부 주치의가 상담 값을 덮는다
-        self.assertIn("재원 59일", row["other_note_title"])
+        self.assertIn("재원 60일", row["other_note_title"])
         self.assertEqual(row["id"], 1)                            # 상담 링크
         self.assertFalse(row["readmission"])                      # 자기 입원이 '이전 입원'으로 잡히지 않는다
 
@@ -108,7 +108,7 @@ class DashboardDischargeTests(unittest.TestCase):
         self.assertIn(2, rows)
         self.assertIsNone(rows[2].get("id"))
         self.assertEqual(rows[2]["patient_name"], "명부만퇴원")
-        self.assertEqual(rows[2]["discharge_stay_days"], 29)
+        self.assertEqual(rows[2]["discharge_stay_days"], 30)
         self.assertEqual(rows[2]["admission_disease_summary"], "고관절 골절")   # 명부 진단명
 
     def test_scope_tabs_count_and_filter(self):
@@ -143,7 +143,7 @@ class DashboardDischargeTests(unittest.TestCase):
         self.assertIn("명부만퇴원", html)
         self.assertIn("dash-scope-btn", html)        # 구분 탭
         self.assertIn("admission_scope=discharged", html)
-        self.assertIn(">59일</small>", html)          # 시간 자리에 재원일수
+        self.assertIn(">60일</small>", html)          # 시간 자리에 재원일수
         # 따로 있던 '오늘 퇴원' 소제목 표는 이 표에 합쳤다(KPI 카드의 오늘 입·퇴원 수는 그대로 둔다)
         self.assertNotIn("dash-discharge-today", html)
 
@@ -161,7 +161,7 @@ class DashboardDischargeTests(unittest.TestCase):
                          (d(-50), d(-20), d(0)))
         data, rows = self.rows()
         self.assertEqual(data["summary"]["discharge_today"], 1)
-        self.assertEqual(rows[4]["discharge_stay_days"], 20)
+        self.assertEqual(rows[4]["discharge_stay_days"], 21)
         html = self.client.get("/").get_data(as_text=True)
         self.assertIn("오늘퇴원", html)
 
