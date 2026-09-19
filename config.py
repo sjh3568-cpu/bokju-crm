@@ -4,7 +4,7 @@
 """
 
 # 화면에 표시하는 CRM 제품 정보. 릴리스 시 APP_VERSION을 갱신한다.
-APP_VERSION = "1.9.6"
+APP_VERSION = "1.9.7"
 APP_DEVELOPER = "미래전략실 신재희"
 
 # 상담실 IP전화(LG헬로비전 biz070) 통화 녹음 조회 사이트. 사이드바 도구 모음에서 새 탭으로 연다.
