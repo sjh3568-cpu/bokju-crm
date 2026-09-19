@@ -352,14 +352,18 @@ def upsert_episode(conn, pid, rec):
     return "신규"
 
 
-def main():
-    ap = argparse.ArgumentParser(description="원무 입퇴원 명부를 입원 회차로 적재")
-    ap.add_argument("path", help="입퇴재원환자현황 xlsx 경로")
-    ap.add_argument("--apply", action="store_true", help="실제로 DB에 쓴다 (없으면 dry-run)")
-    ap.add_argument("--create-missing", action="store_true",
-                    help="상담 기록이 없는 환자를 새로 만든다")
-    ap.add_argument("--report", help="행별 판정 결과를 CSV로 저장할 경로")
-    args = ap.parse_args()
+def run(path, *, apply=False, create_missing=False, report=None, out=print, close_discharged=False):
+    """명부 적재 본체 — CLI(main)와 관리 화면(/admin/import)이 같이 쓴다.
+
+    out: 진행 문구를 받는 콜백(기본 print). 화면에서는 리스트에 모아 리포트로 보여준다.
+    close_discharged: 백필 때 '퇴원완료 전환'까지 (현재 재원 제외).
+    """
+    class _Args:
+        pass
+    args = _Args()
+    args.path, args.apply, args.create_missing, args.report = path, apply, create_missing, report
+    def print(*parts):      # noqa: A001 — 본문의 print를 콜백으로 (빈 줄·여러 인자 모두 받는다)
+        out(" ".join(str(x) for x in parts))
 
     rows = read_roster(args.path)
     print("명부 행: %d" % len(rows))
@@ -434,7 +438,7 @@ def main():
         print()
         print("── 회차 → 환자·상담 백필 ──")
         # promote: 상담 상태가 미정인데 30일 내 명부 입원이 있으면 입원완료로 — 원무 기록이 기준(사용자 결정).
-        backfill_run(conn, apply=True, promote=True)
+        backfill_run(conn, apply=True, promote=True, close=close_discharged)
 
     patients_seen = len(resolved)
     matched = sum(1 for p in resolved.values() if p is not None)
@@ -462,6 +466,23 @@ def main():
                             rec.get("ward") or "", rec.get("room_number") or "",
                             pid if pid and pid > 0 else "", why, action])
         print("  리포트: %s" % args.report)
+    return {"rows": len(rows), "patients": patients_seen, "matched": matched,
+            "episodes": sum(1 for r in results if r[1] is not None),
+            "held": sum(1 for r in results if r[1] is None), "stats": dict(stats)}
+
+
+def main():
+    ap = argparse.ArgumentParser(description="원무 입퇴원 명부를 입원 회차로 적재")
+    ap.add_argument("path", help="입퇴재원환자현황 xlsx 경로")
+    ap.add_argument("--apply", action="store_true", help="실제로 DB에 쓴다 (없으면 dry-run)")
+    ap.add_argument("--create-missing", action="store_true",
+                    help="상담 기록이 없는 환자를 새로 만든다")
+    ap.add_argument("--report", help="행별 판정 결과를 CSV로 저장할 경로")
+    ap.add_argument("--close-discharged", action="store_true",
+                    help="백필 때 명부 퇴원자를 퇴원완료로 (현재 재원 제외)")
+    args = ap.parse_args()
+    run(args.path, apply=args.apply, create_missing=args.create_missing,
+        report=args.report, close_discharged=args.close_discharged)
 
 
 if __name__ == "__main__":

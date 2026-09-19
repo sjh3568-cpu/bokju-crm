@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.security import check_password_hash
 from flask import (
-    Flask, abort, flash, g, jsonify, redirect, render_template,
+    Flask, abort, current_app, flash, g, jsonify, redirect, render_template,
     request, send_file, session, url_for,
 )
 import backup
@@ -394,6 +394,19 @@ def _resolve_import_file(data_dir: Path, name: str):
     return candidate
 
 
+# 원무 입퇴원 명부 헤더 — 이 칸들이 첫 행에 있으면 상담내역이 아니라 명부로 본다.
+# 상담내역 시트와 파일 모양이 완전히 달라(시트 1장, 차트번호 기준) 적재 경로도 다르다.
+_ROSTER_HEADERS = ("차트번호", "수진자명", "입원일", "퇴원일")
+
+
+def _roster_sheet(ws):
+    """이 시트가 원무 명부면 True — 첫 행에서 필수 헤더 4개를 모두 찾는다."""
+    for row in ws.iter_rows(min_row=1, max_row=1, values_only=True):
+        head = {str(v).strip() for v in row if v not in (None, "")}
+        return all(h in head for h in _ROSTER_HEADERS)
+    return False
+
+
 @bp.route("/admin/import", methods=["GET", "POST"])
 @admin_required
 def admin_import():
@@ -420,6 +433,46 @@ def admin_import():
                              detail=f"업로드 {fname}", ip=request.remote_addr)
             flash(f"'{fname}' 을(를) 올렸습니다. 아래에서 시트를 고르고 미리보기를 누르세요.", "success")
             return redirect(url_for("admin.admin_import", file=fname))
+
+        if action in ("roster-dryrun", "roster-apply"):
+            # 원무 입퇴원 명부 — 회차 적재 후 보험유형·입원완료일·발병일 백필, 퇴원완료 전환까지 한 번에.
+            path = _resolve_import_file(data_dir, selected_file)
+            if not path:
+                flash("파일을 찾을 수 없습니다. 목록에서 다시 고르세요.", "error")
+                return redirect(url_for("admin.admin_import"))
+            apply_changes = action == "roster-apply"
+            close = bool(request.form.get("close_discharged"))
+            create_missing = bool(request.form.get("create_missing"))
+            lines = []
+            from tools.import_admission_roster import run as roster_run
+            from tools.backfill_onset import read_rows as onset_rows
+            try:
+                summary = roster_run(str(path), apply=apply_changes, create_missing=create_missing,
+                                     out=lines.append, close_discharged=close)
+            except Exception as exc:                      # 파일 형식 오류 등
+                current_app.logger.exception("명부 적재 실패")
+                flash(f"명부 적재 실패: {exc}", "error")
+                return redirect(url_for("admin.admin_import", file=path.name))
+            # 발병일 — 명부에 있으면 회차에 채운다(멱등, 다른 값은 안 건드림)
+            try:
+                filled = _roster_onset(path, onset_rows, apply_changes)
+                lines.append("")
+                lines.append(f"발병일 — 명부에서 읽은 {filled['read']}행 중 회차 {filled['matched']}건에 기록"
+                             f"{'' if apply_changes else ' (미리보기)'}")
+            except Exception as exc:
+                lines.append(f"발병일 처리 건너뜀: {exc}")
+            report_text = "\n".join(lines)
+            mode = "apply" if apply_changes else "dryrun"
+            models.log_audit(
+                user_id=g.user["id"], username=g.user["username"],
+                action="roster_import", target_type="file", target_id=None,
+                detail=f"{'적재' if apply_changes else '미리보기'} {path.name} "
+                       f"행 {summary['rows']} 확정 {summary['matched']}/{summary['patients']} "
+                       f"보류 {summary['held']}{' 퇴원전환' if close else ''}",
+                ip=request.remote_addr)
+            if apply_changes:
+                flash(f"명부 적재 완료 — 회차 {summary['episodes']}건, 보류 {summary['held']}행. "
+                      "직전 백업이 backups/pre_admission_roster_*.db 로 남았습니다.", "success")
 
         if action in ("dryrun", "apply"):
             path = _resolve_import_file(data_dir, selected_file)
@@ -465,6 +518,7 @@ def admin_import():
                       "success")
 
     files = sorted(data_dir.glob("*.xlsx"), key=lambda q: q.stat().st_mtime, reverse=True)
+    is_roster = False
     file_rows = [{"name": q.name, "size_kb": round(q.stat().st_size / 1024),
                   "mtime": datetime.fromtimestamp(q.stat().st_mtime).strftime("%Y-%m-%d %H:%M")} for q in files]
     sheets = []
@@ -472,6 +526,7 @@ def admin_import():
     if path:
         ei = _excel_import_module()
         wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        is_roster = any(_roster_sheet(ws) for ws in wb.worksheets)
         for ws in wb.worksheets:
             # 데이터 행 수(환자이름 또는 상담일자가 있는 행) — 미리보기 전에 규모를 보여준다
             n = 0
@@ -481,5 +536,32 @@ def admin_import():
             sheets.append({"name": ws.title, "rows": n, "waiting": ei.is_waiting_sheet(ws.title)})
         wb.close()
     return render_template("admin_import.html", files=file_rows, selected_file=path.name if path else "",
-                           sheets=sheets, selected_sheets=selected_sheets,
+                           sheets=sheets, selected_sheets=selected_sheets, is_roster=is_roster,
                            report_text=report_text, mode=mode, data_dir=str(data_dir))
+
+
+def _roster_onset(path, read_rows, apply_changes):
+    """명부의 발병일 열 → 회차 onset_date. backfill_onset과 같은 규칙(roster_key로 찾기, 멱등)."""
+    rows = read_rows(str(path))
+    matched = 0
+    conn = models.get_db()
+    try:
+        for r in rows:
+            onset, chart, adm = r.get("onset_date"), r.get("chart_no"), r.get("admitted_at")
+            if not onset or not chart or not adm:
+                continue
+            key = "%s|%s" % (chart, adm.isoformat() if hasattr(adm, "isoformat") else str(adm)[:10])
+            cur = conn.execute(
+                "SELECT id FROM admission_episodes WHERE roster_key = ? AND COALESCE(onset_date,'') = ''", (key,))
+            hit = cur.fetchone()
+            if not hit:
+                continue
+            matched += 1
+            if apply_changes:
+                conn.execute("UPDATE admission_episodes SET onset_date = ? WHERE id = ?",
+                             (onset.isoformat() if hasattr(onset, "isoformat") else str(onset)[:10], hit["id"]))
+        if apply_changes:
+            conn.commit()
+    finally:
+        conn.close()
+    return {"read": len(rows), "matched": matched}

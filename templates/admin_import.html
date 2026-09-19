@@ -42,7 +42,35 @@
     {% endif %}
 </div>
 
-{% if selected_file %}
+{% if selected_file and is_roster %}
+<div class="card">
+    <h3>② 원무 입퇴원 명부 — {{ selected_file }}</h3>
+    <p class="muted" style="line-height:1.6">
+        차트번호·수진자명·입원일·퇴원일이 있는 <b>원무 명부</b>로 읽습니다(상담내역 시트가 아닙니다).
+        입원 회차를 적재한 뒤 <b>보험유형·입원완료일·발병일</b>을 환자·상담 칸으로 옮겨 적습니다.
+        차트번호+입원일이 열쇠라 여러 번 돌려도 건수가 늘지 않습니다.
+    </p>
+    <form method="post">
+        <input type="hidden" name="file" value="{{ selected_file }}">
+        <label class="ei-sheet" style="display:block;margin-bottom:6px">
+            <input type="checkbox" name="close_discharged" value="1" checked>
+            <b>퇴원완료 전환</b>
+            <small>명부에 퇴원일이 있는 입원완료 상담을 퇴원완료로. <b>현재 재원 환자는 제외</b>하고,
+                   퇴원일을 모르는 건과 이미 퇴원일이 적힌 건은 그대로 둡니다.</small>
+        </label>
+        <label class="ei-sheet" style="display:block">
+            <input type="checkbox" name="create_missing" value="1">
+            <b>상담 없는 환자 새로 만들기</b>
+            <small>명부에만 있고 CRM에 상담이 없는 환자를 신규 등록합니다. 처음 적재가 아니면 보통 꺼 둡니다.</small>
+        </label>
+        <div class="ei-actions">
+            <button type="submit" name="action" value="roster-dryrun" class="btn btn-secondary">③ 미리보기 (DB 변경 없음)</button>
+            <button type="submit" name="action" value="roster-apply" class="btn btn-primary"
+                    onclick="return confirm('명부를 실제로 적재합니다. 미리보기 결과를 확인하셨나요?\n현재 재원 환자는 바뀌지 않습니다. 적재 직전 DB 백업이 남습니다.')">④ 적재</button>
+        </div>
+    </form>
+</div>
+{% elif selected_file %}
 <div class="card">
     <h3>② 시트 고르기 — {{ selected_file }}</h3>
     <form method="post" id="ei-form">

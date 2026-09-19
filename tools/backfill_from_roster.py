@@ -162,14 +162,76 @@ def promote_undecided(conn, *, apply=False) -> dict:
     return {"stats": stats, "targets": len(targets)}
 
 
-def run(conn, *, apply=False, overwrite_insurance=False, promote=False, quiet=False):
+def close_discharged(conn, *, apply=False) -> dict:
+    """명부에 퇴원일이 있는 입원완료 상담을 '퇴원완료'로 바꾸고 퇴원일을 적는다.
+
+    사용자 규칙(2026-09-19): "현재 재원환자 현황은 절대 변경하면 안 되고, 그 외 입원 환자는 다
+    퇴원완료로 본다." 그래서
+      ① 열린 명부 회차가 하나라도 있는 환자(= 지금 재원)는 통째로 건너뛴다. 옛 상담도 안 건드린다.
+      ② 퇴원일을 아는 건만 바꾼다 — 명부에 없어 퇴원일을 모르는 상담은 그대로 둔다(빈 퇴원일 방지).
+      ③ 상담에 이미 퇴원일이 적혀 있으면 손대지 않는다(화면에서 넣은 값 보호).
+    상담과 회차는 입원일로 맞춘다: 같은 날 입원한 회차 → 없으면 상담 입원일 직전의 가장 가까운 회차.
+    UPDATE 전용·멱등. 회차의 consultation_id는 건드리지 않는다.
+    """
+    stats = Counter()
+    resident = {r["patient_id"] for r in conn.execute(
+        "SELECT DISTINCT patient_id FROM admission_episodes "
+        "WHERE roster_key IS NOT NULL AND discharged_at IS NULL AND COALESCE(admitted_at,'') <> ''")}
+    closed = defaultdict(list)      # patient_id -> [(admitted_at, discharged_at)]
+    for r in conn.execute(
+            "SELECT patient_id, admitted_at, discharged_at FROM admission_episodes "
+            "WHERE roster_key IS NOT NULL AND COALESCE(discharged_at,'') <> '' "
+            "AND COALESCE(admitted_at,'') <> ''"):
+        a, d = to_date(r["admitted_at"]), to_date(r["discharged_at"])
+        if a and d:
+            closed[r["patient_id"]].append((a, d))
+    rows = conn.execute(
+        "SELECT id, patient_id, consult_date, actual_admission_date, admission_date, discharge_date "
+        "FROM consultations WHERE admission_status = '입원완료'").fetchall()
+    stats["대상 입원완료 상담"] = len(rows)
+    updates = []
+    for c in rows:
+        if (c["discharge_date"] or "").strip():
+            stats["이미 퇴원일 있음 — 건너뜀"] += 1
+            continue
+        if c["patient_id"] in resident:
+            stats["현재 재원 — 건드리지 않음"] += 1
+            continue
+        cands = closed.get(c["patient_id"]) or []
+        if not cands:
+            stats["명부에 퇴원 기록 없음 — 그대로 둠"] += 1
+            continue
+        adm = to_date(c["actual_admission_date"] or c["admission_date"] or "")
+        if adm:
+            same = [d for a, d in cands if a == adm]
+            pick = same[0] if same else None
+            if pick is None:
+                before = [(a, d) for a, d in cands if a <= adm]
+                pick = max(before, key=lambda t: t[0])[1] if before else None
+        else:
+            pick = max(cands, key=lambda t: t[0])[1]      # 입원일을 모르면 가장 최근 퇴원
+        if pick is None:
+            stats["입원일이 명부 회차와 안 맞음 — 보류"] += 1
+            continue
+        updates.append((c["id"], pick.isoformat()))
+        stats["퇴원완료로 전환"] += 1
+    if apply and updates:
+        conn.executemany(
+            "UPDATE consultations SET admission_status='퇴원완료', discharge_date=?, "
+            "updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            [(d, cid) for cid, d in updates])
+    return {"stats": stats, "updates": updates, "residents": len(resident)}
+
+
+def run(conn, *, apply=False, overwrite_insurance=False, promote=False, quiet=False, close=False):
     ins = backfill_insurance(conn, overwrite=overwrite_insurance, apply=apply)
     adm = backfill_admission_dates(conn, apply=apply)
     pro = promote_undecided(conn, apply=apply) if promote else None
+    clo = close_discharged(conn, apply=apply) if close else None
     if apply:
         conn.commit()
     if quiet:
-        return ins, adm, pro
+        return ins, adm, pro, clo
     print("보험유형 — 명부에 보험이 있는 환자 %d명" % ins["patients"])
     for k, n in ins["stats"].most_common():
         print("  %-16s %5d명" % (k, n))
@@ -186,10 +248,15 @@ def run(conn, *, apply=False, overwrite_insurance=False, promote=False, quiet=Fa
         print("미정 → 입원완료 승격 — 상태 없는 상담 %d건 중" % pro["targets"])
         for k, n in pro["stats"].most_common():
             print("  %-28s %5d건" % (k, n))
+    if clo is not None:
+        print()
+        print("퇴원완료 전환 — 현재 재원 %d명은 제외" % clo["residents"])
+        for k, n in clo["stats"].most_common():
+            print("  %-28s %5d건" % (k, n))
     if not apply:
         print()
         print("  ** dry-run이라 DB는 건드리지 않았다. 반영하려면 --apply **")
-    return ins, adm, pro
+    return ins, adm, pro, clo
 
 
 def main():
@@ -197,6 +264,8 @@ def main():
     ap.add_argument("--apply", action="store_true", help="실제로 DB에 쓴다 (없으면 dry-run)")
     ap.add_argument("--overwrite-insurance", action="store_true",
                     help="이미 값이 있는 보험유형도 최신 명부 값으로 덮는다")
+    ap.add_argument("--close-discharged", action="store_true",
+                    help="명부에 퇴원일이 있는 입원완료 상담을 퇴원완료로 (현재 재원 제외)")
     ap.add_argument("--promote-undecided", action="store_true",
                     help="상태 미정 상담에 30일 내 명부 입원이 있으면 입원완료로 바꾼다")
     args = ap.parse_args()
@@ -204,7 +273,7 @@ def main():
         backup_db("backfill_from_roster")
     conn = models.get_db()
     run(conn, apply=args.apply, overwrite_insurance=args.overwrite_insurance,
-        promote=args.promote_undecided)
+        promote=args.promote_undecided, close=args.close_discharged)
 
 
 if __name__ == "__main__":
