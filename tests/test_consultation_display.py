@@ -42,9 +42,11 @@ class ConsultationDisplayTests(unittest.TestCase):
         result = self.client.get('/consultations')
         self.assertEqual(result.status_code,200)
         html=result.get_data(as_text=True)
-        self.assertLess(html.index('<th>발병일</th>'),html.index('<th>입원완료일</th>'))
+        # 날짜 열 순서 — 발병 → 입원 → 입원기간 만료 → 퇴원 (2026-09-19 요청)
+        for a, b in (('발병일','입원완료일'), ('입원완료일','입원기간 만료일'), ('입원기간 만료일','퇴원완료일')):
+            self.assertLess(html.index(f'<th>{a}</th>'), html.index(f'<th>{b}</th>'), f'{a} < {b}')
         self.assertIn('26.01.02',html)
         parser=TableParser();parser.feed(html)
-        self.assertEqual(parser.rows[:3],[19,19,19])
+        self.assertEqual(parser.rows[:3],[20,20,20])   # 퇴원완료일 열이 늘어 19→20
 
 if __name__=='__main__': unittest.main()

@@ -70,7 +70,8 @@ class BackfillTests(unittest.TestCase):
         self.assertIsNone(self.conn.execute("SELECT actual_admission_date FROM consultations WHERE id=10").fetchone()[0])
 
     def test_apply_fills_and_is_idempotent(self):
-        ins, adm, pro = bf.run(self.conn, apply=True, quiet=True)
+        ins, adm, pro, clo = bf.run(self.conn, apply=True, quiet=True)
+        self.assertIsNone(clo, "close=False면 퇴원 전환은 손대지 않는다")
         self.assertIsNone(pro)
         self.assertEqual(ins["stats"]["채움"], 3)
         self.assertEqual(ins["stats"]["값 있어 보존"], 1)
@@ -83,21 +84,21 @@ class BackfillTests(unittest.TestCase):
         self.assertEqual(tuple(q("SELECT admitted_at, status FROM admission_episodes WHERE consultation_id=10")),
                          ("2026-03-09", "admitted"))
         self.assertIsNone(q("SELECT actual_admission_date FROM consultations WHERE id=30")[0])
-        ins2, adm2, _ = bf.run(self.conn, apply=True, quiet=True)
+        ins2, adm2, _, _ = bf.run(self.conn, apply=True, quiet=True)
         self.assertEqual(ins2["stats"]["이미 같음"], 3)
         self.assertEqual(adm2["targets"], 1)   # 환자3만 남는다
         # 승격 없이 돌렸으니 미정 상담은 그대로
         self.assertIsNone(q("SELECT admission_status FROM consultations WHERE id=40")[0])
 
     def test_promote_undecided(self):
-        _, _, pro = bf.run(self.conn, apply=True, promote=True, quiet=True)
+        _, _, pro, _ = bf.run(self.conn, apply=True, promote=True, quiet=True)
         self.assertEqual(pro["stats"]["입원완료로 승격"], 1)
         self.assertEqual(pro["stats"]["30일 넘어 입원 — 보류"], 1)
         q = lambda s: self.conn.execute(s).fetchone()
         self.assertEqual(tuple(q("SELECT admission_status, actual_admission_date FROM consultations WHERE id=40")),
                          ("입원완료", "2026-04-05"))
         self.assertIsNone(q("SELECT admission_status FROM consultations WHERE id=50")[0])
-        _, _, pro2 = bf.run(self.conn, apply=True, promote=True, quiet=True)
+        _, _, pro2, _ = bf.run(self.conn, apply=True, promote=True, quiet=True)
         self.assertEqual(pro2["stats"]["입원완료로 승격"], 0)   # 멱등
 
     def test_overwrite_insurance(self):
