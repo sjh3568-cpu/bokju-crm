@@ -7672,6 +7672,62 @@ def set_discharge_date(consultation_id, when, *, destination=None, reason=None):
         conn.close()
 
 
+def cancel_discharge(consultation_id, *, due_date=None):
+    """퇴원을 취소해 다시 재원으로 되돌린다 (2026-09-19 사용자 요청).
+
+    9월 21일 퇴원 예정인 환자가 오늘 퇴원으로 잘못 처리됐는데 되돌릴 길이 없었다.
+    상태만 '입원완료'로 바꾸는 것으로는 안 돌아온다 — 상담에 퇴원일이 남고 회차도 닫힌
+    채라 재원 판정(crm_discharge_sql)이 그 둘을 다 보고 계속 퇴원으로 친다. 그래서
+    상담 상태·퇴원일, 그 퇴원으로 닫힌 회차, 퇴원일 수정 표시를 함께 되돌린다.
+
+    '그 퇴원으로 닫힌 회차'는 퇴원일이 취소하려는 날짜와 같은 회차다. 같은 환자의 옛
+    입원(퇴원일이 다른 지난 회차)은 건드리지 않는다 — 한 번의 실수만 되돌린다.
+
+    discharge_edited는 0으로 지운다. 취소는 'CRM에 잘못 적혔다'는 뜻이므로 다음 명부
+    적재가 원무의 실제 퇴원일(예: 9/21)을 가져올 수 있어야 한다. 1로 두면 그 퇴원이
+    영원히 막힌다.
+
+    due_date를 주면 퇴원예정일로 함께 적는다 — 되돌리는 이유가 대개 '아직 예정'이라서다.
+    """
+    conn = get_db()
+    try:
+        with conn:
+            con = conn.execute("SELECT * FROM consultations WHERE id = ?", (consultation_id,)).fetchone()
+            if not con:
+                raise ValueError("상담을 찾을 수 없습니다.")
+            if (con["admission_status"] or "").strip() != "퇴원완료":
+                raise ValueError("퇴원완료인 상담만 되돌릴 수 있습니다.")
+            prev = str(con["discharge_date"] or "")[:10]
+            due = None
+            if due_date:
+                try:
+                    due = datetime.strptime(str(due_date)[:10], "%Y-%m-%d").date().isoformat()
+                except ValueError:
+                    raise ValueError("퇴원예정일 형식 오류 (YYYY-MM-DD)")
+            conn.execute(
+                "UPDATE consultations SET admission_status='입원완료', discharge_date=NULL, "
+                "discharge_destination=NULL, discharge_reason=NULL, "
+                "discharge_due_date=COALESCE(?, discharge_due_date), updated_at=CURRENT_TIMESTAMP "
+                "WHERE id=?", (due, consultation_id))
+            rows = [dict(r) for r in conn.execute(
+                "SELECT id, discharged_at, consultation_id FROM admission_episodes "
+                "WHERE patient_id = ? AND COALESCE(discharged_at,'') <> ''", (con["patient_id"],))]
+            if prev:
+                targets = [r["id"] for r in rows if str(r["discharged_at"])[:10] == prev]
+            else:
+                # 퇴원일이 안 적힌 옛 기록 — 날짜로 짚을 수 없으니 이 상담이 데리고 있는 회차만 연다
+                targets = [r["id"] for r in rows if r["consultation_id"] == consultation_id]
+            for eid in targets:
+                conn.execute(
+                    "UPDATE admission_episodes SET discharged_at=NULL, status='admitted', "
+                    "discharge_destination=NULL, discharge_reason=NULL, discharge_edited=0, "
+                    "updated_at=CURRENT_TIMESTAMP WHERE id=?", (eid,))
+            return {"consultation_id": consultation_id, "cancelled_date": prev or None,
+                    "episodes": sorted(targets), "discharge_due_date": due}
+    finally:
+        conn.close()
+
+
 def close_roster_episode(episode_id, *, discharged_at, destination=None, reason=None):
     """CRM에서 퇴원(또는 타 병원 전원) 처리한 환자의 원무 명부 회차를 닫는다.
 

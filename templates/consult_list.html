@@ -338,6 +338,9 @@
                         <button type="button" class="dc-btn dc-fix" data-act="fix-date" data-cid="{{ r.id }}"
                                 data-cur="{{ r.discharge_date or r.roster_discharged_at or '' }}"
                                 title="퇴원일 수정 — 여기 값이 기준입니다(원무 명부를 다시 올려도 안 바뀝니다)">날짜 수정</button>
+                        <button type="button" class="dc-btn dc-undo" data-act="cancel" data-cid="{{ r.id }}"
+                                data-cur="{{ r.discharge_date or r.roster_discharged_at or '' }}"
+                                title="퇴원 취소 — 잘못 처리한 퇴원을 되돌려 다시 재원으로 올립니다">퇴원 취소</button>
                     {% else %}
                         <select class="status-select badge-select st-{{ {'미정':'pending','입원보류':'hold','입원취소':'cancelled','입원완료':'completed'}.get(status,'pending') }}"
                                 data-cid="{{ r.id }}" data-current="{{ status }}" title="입원 진행 인라인 변경">
@@ -876,6 +879,8 @@ body .container { max-width: none; padding: 0 12px; }
 .discharge-date-main { display:block; white-space:nowrap; color:var(--text); }
 .status-cell .dc-fix { margin-left:3px; padding:0 5px; border:1px solid #d1d5db; border-radius:5px; background:#fff; color:#374151; font:700 .72em inherit; cursor:pointer; }
 .status-cell .dc-fix:hover { border-color:#b91c1c; color:#b91c1c; }
+.status-cell .dc-undo { margin-left:3px; padding:0 5px; border:1px solid #d1d5db; border-radius:5px; background:#fff; color:#374151; font:700 .72em inherit; cursor:pointer; }
+.status-cell .dc-undo:hover { border-color:#1d4ed8; color:#1d4ed8; }
 .discharge-date-cell .dc-roster { display:inline-block; margin-top:1px; padding:0 4px; border-radius:5px; background:#eef2f7; color:#64748b; font-size:.76em; font-weight:700; }
 .admexp-kind { display:inline-block; padding:1px 4px; border-radius:7px; font-weight:700; white-space:nowrap; }
 .admexp-kind.billing { background:#dcfce7; color:#166534; }
@@ -1111,10 +1116,15 @@ body .container { max-width: none; padding: 0 12px; }
             let body;
             if (act === 'fix-date') {
                 const cur = btn.dataset.cur || today;
-                const d = prompt('실제 퇴원일자로 고칩니다 (YYYY-MM-DD)
-여기 값이 기준입니다 — 원무 명부를 다시 올려도 되돌아가지 않습니다.', cur);
+                const d = prompt('실제 퇴원일자로 고칩니다 (YYYY-MM-DD)\n여기 값이 기준입니다 — 원무 명부를 다시 올려도 되돌아가지 않습니다.', cur);
                 if (!d || !d.trim()) return;
                 body = { action: 'fix-date', discharge_date: d.trim() };
+            } else if (act === 'cancel') {
+                const cur = btn.dataset.cur || '';
+                if (!confirm(`퇴원(${cur || '날짜 없음'})을 취소하고 다시 재원으로 되돌립니다.\n회차에 적힌 퇴원일도 함께 지워집니다. 계속할까요?`)) return;
+                const due = prompt('퇴원예정일을 아시면 입력하세요 (YYYY-MM-DD). 모르면 비워 두세요.', '');
+                body = { action: 'cancel' };
+                if (due && due.trim()) body.discharge_due_date = due.trim();
             } else if (act === 'complete') {
                 const d = prompt('실제 퇴원일자를 입력하세요 (YYYY-MM-DD)', today);
                 if (!d || !d.trim()) return;

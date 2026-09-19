@@ -1410,8 +1410,10 @@ def api_consult_status(cid):
 @bp.route("/api/consult/<int:cid>/discharge", methods=["POST"])
 @login_required
 def api_consult_discharge(cid):
-    """입원완료 상담의 퇴원 처리 — action=complete(퇴원완료) | extend(입원연장).
+    """입원완료 상담의 퇴원 처리 — action=complete | fix-date | cancel | extend.
     complete: admission_status='퇴원완료' + discharge_date 저장.
+    fix-date: 이미 퇴원완료인 건의 퇴원일만 정정.
+    cancel:   잘못 처리한 퇴원을 되돌려 다시 재원으로. 퇴원예정일도 함께 적을 수 있다.
     extend:   discharge_due_date(새 퇴원예정일) 저장. 상태는 입원완료 유지.
     """
     existing = models.get_consultation(cid)
@@ -1448,6 +1450,21 @@ def api_consult_discharge(cid):
             user_id=g.user["id"], username=g.user["username"],
             action="update_discharge", target_type="consultation", target_id=cid,
             detail=f"퇴원일 수정 → {res['discharge_date']}", ip=request.remote_addr)
+        return jsonify({"ok": True, **res})
+    elif action == "cancel":
+        # 퇴원을 잘못 눌렀을 때 되돌린다 (2026-09-19 요청: 9/21 퇴원 예정인 분이 오늘 퇴원으로 잡혔다).
+        # 상태만 되돌리면 상담의 퇴원일과 닫힌 회차가 남아 재원 명단에 안 돌아온다 — models가 셋을 함께 연다.
+        try:
+            res = models.cancel_discharge(cid, due_date=payload.get("discharge_due_date"))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        _sync_lifecycle_stage(existing["patient_id"], "입원완료")
+        models.log_audit(
+            user_id=g.user["id"], username=g.user["username"],
+            action="update_discharge", target_type="consultation", target_id=cid,
+            detail=f"퇴원 취소 ({res['cancelled_date'] or '날짜 없음'}) → 재원"
+                   + (f", 퇴원예정일 {res['discharge_due_date']}" if res["discharge_due_date"] else ""),
+            ip=request.remote_addr)
         return jsonify({"ok": True, **res})
     elif action == "extend":
         due = (payload.get("discharge_due_date") or "").strip()
