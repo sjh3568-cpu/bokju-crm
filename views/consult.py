@@ -1435,6 +1435,20 @@ def api_consult_discharge(cid):
         fields["discharge_date"] = ddate
         fields["discharge_destination"] = (payload.get("discharge_destination") or "").strip()[:120]
         fields["discharge_reason"] = (payload.get("discharge_reason") or "").strip()[:500]
+    elif action == "fix-date":
+        # 이미 퇴원완료인 건의 날짜만 고친다 — 상담과 회차를 함께(CRM이 기준, 2026-09-19).
+        ddate = (payload.get("discharge_date") or "").strip()
+        try:
+            res = models.set_discharge_date(cid, ddate,
+                                            destination=payload.get("discharge_destination"),
+                                            reason=payload.get("discharge_reason"))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        models.log_audit(
+            user_id=g.user["id"], username=g.user["username"],
+            action="update_discharge", target_type="consultation", target_id=cid,
+            detail=f"퇴원일 수정 → {res['discharge_date']}", ip=request.remote_addr)
+        return jsonify({"ok": True, **res})
     elif action == "extend":
         due = (payload.get("discharge_due_date") or "").strip()
         if not due:

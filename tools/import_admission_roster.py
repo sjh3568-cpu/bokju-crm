@@ -331,6 +331,19 @@ def upsert_episode(conn, pid, rec):
         (str(rec.get("care_type")).strip() if rec.get("care_type") else None),
     )
     if existing:
+        # 사람이 CRM에서 고친 퇴원일은 되돌리지 않는다 — 명부는 처음 채울 때의 근거이고,
+        # 그 뒤로는 CRM이 기준이다(2026-09-19 사용자 결정).
+        edited = conn.execute(
+            "SELECT COALESCE(discharge_edited, 0) FROM admission_episodes WHERE id = ?",
+            (existing[0],)).fetchone()[0]
+        if edited:
+            conn.execute(
+                "UPDATE admission_episodes SET status=?, admitted_at=?, "
+                "  room_number=?, ward=?, attending_doctor=?, insurance_type=?, "
+                "  diagnosis_code=?, diagnosis_name=?, care_type=?, "
+                "  updated_at=CURRENT_TIMESTAMP "
+                "WHERE id=?", (values[0], values[1]) + values[3:] + (existing[0],))
+            return "갱신(퇴원일 보존)"
         conn.execute(
             "UPDATE admission_episodes SET status=?, admitted_at=?, discharged_at=?, "
             "  room_number=?, ward=?, attending_doctor=?, insurance_type=?, "

@@ -980,6 +980,9 @@ def init_db():
         # 명부 1행 = 차트번호+입원일. 재적재해도 같은 회차를 덮어쓰도록 UNIQUE.
         # excel_import가 멱등이 아니라 중복이 섞였던 전례가 있어 키를 박아둔다.
         "roster_key": "TEXT",
+        # 사람이 CRM에서 고친 퇴원일 — 명부를 다시 적재해도 이 값은 되돌리지 않는다
+        # (2026-09-19 사용자 결정: 원무 명부는 처음 채울 때의 근거, 이후로는 CRM이 기준).
+        "discharge_edited": "INTEGER NOT NULL DEFAULT 0",
     })
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_episode_roster "
                  "ON admission_episodes(roster_key) WHERE roster_key IS NOT NULL")
@@ -7562,6 +7565,60 @@ def away_returns_as_admissions(d_from, d_to):
     finally:
         conn.close()
     return [dict(r) for r in rows]
+
+
+def set_discharge_date(consultation_id, when, *, destination=None, reason=None):
+    """퇴원일을 고친다 — 상담과 그 입원 회차를 함께. CRM이 기준이다(2026-09-19 사용자 결정).
+
+    원무 명부는 처음 채울 때의 근거일 뿐, 이후로는 CRM에 적힌 값이 사실이다. 그래서 고친 회차에
+    discharge_edited=1을 남겨 다음 명부 적재가 이 퇴원일을 되돌리지 못하게 한다.
+    상담에 붙은 회차와, 그 환자의 명부 회차 중 이 입원에 해당하는 것(입원일이 상담 입원일과 같거나
+    가장 가까운 직전 회차)을 함께 고친다.
+    """
+    try:
+        d = datetime.strptime(str(when or "")[:10], "%Y-%m-%d").date()
+    except ValueError:
+        raise ValueError("퇴원일 형식 오류 (YYYY-MM-DD)")
+    if d > date.today():
+        raise ValueError("퇴원일이 미래입니다.")
+    conn = get_db()
+    try:
+        with conn:
+            con = conn.execute("SELECT * FROM consultations WHERE id = ?", (consultation_id,)).fetchone()
+            if not con:
+                raise ValueError("상담을 찾을 수 없습니다.")
+            adm = (con["actual_admission_date"] or con["admission_date"] or "")[:10]
+            if adm and d.isoformat() < adm:
+                raise ValueError(f"퇴원일이 입원일({adm})보다 빠릅니다.")
+            conn.execute("UPDATE consultations SET discharge_date=?, admission_status='퇴원완료', "
+                         "discharge_destination=COALESCE(?, discharge_destination), "
+                         "discharge_reason=COALESCE(?, discharge_reason), updated_at=CURRENT_TIMESTAMP "
+                         "WHERE id=?",
+                         (d.isoformat(), (destination or "").strip() or None,
+                          (reason or "").strip() or None, consultation_id))
+            targets = [r["id"] for r in conn.execute(
+                "SELECT id FROM admission_episodes WHERE consultation_id = ?", (consultation_id,))]
+            # 명부 회차 — 이 입원에 해당하는 것 하나
+            rows = [dict(r) for r in conn.execute(
+                "SELECT id, admitted_at FROM admission_episodes WHERE patient_id = ? AND roster_key IS NOT NULL "
+                "AND COALESCE(admitted_at,'') <> ''", (con["patient_id"],))]
+            pick = None
+            if adm:
+                same = [r for r in rows if str(r["admitted_at"])[:10] == adm]
+                before = [r for r in rows if str(r["admitted_at"])[:10] <= d.isoformat()]
+                pick = same[0] if same else (max(before, key=lambda r: r["admitted_at"]) if before else None)
+            elif rows:
+                pick = max(rows, key=lambda r: r["admitted_at"])
+            if pick:
+                targets.append(pick["id"])
+            for eid in set(targets):
+                conn.execute("UPDATE admission_episodes SET discharged_at=?, status='discharged', "
+                             "discharge_edited=1, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                             (d.isoformat(), eid))
+            return {"consultation_id": consultation_id, "discharge_date": d.isoformat(),
+                    "episodes": sorted(set(targets))}
+    finally:
+        conn.close()
 
 
 def close_roster_episode(episode_id, *, discharged_at, destination=None, reason=None):

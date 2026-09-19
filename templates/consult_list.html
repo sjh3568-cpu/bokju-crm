@@ -335,6 +335,9 @@
                 <td class="status-cell">
                     {% if status == '퇴원완료' %}
                         <span class="badge st-discharge-done">퇴원완료</span>
+                        <button type="button" class="dc-btn dc-fix" data-act="fix-date" data-cid="{{ r.id }}"
+                                data-cur="{{ r.discharge_date or r.roster_discharged_at or '' }}"
+                                title="퇴원일 수정 — 여기 값이 기준입니다(원무 명부를 다시 올려도 안 바뀝니다)">날짜 수정</button>
                     {% else %}
                         <select class="status-select badge-select st-{{ {'미정':'pending','입원보류':'hold','입원취소':'cancelled','입원완료':'completed'}.get(status,'pending') }}"
                                 data-cid="{{ r.id }}" data-current="{{ status }}" title="입원 진행 인라인 변경">
@@ -871,6 +874,8 @@ body .container { max-width: none; padding: 0 12px; }
 /* 퇴원완료일 — 상담에 없으면 원무 명부 회차 값을 '명부' 꼬리표와 함께 보여준다(2026-09-19) */
 .tbl-compact td.discharge-date-cell { white-space:normal; }
 .discharge-date-main { display:block; white-space:nowrap; color:var(--text); }
+.status-cell .dc-fix { margin-left:3px; padding:0 5px; border:1px solid #d1d5db; border-radius:5px; background:#fff; color:#374151; font:700 .72em inherit; cursor:pointer; }
+.status-cell .dc-fix:hover { border-color:#b91c1c; color:#b91c1c; }
 .discharge-date-cell .dc-roster { display:inline-block; margin-top:1px; padding:0 4px; border-radius:5px; background:#eef2f7; color:#64748b; font-size:.76em; font-weight:700; }
 .admexp-kind { display:inline-block; padding:1px 4px; border-radius:7px; font-weight:700; white-space:nowrap; }
 .admexp-kind.billing { background:#dcfce7; color:#166534; }
@@ -1104,7 +1109,13 @@ body .container { max-width: none; padding: 0 12px; }
             const act = btn.dataset.act;
             const today = todayISO();
             let body;
-            if (act === 'complete') {
+            if (act === 'fix-date') {
+                const cur = btn.dataset.cur || today;
+                const d = prompt('실제 퇴원일자로 고칩니다 (YYYY-MM-DD)
+여기 값이 기준입니다 — 원무 명부를 다시 올려도 되돌아가지 않습니다.', cur);
+                if (!d || !d.trim()) return;
+                body = { action: 'fix-date', discharge_date: d.trim() };
+            } else if (act === 'complete') {
                 const d = prompt('실제 퇴원일자를 입력하세요 (YYYY-MM-DD)', today);
                 if (!d || !d.trim()) return;
                 body = { action: 'complete', discharge_date: d.trim() };
