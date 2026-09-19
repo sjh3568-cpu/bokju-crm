@@ -34,7 +34,11 @@
         });
     }
     function mount(form, start, end, index) {
-        if (form.dataset.datePresets === 'off' || start._datePresetPanel || end._datePresetPanel || start.disabled || end.disabled || start.readOnly || end.readOnly) return;
+        // readOnly는 이 스크립트가 직접 걸기도 한다(브라우저 달력 대신 빠른 조회를 열려고).
+        // 그래서 '우리가 건 readOnly'(date-preset-trigger)는 다시 붙일 수 있게 예외로 둔다 — 부분 갱신 대비.
+        const ours = start.classList.contains('date-preset-trigger') || end.classList.contains('date-preset-trigger');
+        if (form.dataset.datePresets === 'off' || start._datePresetPanel || end._datePresetPanel
+            || start.disabled || end.disabled || (!ours && (start.readOnly || end.readOnly))) return;
         const anchor = document.createElement('span'); anchor.className = 'date-preset-anchor';
         const panel = document.createElement('div'); panel.className = 'date-preset-panel'; panel.id = `date-preset-${index}`; panel.hidden = true;
         const custom = document.createElement('div'); custom.className = 'date-preset-custom';
@@ -95,7 +99,9 @@
         panel.addEventListener('click', e => e.stopPropagation());
     }
     function mountSingle(form, input, index) {
-        if (form.dataset.datePresets === 'off' || input._datePresetPanel || input.disabled || input.readOnly || input.closest('.date-preset-panel')) return;
+        if (form.dataset.datePresets === 'off' || input._datePresetPanel || input.disabled
+            || (input.readOnly && !input.classList.contains('date-preset-trigger'))
+            || input.closest('.date-preset-panel')) return;
         const panel = document.createElement('div'); panel.className = 'date-preset-panel'; panel.id = `date-preset-${index}`; panel.hidden = true;
         const title = document.createElement('b'); title.textContent = '날짜 선택';
         const custom = document.createElement('input'); custom.type = 'date'; custom.value = input.value;
@@ -131,11 +137,18 @@
         input.addEventListener('click',toggle); input.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' ')toggle(e)}); panel.addEventListener('click',e=>e.stopPropagation());
     }
     let index = 0;
-    document.querySelectorAll('form').forEach(form => pairs.forEach(([a, b]) => {
-        const start = form.querySelector(`input[type="date"][name="${a}"]`), end = form.querySelector(`input[type="date"][name="${b}"]`);
-        if (start && end) mount(form, start, end, ++index);
-    }));
-    document.querySelectorAll('form').forEach(form => [...form.querySelectorAll('input[type="date"]')].forEach(input => mountSingle(form,input,++index)));
+    function mountAll() {
+        document.querySelectorAll('form').forEach(form => pairs.forEach(([a, b]) => {
+            const start = form.querySelector(`input[type="date"][name="${a}"]`), end = form.querySelector(`input[type="date"][name="${b}"]`);
+            if (start && end) mount(form, start, end, ++index);
+        }));
+        document.querySelectorAll('form').forEach(form => [...form.querySelectorAll('input[type="date"]')].forEach(input => mountSingle(form,input,++index)));
+    }
+    mountAll();
+    // 30초 부분 갱신(base.html)이 main을 통째로 갈아 끼우면 여기서 붙인 것이 사라진다 —
+    // 이 파일은 main 밖이라 다시 실행되지 않기 때문이다. 그래서 갱신 뒤 한 번 더 붙인다.
+    // 이게 없으면 재원관리·대시보드에서 30초 뒤부터 날짜 칸이 빠른 조회 대신 브라우저 달력을 연다(2026-09-19).
+    document.addEventListener('page:refreshed', mountAll);
     document.addEventListener('click', () => closeAll());
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAll(); });
 })();
