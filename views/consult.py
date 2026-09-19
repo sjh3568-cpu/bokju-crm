@@ -1461,12 +1461,13 @@ def api_consult_discharge(cid):
     else:
         return jsonify({"error": "허용되지 않은 동작"}), 400
 
+    # 재원 명단은 원무 명부 회차로 세므로, 이 상담에 붙은 명부 회차도 닫아야 명부에도
+    # 퇴원이 남는다. 상담을 먼저 고치면 census가 이 환자를 이미 재원에서 빼(퇴원완료+퇴원일을
+    # 읽는다) 닫을 회차를 못 찾으므로, 회차는 고치기 전에 집어 둔다.
+    ep = models.current_admission_census()["by_consultation"].get(cid) if action == "complete" else None
     models.update_consultation_meta(cid, **fields)
     if action == "complete":
         _sync_lifecycle_stage(existing["patient_id"], "퇴원완료")
-        # 재원 명단은 원무 명부 회차로 세므로, 이 상담에 붙은 명부 회차도 닫아야
-        # 화면에서 빠진다. 상담에만 퇴원일을 적으면 '반영이 안 되는' 것처럼 보였다.
-        ep = models.current_admission_census()["by_consultation"].get(cid)
         if ep:
             models.close_roster_episode(ep["id"], discharged_at=fields["discharge_date"],
                                         destination=fields["discharge_destination"] or None,

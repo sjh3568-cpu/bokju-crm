@@ -12,9 +12,14 @@
 from datetime import date, timedelta
 
 from config import ROOM_BED_CAPACITIES, WARD_BED_CAPACITIES
-from models import AWAY_EVENT_TYPES, active_reservations_by_room, away_returns_by_date, get_db
+from models import (AWAY_EVENT_TYPES, active_reservations_by_room, away_returns_by_date,
+                    crm_discharge_sql, get_db)
 
 ROSTER = "roster_key IS NOT NULL"
+# 재원 판정은 재원 명단(models.current_admission_census)과 같은 규칙을 써야 한다 —
+# 명부 회차가 열려 있어도 CRM에 퇴원이 적혔으면 재원이 아니다. 여기만 빼먹으면
+# 병동 가동률·병실 만실 판정에서만 퇴원자가 침대를 차지한 채 남는다.
+OPEN = f"e.{ROSTER} AND e.discharged_at IS NULL AND {crm_discharge_sql('e')} IS NULL"
 
 
 def _days(n, end=None):
@@ -255,7 +260,7 @@ def room_status(room, *, gender=None, exclude_cid=None):
         residents = [dict(r) for r in conn.execute(
             f"""SELECT p.name, p.gender, e.admitted_at, e.room_number
                 FROM admission_episodes e JOIN patients p ON p.id = e.patient_id
-                WHERE e.{ROSTER} AND e.discharged_at IS NULL
+                WHERE {OPEN}
                   AND e.admitted_at IS NOT NULL AND e.admitted_at != ''
                   AND e.room_number IS NOT NULL AND e.room_number != ''""")
             if _norm_room(r["room_number"]) == key]
@@ -320,7 +325,7 @@ def ward_occupancy():
                        CASE WHEN p.gender IN ('M', 'F') THEN p.gender ELSE 'U' END AS gender,
                        COUNT(*) AS n
                 FROM admission_episodes e JOIN patients p ON p.id = e.patient_id
-                WHERE e.{ROSTER} AND e.discharged_at IS NULL
+                WHERE {OPEN}
                   AND e.admitted_at IS NOT NULL AND e.admitted_at != ''
                 GROUP BY 1, 2, 3""").fetchall()
     finally:

@@ -3161,6 +3161,7 @@ def _build_consult_where(*, date_from=None, date_to=None, insurance=None, q=None
         where.append(
             "(c.admission_status = '입원완료' AND EXISTS (SELECT 1 FROM admission_episodes e "
             "WHERE e.patient_id = c.patient_id AND e.roster_key IS NOT NULL AND e.discharged_at IS NULL "
+            f"AND {crm_discharge_sql('e')} IS NULL "
             f"AND e.admitted_at IS NOT NULL AND e.admitted_at != '' AND {span}))")
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
     return where_sql, vals
@@ -7222,6 +7223,53 @@ def homepage_post_map(comm_ids) -> dict[int, dict]:
 
 # ─── 입원 중 이벤트 (응급전원·모병원 외래치료 등) ───
 
+# ── CRM에 적힌 퇴원 — 명부 회차가 아직 열려 있어도 재원에서 뺀다 ──────────────
+# 원무 명부는 '그날 재원인 사람'만 담은 하루치 스냅샷으로도 올라온다
+# (입퇴재원환자현황(20260919-20260919).xlsx). 그 파일에는 이미 퇴원한 사람의 행이 아예
+# 없어서 적재기가 회차를 닫을 근거가 없다 — 행이 없다고 퇴원으로 칠 수도 없다(그러면
+# 그 파일에 안 들어간 나머지 전원이 퇴원 처리된다). 실제로 2026-09-17~18에 퇴원한 6명이
+# 명부 회차가 열린 채 재원에 남아 재원 수가 엑셀 273명 대비 279명으로 나왔다. 상담실은
+# 그때 이미 CRM에 퇴원완료를 입력한 뒤였다 — CRM은 알고 있는데 화면만 몰랐다.
+#
+# 사용자 규칙(2026-09-19): "퇴원이 재원 수에 반영 안 되는 일이 절대 없도록."
+# 그래서 명부 회차가 열려 있어도 CRM이 이 입원의 퇴원을 알면 그날 퇴원한 것으로 본다.
+# 근거는 둘 — 앱이 만든 회차(roster_key 없음)의 퇴원일, 상담의 '퇴원완료 + 퇴원일'.
+# 회차만 보면 옛 상담에서 퇴원완료만 눌린 건을 놓치고, 상담만 보면 회차로만 닫힌 건을
+# 놓친다. 둘 중 이른 날짜를 쓴다.
+#
+# 재입원 가드 — 이 입원일(admitted_at) 이후의 퇴원만 이 입원의 퇴원으로 본다.
+# 옛 퇴원이 새 입원을 닫으면 재입원해 지금 병원에 있는 사람이 통째로 사라진다.
+#
+# 반대 방향(명부보다 CRM이 먼저 아는 입원)은 current_admission_census가 이미 더하고
+# 있었다. 이건 그 대칭이다 — 더하기만 하고 빼지 않아서 생긴 차이였다.
+
+def crm_discharge_sql(alias="e"):
+    """명부 회차에 대해 'CRM이 아는 이 입원의 퇴원일'을 내는 식(없으면 NULL).
+
+    재원 판정 질의는 `{alias}.discharged_at IS NULL AND {이 식} IS NULL`로 쓴다 —
+    앞 조건이 먼저 걸러 주므로 서브쿼리는 열린 회차에만 돈다.
+    """
+    return (
+        f"COALESCE("
+        f"(SELECT MIN(date(x.discharged_at)) FROM admission_episodes x"
+        f"  WHERE x.patient_id = {alias}.patient_id AND x.roster_key IS NULL"
+        f"    AND COALESCE(x.discharged_at, '') <> ''"
+        f"    AND date(x.discharged_at) >= date({alias}.admitted_at)),"
+        f"(SELECT MIN(date(cc.discharge_date)) FROM consultations cc"
+        f"  WHERE cc.patient_id = {alias}.patient_id AND cc.admission_status = '퇴원완료'"
+        f"    AND COALESCE(cc.discharge_date, '') <> ''"
+        f"    AND date(cc.discharge_date) >= date({alias}.admitted_at)))"
+    )
+
+
+def effective_discharge_sql(alias="e"):
+    """실제 퇴원일 — 명부가 찍은 퇴원일이 우선, 없으면 CRM이 아는 퇴원일.
+
+    재원 여부만이 아니라 '언제 나갔는가'까지 필요한 곳(추이 복원·퇴원 건수·월간보고서)이 쓴다.
+    """
+    return f"COALESCE({alias}.discharged_at, {crm_discharge_sql(alias)})"
+
+
 def current_admission_census():
     """지금 재원 중인 입원 회차 — 원무 명부가 기준이다.
 
@@ -7248,11 +7296,12 @@ def current_admission_census():
         # 상담에 퇴원일이 없어 퇴원한 환자도 영원히 열린 회차로 남는다. 섞어 세면
         # 재원이 두 배가 된다(실제로 260명이 558명으로 나왔다). 명부가 사실이다.
         episodes = [dict(r) for r in conn.execute(
-            """SELECT e.*, p.name AS patient_name, p.gender, p.birth_year, p.chart_no
+            f"""SELECT e.*, p.name AS patient_name, p.gender, p.birth_year, p.chart_no
                FROM admission_episodes e
                JOIN patients p ON p.id = e.patient_id
                WHERE e.roster_key IS NOT NULL
                  AND e.discharged_at IS NULL
+                 AND {crm_discharge_sql('e')} IS NULL
                  AND e.admitted_at IS NOT NULL AND e.admitted_at != ''
                ORDER BY e.admitted_at DESC, e.id DESC""")]
         has_roster = bool(conn.execute(
@@ -7359,10 +7408,12 @@ def admission_flow_counts(week_from, week_to, month_from, month_to):
     conn = get_db()
     try:
         def _count(col, lo, hi):
+            # 퇴원은 CRM에 적힌 퇴원까지 센다 — 명부 회차가 아직 열려 있어도 나간 날은 그날이다.
+            expr = effective_discharge_sql("e") if col == "discharged_at" else f"e.{col}"
             return conn.execute(
-                f"SELECT COUNT(*) FROM admission_episodes "
-                f"WHERE roster_key IS NOT NULL AND {col} IS NOT NULL AND {col} != '' "
-                f"AND date({col}) BETWEEN ? AND ?", (lo, hi)).fetchone()[0]
+                f"SELECT COUNT(*) FROM admission_episodes e "
+                f"WHERE e.roster_key IS NOT NULL AND date({expr}) BETWEEN ? AND ?",
+                (lo, hi)).fetchone()[0]
         # 명부 이후 CRM에서 처리한 입원·퇴원 — current_admission_census와 같은 ①②③ 규칙
         roster_asof = conn.execute(
             "SELECT MAX(date(admitted_at)) FROM admission_episodes WHERE roster_key IS NOT NULL"
@@ -7898,10 +7949,11 @@ def admission_spans():
     conn = get_db()
     try:
         episodes = [dict(r) for r in conn.execute(
-            "SELECT id, patient_id, admitted_at, discharged_at, care_type, "
-            "rehab_end_date, rehab_end_imported "
-            "FROM admission_episodes WHERE roster_key IS NOT NULL "
-            "AND admitted_at IS NOT NULL AND admitted_at != ''")]
+            "SELECT e.id, e.patient_id, e.admitted_at, e.care_type, "
+            "e.rehab_end_date, e.rehab_end_imported, "
+            f"{effective_discharge_sql('e')} AS discharged_at "
+            "FROM admission_episodes e WHERE e.roster_key IS NOT NULL "
+            "AND e.admitted_at IS NOT NULL AND e.admitted_at != ''")]
         if not episodes:
             return []
         by_patient = {}
@@ -7943,8 +7995,10 @@ def stay_report(year: int, month: int) -> dict:
     conn = get_db()
     try:
         eps = [dict(r) for r in conn.execute(
-            "SELECT admitted_at, discharged_at, care_type FROM admission_episodes "
-            "WHERE roster_key IS NOT NULL AND admitted_at IS NOT NULL AND admitted_at != ''")]
+            "SELECT e.admitted_at, e.care_type, "
+            f"{effective_discharge_sql('e')} AS discharged_at "
+            "FROM admission_episodes e "
+            "WHERE e.roster_key IS NOT NULL AND e.admitted_at IS NOT NULL AND e.admitted_at != ''")]
     finally:
         conn.close()
 
