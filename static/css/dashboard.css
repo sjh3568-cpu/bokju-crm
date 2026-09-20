@@ -368,6 +368,28 @@
     word-break: keep-all; overflow-wrap: anywhere; }
 .page-dashboard .dash-adm-tbl .dash-note { color: var(--dtext); }   /* 모병원은 제 열이 됐으니 본문 색(전에는 보조 정보라 흐리게) */
 .page-dashboard .dash-adm-tbl .dash-adm-ref .ref-main { display: block; }
+/* 소개자가 비어 있는 소개 계열(직원소개·지인추천·기관연계) — 빈칸을 감추지 않고 드러낸다(2026-09-20 요청) */
+.page-dashboard .dash-adm-tbl .dash-adm-ref .ref-missing { color: #b45309; font-style: italic; }
+/* 주병명 색 구분 (2026-09-20 요청) — 뇌졸중(중추신경계)·근골격계·비사용증후군 세 갈래.
+   글자색 + 왼쪽 띠로만 구분한다. 칠(배경)을 넣으면 옆의 내성균 빨간 배지·구분 배지와 싸운다. */
+.page-dashboard .dash-dx[class*="dxg-"] { font-weight: 700; }
+/* 뇌졸중 세 갈래는 같은 붉은 계열 안에서 색조만 달리한다 — 멀리선 한 묶음, 가까이선 출혈/경색이 갈린다.
+   근골격계(파랑)·비사용증후군(초록)은 아예 다른 색으로 둔다(2026-09-20 요청).
+   구분은 글자색만으로 — 왼쪽 띠는 뺐다(2026-09-20 요청: 병명 앞 작대기가 거슬린다). 범례가 색 뜻을 설명한다. */
+.page-dashboard .dash-dx.dxg-stroke-hem { color: #b91c1c; }   /* 뇌출혈 — 진한 빨강 */
+.page-dashboard .dash-dx.dxg-stroke-inf { color: #c2410c; }   /* 뇌경색 — 주황빨강 */
+.page-dashboard .dash-dx.dxg-stroke     { color: #9f1239; }   /* 그 밖의 중추신경계 — 자주빛 빨강 */
+.page-dashboard .dash-dx.dxg-msk        { color: #1d4ed8; }   /* 근골격계 — 파랑 */
+.page-dashboard .dash-dx.dxg-disuse     { color: #047857; }   /* 비사용증후군 — 초록 */
+/* 주병명 색 범례 — 병동 띠(.ws-legend)와 같은 모양으로 섹션 머리에. 뇌졸중 셋은 한 묶음으로 보이게 붙여 적는다. */
+.page-dashboard .dx-legend { margin-left: 8px; font-size: .72rem; color: var(--dmuted); white-space: nowrap; cursor: help; }
+.page-dashboard .dx-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin: 0 3px 0 7px; vertical-align: -1px; }
+.page-dashboard .dx-legend .dx-legend-gap { margin-left: 5px; padding-left: 7px; border-left: 1px solid var(--dborder); }
+.page-dashboard .dx-legend i.dxg-stroke-hem { background: #b91c1c; }
+.page-dashboard .dx-legend i.dxg-stroke-inf { background: #c2410c; }
+.page-dashboard .dx-legend i.dxg-stroke { background: #9f1239; }
+.page-dashboard .dx-legend i.dxg-msk { background: #1d4ed8; }
+.page-dashboard .dx-legend i.dxg-disuse { background: #047857; }
 /* 내성균(CRE·VRE 등) — 재원 관리의 .wd-org와 같은 빨간 배지 + 행 왼쪽 빨간 선 */
 .page-dashboard .dash-adm-tbl .dash-org { display: inline-block; margin-right: 4px; padding: 1px 6px; border-radius: 6px; background: #b91c1c; color: #fff; font-size: .72rem; font-weight: 800; letter-spacing: .02em; vertical-align: middle; }
 .page-dashboard .dash-adm-tbl tr.has-organism td:first-child { box-shadow: inset 3px 0 0 #b91c1c; }

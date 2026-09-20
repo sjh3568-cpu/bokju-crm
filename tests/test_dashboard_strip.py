@@ -217,9 +217,13 @@ class DashboardDueQueueTests(DashboardStripTests):
         self.assertIn('최근초과</a> <span class="dash-who">여/70세</span>', html)
         self.assertIn('곧만료</a> <span class="dash-who">남/70세</span>', html)
         self.assertIn('재연락대기</a> <span class="dash-who">남/65세</span>', html)
-        self.assertIn('<td class="dash-dx" title="상세불명의 뇌경색증">상세불명의 뇌경색증</td>', html)
-        self.assertIn('<td class="dash-dx" title="척수손상">척수손상</td>', html)
-        self.assertIn('<td class="dash-dx" title="파킨슨병">파킨슨병</td>', html)
+        # 주상병 칸은 뇌졸중·근골격계·비사용증후군이면 색 구분 클래스(dxg-*)가 붙는다(2026-09-20 요청).
+        # 뇌졸중은 출혈(dxg-stroke-hem)·경색(dxg-stroke-inf)·그 밖(dxg-stroke)으로 갈린다.
+        # 툴팁은 병명 그대로 두고 색 뜻은 표 머리의 범례로. 주상병으로 적힌 파킨슨병은
+        # 비사용증후군으로 본다(2026-09-20 사용자 결정 — 기저질환의 파킨슨과 구분).
+        self.assertIn('<td class="dash-dx dxg-stroke-inf" title="상세불명의 뇌경색증">상세불명의 뇌경색증</td>', html)
+        self.assertIn('<td class="dash-dx dxg-stroke" title="척수손상">척수손상</td>', html)
+        self.assertIn('<td class="dash-dx dxg-disuse" title="파킨슨병">파킨슨병</td>', html)
         self.assertNotIn('title="[&#34;', html)
         # 경과·D-day 색상 단계: 오늘 상담요청=fresh, 5일 초과=old, D-30=far
         self.assertIn('aq-meta age-fresh', html)

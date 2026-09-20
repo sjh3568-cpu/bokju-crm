@@ -748,6 +748,80 @@ def _sido_short(value):
     return _SIDO_SHORT.get(value, value)
 
 
+# ─── 병실 표기 통일 (2026-09-20 요청) ───
+# 상담일지는 '215'처럼 숫자만, 원무 명부는 '501호'처럼 '호'까지 적어 두 출처가 섞이면
+# 같은 병실이 다르게 보인다. 화면에는 항상 '215호'로 맞춘다. '316호 ★' 같은 꼬리표는 떼고
+# 숫자가 아예 없는 값(예: '특실')은 적힌 그대로 둔다.
+_ROOM_DIGITS = re.compile(r"\d+")
+
+
+@app.template_filter("room_no")
+def _room_no(value):
+    """병실 번호 → 'NNN호'. 값이 없으면 빈 문자열(화면에서 '-'로 표시)."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    m = _ROOM_DIGITS.search(text)
+    return f"{m.group()}호" if m else text
+
+
+# ─── 주병명 색 구분 (2026-09-20 요청) ───
+# 질환군 셋은 아예 다른 색(뇌졸중 붉은 계열 · 근골격계 파랑 · 비사용증후군 초록)으로,
+# 뇌졸중 안의 출혈·경색·기타는 같은 붉은 계열 안에서 색조만 달리한다 — 멀리선 한 묶음으로,
+# 가까이선 갈래가 보이게. 올해 상담 1,084건 기준 출혈 32% · 경색 26% · 비사용 19% · 근골 15% · 뇌졸중기타 6%.
+_DX_GROUP_KEY = {"중추신경계": "stroke", "근골격계": "msk", "비사용증후군": "disuse"}
+# 중추신경계 안에서 출혈·경색으로 갈리는 체크값 — 나머지(척수손상·뇌성마비·마비)는 'stroke'로 둔다.
+_DX_STROKE_LABEL = {"뇌출혈": "stroke-hem", "뇌경색": "stroke-inf"}
+_DX_LABEL_GROUP = {}
+for _gname, _labels in DISEASES_GROUPS.items():
+    _key = _DX_GROUP_KEY.get(_gname)
+    if _key:
+        _DX_LABEL_GROUP[_gname] = _key
+        for _lab in _labels:
+            _DX_LABEL_GROUP[_lab] = _DX_STROKE_LABEL.get(_lab, _key)
+# 원무 명부에서 온 표준 진단명(자유 기재)까지 잡으려는 보완. 실제 값으로 확인한 표기를 그대로 넣었다 —
+# '지주막하'가 아니라 '거미막하', '뇌손상'이 아니라 '뇌 손상'으로 온다.
+# 순서가 곧 우선순위다: 출혈·경색을 먼저 보고, 어느 쪽도 아닌 뇌졸중만 'stroke'로 내려간다.
+_DX_KEYWORDS = (
+    ("stroke-hem", ("뇌출혈", "뇌내출혈", "뇌내 출혈", "거미막하", "지주막하", "경막하", "경막외",
+                    "출혈", "HEMORRHAGE", "HAEMORRHAGE", "ICH", "SAH", "SDH")),
+    ("stroke-inf", ("뇌경색", "경색", "허혈", "INFARCT", "ISCHEMI")),
+    # '척수'는 중추신경계, '척추'는 근골격계 — 글자가 달라 섞이지 않는다.
+    ("stroke", ("뇌졸중", "뇌 손상", "뇌손상", "저산소성", "척수", "뇌성마비", "수두증",
+                "편마비", "사지마비", "하지마비", "반신마비", "STROKE", "MYELOPATHY")),
+    ("msk", ("골절", "치환술", "관절", "대퇴", "고관절", "골반", "절단", "내고정", "골유합",
+             "척추", "추간판", "인대", "건파열",
+             "FRACTURE", "ARTHROPLASTY", "TKR", "THR", "TKRA", "THRA")),
+    # 파킨슨은 상담일지에서 기저질환('파킨슨')에도, 비사용증후군('파킨슨(신규)')에도 있다.
+    # 주상병으로 적힌 파킨슨은 비사용증후군으로 본다(2026-09-20 사용자 결정).
+    ("disuse", ("비사용", "파킨슨", "폐질환", "호흡질환", "심장질환", "신생물", "길랑바레", "길랭", "암",
+                "근육 소모", "근육소모", "위축", "근위축", "쇠약", "탈조건화",
+                "PNEUMONIA", "CANCER", "ATROPHY", "DISUSE", "PARKINSON")),
+)
+# 범례·툴팁에 쓰는 이름
+DX_GROUP_LABELS = {"stroke-hem": "뇌출혈", "stroke-inf": "뇌경색", "stroke": "뇌졸중 기타",
+                   "msk": "근골격계", "disuse": "비사용증후군"}
+
+
+@app.template_filter("dx_group")
+def _dx_group(value):
+    """주병명 문자열 → 색 구분 키. 다섯 갈래 중 아니면 빈 문자열.
+
+    stroke-hem(뇌출혈) · stroke-inf(뇌경색) · stroke(그 밖의 중추신경계) · msk · disuse
+    """
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    for label, key in _DX_LABEL_GROUP.items():
+        if label and label in text:
+            return key
+    upper = text.upper()
+    for key, words in _DX_KEYWORDS:
+        if any(w in upper for w in words):
+            return key
+    return ""
+
+
 # 기저질환 그룹의 부모 라벨 prefix — 병명 셀에서 제외용
 _CHRONIC_PREFIXES = ("당뇨", "고혈압", "파킨슨", "희귀성난치질환",
                      "치매", "인지기능저하", "이상행동", "탈출", "암",
