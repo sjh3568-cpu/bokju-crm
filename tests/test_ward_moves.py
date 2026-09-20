@@ -140,6 +140,16 @@ class AwayReturnAsAdmissionTests(unittest.TestCase):
         self.assertEqual(flow['week_in'], 1)
         self.assertEqual(dashboard_metrics.admission_flow_by_date(['2026-09-11'])['2026-09-11']['in'], 1)
 
+    def test_flow_counts_match_event_basis(self):
+        week_flow = models.admission_flow_counts('2026-09-07', '2026-09-13', '2026-09-01', '2026-09-15')
+        expected = {
+            'week_in': sum(1 for e in models.admission_flow_events('2026-09-07', '2026-09-13') if e['kind'] == models.ADMISSION_EVENT_IN),
+            'week_out': sum(1 for e in models.admission_flow_events('2026-09-07', '2026-09-13') if e['kind'] == models.ADMISSION_EVENT_OUT),
+            'month_in': sum(1 for e in models.admission_flow_events('2026-09-01', '2026-09-15') if e['kind'] == models.ADMISSION_EVENT_IN),
+            'month_out': sum(1 for e in models.admission_flow_events('2026-09-01', '2026-09-15') if e['kind'] == models.ADMISSION_EVENT_OUT),
+        }
+        self.assertEqual(week_flow, expected)
+
     def test_sync_does_not_overwrite_roster_episode_dates(self):
         """상담을 다시 저장해도 명부 회차의 입원일(9/11)이 상담 입원일(8/10)로 되돌아가지 않는다."""
         db = models.get_db()

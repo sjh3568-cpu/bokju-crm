@@ -172,26 +172,26 @@ def consult_weekday_hour_matrix(date_from=None, date_to=None):
 # ── 입원·퇴원·재원 (원무 명부 회차) ───────────────────────────────────
 
 def admission_flow_by_date(dates):
-    """dates별 명부 입원·퇴원 건수. 명부 회차에 없는 외진 복귀는 그날의 입원으로 더한다."""
+    """dates별 입원·퇴원 건수.
+
+    대시보드의 일별 추이도 재원관리의 기준과 동일하게
+    models.admission_flow_events()로 계산한다. 명부 회차·CRM 회차·외진 이벤트를
+    한 번에 묶는 단일 근거를 사용하므로 중복/누락이 줄어든다.
+    """
     if not dates:
         return {}
-    conn = get_db()
-    try:
-        lo, hi = min(dates), max(dates)
-        ins = conn.execute(
-            f"SELECT date(admitted_at) AS d, COUNT(*) AS n FROM admission_episodes "
-            f"WHERE {ROSTER} AND admitted_at IS NOT NULL AND admitted_at != '' "
-            f"AND date(admitted_at) BETWEEN ? AND ? GROUP BY date(admitted_at)", (lo, hi)).fetchall()
-        outs = conn.execute(
-            f"SELECT date(discharged_at) AS d, COUNT(*) AS n FROM admission_episodes "
-            f"WHERE {ROSTER} AND discharged_at IS NOT NULL AND discharged_at != '' "
-            f"AND date(discharged_at) BETWEEN ? AND ? GROUP BY date(discharged_at)", (lo, hi)).fetchall()
-    finally:
-        conn.close()
-    i_map = {r["d"]: r["n"] for r in ins}
-    o_map = {r["d"]: r["n"] for r in outs}
-    returns = away_returns_by_date(dates)
-    return {d: {"in": i_map.get(d, 0) + returns.get(d, 0), "out": o_map.get(d, 0)} for d in dates}
+    lo, hi = min(dates), max(dates)
+    rows = []
+    for e in models.admission_flow_events(lo, hi):
+        if e.get("date") in dates:
+            rows.append(e)
+    counts = {d: {"in": 0, "out": 0} for d in dates}
+    for row in rows:
+        if row.get("kind") == models.ADMISSION_EVENT_IN:
+            counts[row["date"]]["in"] += 1
+        elif row.get("kind") == models.ADMISSION_EVENT_OUT:
+            counts[row["date"]]["out"] += 1
+    return counts
 
 
 def census_by_date(dates):

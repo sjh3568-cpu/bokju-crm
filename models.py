@@ -7463,54 +7463,19 @@ def _ward_from_room(room):
 
 
 def admission_flow_counts(week_from, week_to, month_from, month_to):
-    """원무 명부 회차 기준 이번주·이번달 입원/퇴원 건수.
+    """이번주·이번달 입원/퇴원 건수.
 
-    재원 판정과 같은 근거를 쓴다 — roster_key가 있는 회차(원무 명부에서 온 것)만
-    센다. 앱이 만든 회차(roster_key 없음)는 퇴원일이 안 채워져 흐름 집계를 부풀린다.
-    날짜는 DATE(ISO 문자열)라 문자열 BETWEEN이 곧 날짜 비교다.
+    대시보드와 재원관리 '입원·퇴원 이력'은 같은 근거를 써야 하므로,
+    별도 회차 계산을 덧붙이지 않고 admission_flow_events()의 단일 사건 집계로
+    계산한다. 원무 명부·CRM 회차·외진 복귀/퇴원이 모두 같은 함수 안에서 하나로
+    합쳐지고, 같은 (환자, 날짜, 입원/퇴원) 이벤트는 중복 제거된다.
     """
-    conn = get_db()
-    try:
-        def _count(col, lo, hi):
-            # 퇴원은 CRM에 적힌 퇴원까지 센다 — 명부 회차가 아직 열려 있어도 나간 날은 그날이다.
-            expr = effective_discharge_sql("e") if col == "discharged_at" else f"e.{col}"
-            return conn.execute(
-                f"SELECT COUNT(*) FROM admission_episodes e "
-                f"WHERE e.roster_key IS NOT NULL AND date({expr}) BETWEEN ? AND ?",
-                (lo, hi)).fetchone()[0]
-        # 명부 이후 CRM에서 처리한 입원·퇴원 — current_admission_census와 같은 ①②③ 규칙
-        roster_asof = conn.execute(
-            "SELECT MAX(date(admitted_at)) FROM admission_episodes WHERE roster_key IS NOT NULL"
-        ).fetchone()[0] or "0000-01-01"
-
-        def _crm_count(col, lo, hi):
-            return conn.execute(
-                f"""SELECT COUNT(*) FROM admission_episodes e
-                     JOIN consultations c ON c.id = e.consultation_id
-                    WHERE e.roster_key IS NULL AND e.admitted_at IS NOT NULL AND e.admitted_at != ''
-                      AND date(e.admitted_at) >= date(?)
-                      AND c.admission_status IN ('입원완료', '퇴원완료')
-                      AND e.{col} IS NOT NULL AND e.{col} != '' AND date(e.{col}) BETWEEN ? AND ?
-                      AND NOT EXISTS (SELECT 1 FROM admission_episodes r
-                                       WHERE r.patient_id = e.patient_id AND r.roster_key IS NOT NULL
-                                         AND date(r.admitted_at) >= date(e.admitted_at))
-                      AND NOT EXISTS (SELECT 1 FROM admission_events ae
-                                       WHERE ae.consultation_id = e.consultation_id
-                                         AND COALESCE(ae.return_outcome, '복귀') = '복귀'
-                                         AND date(ae.returned_at) = date(e.admitted_at))""",
-                (roster_asof, lo, hi)).fetchone()[0]
-        return {
-            "week_in": _count("admitted_at", week_from, week_to) + _crm_count("admitted_at", week_from, week_to)
-                       + _away_return_count(conn, week_from, week_to),
-            "week_out": _count("discharged_at", week_from, week_to) + _crm_count("discharged_at", week_from, week_to)
-                        + _away_departure_count(conn, week_from, week_to),
-            "month_in": _count("admitted_at", month_from, month_to) + _crm_count("admitted_at", month_from, month_to)
-                        + _away_return_count(conn, month_from, month_to),
-            "month_out": _count("discharged_at", month_from, month_to) + _crm_count("discharged_at", month_from, month_to)
-                         + _away_departure_count(conn, month_from, month_to),
-        }
-    finally:
-        conn.close()
+    return {
+        "week_in": sum(1 for e in admission_flow_events(week_from, week_to) if e["kind"] == ADMISSION_EVENT_IN),
+        "week_out": sum(1 for e in admission_flow_events(week_from, week_to) if e["kind"] == ADMISSION_EVENT_OUT),
+        "month_in": sum(1 for e in admission_flow_events(month_from, month_to) if e["kind"] == ADMISSION_EVENT_IN),
+        "month_out": sum(1 for e in admission_flow_events(month_from, month_to) if e["kind"] == ADMISSION_EVENT_OUT),
+    }
 
 
 # 외진(응급전원·모병원 외래치료) 복귀는 병동 입장에서 그날의 입원이다(2026-09-15 사용자 요청).
