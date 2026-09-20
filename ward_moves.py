@@ -4,8 +4,8 @@
 (환자, 날짜, 입원/퇴원)으로 묶는다. 대시보드 '입·퇴원 현황'이 같은 함수를 쓰므로 두 화면의
 명단이 어긋나지 않는다(2026-09-18 요청: 어느 화면에서도 놓치면 안 된다).
 값이 엇갈리면 원무 명부가 이긴다. 상담사·나이·유입경로처럼 명부에 없는 것은 상담에서 온다.
-외진(응급전원·모병원 외래치료) 복귀는 그날의 입원으로 센다(2026-09-15) — 같은 날 입원 줄이
-이미 있으면 복귀 줄로 갈아 끼운다.
+외진(응급전원·모병원 외래치료) 복귀는 그날의 입원으로 센다(2026-09-15) — 이것도 같은 함수가
+IN(source 외진) 행으로 넣어 주므로 이 모듈은 덧붙이지 않는다.
 
   report(args)  → {filters, rows, summary, options}
   /ward/moves.xlsx  현재 필터 그대로 엑셀
@@ -94,39 +94,11 @@ def _load(d_from: str, d_to: str) -> list[dict]:
             "stay_days": ((dis or today) - adm).days + 1 if adm else None,
             "kind": e["kind"], "date": e["date"],
             "source": " · ".join(e.get("sources") or ()),
+            # 외진 복귀 = 그날의 입원 — admission_flow_events가 IN(source 외진) 행으로 넣어 준다.
+            "is_return": bool(e.get("is_return")), "away_type": e.get("away_type") or "",
+            "away_from": e.get("away_from") or "",
         })
-    # 외진 복귀 — 그날의 입원으로 센다. 명부 회차가 복귀일에 열려 있으면 위에서 이미 나왔으므로
-    # 같은 (환자, 날짜)에 입원 줄이 있으면 복귀 줄로 갈아 끼운다(복귀가 더 구체적인 사실이다).
-    returns = _return_rows(d_from, d_to, today)
-    keys = {(r["patient_id"], r["date"]) for r in returns}
-    rows = [r for r in rows if not (r["kind"] == "in" and (r["patient_id"], r["date"]) in keys)]
-    rows.extend(returns)
     rows.sort(key=lambda r: (r["date"], r["kind"] == "in", r["patient_name"]), reverse=True)
-    return rows
-
-
-def _return_rows(d_from: str, d_to: str, today) -> list[dict]:
-    """명부 회차가 복귀일에 시작하지 않는 외진 복귀 → '입원(복귀)' 행. 명부에 있으면 _load가 이미 냈다."""
-    rows = []
-    for r in models.away_returns_as_admissions(d_from, d_to):
-        ret = _parse_date(r["returned_at"])
-        if not ret:
-            continue
-        age = r.get("patient_age")
-        if age is None and r.get("birth_year"):
-            age = today.year - int(r["birth_year"])
-        rows.append({
-            "episode_id": r.get("episode_id"), "consultation_id": r["consultation_id"], "patient_id": r["patient_id"],
-            "patient_name": r["patient_name"], "gender": r.get("gender"), "age": age,
-            "ward": r.get("ward") or "", "room": r.get("return_room") or r.get("ep_room") or r.get("c_room") or "",
-            "doctor": (r.get("ep_doctor") or r.get("c_doctor") or "").strip(),
-            "care": _care_label(r.get("care_type")), "dx": r.get("diagnosis_name") or r.get("primary_diagnosis") or "",
-            "admitted_at": ret.isoformat(), "discharged_at": "",
-            "counselor": (r.get("counselor") or "").strip(), "destination": "", "reason": "",
-            "stay_days": (today - ret).days + 1,
-            "kind": "in", "date": ret.isoformat(), "source": "외진 복귀",
-            "is_return": True, "away_type": r.get("event_type") or "", "away_from": r.get("event_date") or "",
-        })
     return rows
 
 

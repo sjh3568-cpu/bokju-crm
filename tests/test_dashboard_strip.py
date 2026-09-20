@@ -108,8 +108,9 @@ class DashboardStripTests(unittest.TestCase):
         self.assertFalse(strip["has_roster"])
         self.assertIsNone(strip["admitted"])
         self.assertIsNone(strip["recovery_ratio"])
-        # 명부가 없어도 흐름·외진 지표는 0으로 계산되고 화면은 '명부 필요'를 띄운다
-        self.assertEqual(strip["week_in"], 0)
+        # 명부가 없어도 흐름은 admission_flow_events 하나로 센다 — 환자1의 상담(오늘 입원완료)이
+        # '명부 전' 입원으로 남아 1건. 명부에 없다고 숨기지 않는다(데이터 집계 원칙). 퇴원은 상담에 없어 0.
+        self.assertEqual(strip["week_in"], 1)
         self.assertEqual(strip["month_out"], 0)
         html = self.client.get("/").get_data(as_text=True)
         self.assertIn("명부 필요", html)

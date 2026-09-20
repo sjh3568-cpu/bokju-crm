@@ -7501,18 +7501,9 @@ AWAY_DISCHARGE_MERGE_DAYS = 3
 # 원무 명부도 외진 나간 날 퇴원, 복귀한 날 새 입원으로 적는다 — 복귀를 입원으로 세는 것과 대칭이다.
 # 명부가 이미 그날 퇴원으로 적었으면 두 번 세지 않는다. 타 병원 전원(return_outcome='전원')은
 # 종결 처리가 따로 회차를 닫으므로 여기서 빼서 중복을 막는다.
-_AWAY_DEPARTURE_NOT_IN_ROSTER = """
-    ae.event_type IN ('응급전원', '모병원 외래치료')
-    AND ae.event_date IS NOT NULL AND ae.event_date != ''
-    AND COALESCE(ae.return_outcome, '복귀') = '복귀'
-    AND NOT EXISTS (SELECT 1 FROM admission_episodes e
-                     WHERE e.patient_id = c.patient_id
-                       AND ABS(julianday(date(e.discharged_at)) - julianday(date(ae.event_date)))
-                           <= """ + str(AWAY_DISCHARGE_MERGE_DAYS) + """)
-"""
-
-# 목록용 — 같은 날 퇴원이 이미 있을 때만 뺀다. 하루 이틀 차이는 행을 만들고 화면에서 명부 줄과 합친다
-# (외진 기록이 사유·행선지까지 있는 더 구체적인 사실이라 그쪽 날짜를 남긴다, 2026-09-19).
+# 같은 날 퇴원이 이미 있을 때만 뺀다. 하루 이틀 차이는 행을 만들고 admission_flow_events가
+# AWAY_DISCHARGE_MERGE_DAYS 안의 명부 줄과 합친다(외진 기록이 사유·행선지까지 있는 더 구체적인
+# 사실이라 그쪽 날짜를 남긴다, 2026-09-19).
 _AWAY_DEPARTURE_FOR_LIST = """
     ae.event_type IN ('응급전원', '모병원 외래치료')
     AND ae.event_date IS NOT NULL AND ae.event_date != ''
@@ -7521,14 +7512,6 @@ _AWAY_DEPARTURE_FOR_LIST = """
                      WHERE e.patient_id = c.patient_id
                        AND date(e.discharged_at) = date(ae.event_date))
 """
-
-
-def _away_departure_count(conn, lo, hi):
-    return conn.execute(
-        f"""SELECT COUNT(*) FROM admission_events ae
-             JOIN consultations c ON c.id = ae.consultation_id
-            WHERE {_AWAY_DEPARTURE_NOT_IN_ROSTER} AND date(ae.event_date) BETWEEN ? AND ?""",
-        (lo, hi)).fetchone()[0]
 
 
 def _iso_date(value):
@@ -7564,31 +7547,6 @@ def away_departures_as_discharges(d_from, d_to):
     finally:
         conn.close()
     return [dict(r) for r in rows]
-
-
-def _away_return_count(conn, lo, hi):
-    return conn.execute(
-        f"""SELECT COUNT(*) FROM admission_events ae
-             JOIN consultations c ON c.id = ae.consultation_id
-            WHERE {_AWAY_RETURN_NOT_IN_ROSTER} AND date(ae.returned_at) BETWEEN ? AND ?""",
-        (lo, hi)).fetchone()[0]
-
-
-def away_returns_by_date(dates):
-    """dates별 '명부 회차에 없는' 외진 복귀 건수 — 대시보드 명부 입원 KPI·30일 추이용."""
-    if not dates:
-        return {}
-    conn = get_db()
-    try:
-        rows = conn.execute(
-            f"""SELECT date(ae.returned_at) AS d, COUNT(*) AS n FROM admission_events ae
-                 JOIN consultations c ON c.id = ae.consultation_id
-                WHERE {_AWAY_RETURN_NOT_IN_ROSTER} AND date(ae.returned_at) BETWEEN ? AND ?
-                GROUP BY d""", (min(dates), max(dates))).fetchall()
-    finally:
-        conn.close()
-    found = {r["d"]: r["n"] for r in rows}
-    return {d: found.get(d, 0) for d in dates}
 
 
 def away_calendar_rows(d_from, d_to, counselor=None):
@@ -7835,11 +7793,14 @@ def admission_flow_events(date_from, date_to):
     같은 (환자, 날짜, 구분)이 여러 근거에 있으면 한 건으로 묶고 sources에 다 적는다.
     값이 엇갈리면 원무 명부가 이긴다 — 병실·병동·주치의·행선지는 명부가 마지막 사실이다.
     상담사·보험·유입경로처럼 명부에 없는 것은 상담에서 온다.
+    외진 나감 = 그날의 퇴원(OUT, source 외진), 외진 복귀 = 그날의 입원(IN, source 외진) —
+    명부 회차가 그날 이미 있으면 두 번 세지 않는다. 대시보드 KPI·30일 추이·입원·퇴원 이력이 모두 이 함수 하나를 쓴다.
 
     Returns [{kind, date, patient_id, patient_name, gender, birth_year, chart_no, insurance_type,
               blacklist, episode_id, consultation_id, sources(list), room_number, ward,
               attending_doctor, diagnosis_name, care_type, admitted_at, discharged_at,
-              discharge_destination, discharge_reason, counselor, patient_age, primary_diagnosis}]
+              discharge_destination, discharge_reason, counselor, patient_age, primary_diagnosis,
+              is_return, away_type, away_from}]
     """
     lo, hi = str(date_from)[:10], str(date_to)[:10]
     if lo > hi:
@@ -7994,7 +7955,34 @@ def admission_flow_events(date_from, date_to):
         row["away_type"] = a.get("event_type") or ""
         row["away_returned_at"] = (a.get("returned_at") or "")[:10]
 
+    # 외진 복귀 = 그날의 입원 (2026-09-15). 명부 회차가 복귀일에 열렸으면 SQL(_AWAY_RETURN_NOT_IN_ROSTER)에서
+    # 걸러지므로 명부 줄과 겹치지 않는다. CRM 회차·상담이 같은 날 입원 줄을 이미 만들었으면 새로 만들지
+    # 않고 그 줄에 복귀 정보만 보강한다(복귀가 더 구체적인 사실이라 병실은 복귀 병실을 우선한다).
+    for a in away_returns_as_admissions(lo, hi):
+        day = str(a.get("returned_at") or "")[:10]
+        if not day or not (lo <= day <= hi):
+            continue
+        row = event(a["patient_id"], day, ADMISSION_EVENT_IN, "외진")
+        fill(row, {
+            "patient_name": a["patient_name"], "gender": a["gender"], "birth_year": a["birth_year"],
+            "consultation_id": a["consultation_id"], "counselor": a["counselor"],
+            "episode_id": a.get("episode_id"), "ward": a.get("ward"),
+            "room_number": a.get("ep_room") or a.get("c_room"),
+            "attending_doctor": a.get("ep_doctor") or a.get("c_doctor"),
+            "care_type": a.get("care_type"), "diagnosis_name": a.get("diagnosis_name"),
+            "patient_age": a.get("patient_age"), "primary_diagnosis": a.get("primary_diagnosis"),
+            "admitted_at": day,
+        }, False)
+        if (a.get("return_room") or "").strip():
+            row["room_number"] = a["return_room"].strip()
+        row["is_return"] = True
+        row["away_type"] = a.get("event_type") or ""
+        row["away_from"] = str(a.get("event_date") or "")[:10]
+
     for row in events.values():
+        row.setdefault("is_return", False)
+        row.setdefault("away_type", "")
+        row.setdefault("away_from", "")
         if not row.get("ward"):
             row["ward"] = ward_of_room(row.get("room_number"))
         row["sources"] = sorted(set(row["sources"]), key=("명부", "CRM", "상담", "외진").index)

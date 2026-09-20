@@ -246,7 +246,7 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
 
 ## 외진 복귀 = 입원 (2026-09-15 사용자 명시 요청)
 
-- **외진(응급전원·모병원 외래치료) 복귀는 그날의 입원으로 센다.** 원무 명부는 보통 나간 날 퇴원 회차를 닫고 복귀한 날 새 회차를 여니 명부만으로도 잡히지만, 명부에 복귀일 회차가 없으면 `admission_events.returned_at`(outcome 복귀)로 보충한다 — `models._AWAY_RETURN_NOT_IN_ROSTER`(같은 환자의 명부 회차가 복귀일에 시작하지 않는 건만) 한 조건을 세 곳이 같이 쓴다: 입원·퇴원 이력 탭(`ward_moves._return_rows`, '입원 복귀' 배지·엑셀 '입원(복귀)'), 대시보드 이번주/이번달 입원(`models.admission_flow_counts`), 명부 입원 KPI·30일 추이(`dashboard_metrics.admission_flow_by_date`). 타 병원 전원으로 끝난 건은 입원이 아니다. 나간 날을 퇴원으로 만들지는 않는다(명부 퇴원 회차가 이미 들고 있음).
+- **외진(응급전원·모병원 외래치료) 복귀는 그날의 입원으로 센다.** 원무 명부는 보통 나간 날 퇴원 회차를 닫고 복귀한 날 새 회차를 여니 명부만으로도 잡히지만, 명부에 복귀일 회차가 없으면 `admission_events.returned_at`(outcome 복귀)로 보충한다 — `models._AWAY_RETURN_NOT_IN_ROSTER`(같은 환자의 명부 회차가 복귀일에 시작하지 않는 건만) 한 조건으로 `models.admission_flow_events`가 **외진 복귀를 IN 행(source '외진', `is_return`)** 으로 넣고, 그 함수를 쓰는 세 화면이 같이 받는다: 입원·퇴원 이력 탭(`ward_moves._load`, '입원 복귀' 배지·엑셀 '입원(복귀)'), 대시보드 이번주/이번달 입원(`models.admission_flow_counts`), 명부 입원 KPI·30일 추이(`dashboard_metrics.admission_flow_by_date`). 복귀를 따로 덧붙이는 코드를 두지 말 것(2026-09-20에 대시보드만 빠진 사고). 타 병원 전원으로 끝난 건은 입원이 아니다. 나간 날을 퇴원으로 만들지는 않는다(명부 퇴원 회차가 이미 들고 있음).
 - **명부 회차(`roster_key`)의 입·퇴원일·병실·status는 상담값으로 덮지 않는다.** `sync_admission_episode`와 기동마다 도는 `_migrate_admission_episodes`의 `ON CONFLICT(consultation_id) DO UPDATE`가 상담 입원일로 덮어써서, 외진 복귀로 새로 열린 회차(박성락 9/11)의 입원일이 첫 입원일(8/10)로 되돌아가 지난주 입원에서 빠졌다. 두 곳 다 `CASE WHEN roster_key IS NOT NULL THEN 기존값` 으로 지키고, `_repair_roster_admitted_at`(기동마다, 멱등)이 `roster_key`의 입원일과 `admitted_at`이 어긋난 회차를 명부 값으로 되돌린다 — NAS는 재배포(재기동) 때 자동 복구된다.
 
 ## 운영 메모

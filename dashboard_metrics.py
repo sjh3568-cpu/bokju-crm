@@ -11,8 +11,9 @@
 """
 from datetime import date, timedelta
 
+import models
 from config import ROOM_BED_CAPACITIES, WARD_BED_CAPACITIES
-from models import (AWAY_EVENT_TYPES, active_reservations_by_room, away_returns_by_date,
+from models import (AWAY_EVENT_TYPES, active_reservations_by_room,
                     crm_discharge_sql, get_db)
 
 ROSTER = "roster_key IS NOT NULL"
