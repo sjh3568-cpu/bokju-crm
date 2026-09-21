@@ -2,11 +2,20 @@
 {% block title %}주간 상담 현황 · 복주 상담CRM{% endblock %}
 {% block content %}
 <div class="page-header">
-    <div><h1>주간 상담 현황</h1><p class="muted">이번 주(월~일) 유입경로·내성균·지역·상담유형 집계. 요약문 복사·이미지 저장으로 공유합니다.</p></div>
+    <div><h1>주간 상담 현황</h1><p class="muted">한 주(월~일)의 유입경로·내성균·지역·상담유형 집계. 기본은 지난주입니다. 요약문 복사·이미지 저장으로 공유합니다.</p></div>
+    {# 주 고르기 — 어느 날짜를 넣어도 그 주 월요일~일요일로 잡힌다. 이번 주는 진행 중이라 참고용. #}
+    <form method="get" action="/report/weekly" class="week-picker no-print" data-export-ignore>
+        <a class="btn btn-secondary btn-sm" href="/report/weekly?week={{ prev_week }}" aria-label="이전 주">◀</a>
+        <input type="date" name="week" value="{{ week_start }}" aria-label="주 선택 (아무 날짜나 고르면 그 주)">
+        <a class="btn btn-secondary btn-sm{% if is_future %} disabled{% endif %}" href="/report/weekly?week={{ next_week }}" aria-label="다음 주"{% if is_future %} aria-disabled="true" tabindex="-1"{% endif %}>▶</a>
+        <button class="btn btn-secondary btn-sm" type="submit">조회</button>
+        <a class="btn btn-sm {% if is_last_week %}btn-primary{% else %}btn-secondary{% endif %}" href="/report/weekly?week={{ last_week }}">지난주</a>
+        <a class="btn btn-sm {% if is_this_week %}btn-primary{% else %}btn-secondary{% endif %}" href="/report/weekly?week={{ this_week }}" title="아직 진행 중인 주 — 숫자가 매일 바뀝니다">이번 주</a>
+    </form>
 </div>
 <div class="card weekly-report-card" id="weekly-status">
     <div class="dash-section-head">
-        <div><h3>주간 상담 현황</h3><span class="muted-sm">{{ weekly_report.period_label }} · 월요일~일요일</span></div>
+        <div><h3>주간 상담 현황</h3><span class="muted-sm">{{ weekly_report.period_label }} · 월요일~일요일{% if is_this_week %} · <b>진행 중</b>{% elif is_last_week %} · 지난주{% endif %}</span></div>
         <div class="weekly-share-actions" data-export-ignore>
             <button type="button" class="btn btn-secondary btn-xs" id="weekly-copy-text">요약문 복사</button>
             <button type="button" class="btn btn-secondary btn-xs" id="weekly-copy-image">이미지 복사</button>
@@ -52,6 +61,9 @@
 .weekly-report-export > h2 { margin:0; text-align:center; font-size:1.25em; }
 .weekly-report-export > p { margin:3px 0 12px; text-align:center; color:#64748b; }
 .weekly-share-actions { display:flex; gap:5px; flex-wrap:wrap; justify-content:flex-end; }
+.week-picker { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+.week-picker input[type=date] { padding:4px 8px; border:1px solid var(--border); border-radius:6px; font-family:inherit; }
+.week-picker .btn.disabled { opacity:.4; pointer-events:none; }
 .weekly-compare-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-bottom:12px; }
 .weekly-compare-card { border:1px solid #dbe3ee; border-radius:8px; padding:9px 11px; display:grid; grid-template-columns:auto 1fr; gap:2px 8px; }
 .weekly-compare-card > span { color:#64748b; font-size:.8em; }

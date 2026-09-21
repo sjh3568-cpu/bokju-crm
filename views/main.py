@@ -305,9 +305,26 @@ def calendar_page():
 @bp.route("/report/weekly")
 @login_required
 def report_weekly():
-    """주간 상담 현황 — 대시보드에서 분리. 집계는 dashboard_summary의 weekly_report 그대로."""
-    data = models.dashboard_summary()
-    return render_template("report_weekly.html", weekly_report=data["weekly_report"])
+    """주간 상담 현황 — 주 단위로 고른다(?week=YYYY-MM-DD, 어느 요일이든 그 주 월요일로).
+    기본은 지난주(월~일) — 이번 주는 진행 중이라 숫자가 매일 바뀌어 보고서로 못 쓴다(2026-09-21 요청)."""
+    today = date.today()
+    this_monday = today - timedelta(days=today.weekday())
+    picked = _valid_date(request.args.get("week"))
+    week = date.fromisoformat(picked) if picked else None
+    report = models.weekly_report(week)
+    ws = date.fromisoformat(report["week_start"])
+    return render_template(
+        "report_weekly.html", weekly_report=report,
+        week_start=ws.isoformat(),
+        week_end=report["week_end"],
+        prev_week=(ws - timedelta(days=7)).isoformat(),
+        next_week=(ws + timedelta(days=7)).isoformat(),
+        last_week=(this_monday - timedelta(days=7)).isoformat(),
+        this_week=this_monday.isoformat(),
+        is_this_week=(ws == this_monday),
+        is_last_week=(ws == this_monday - timedelta(days=7)),
+        is_future=(ws > this_monday),
+    )
 
 def _recovery_projection(strip, recovery_due, discharge_due, horizon=7):
     """회복기 비율 7일 전망 — 만료 예정·퇴원 예정만 반영한 보수적 추정.
