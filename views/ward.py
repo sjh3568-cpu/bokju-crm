@@ -661,6 +661,10 @@ def ward_view():
     admitted, pending = [], list(pending_pool)
     # 재입원 표시 — 지금 입원보다 앞서 퇴원한 회차가 있으면 이전 입원·퇴원일을 함께(2026-09-16 요청)
     prior_by_patient = models.prior_admissions_by_patient(c.get("patient_id") for c in rows)
+    # 재입원 배지를 둘로 가른다(2026-09-21 요청) — 명부는 외진 나간 날 퇴원, 복귀한 날 새 회차로
+    # 적어서 외진 복귀도 '재입원'으로 보였다. 복귀일이 이번 입원일과 맞는 외진이 있으면 '외진 복귀',
+    # 아니면 진짜 재입원이고 '퇴원 후 N일'을 배지에 적는다.
+    returns_by_patient = models.away_return_for_readmission(c.get("patient_id") for c in rows)
     for c in rows:
         adm = (c.get("actual_admission_date") or c.get("admission_date") or "").strip()
         c["admitted_on"] = adm or None
@@ -668,6 +672,7 @@ def ward_view():
             continue
         c["prior_stays"] = [s for s in prior_by_patient.get(c.get("patient_id"), [])
                             if s["admitted_at"] < adm[:10]]
+        c.update(_readmit_badge(c, returns_by_patient.get(c.get("patient_id"))))
         c["away"] = _ward_current_away(c, away_by_pid)
         c["stay_days"] = _days_since(adm)
         c.update(_care_phase(c))
@@ -1032,6 +1037,29 @@ def api_backup_run():
 def api_backup_verify():
     result = backup.verify_latest_restore()
     return jsonify(result), (200 if result.get("ok") else 500)
+
+def _readmit_badge(c, returns):
+    """재입원 배지 종류와 글자.
+
+    외진 복귀: 복귀일이 이번 입원일과 맞는 외진이 있다 → '외진 복귀 · N일'(나가 있던 일수).
+    재입원: 그 외, 이전에 퇴원한 회차가 있다 → '재입원 · 퇴원 후 N일'(직전 퇴원부터 이번 입원까지).
+    prior_stays가 없으면 배지 없음. 반환 키: readmit_kind('away'|'re'|None), readmit_label, readmit_away.
+    """
+    stays = c.get("prior_stays") or []
+    if not stays:
+        return {"readmit_kind": None, "readmit_label": None, "readmit_away": None}
+    hit = models.match_away_return(returns, c.get("admitted_on"))
+    if hit:
+        label = "외진 복귀" + (f" · {hit['days']}일" if hit.get("days") is not None else "")
+        return {"readmit_kind": "away", "readmit_label": label, "readmit_away": hit}
+    gap = None
+    try:
+        gap = (date.fromisoformat(c["admitted_on"][:10]) - date.fromisoformat(stays[0]["discharged_at"])).days
+    except (KeyError, TypeError, ValueError):
+        pass
+    label = "재입원" + (f" · 퇴원 후 {gap}일" if gap is not None and gap >= 0 else "")
+    return {"readmit_kind": "re", "readmit_label": label, "readmit_away": None}
+
 
 def _ward_current_away(record, by_patient):
     event = by_patient.get(record.get("patient_id"))

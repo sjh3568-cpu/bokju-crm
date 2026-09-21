@@ -2596,6 +2596,50 @@ def prior_admissions_by_patient(patient_ids):
     return out
 
 
+def away_return_for_readmission(patient_ids):
+    """환자별 '외진 복귀로 생긴 재입원' 근거 — 재입원 배지를 외진 복귀와 진짜 재입원으로 가른다(2026-09-21 요청).
+
+    원무 명부는 외진 나간 날 퇴원, 복귀한 날 새 회차로 적는다. 그래서 회차만 보면 외진 복귀도
+    '이전에 퇴원한 회차가 있는' 재입원으로 보인다. 그 환자의 복귀 처리된 외진 중 복귀일이
+    현재 입원일과 같은(±AWAY_DISCHARGE_MERGE_DAYS) 건이 있으면 외진 복귀다.
+    반환: {patient_id: [{event_date, returned_at, hospital, event_type, days}]} — 복귀일 최근 순.
+    """
+    ids = [int(p) for p in set(patient_ids or []) if p]
+    if not ids:
+        return {}
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            f"""SELECT c.patient_id, e.event_date, e.returned_at, e.hospital, e.event_type
+                  FROM admission_events e JOIN consultations c ON c.id = e.consultation_id
+                 WHERE c.patient_id IN ({",".join("?" * len(ids))})
+                   AND e.event_type IN ({",".join("?" * len(AWAY_EVENT_TYPES))})
+                   AND e.returned_at IS NOT NULL AND e.returned_at != ''
+                 ORDER BY c.patient_id, date(e.returned_at) DESC""",
+            ids + list(AWAY_EVENT_TYPES)).fetchall()
+    finally:
+        conn.close()
+    out = {}
+    for r in rows:
+        went, back = _iso_date(r["event_date"]), _iso_date(r["returned_at"])   # 잘못된 값은 1900년
+        out.setdefault(r["patient_id"], []).append({
+            "event_date": went.isoformat(), "returned_at": back.isoformat(),
+            "hospital": r["hospital"], "event_type": r["event_type"],
+            "days": (back - went).days if went.year > 1900 and back.year > 1900 else None})
+    return out
+
+
+def match_away_return(returns, admitted_on):
+    """복귀일이 입원일 ±AWAY_DISCHARGE_MERGE_DAYS 안인 외진 건 하나 — 없으면 None."""
+    if not returns or not admitted_on:
+        return None
+    adm = _iso_date(admitted_on)
+    for r in returns:
+        if abs((_iso_date(r["returned_at"]) - adm).days) <= AWAY_DISCHARGE_MERGE_DAYS:
+            return r
+    return None
+
+
 def patient_admission_history(patient_id):
     """상담 상세 '입원 회차 이력' — 시간순으로 번호를 다시 매긴다(가장 오래된 입원이 1회).
 

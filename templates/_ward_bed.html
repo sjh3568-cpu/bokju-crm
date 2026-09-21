@@ -4,7 +4,7 @@
      data-cid="{{ c.id or '' }}" data-name="{{ c.patient_name }}" data-room="{{ c.room_number or '' }}"{% if c.away %} data-aevent="{{ c.away.id }}" data-event-date="{{ c.away.event_date or '' }}" data-return-date="{{ c.away.expected_return_date or '' }}" data-return-room="{{ c.away.return_room or c.room_number or '' }}"{% endif %}>
     {# 1행 이름(성별/나이) · 관리태그 · 외진 표시 #}
     <div class="rm-bed-top">
-        {% if c.id %}<a href="/consult/{{ c.id }}" class="rm-name">{{ c.patient_name }}</a>{% if c.prior_stays %} <span class="wd-readmit" title="재입원 — 이전 입원 {% for s in c.prior_stays %}{{ s.admitted_at|krdate_short }}~{{ s.discharged_at|krdate_short }}{% if s.room_number %} {{ s.room_number }}{% endif %}({{ s.source }}){% if not loop.last %} · {% endif %}{% endfor %}">재입원</span>{% endif %}
+        {% if c.id %}<a href="/consult/{{ c.id }}" class="rm-name">{{ c.patient_name }}</a>{% if c.readmit_kind %} {% include "_readmit_badge.html" %}{% endif %}
         {% else %}<span class="rm-name">{{ c.patient_name }}</span>{% endif %}
         <span class="rm-age muted-sm">({% if c.gender == 'M' %}남{% elif c.gender == 'F' %}여{% else %}-{% endif %}/{% if c.patient_age is not none %}{{ c.patient_age }}{% else %}-{% endif %})</span>
         {% for t in c.mgmt_tags %}<span class="wd-tag">{{ t }}</span>{% endfor %}

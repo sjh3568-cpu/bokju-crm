@@ -1,0 +1,7 @@
+{#- 재입원 배지 — 재원 명단(_ward_roster)과 침상 카드(_ward_bed)가 같이 쓴다.
+    외진 복귀와 진짜 재입원을 글자로 가른다(2026-09-21 요청). 근거는 views/ward.py _readmit_badge(). -#}
+{%- if c.readmit_kind == 'away' -%}
+<span class="wd-readmit wd-readmit-away" title="외진 복귀 — {{ c.readmit_away.event_type }}{% if c.readmit_away.hospital %} {{ c.readmit_away.hospital }}{% endif %} {{ c.readmit_away.event_date|krdate_short }}~{{ c.readmit_away.returned_at|krdate_short }}{% if c.readmit_away.days is not none %}({{ c.readmit_away.days }}일){% endif %} · 원무 명부는 외진 나간 날 퇴원, 복귀한 날 새 회차로 적습니다">{{ c.readmit_label }}</span>
+{%- elif c.readmit_kind == 're' -%}
+<span class="wd-readmit" title="재입원 — 이전 입원 {% for s in c.prior_stays %}{{ s.admitted_at|krdate_short }}~{{ s.discharged_at|krdate_short }}{% if s.room_number %} {{ s.room_number }}{% endif %}({{ s.source }}){% if not loop.last %} · {% endif %}{% endfor %}">{{ c.readmit_label }}</span>
+{%- endif -%}
