@@ -39,6 +39,33 @@
 다른 PC에서 이어갈 때 이 문서를 먼저 읽고 실제 확인된 설정을 추가한다.
 
 
+## 2026-09-21 기기 확인 — A안(팩스→SMB→NAS)·B안(팩스→이메일)은 이 기기로 불가, C안(PC 수신)만 가능
+
+팩스를 사내망에 랜선으로 연결한 뒤(172.16.1.157, 이 PC .28에서 응답) 웹 관리 화면(SyncThru)이 로그인 없이
+내려주는 기능 플래그 `http://172.16.1.157/sws/app/information/currentsettings/machine/system/system_info.json`을 읽었다.
+모델명은 "M267x 287x Series"로 보고된다.
+
+| 플래그 | 값 | 뜻 |
+|---|---|---|
+| `GXI_SUPPORT_S2SMB` | 0 | 네트워크 폴더(SMB)로 보내기 없음 → **A안 불가** |
+| `GXI_SUPPORT_S2FTP` | 0 | FTP 없음 |
+| `GXI_SUPPORT_S2EMAIL` | 0 | 이메일 전송 없음 → **B안 불가** |
+| `GXI_SUPPORT_FAX2PC` | 1 | PC로 팩스 수신(Easy Printer Manager) 있음 → **C안 가능** |
+| `GXI_SUPPORT_S2PC` / `GXI_SUPPORT_WSD` | 1 | PC 스캔 가능 |
+
+같은 시리즈에서 SMB/이메일 전송은 상위 기종(M2875FD·M2885FW)에만 있다. 현재 팩스 설정: 자동수신, 벨 4회,
+발신자명 "복주회복병원", 054-853-9229, 자동 리포트 켜짐. 종이 출력은 PC·네트워크와 무관하게 계속된다.
+
+**결정 방향 (사용자와 협의 중)**
+- 지금 갈 길 = C안. 수신 PC의 EPM이 PDF를 로컬 `C:\Fax\수신`에 저장 → 로그온 시 자동 실행되는
+  `robocopy C:\Fax\수신 \172.16.1.250\팩스\수신 /MOV /MOT:1 /R:0 /NP /LOG+:C:\Fax\복사로그.txt`
+  가 1분마다 NAS로 옮긴다. NAS가 안 보이면 로컬에 대기했다가 마저 보낸다(EPM 저장 폴더를 NAS로 직접 잡으면
+  그 순간 NAS가 안 보일 때 파일이 소리 없이 사라진다 — 그래서 로컬+robocopy).
+- 한계: PC가 꺼져 있는 동안 온 팩스는 종이로만 남는다(켜도 소급 안 됨). 그 종이는 PC로 스캔해 같은 폴더에 넣으면 CRM이 똑같이 처리한다.
+- PC 없이 가려면: 인터넷팩스로 번호 착신전환(팩스→이메일 PDF→CRM, B안을 서비스로 대체) 또는 SMB 전달 되는 복합기로 교체.
+- CRM 쪽은 어느 쪽이든 동일 — "NAS 폴더에 PDF가 나타난다"만 본다. 남은 일은 NAS 공유폴더 `팩스`(안에 `수신`·`정리`) 생성,
+  docker-compose의 `/volume1/팩스:/fax` 주석 해제, `.env`에 `FAX_INBOX_DIR=/fax/수신`, 재배포.
+
 ## CRM 쪽 구현 (2026-09-17, `fax_inbox.py` · `views/documents.py`)
 
 현장(복합기·PC·NAS 폴더) 설정과 무관하게 CRM 쪽은 만들어져 있다. 계약은 하나 — **NAS 폴더에 PDF가 떨어진다.**
