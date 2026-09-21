@@ -75,17 +75,17 @@
     </form>
 {% if trend_summary %}{% set ts = trend_summary %}
     <div class="wd-kpi wd-trend-kpi">
-        <div class="wd-k {% if trend_insight and trend_insight.ok %}ok{% endif %}"><span class="wd-k-n">{{ (trend_insight.ratio if trend_insight else ts.last.ratio)|pct2 }}<small>%</small></span><span class="wd-k-l">오늘 회복기 비율 <small>{{ trend_insight.recovery if trend_insight else ts.last.recovery }}/{{ trend_insight.known if trend_insight else ts.last.known }}명</small></span></div>
-        <div class="wd-k {% if ts.ok %}ok{% else %}warn{% endif %}"><span class="wd-k-n">{{ ts.avg|pct2 }}<small>%</small></span><span class="wd-k-l">기간 평균 <small>연인원 기준 · 단순평균 {{ ts.avg_simple|pct2 }}%</small></span></div>
-        <div class="wd-k"><span class="wd-k-n">{{ ts.low.ratio|pct2 }}<small>%</small></span><span class="wd-k-l">기간 최저 <small>{{ ts.low.label }} · {{ ts.low.recovery }}/{{ ts.low.known }}명</small></span></div>
-        <div class="wd-k"><span class="wd-k-n">{{ ts.high.ratio|pct2 }}<small>%</small></span><span class="wd-k-l">기간 최고 <small>{{ ts.high.label }} · {{ ts.high.recovery }}/{{ ts.high.known }}명</small></span></div>
+        <div class="wd-k {% if trend_insight and trend_insight.ok %}ok{% endif %}"><span class="wd-k-n">{{ (trend_insight.ratio if trend_insight else ts.last.ratio)|pct1 }}<small>%</small></span><span class="wd-k-l">오늘 회복기 비율 <small>{{ trend_insight.recovery if trend_insight else ts.last.recovery }}/{{ trend_insight.known if trend_insight else ts.last.known }}명</small></span></div>
+        <div class="wd-k {% if ts.ok %}ok{% else %}warn{% endif %}"><span class="wd-k-n">{{ ts.avg|pct1 }}<small>%</small></span><span class="wd-k-l" title="연인원 기준(재원일수 가중) 평균 · 날짜별 단순평균 {{ ts.avg_simple|pct1 }}%">기간 평균 <small>단순평균 {{ ts.avg_simple|pct1 }}%</small></span></div>
+        <div class="wd-k"><span class="wd-k-n">{{ ts.low.ratio|pct1 }}<small>%</small></span><span class="wd-k-l">기간 최저 <small>{{ ts.low.label }} · {{ ts.low.recovery }}/{{ ts.low.known }}명</small></span></div>
+        <div class="wd-k"><span class="wd-k-n">{{ ts.high.ratio|pct1 }}<small>%</small></span><span class="wd-k-l">기간 최고 <small>{{ ts.high.label }} · {{ ts.high.recovery }}/{{ ts.high.known }}명</small></span></div>
         <div class="wd-k {% if ts.below_days %}warn{% else %}ok{% endif %}"><span class="wd-k-n">{{ ts.below_days }}<small>일 / {{ ts.days }}일</small></span><span class="wd-k-l">40% 미만 일수 <small>{% if ts.below_first %}첫 날 {{ ts.below_first.label }}{% else %}없음{% endif %}</small></span></div>
-        <div class="wd-k"><span class="wd-k-n">{% if ts.month_avg is not none %}{{ ts.month_avg|pct2 }}<small>%</small>{% else %}-{% endif %}</span><span class="wd-k-l">최근 {{ ts.month_count }}개월 월말 평균 <small>달마다 월말 하루 · 조회 기간과 무관</small></span></div>
+        <div class="wd-k"><span class="wd-k-n">{% if ts.month_avg is not none %}{{ ts.month_avg|pct1 }}<small>%</small>{% else %}-{% endif %}</span><span class="wd-k-l" title="달마다 월말 하루 값의 평균 · 조회 기간과 무관">최근 {{ ts.month_count }}개월 월말 평균</span></div>
     </div>
     {% if ts.below_runs %}
     <details class="wd-below-runs"><summary>40% 미만 구간 {{ ts.below_runs|length }}회 · 총 {{ ts.below_days }}일 보기</summary>
         <table class="wd-insight-table"><thead><tr><th>시작</th><th>종료</th><th>일수</th><th>최저</th></tr></thead><tbody>
-        {% for r in ts.below_runs %}<tr><td class="nowrap">{{ r.start.date }}</td><td class="nowrap">{{ r.end.date }}</td><td>{{ r.days }}일</td><td class="nowrap"><b>{{ r.low.ratio|pct2 }}%</b> <small class="muted">{{ r.low.label }} · {{ r.low.recovery }}/{{ r.low.known }}명</small></td></tr>{% endfor %}
+        {% for r in ts.below_runs %}<tr><td class="nowrap">{{ r.start.date }}</td><td class="nowrap">{{ r.end.date }}</td><td>{{ r.days }}일</td><td class="nowrap"><b>{{ r.low.ratio|pct1 }}%</b> <small class="muted">{{ r.low.label }} · {{ r.low.recovery }}/{{ r.low.known }}명</small></td></tr>{% endfor %}
         </tbody></table>
     </details>
     {% endif %}
@@ -93,25 +93,25 @@
 {% if trend_insight %}{% set ti = trend_insight %}
     <div class="wd-insight {% if ti.ok %}ok{% else %}warn{% endif %}">
         <div class="wd-insight-head">
-            <span class="wd-insight-ratio">{{ ti.ratio|pct2 }}%</span>
+            <span class="wd-insight-ratio">{{ ti.ratio|pct1 }}%</span>
             <span class="wd-insight-state">{% if ti.ok %}✓ 40% 이상 유지 중{% else %}⚠ 40% 미만{% endif %}</span>
             <span class="muted-sm">오늘 기준 · 회복기 {{ ti.recovery }}명 / 판정 가능 {{ ti.known }}명 (총 재원 {{ ti.total }}명)</span>
         </div>
         <ul class="wd-insight-list">
         {% if ti.ok %}
-            <li>회복기 환자 <b>{{ ti.rec_out }}명</b>까지 퇴원(또는 비회복기 전환)해도 40%가 유지됩니다. <b>{{ ti.rec_out + 1 }}명째</b>가 나가면 {{ ti.rec_out_ratio|pct2 }}%로 기준선 아래로 떨어집니다.</li>
-            <li>비회복기 환자는 <b>{{ ti.non_in }}명</b>까지 더 받아도 40%가 유지됩니다. {{ ti.non_in + 1 }}명째부터 {{ ti.non_in_ratio|pct2 }}%가 됩니다.</li>
+            <li>회복기 환자 <b>{{ ti.rec_out }}명</b>까지 퇴원(또는 비회복기 전환)해도 40%가 유지됩니다. <b>{{ ti.rec_out + 1 }}명째</b>가 나가면 {{ ti.rec_out_ratio|pct1 }}%로 기준선 아래로 떨어집니다.</li>
+            <li>비회복기 환자는 <b>{{ ti.non_in }}명</b>까지 더 받아도 40%가 유지됩니다. {{ ti.non_in + 1 }}명째부터 {{ ti.non_in_ratio|pct1 }}%가 됩니다.</li>
         {% else %}
-            <li>회복기 환자 <b>{{ ti.rec_in }}명</b>이 더 입원하면 {{ ti.rec_in_ratio|pct2 }}%로 40%에 도달합니다.</li>
-            <li>또는 비회복기 환자 <b>{{ ti.non_out }}명</b>이 퇴원하면 {{ ti.non_out_ratio|pct2 }}%로 40%에 도달합니다. (둘을 섞어도 됩니다 — 아래 계산기)</li>
+            <li>회복기 환자 <b>{{ ti.rec_in }}명</b>이 더 입원하면 {{ ti.rec_in_ratio|pct1 }}%로 40%에 도달합니다.</li>
+            <li>또는 비회복기 환자 <b>{{ ti.non_out }}명</b>이 퇴원하면 {{ ti.non_out_ratio|pct1 }}%로 40%에 도달합니다. (둘을 섞어도 됩니다 — 아래 계산기)</li>
         {% endif %}
-            <li>앞으로 {{ ti.horizon }}일 안에 회복기 종료 예정 <b>{{ ti.ending|length }}명</b>(30일 내 {{ ti.ending_30 }}명). 입·퇴원이 없다고 가정하면 {{ ti.forecast[-1].label }}에 <b>{{ ti.end_ratio|pct2 }}%</b>가 됩니다.
-            {% if ti.cross %}<span class="wd-insight-cross">→ <b>{{ ti.cross.label }}</b>에 {{ ti.cross.ratio|pct2 }}%로 처음 40% 아래로 내려갑니다.</span>{% elif ti.ok %}<span class="muted-sm">이 기간 안에는 40% 아래로 내려가지 않습니다.</span>{% endif %}</li>
+            <li>앞으로 {{ ti.horizon }}일 안에 회복기 종료 예정 <b>{{ ti.ending|length }}명</b>(30일 내 {{ ti.ending_30 }}명). 입·퇴원이 없다고 가정하면 {{ ti.forecast[-1].label }}에 <b>{{ ti.end_ratio|pct1 }}%</b>가 됩니다.
+            {% if ti.cross %}<span class="wd-insight-cross">→ <b>{{ ti.cross.label }}</b>에 {{ ti.cross.ratio|pct1 }}%로 처음 40% 아래로 내려갑니다.</span>{% elif ti.ok %}<span class="muted-sm">이 기간 안에는 40% 아래로 내려가지 않습니다.</span>{% endif %}</li>
         </ul>
         {% if ti.ending %}
         <details class="wd-insight-ending"><summary>회복기 종료 예정 {{ ti.ending|length }}명 보기</summary>
             <table class="wd-insight-table"><thead><tr><th>종료</th><th>환자</th><th>병실</th><th>주진단</th></tr></thead><tbody>
-            {% for c in ti.ending %}<tr><td class="nowrap">D-{{ c.phase_dday }}</td><td><a href="/consult/{{ c.id }}">{{ c.patient_name }}</a></td><td>{{ c.room_number or '-' }}</td><td>{{ c.primary_diagnosis or '-' }}</td></tr>{% endfor %}
+            {% for c in ti.ending %}<tr><td class="nowrap">D-{{ c.phase_dday }}</td><td><a href="/consult/{{ c.id }}">{{ c.patient_name }}</a></td><td>{{ c.room_number|room_no or '-' }}</td><td>{{ c.primary_diagnosis or '-' }}</td></tr>{% endfor %}
             </tbody></table>
         </details>
         {% endif %}
@@ -120,21 +120,21 @@
     <details class="wd-flow {% if tf.ok %}ok{% else %}warn{% endif %}" id="wd-flow-details">
         <summary class="wd-flow-summary">
             <span class="wd-flow-title">📅 입·퇴원 D-30 반영 추이</span>
-            <span class="wd-flow-brief">{{ tf.horizon }}일 후 예상 <b>{{ tf.end.ratio|pct2 }}%</b> · 입원 {{ tf.sum.in_total }} · 퇴원 {{ tf.sum.out_total }} · 종료 {{ tf.sum.rec_end }}{% if tf.cross %} · <b class="wd-insight-cross">{{ tf.cross.label }} 40% 아래</b>{% endif %}</span>
+            <span class="wd-flow-brief">{{ tf.horizon }}일 후 예상 <b>{{ tf.end.ratio|pct1 }}%</b> · 입원 {{ tf.sum.in_total }} · 퇴원 {{ tf.sum.out_total }} · 종료 {{ tf.sum.rec_end }}{% if tf.cross %} · <b class="wd-insight-cross">{{ tf.cross.label }} 40% 아래</b>{% endif %}</span>
             <span class="muted-sm wd-flow-hint">펼치기 ▾</span>
         </summary>
         <p class="muted-sm wd-flow-desc">입원예정 상담 + 퇴원 예정 D-30 + 회복기 종료 · 오늘부터 {{ tf.horizon }}일</p>
         <div class="wd-kpi wd-trend-kpi wd-flow-kpi">
-            <div class="wd-k"><span class="wd-k-n">{{ tf.sum.in_total }}<small>명</small></span><span class="wd-k-l">입원 예정 <small>회복기 {{ tf.sum.in_rec }} · 비회복기 {{ tf.sum.in_non }}{% if tf.sum.in_unknown %} · 미판정 {{ tf.sum.in_unknown }}{% endif %}</small></span></div>
+            <div class="wd-k"><span class="wd-k-n">{{ tf.sum.in_total }}<small>명</small></span><span class="wd-k-l">입원예정 <small>회복기 {{ tf.sum.in_rec }} · 비회복기 {{ tf.sum.in_non }}{% if tf.sum.in_unknown %} · 미판정 {{ tf.sum.in_unknown }}{% endif %}</small></span></div>
             <div class="wd-k"><span class="wd-k-n">{{ tf.sum.out_total }}<small>명</small></span><span class="wd-k-l">퇴원 예정 D-30 <small>회복기 {{ tf.sum.out_rec }} · 비회복기 {{ tf.sum.out_non }}{% if tf.sum.out_unknown %} · 미판정 {{ tf.sum.out_unknown }}{% endif %}</small></span></div>
             <div class="wd-k"><span class="wd-k-n">{{ tf.sum.rec_end }}<small>명</small></span><span class="wd-k-l">회복기 종료(전환) <small>S005 수가 만료 · 퇴원 전 종료만</small></span></div>
-            <div class="wd-k {% if tf.ok %}ok{% else %}warn{% endif %}"><span class="wd-k-n">{{ tf.end.ratio|pct2 }}<small>%</small></span><span class="wd-k-l">{{ tf.horizon }}일 후 예상 <small>지금 {{ tf.start_ratio|pct2 }}% → {{ tf.end.recovery }}/{{ tf.end.known }}명{% if tf.cross %} · <b class="wd-insight-cross">{{ tf.cross.label }} 40% 아래</b>{% endif %}</small></span></div>
+            <div class="wd-k {% if tf.ok %}ok{% else %}warn{% endif %}"><span class="wd-k-n">{{ tf.end.ratio|pct1 }}<small>%</small></span><span class="wd-k-l">{{ tf.horizon }}일 후 예상 <small>지금 {{ tf.start_ratio|pct1 }}% → {{ tf.end.recovery }}/{{ tf.end.known }}명{% if tf.cross %} · <b class="wd-insight-cross">{{ tf.cross.label }} 40% 아래</b>{% endif %}</small></span></div>
         </div>
         <div class="wd-trend-grid wd-flow-grid">
             <div>
                 <strong>향후 {{ tf.horizon }}일 · 입원(＋)·퇴원(－)·회복기 종료 인원과 예상 비율</strong>
                 <svg class="wd-ratio-chart" data-flow="1" data-series='{{ tf.days|tojson }}' viewBox="0 0 1000 260" role="img" aria-label="입·퇴원 반영 회복기 비율 예상"></svg>
-                <div class="wd-chart-legend"><span><i style="background:#34d399"></i>입원 예정</span><span><i style="background:#fb923c"></i>퇴원 예정</span><span><i style="background:#fbbf24"></i>회복기 종료</span><span><i class="line" style="background:#0ea5e9"></i>예상 비율(왼쪽 축 %)</span><span class="muted">막대는 오른쪽 축(명)</span></div>
+                <div class="wd-chart-legend"><span><i style="background:#34d399"></i>입원예정</span><span><i style="background:#fb923c"></i>퇴원 예정</span><span><i style="background:#fbbf24"></i>회복기 종료</span><span><i class="line" style="background:#0ea5e9"></i>예상 비율(왼쪽 축 %)</span><span class="muted">막대는 오른쪽 축(명)</span></div>
             </div>
             <div class="wd-flow-side">
                 <div class="wd-whatif" data-recovery="{{ ti.recovery }}" data-known="{{ ti.known }}"
@@ -148,20 +148,20 @@
                         <label>회복기 종료 <input type="number" min="0" value="{{ tf.sum.rec_end }}" data-k="rec_end"></label>
                     </div>
                     <div class="wd-whatif-row">
-                        <span class="wd-whatif-out">→ <b id="wd-whatif-ratio">{{ tf.end.ratio|pct2 }}%</b> <span id="wd-whatif-detail" class="muted-sm"></span></span>
+                        <span class="wd-whatif-out">→ <b id="wd-whatif-ratio">{{ tf.end.ratio|pct1 }}%</b> <span id="wd-whatif-detail" class="muted-sm"></span></span>
                         <button type="button" class="btn btn-secondary btn-sm" data-whatif="preset">D-30 예정값</button>
                         <button type="button" class="btn btn-secondary btn-sm" data-whatif="zero">모두 0</button>
                     </div>
                 </div>
                 {% if tf.active %}
                 <details class="wd-flow-days" open><summary>날짜별 내역 · 예정이 있는 {{ tf.active|length }}일</summary>
-                    <div class="wd-flow-table-wrap"><table class="wd-insight-table"><thead><tr><th>날짜</th><th>입원 예정</th><th>퇴원 예정</th><th>회복기 종료</th><th>예상 비율</th></tr></thead><tbody>
+                    <div class="wd-flow-table-wrap"><table class="wd-insight-table"><thead><tr><th>날짜</th><th>입원예정</th><th>퇴원 예정</th><th>회복기 종료</th><th>예상 비율</th></tr></thead><tbody>
                     {% for d in tf.active %}<tr>
                         <td class="nowrap">{{ d.label }} <small class="muted">D+{{ d.dday }}</small></td>
                         <td>{% for p in d.in_names %}<span class="wd-flow-name {% if p.phase == '회복기' %}rec{% elif p.phase == '비회복기' %}non{% else %}unk{% endif %}" title="{{ p.phase }}">{% if p.id %}<a href="/consult/{{ p.id }}">{{ p.name }}</a>{% else %}{{ p.name }}{% endif %}</span>{% endfor %}</td>
                         <td>{% for p in d.out_names %}<span class="wd-flow-name {% if p.phase == '회복기' %}rec{% elif p.phase == '비회복기' %}non{% else %}unk{% endif %}" title="{{ p.phase }}">{% if p.id %}<a href="/consult/{{ p.id }}">{{ p.name }}</a>{% else %}{{ p.name }}{% endif %}</span>{% endfor %}</td>
                         <td>{% for p in d.end_names %}<span class="wd-flow-name end">{% if p.id %}<a href="/consult/{{ p.id }}">{{ p.name }}</a>{% else %}{{ p.name }}{% endif %}</span>{% endfor %}</td>
-                        <td class="nowrap"><b{% if d.ratio < 40 %} class="wd-insight-cross"{% endif %}>{{ d.ratio|pct2 }}%</b> <small class="muted">{{ d.recovery }}/{{ d.known }}명</small></td>
+                        <td class="nowrap"><b{% if d.ratio < 40 %} class="wd-insight-cross"{% endif %}>{{ d.ratio|pct1 }}%</b> <small class="muted">{{ d.recovery }}/{{ d.known }}명</small></td>
                     </tr>{% endfor %}
                     </tbody></table></div>
                     <p class="muted-sm wd-flow-note">초록 회복기 · 회색 비회복기 · 점선 미판정(인원에만 반영). 입원 예정은 상담의 입원예정일, 퇴원 예정은 재원 카드의 '퇴원 예정 D-30'과 같은 기준입니다.</p>
@@ -189,7 +189,7 @@
     {% if blacklisted %}<div class="tbl-wrap"><table class="tbl wd-tbl"><thead><tr><th>환자</th><th>보호자·연락처</th><th>지정 사유</th><th>등록일</th><th>최근 상담</th><th>상태</th><th>확인</th></tr></thead><tbody>
     {% for p in blacklisted %}<tr>
         <td class="nowrap"><strong>{{ p.name }}</strong>{% if p.gender == 'M' %} <span class="muted-sm">· 남</span>{% elif p.gender == 'F' %} <span class="muted-sm">· 여</span>{% endif %}</td>
-        <td>{{ p.guardian_name or '-' }}{% if p.guardian_relation %} ({{ p.guardian_relation }}){% endif %}<small class="wd-block">{{ p.guardian_phone or '-' }}</small></td>
+        <td>{% if p.guardian_name or p.guardian_relation %}{{ p.guardian_name or '' }}{% if p.guardian_relation %} ({{ p.guardian_relation }}){% endif %}{% elif not p.guardian_phone %}-{% endif %}{% if p.guardian_phone %}<small class="wd-block">{{ p.guardian_phone }}</small>{% endif %}</td>
         <td>{{ p.blacklist_reason or '사유 미입력' }}</td>
         <td class="nowrap">{{ p.blacklist_at[0:10]|krdate if p.blacklist_at else '-' }}</td>
         <td class="nowrap">{{ p.consult_date|krdate if p.consult_date else '상담 이력 없음' }}{% if p.counselor %}<small class="wd-block">{{ p.counselor }}</small>{% endif %}</td>
@@ -206,7 +206,7 @@
         <div class="wd-k"><span class="wd-k-n">{{ wait_kpis.total }}</span><span class="wd-k-l">🛏 총 대기 인원 <small>평균 {{ wait_kpis.avg_days }}일</small></span></div>
         <div class="wd-k wd-k-mix" title="입원 전이라 상담일지의 입원목적·발병일로 판정한 값입니다">
             <span class="wd-k-split"><b>{{ wait_kpis.recovery }}<small>명</small></b><b>{{ wait_kpis.nonrecovery }}<small>명</small></b></span>
-            <span class="wd-k-l"><i class="rec"></i>회복기 대상 · <i class="non"></i>비회복기 대상{% if wait_kpis.other or wait_kpis.unknown %} <small>· 기타 {{ wait_kpis.other }} · 미판정 {{ wait_kpis.unknown }}</small>{% endif %}</span>
+            <span class="wd-k-l" title="회복기 대상 · 비회복기 대상{% if wait_kpis.other or wait_kpis.unknown %} · 기타 {{ wait_kpis.other }} · 미판정 {{ wait_kpis.unknown }}{% endif %}"><i class="rec"></i>회복기 · <i class="non"></i>비회복기{% if wait_kpis.other or wait_kpis.unknown %} <small>· 기타 {{ wait_kpis.other }} · 미판정 {{ wait_kpis.unknown }}</small>{% endif %}</span>
         </div>
         <div class="wd-k {% if wait_kpis.urgent %}danger{% elif wait_kpis.priority %}warn{% else %}zero{% endif %}"><span class="wd-k-n">{{ wait_kpis.urgent }}<small> / {{ wait_kpis.priority }}</small></span><span class="wd-k-l">🔥 긴급 / 우선</span></div>
         <div class="wd-k {% if wait_kpis.over7 %}warn{% else %}zero{% endif %}"><span class="wd-k-n">{{ wait_kpis.over7 }}</span><span class="wd-k-l">⏳ 7일 이상 대기</span></div>
@@ -223,24 +223,24 @@
             <small class="wd-block">상담 {{ c.consult_date|krdate }}</small></td>
         <td class="wd-wait-edit"><input class="wd-w-ward" value="{{ c.wait_preferred_ward or '' }}" placeholder="선호 병동"><input class="wd-w-req" value="{{ c.wait_bed_requirements or '' }}" placeholder="격리·성별 등 조건"></td>
         <td class="wd-wait-edit {% if c.contact_overdue %}wd-contact-over{% endif %}"><small>최근 {{ c.wait_last_contact_at[0:16] if c.wait_last_contact_at else '없음' }}{% if c.wait_contact_by %} · {{ c.wait_contact_by }}{% endif %}</small><input type="date" class="wd-w-next" value="{{ c.wait_next_contact_date or '' }}"><button type="button" class="btn btn-secondary btn-xs wd-contact-done">연락 완료</button></td>
-        <td class="wd-wait-edit"><textarea class="wd-w-memo" rows="2" placeholder="대기 메모 (연락 내용·보호자 요청 등)">{{ c.recontact_memo or '' }}</textarea>{% if c.hold_reason %}<small class="wd-block muted-sm">보류 사유: {{ c.hold_reason }}</small>{% endif %}<small class="wd-block">{{ c.guardian_name or '-' }} · {{ c.guardian_phone or '-' }}</small></td>
+        <td class="wd-wait-edit"><textarea class="wd-w-memo" rows="2" placeholder="대기 메모 (연락 내용·보호자 요청 등)">{{ c.recontact_memo or '' }}</textarea>{% if c.hold_reason %}<small class="wd-block muted-sm">보류 사유: {{ c.hold_reason }}</small>{% endif %}<small class="wd-block">{% if c.guardian_name or c.guardian_phone %}{{ c.guardian_name or '' }}{% if c.guardian_name and c.guardian_phone %} · {% endif %}{{ c.guardian_phone or '' }}{% else %}-{% endif %}</small></td>
         <td class="nowrap wd-plan" data-cid="{{ c.id }}"><input type="date" class="wd-pl-date" value="{{ c.planned_admission_date or today_str }}"><input type="time" class="wd-pl-time" value="{{ c.planned_admission_time or '' }}"><select class="wd-pl-doctor doctor-select" title="주치의"><option value="">주치의</option>{% for d in ATTENDING_DOCTORS %}<option value="{{ d }}" {% if c.attending_doctor == d %}selected{% endif %}>{{ d }}</option>{% endfor %}{% if c.attending_doctor and c.attending_doctor not in ATTENDING_DOCTORS %}<option value="{{ c.attending_doctor }}" selected>{{ c.attending_doctor }}</option>{% endif %}<option value="__custom__">직접 입력…</option></select><input type="text" class="wd-pl-room" placeholder="호실" size="5" value="{{ c.room_number or '' }}"><button type="button" class="btn btn-primary btn-xs wd-pl-save" title="입원 예정으로 넘깁니다. 환자가 실제로 온 날 아래 '입원 예정 환자' 표에서 [입원 완료]">입원 예정</button></td>
     </tr>{% endfor %}</tbody></table></div>
     {% else %}<div class="empty">현재 입원 대기 환자가 없습니다.</div>{% endif %}
 </section>
 <section class="card wd-sec wd-planned" id="sec-planned">
-    <div class="wd-sec-head"><h3>📅 입원 예정 환자 <span class="wd-n">{{ planned_list|length }}</span>{% if wait_kpis.planned_overdue %} <span class="wd-badge-warn" title="예정일이 지났는데 입원 완료·취소 처리가 안 된 환자">예정일 지남 {{ wait_kpis.planned_overdue }}</span>{% endif %}</h3><span class="muted-sm">입원하기로 한 환자 · 실제로 온 날 [입원 완료]를 눌러야 재원 명부에 오릅니다 · 못 오게 되면 [대기로]</span></div>
+    <div class="wd-sec-head"><h3>📅 입원예정 환자 <span class="wd-n">{{ planned_list|length }}</span>{% if wait_kpis.planned_overdue %} <span class="wd-badge-warn" title="예정일이 지났는데 입원 완료·취소 처리가 안 된 환자">예정일 지남 {{ wait_kpis.planned_overdue }}</span>{% endif %}</h3><span class="muted-sm">입원하기로 한 환자 · 실제로 온 날 [입원 완료]를 눌러야 재원 명부에 오릅니다 · 못 오게 되면 [대기로]</span></div>
     {% if planned_list %}<div class="tbl-wrap"><table class="tbl wd-tbl"><thead><tr><th class="wd-seq">연번</th><th>예정일·시간</th><th>환자</th><th>병실·주치의</th><th>모병원·진단</th><th>보호자</th><th>입원 처리</th></tr></thead><tbody>
     {% for c in planned_list %}<tr class="{% if c.plan_overdue %}wd-over{% endif %}">
         <td class="wd-seq">{{ c.seq }}</td>
         <td class="nowrap"><strong>{{ c.planned_admission_date|krdate_short_wd if c.planned_admission_date else '미정' }}</strong> {{ c.planned_admission_time or '' }}{% if c.plan_dday is not none %}<small class="wd-block {% if c.plan_overdue %}wd-red{% endif %}">{% if c.plan_dday == 0 %}오늘{% elif c.plan_dday > 0 %}D-{{ c.plan_dday }}{% else %}{{ -c.plan_dday }}일 지남{% endif %}</small>{% endif %}</td>
         <td class="nowrap"><a href="/consult/{{ c.id }}"><strong>{{ c.patient_name }}</strong></a> <span class="muted-sm">{% if c.patient_age is not none %}{{ c.patient_age }}세{% endif %}{% if c.gender == 'M' %}·남{% elif c.gender == 'F' %}·여{% endif %}</span>{% if c.care_label %}<small class="wd-block wd-care wd-care-{{ 'rec' if c.care_label == '회복기' else 'non' if c.care_label == '비회복기' else 'etc' }}">{{ c.care_label }} 대상</small>{% endif %}</td>
-        <td class="nowrap">{{ c.room_number or '-' }}<small class="wd-block">{{ c.attending_doctor|doctor_short if c.attending_doctor else '-' }}</small></td>
+        <td class="nowrap">{{ c.room_number|room_no or '-' }}<small class="wd-block">{{ c.attending_doctor|doctor_short if c.attending_doctor else '-' }}</small></td>
         <td>{{ c.source_hospital or '-' }}<small class="wd-block">{{ (c.dx_primary|join(', ') if (c.dx_primary is iterable and c.dx_primary is not string) else c.dx_primary) or c.disease_detail or '-' }}</small></td>
-        <td class="nowrap"><small>{{ c.guardian_name or '-' }}<br>{{ c.guardian_phone or '-' }}</small></td>
+        <td class="nowrap"><small>{% if c.guardian_name or c.guardian_phone %}{{ c.guardian_name or '' }}{% if c.guardian_name and c.guardian_phone %}<br>{% endif %}{{ c.guardian_phone or '' }}{% else %}-{% endif %}</small></td>
         <td class="nowrap wd-admit" data-cid="{{ c.id }}"><input type="date" class="wd-ad-date" value="{{ today_str }}" title="실제 입원일"><input type="text" class="wd-ad-room" placeholder="호실" size="5" value="{{ c.room_number or '' }}"><button type="button" class="btn btn-primary btn-xs wd-ad-save">입원 완료</button><button type="button" class="btn btn-secondary btn-xs wd-back-wait" title="입원 예정을 접고 다시 대기 명단으로">대기로</button></td>
     </tr>{% endfor %}</tbody></table></div>
-    {% else %}<div class="empty">입원 예정 환자가 없습니다.</div>{% endif %}
+    {% else %}<div class="empty">입원예정 환자가 없습니다.</div>{% endif %}
 </section>
 {% else %}
 
@@ -256,12 +256,12 @@
         <span class="wd-k-l">병상 가동률 · {{ kpis.admitted }}/{{ kpis.bed_capacity }}병상{% if kpis.reserved %} <small title="병상 예약(사용 예정자) — 재원에 안 세고 가용 병상에서만 뺀다">· 예약 {{ kpis.reserved }}</small>{% endif %}</span>
     </a>
     <a class="wd-k wd-k-mix" href="/ward?tab=trend">
-        <span class="wd-k-split"><b>{{ kpis.recovery }}<small>명 · {{ kpis.recovery_ratio|pct2 }}%</small></b><b>{{ kpis.nonrecovery }}<small>명 · {{ kpis.nonrecovery_ratio|pct2 }}%</small></b></span>
-        <span class="wd-k-l"><i class="rec"></i>회복기 <small>S005</small> · <i class="non"></i>비회복기 <small>S006</small></span>
+        <span class="wd-k-split"><b>{{ kpis.recovery }}<small>명 · {{ kpis.recovery_ratio|pct1 }}%</small></b><b>{{ kpis.nonrecovery }}<small>명 · {{ kpis.nonrecovery_ratio|pct1 }}%</small></b></span>
+        <span class="wd-k-l" title="회복기 S005 · 비회복기 S006"><i class="rec"></i>회복기 · <i class="non"></i>비회복기</span>
     </a>
     <a class="wd-k {% if kpis.recovery_ratio_ok %}ok{% else %}danger{% endif %} {% if filt == 'recovery' %}on{% endif %}"
        href="/ward?filt=recovery{{ _dq }}#sec-ward" title="재활의료기관 유지 기준: 회복기 40% 이상 — 클릭 시 회복기 명단">
-        <span class="wd-k-n">{{ kpis.recovery_ratio|pct2 }}<small>%</small></span>
+        <span class="wd-k-n">{{ kpis.recovery_ratio|pct1 }}<small>%</small></span>
         <span class="wd-k-l">회복기 비율 {% if kpis.recovery_ratio_ok %}<b>✓ 40%↑</b>{% else %}<b>⚠ 40%↓</b>{% endif %}</span>
     </a>
     <a class="wd-k {% if not kpis.away %}zero{% elif kpis.away_overdue %}danger{% else %}warn{% endif %}" href="/ward?tab=away">
@@ -270,7 +270,7 @@
     </a>
     <a class="wd-k wd-k-notice {% if kpis.recovery_due_unchecked or kpis.discharge_due_unchecked %}warn{% else %}zero{% endif %}" href="/ward?filt=recdue#sec-ward">
         <span class="wd-k-split"><b>{{ kpis.recovery_due }}<small>전환 · 미확인 {{ kpis.recovery_due_unchecked }}</small></b><b>{{ kpis.discharge_due_30 }}<small>퇴원 · 미확인 {{ kpis.discharge_due_unchecked }}</small></b></span>
-        <span class="wd-k-l">📣 회복기 종료·퇴원 안내 D-30</span>
+        <span class="wd-k-l" title="회복기 종료(전환)·퇴원 예정 D-30 안내 대상">📣 종료·퇴원 안내 D-30</span>
     </a>
 </div>
 
@@ -317,7 +317,7 @@
         <select class="rm-res-gender" title="성별 — 남/여 빈 병상 계산에 쓴다">
             <option value="">성별</option><option value="M">남</option><option value="F">여</option>
         </select>
-        <input type="date" class="rm-res-date" title="입원 예정일 (선택)">
+        <input type="date" class="rm-res-date" title="입원예정일 (선택)">
         <input type="text" class="rm-res-memo" placeholder="메모 (선택)" maxlength="200" size="12">
         <button type="button" class="btn btn-primary btn-xs rm-res-save">📌 예약</button>
         <button type="button" class="btn btn-secondary btn-xs rm-res-cancel">취소</button>
@@ -401,7 +401,7 @@
     {% if pending %}
     <div class="tbl-wrap">
         <table class="tbl wd-tbl">
-            <thead><tr><th>환자</th><th>상담일</th><th>입원 예정일</th><th>주치의</th><th>진단</th><th>확정</th></tr></thead>
+            <thead><tr><th>환자</th><th>상담일</th><th>입원예정일</th><th>주치의</th><th>진단</th><th>확정</th></tr></thead>
             <tbody>
                 {% for c in pending %}
                 <tr>
@@ -428,7 +428,7 @@
         <summary>3개월 이전 미확정 {{ pending_old|length }}건 — 대부분 이미 퇴원했거나 입원하지 않은 과거 건입니다</summary>
         <div class="tbl-wrap">
             <table class="tbl wd-tbl">
-                <thead><tr><th>환자</th><th>상담일</th><th>입원 예정일</th><th>주치의</th><th>확정</th></tr></thead>
+                <thead><tr><th>환자</th><th>상담일</th><th>입원예정일</th><th>주치의</th><th>확정</th></tr></thead>
                 <tbody>
                     {% for c in pending_old %}
                     <tr>
@@ -587,9 +587,9 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
     padding:0 8px; font-size:0.8em; font-weight:700; margin-left:4px; }
 /* 외진 배지 3종 — 재원 현황 '외진 중'·외진 환자 탭 머리 공용 (_away_badges.html) */
 .away-badges { display:inline-flex; flex-wrap:wrap; gap:6px; align-items:center; }
-.away-badge { display:inline-flex; align-items:center; gap:4px; border-radius:999px; padding:2px 10px;
+.away-badge { display:inline-flex; align-items:center; gap:0;   /* gap이 숫자와 단위 사이('18 명')에도 벌어져 gap 대신 b에 margin (2026-09-21) */ border-radius:999px; padding:2px 10px;
     font-size:0.78em; font-weight:700; white-space:nowrap; border:1px solid transparent; }
-.away-badge b { font-size:1.15em; }
+.away-badge b { font-size:1.15em; margin-left:4px; }
 .away-badge.total { background:#e0f2fe; color:#075985; border-color:#bae6fd; }
 .away-badge.back { background:#dcfce7; color:#166534; border-color:#bbf7d0; }
 .away-badge.open { background:#ffedd5; color:#9a3412; border-color:#fed7aa; }
@@ -1343,7 +1343,7 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
                 reserveCandidates.forEach(c => {
                     const o = document.createElement('option');
                     o.value = c.id;
-                    o.textContent = `${c.name}${c.gender === 'M' ? '(남)' : c.gender === 'F' ? '(여)' : ''} · ${c.status}${c.date ? ' ' + c.date.slice(5).replace('-', '.') : ''}${c.room ? ' · ' + c.room : ''}`;
+                    o.textContent = `${c.name}${c.gender === 'M' ? '(남)' : c.gender === 'F' ? '(여)' : ''} · ${c.status}${c.date ? ' ' + c.date.slice(5) : ''}${c.room ? ' · ' + c.room : ''}`;
                     sel.appendChild(o);
                 });
                 sel.addEventListener('change', () => {

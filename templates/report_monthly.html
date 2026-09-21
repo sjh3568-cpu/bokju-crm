@@ -53,14 +53,14 @@
         <div class="kpi-delta">
             <span class="cmp">
                 <span class="cmp-tag">전월</span>
-                {% if k.delta_pct is none %}<span class="muted">—</span>
+                {% if k.delta_pct is none %}<span class="muted">-</span>
                 {% elif k.delta_pct > 0 %}<span class="up">▲{{ k.delta_pct }}%</span>
                 {% elif k.delta_pct < 0 %}<span class="down">▼{{ k.delta_pct|abs }}%</span>
                 {% else %}<span class="muted">0%</span>{% endif %}
             </span>
             <span class="cmp">
                 <span class="cmp-tag">전년</span>
-                {% if k.yoy_delta_pct is none %}<span class="muted">—</span>
+                {% if k.yoy_delta_pct is none %}<span class="muted">-</span>
                 {% elif k.yoy_delta_pct > 0 %}<span class="up">▲{{ k.yoy_delta_pct }}%</span>
                 {% elif k.yoy_delta_pct < 0 %}<span class="down">▼{{ k.yoy_delta_pct|abs }}%</span>
                 {% else %}<span class="muted">0%</span>{% endif %}
@@ -118,10 +118,10 @@
                     <td>{{ r.label }}</td>
                     <td class="num"><strong>{{ r.cur }}</strong></td>
                     <td class="num">{{ r.prev }}</td>
-                    <td class="num delta-cell">{% if r.delta_pct is not none %}<span class="mini-delta {{ 'up' if r.delta_pct > 0 else ('down' if r.delta_pct < 0 else '') }}">{{ '%+.0f'|format(r.delta_pct) }}%</span>{% else %}—{% endif %}</td>
+                    <td class="num delta-cell">{% if r.delta_pct is not none %}<span class="mini-delta {{ 'up' if r.delta_pct > 0 else ('down' if r.delta_pct < 0 else '') }}">{{ '%+.0f'|format(r.delta_pct) }}%</span>{% else %}-{% endif %}</td>
                     <td class="num">{{ r.yoy }}</td>
-                    <td class="num delta-cell">{% if r.yoy_delta_pct is not none %}<span class="mini-delta {{ 'up' if r.yoy_delta_pct > 0 else ('down' if r.yoy_delta_pct < 0 else '') }}">{{ '%+.0f'|format(r.yoy_delta_pct) }}%</span>{% else %}—{% endif %}</td>
-                    {% if cat == '병명그룹' %}<td class="num">{% if r.rate is not none %}{{ r.rate }}%{% else %}—{% endif %}</td>{% endif %}
+                    <td class="num delta-cell">{% if r.yoy_delta_pct is not none %}<span class="mini-delta {{ 'up' if r.yoy_delta_pct > 0 else ('down' if r.yoy_delta_pct < 0 else '') }}">{{ '%+.0f'|format(r.yoy_delta_pct) }}%</span>{% else %}-{% endif %}</td>
+                    {% if cat == '병명그룹' %}<td class="num">{% if r.rate is not none %}{{ r.rate }}%{% else %}-{% endif %}</td>{% endif %}
                 </tr>
                 {% endfor %}
             </tbody>
@@ -153,7 +153,7 @@
                 <td class="num">{{ r.ext1 }}</td>
                 <td class="num">{{ r.ext2 }}</td>
                 <td class="num">{{ r.dis_n }}</td>
-                <td class="num">{% if r.dis_avg_days is not none %}{{ r.dis_avg_days }}일{% else %}—{% endif %}</td>
+                <td class="num">{% if r.dis_avg_days is not none %}{{ r.dis_avg_days }}일{% else %}-{% endif %}</td>
             </tr>
             {% endfor %}
             <tr class="total-row">
@@ -164,12 +164,12 @@
                 <td class="num">{{ st.total.ext1 }}</td>
                 <td class="num">{{ st.total.ext2 }}</td>
                 <td class="num">{{ st.total.dis_n }}</td>
-                <td class="num">{% if st.total.dis_avg_days is not none %}{{ st.total.dis_avg_days }}일{% else %}—{% endif %}</td>
+                <td class="num">{% if st.total.dis_avg_days is not none %}{{ st.total.dis_avg_days }}일{% else %}-{% endif %}</td>
             </tr>
         </tbody>
     </table>
     <p class="muted" style="font-size:0.8em; margin:6px 0 0">
-        1년 이상 재원 비율 전월 말 {{ st.prev_total.over_pct if st.prev_total.over_pct is not none else '—' }}% → 이번 달 {{ st.total.over_pct }}%
+        1년 이상 재원 비율 전월 말 {{ st.prev_total.over_pct if st.prev_total.over_pct is not none else '-' }}% → 이번 달 {{ st.total.over_pct }}%
         {% if st.over_pct_delta is not none %}<span class="mini-delta {{ 'up' if st.over_pct_delta > 0 else ('down' if st.over_pct_delta < 0 else '') }}">{{ '%+.1f'|format(st.over_pct_delta) }}%p</span>{% endif %}
         · '구분 없음'은 명부에 수가구분이 안 실린 회차.
     </p>
@@ -188,7 +188,7 @@
       <div class="sr-kpi accent"><small>입원</small><div><strong>{{ sr.admissions }}</strong><span>건</span></div>
         <em class="cmp"><span class="cmp-tag">전월</span>{% if sr.delta_admissions is none %}<span class="muted">신규</span>{% elif sr.delta_admissions>0 %}<span class="up">▲{{ sr.delta_admissions }}%</span>{% elif sr.delta_admissions<0 %}<span class="down">▼{{ sr.delta_admissions|abs }}%</span>{% else %}<span class="muted">0%</span>{% endif %}</em></div>
       <div class="sr-kpi"><small>전환율</small><div><strong>{{ sr.conversion }}</strong><span>%</span></div></div>
-      {% if sr.quality_patients %}<div class="sr-kpi"><small>소개환자 회복기</small><div><strong>{{ sr.recovery_ratio|pct2 }}</strong><span>%</span></div></div>{% endif %}
+      {% if sr.quality_patients %}<div class="sr-kpi"><small>소개환자 회복기</small><div><strong>{{ sr.recovery_ratio|pct1 }}</strong><span>%</span></div></div>{% endif %}
     </div>
     {% if sr.top_referrers %}
     <table class="report-tbl compact">

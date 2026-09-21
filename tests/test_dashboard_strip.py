@@ -93,7 +93,7 @@ class DashboardStripTests(unittest.TestCase):
         with main.app.test_request_context():
             ratio = main._ward_status_strip()["recovery_ratio"]
         html = self.client.get("/ward").get_data(as_text=True)
-        self.assertIn('<span class="wd-k-n">%.2f<small>%%</small></span>' % ratio, html)
+        self.assertIn('<span class="wd-k-n">%.1f<small>%%</small></span>' % ratio, html)   # 퍼센트 1자리(2026-09-21 표기 결정)
 
     def test_strip_renders_on_dashboard(self):
         html = self.client.get("/").get_data(as_text=True)

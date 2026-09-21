@@ -4,7 +4,7 @@
 {# 이력 관리 — audit_log 열람. 어드민 전용(/admin/audit).
    누가·언제·어떤 환자/상담 정보를 조회·입력·수정·삭제했는지 추적한다. #}
 <div class="page-header">
-    <h2>이력 관리</h2>
+    <h1>이력 관리</h1>
     <div style="margin-left:auto; display:flex; gap:6px">
         <a class="btn btn-secondary btn-sm" href="/admin/users">사용자 관리</a>
         <a class="btn btn-secondary btn-sm" href="/admin/audit/export{{ export_qs }}"
@@ -12,7 +12,7 @@
     </div>
     <p class="hint">
         모든 계정의 개인정보 열람·입력·수정·삭제 기록입니다. 기록은 자동으로 남으며 화면에서 수정·삭제할 수 없습니다.
-        {% if span.n %}보관 중 {{ '{:,}'.format(span.n) }}건 · {{ (span.oldest or '')[:16] }} ~ {{ (span.newest or '')[:16] }} · {% endif %}
+        {% if span.n %}보관 중 {{ span.n|comma }}건 · {{ (span.oldest or '')[:16] }} ~ {{ (span.newest or '')[:16] }} · {% endif %}
         권장 보관 {{ AUDIT_RETENTION_DAYS }}일
     </p>
 </div>
@@ -112,7 +112,7 @@
             <tr class="{% if r.action in AUDIT_CRITICAL_ACTIONS %}audit-crit{% endif %}">
                 <td class="mono nowrap">{{ (r.created_at or '')[:16] }}</td>
                 <td>
-                    {{ r.display_name or r.username or '—' }}
+                    {{ r.display_name or r.username or '-' }}
                     {% if r.role %}<small class="role-chip">{{ ROLE_LABELS.get(r.role, r.role) }}</small>{% endif %}
                     {% if r.display_name and r.username and r.display_name != r.username %}
                     <div class="muted-sm mono">{{ r.username }}</div>
@@ -120,7 +120,7 @@
                 </td>
                 <td>
                     <a class="audit-act" href="{{ url_with(action=r.action, page=None) }}" title="{{ r.action }}">
-                        {{ AUDIT_ACTION_LABELS.get(r.action, r.action or '—') }}</a>
+                        {{ AUDIT_ACTION_LABELS.get(r.action, r.action or '-') }}</a>
                 </td>
                 <td class="nowrap">
                     {% if r.target_type == 'consultation' and r.target_id %}
@@ -129,7 +129,7 @@
                         <a href="/patients/{{ r.target_id }}">환자 #{{ r.target_id }}</a>
                     {% elif r.target_type %}
                         {{ r.target_type }}{% if r.target_id %} #{{ r.target_id }}{% endif %}
-                    {% else %}—{% endif %}
+                    {% else %}-{% endif %}
                 </td>
                 <td class="audit-detail">{{ r.detail or '' }}</td>
                 <td class="mono muted-sm">{{ r.ip or '' }}</td>
@@ -166,10 +166,10 @@
         <span class="pg pg-off">다음 ›</span>
         <span class="pg pg-off">»</span>
     {% endif %}
-    {% if rows %}<span class="pg-summary">{{ page_start + 1 }}–{{ page_start + rows|length }} / 총 {{ '{:,}'.format(total) }}건</span>{% endif %}
+    {% if rows %}<span class="pg-summary">{{ page_start + 1 }}–{{ page_start + rows|length }} / 총 {{ total|comma }}건</span>{% endif %}
 </nav>
 {% elif rows %}
-<p class="muted-sm" style="margin-top:8px">총 {{ '{:,}'.format(total) }}건</p>
+<p class="muted-sm" style="margin-top:8px">총 {{ total|comma }}건</p>
 {% endif %}
 
 <style>
@@ -184,7 +184,6 @@
 .audit-chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
 .audit-chip.on b { color: #fff; }
 .audit-tbl td { vertical-align: top; }
-.audit-tbl .nowrap { white-space: nowrap; }
 .audit-tbl .audit-detail { font-size: 0.86em; color: var(--text-light);
     max-width: 520px; word-break: break-word; }
 .audit-tbl .audit-act { text-decoration: none; color: var(--text); }

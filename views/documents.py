@@ -18,7 +18,7 @@ from config import PERM_EDIT
 logger = logging.getLogger(__name__)
 bp = Blueprint("documents", __name__)
 
-STATUS_LABELS = {"pending": "판독 대기", "analyzed": "확인 필요", "done": "처리 완료"}
+STATUS_LABELS = {"pending": "판독 대기", "analyzed": "확인 필요", "done": "처리완료"}
 
 
 def _can_edit():

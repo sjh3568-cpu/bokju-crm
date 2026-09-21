@@ -378,7 +378,7 @@ def dashboard():
     admission_weekdays = "월화수목금토일"
     def admission_date_label(value):
         parsed = date.fromisoformat(value)
-        return parsed.strftime("%Y.%m.%d") + f"({admission_weekdays[parsed.weekday()]})"
+        return parsed.strftime("%Y-%m-%d") + f"({admission_weekdays[parsed.weekday()]})"
     data = models.dashboard_summary(admission_from, admission_to, admission_scope)
     data.update({
         "admission_lookup_from": admission_from,

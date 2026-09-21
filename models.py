@@ -4354,7 +4354,7 @@ def dashboard_summary(admission_lookup_from: str | None = None,
 
     def _empty_report_day(day_value):
         return {
-            "date": day_value.isoformat(), "label": day_value.strftime("%m/%d"),
+            "date": day_value.isoformat(), "label": day_value.strftime("%m-%d"),
             "weekday": "월화수목금토일"[day_value.weekday()], "total": 0,
             "sources": {key: 0 for key in report_source_keys},
             "resistant": {key: 0 for key in report_source_keys},
@@ -4421,7 +4421,7 @@ def dashboard_summary(admission_lookup_from: str | None = None,
 
     weekly_report = {key: _report_period(*dates) for key, dates in report_ranges.items()}
     current_total = weekly_report["current"]["totals"]
-    weekly_report["period_label"] = f"{report_ranges['current'][0].strftime('%Y.%m.%d')} ~ {report_ranges['current'][1].strftime('%Y.%m.%d')}"
+    weekly_report["period_label"] = f"{report_ranges['current'][0].strftime('%Y-%m-%d')} ~ {report_ranges['current'][1].strftime('%Y-%m-%d')}"
     weekly_report["source_keys"] = report_source_keys
     weekly_report["comparisons"] = []
     for key, label in (("total", "상담"), ("admitted", "입원"), ("admission_rate", "입원율")):

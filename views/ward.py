@@ -886,7 +886,7 @@ def ward_view():
     if subtab == "trend":
         snapshot = trend_from
         while snapshot <= trend_to:
-            daily_ratio_trend.append({"label": snapshot.strftime("%m.%d"),
+            daily_ratio_trend.append({"label": snapshot.strftime("%m-%d"),
                                       "date": snapshot.isoformat(), **_ratio_at(snapshot)})
             snapshot += timedelta(days=1)
         end_index = trend_to.year * 12 + trend_to.month - 1
@@ -1521,7 +1521,7 @@ def _ratio_insight(now, admitted, ratio_at, today, threshold=40, horizon=60):
     forecast, cross = [], None
     for offset in range(0, horizon + 1):
         snapshot = today + timedelta(days=offset)
-        point = {"label": snapshot.strftime("%m.%d"), "date": snapshot.isoformat(),
+        point = {"label": snapshot.strftime("%m-%d"), "date": snapshot.isoformat(),
                  **ratio_at(snapshot)}
         forecast.append(point)
         if cross is None and ok and point["known"] and point["recovery"] * t_den < t_num * point["known"]:
@@ -1555,7 +1555,7 @@ def _trend_flow(insight, admitted, today, horizon=DASHBOARD_DUE_WINDOW_DAYS):
     for offset in range(horizon + 1):
         d = today + timedelta(days=offset)
         days[d.isoformat()] = {
-            "date": d.isoformat(), "label": d.strftime("%m.%d"), "dday": offset,
+            "date": d.isoformat(), "label": d.strftime("%m-%d"), "dday": offset,
             "in_rec": 0, "in_non": 0, "in_unknown": 0,
             "out_rec": 0, "out_non": 0, "out_unknown": 0, "rec_end": 0,
             "in_names": [], "out_names": [], "end_names": [],

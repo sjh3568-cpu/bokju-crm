@@ -2,7 +2,7 @@
 {% block title %}사용자 관리 — 복주 상담실{% endblock %}
 {% block content %}
 <div class="page-header">
-    <h2>사용자 관리</h2>
+    <h1>사용자 관리</h1>
     <p class="hint">계정마다 <strong>메뉴별 권한</strong>을 설정합니다. 단계형 — 미현시 &lt; 조회 &lt; 수정 &lt; 등록
         (상위가 하위 포함). 역할을 고르면 기본 권한이 자동 채워지고, 이후 메뉴별로 조정할 수 있습니다.</p>
 </div>
@@ -62,7 +62,7 @@
             <span class="role-chip role-chip-dark">{{ ROLE_LABELS.get(u.role, u.role) }}</span>
             {% if u.active %}<span class="badge badge-ok">활성</span>
             {% else %}<span class="badge badge-off">비활성</span>{% endif %}
-            <span class="muted uc-login">최근 로그인: {{ u.last_login_at[:16] if u.last_login_at else '—' }}</span>
+            <span class="muted uc-login">최근 로그인: {{ u.last_login_at[:16] if u.last_login_at else '-' }}</span>
         </div>
         <div class="uc-ops">
             <form method="post" action="/admin/users/{{ u.id }}/password" class="cell-form" autocomplete="off">

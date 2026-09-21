@@ -56,7 +56,7 @@
                    재원일수는 구분 칸 아래로 옮겼다. 시간을 모르는 행(실입원·퇴원)은 빈칸으로 둔다. #}
                 {% set when_time = r.planned_admission_time or r.admission_time or '' %}
                 <td class="dash-adm-when" title="{{ r.admission_display_date|krdate }}{% if when_time %} {{ when_time }}{% endif %}{% if r.discharge_stay_days is not none %} · {% if is_discharge %}재원 {{ r.discharge_stay_days }}일{% else %}예상 재원 {{ r.discharge_stay_days }}일{% endif %}{% endif %}">
-                    <b>{{ (r.admission_display_date|krdate_short_wd)[3:] }}</b><small>{{ when_time or ' ' }}</small>
+                    <b>{{ r.admission_display_date|krdate_wd }}</b><small>{{ when_time or ' ' }}</small>
                 </td>
                 {# 구분은 models가 정한 라벨·색을 그대로 쓴다(입원예정·입원완료·퇴원예정·퇴원완료·외진복귀·복귀예정).
                    퇴원 행은 그 아래에 재원기간을 — 얼마나 있다 나갔는지가 퇴원 줄에서 가장 먼저 읽고 싶은 값이다. #}
@@ -254,7 +254,7 @@
 </div>
 {% endmacro %}
 {% macro inbound_list(rows) %}
-<div class="tbl-wrap"><table class="tbl tbl-compact dash-inbound-tbl" data-limit="5">
+<div class="tbl-wrap"><table class="tbl dash-inbound-tbl" data-limit="5">
     <thead><tr><th>일시</th><th>채널</th><th>환자/연락처</th><th>내용</th><th>액션</th></tr></thead>
     <tbody>
         {% for m in rows %}
@@ -275,7 +275,7 @@
                 {% if m.channel == '팩스' %}<a class="btn btn-primary btn-xs" href="/documents?comm={{ m.id }}" title="팩스 원본과 AI 요약">📠 원본·요약</a>{% endif %}
                 <a class="btn {{ 'btn-secondary' if (m.homepage_idx or m.channel == '팩스') else 'btn-primary' }} btn-xs" href="/consult/new?comm_id={{ m.id }}">상담 등록</a>
                 <button class="btn btn-secondary btn-xs ib-missed" data-comm="{{ m.id }}" title="전화했는데 안 받음 — 재연락 시각을 잡아 두면 그때 다시 알림">부재중</button>
-                <button class="btn btn-secondary btn-xs ib-done" data-comm="{{ m.id }}" title="후속 처리 완료로 표시">완료</button>
+                <button class="btn btn-secondary btn-xs ib-done" data-comm="{{ m.id }}" title="후속 처리완료로 표시">처리완료</button>
                 <button class="btn btn-secondary btn-xs ib-del" data-comm="{{ m.id }}" title="삭제">삭제</button>
             </td>
         </tr>
@@ -293,15 +293,15 @@
 </div>
 {% endmacro %}
 {% macro callback_list(rows) %}
-<div class="tbl-wrap"><table class="tbl tbl-compact dash-callback-tbl" data-limit="5">
+<div class="tbl-wrap"><table class="tbl dash-callback-tbl" data-limit="5">
     <thead><tr><th>상담일</th><th>환자</th><th>재연락 시기/사유</th><th>보호자 연락처</th><th>상담자</th><th>액션</th></tr></thead>
     <tbody>
         {% for r in rows %}
         <tr>
             <td class="nowrap muted-sm">{{ r.consult_date|krdate }}</td>
             <td class="nowrap">{% if r.blacklist %}<span class="bl-mark" title="블랙리스트">⚠</span> {% endif %}<a href="/patients/{{ r.patient_id }}">{{ r.patient_name }}</a></td>
-            <td>{{ r.consult_result_reason or '(미기재)' }}</td>
-            <td class="nowrap muted-sm">{{ r.guardian_name or '' }} {{ r.guardian_phone or '' }}</td>
+            <td>{{ r.consult_result_reason or '-' }}</td>
+            <td class="nowrap muted-sm">{% if r.guardian_name or r.guardian_phone %}{{ r.guardian_name or '' }} {{ r.guardian_phone or '' }}{% else %}-{% endif %}</td>
             <td class="nowrap muted-sm">{{ r.counselor or '' }}</td>
             <td class="nowrap dash-action-cell">
                 <a class="btn btn-secondary btn-xs" href="/sms?cid={{ r.id }}">문자</a>
@@ -338,11 +338,16 @@
     <td class="nowrap aq-meta age-{{ item.age_tier }}" title="경과 {{ item.age_days }}일 — 오늘=초록 · 1~2일=주황 · 3~7일=빨강 · 8일 이상=방치">{% if stale %}{{ item.age_days }}일 방치{% if item.meta %} <span class="muted-sm">· {{ item.meta }}</span>{% endif %}{% else %}{{ item.meta }}{% endif %}</td>
     <td class="nowrap dash-action-cell">
         {% if item.action and item.action.type == 'comm' %}
-        {% if item.action.homepage_idx %}<button type="button" class="btn btn-primary btn-xs ib-hp-reply" data-comm="{{ item.action.id }}" title="홈페이지 상담게시판에 답변을 올리고 완료 처리">✎ 답변</button>{% endif %}
-        {% if item.action.channel == '팩스' %}<a class="btn btn-primary btn-xs" href="/documents?comm={{ item.action.id }}" title="팩스 원본과 AI 요약">📠 원본·요약</a>{% endif %}
-        <a class="btn {{ 'btn-secondary' if (item.action.homepage_idx or item.action.channel == '팩스') else 'btn-primary' }} btn-xs" href="/consult/new?comm_id={{ item.action.id }}">상담 등록</a>
-        <button type="button" class="btn btn-secondary btn-xs ib-missed" data-comm="{{ item.action.id }}" title="전화했는데 안 받음 — 재연락 시각을 잡아 두면 그때 다시 알림">부재중</button>
-        <button type="button" class="btn btn-secondary btn-xs ib-done" data-comm="{{ item.action.id }}" title="후속 처리 완료로 표시">완료</button>
+        {#- 대표 버튼 1개 + '…' 더보기 — 버튼 4개가 세로로 쌓여 문의 행만 3배 높아지던 문제(2026-09-21). 나머지는 details 메뉴에 -#}
+        {% set is_hp = item.action.homepage_idx %}{% set is_fax = item.action.channel == '팩스' %}
+        {% if is_hp %}<button type="button" class="btn btn-primary btn-xs ib-hp-reply" data-comm="{{ item.action.id }}" title="홈페이지 상담게시판에 답변을 올리고 완료 처리">✎ 답변</button>
+        {% elif is_fax %}<a class="btn btn-primary btn-xs" href="/documents?comm={{ item.action.id }}" title="팩스 원본과 AI 요약">📠 원본</a>
+        {% else %}<a class="btn btn-primary btn-xs" href="/consult/new?comm_id={{ item.action.id }}">상담 등록</a>{% endif %}
+        <details class="aq-more"><summary class="btn btn-secondary btn-xs" title="상담 등록 · 부재중 · 처리완료">…</summary><div class="aq-more-menu">
+            {% if is_hp or is_fax %}<a class="btn btn-secondary btn-xs" href="/consult/new?comm_id={{ item.action.id }}">상담 등록</a>{% endif %}
+            <button type="button" class="btn btn-secondary btn-xs ib-missed" data-comm="{{ item.action.id }}" title="전화했는데 안 받음 — 재연락 시각을 잡아 두면 그때 다시 알림">부재중</button>
+            <button type="button" class="btn btn-secondary btn-xs ib-done" data-comm="{{ item.action.id }}" title="후속 처리완료로 표시">처리완료</button>
+        </div></details>
         {% elif item.action and item.action.type == 'callback' %}
         <a class="btn btn-secondary btn-xs" href="/sms?cid={{ item.action.id }}">문자</a>
         <button type="button" class="btn btn-primary btn-xs ib-callback-done" data-cid="{{ item.action.id }}" title="재연락 완료 — 상담 결과를 '상담완료'로 즉시 변경">✓ 완료</button>
@@ -362,6 +367,8 @@
 {% macro action_table(rows, stale=False, limit=5) %}
 <div class="tbl-wrap">
     <table class="tbl dash-table aq-table"{% if limit %} data-limit="{{ limit }}"{% endif %}>
+        {#- 고정 열 폭 — 카드(≈534px)를 넘지 않게. 남는 폭은 '내용' 열이 갖고 ellipsis (2026-09-21) -#}
+        <colgroup><col class="c-kind"><col class="c-who"><col class="c-dx"><col class="c-detail"><col class="c-meta"><col class="c-act"></colgroup>
         <thead><tr><th>구분</th><th>환자</th><th>주상병</th><th>내용</th><th>경과</th><th>액션</th></tr></thead>
         <tbody>{% for item in rows %}{{ action_tr(item, stale) }}{% endfor %}</tbody>
     </table>
@@ -439,7 +446,7 @@
 {% set mk = month_kpi %}
 <section class="dash-kpi">
     <div class="krow">
-        <span class="gl">오늘 · 이번달 {{ mk.from[5:].replace('-', '.') }}~{{ mk.to[5:].replace('-', '.') }} · 비교: 지난주 같은 요일 / 지난달 같은 기간</span>
+        <span class="gl">오늘 · 이번달 {{ mk.from[5:] }} ~ {{ mk.to[5:] }} · 비교: 지난주 같은 요일 / 지난달 같은 기간</span>
         <a class="kc" href="/consultations?from={{ today_iso }}&to={{ today_iso }}">
             <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg></span><svg data-spark="{{ mx.consult.spark|join(',') }}" aria-hidden="true"></svg>
             <span class="l">오늘 상담</span>
@@ -451,20 +458,20 @@
             <span class="l">오늘 입원 · 퇴원</span>
             {% set discharge_today_due = discharge_due|selectattr('watch.days_left', 'equalto', 0)|list|length %}
             <span class="v"><b class="num">{{ summary.admission_today or 0 }}</b><small>입원</small>{{ delta_chip(mx.admission.delta) }}<b class="num pair">{{ summary.discharge_today or 0 }}<small class="c2">퇴원</small></b>{{ delta_chip(mx.discharge.delta) }}</span>
-            <span class="s" title="입원 예정=오늘 입원예정(외진 복귀 예정 포함)인데 아직 미완료 · 완료=오늘 입원완료·외진 복귀 처리 · 지난주 같은 요일의 입원 수(▲▼ 배지의 비교 기준)">입원 예정 <b>{{ summary.admission_today_planned or 0 }}</b> · 완료 <b>{{ summary.admission_today_completed or 0 }}</b> · 지난주 {{ today_weekday }} <b>{{ mx.admission.last_week }}</b>{% if unassigned_planned %} · <em class="warn-text">병실 미배정 {{ unassigned_planned|length }}</em>{% endif %}</span>
-            <span class="s" title="퇴원 예정=퇴원 예정일이 오늘인 재원 · 완료=오늘 퇴원 처리(원무 명부 회차 + CRM 퇴원 처리를 한 사람으로 묶어 센다) · 지난주 같은 요일의 퇴원 수(▲▼ 배지의 비교 기준 — 이 배지만 명부 기준)">퇴원 예정 <b>{{ discharge_today_due }}</b> · 완료 <b>{{ summary.discharge_today or 0 }}</b> · 지난주 {{ today_weekday }} <b>{{ mx.discharge.last_week }}</b></span>
+            <span class="s" title="입원예정=오늘 입원예정(외진 복귀 예정 포함)인데 아직 미완료 · 완료=오늘 입원완료·외진 복귀 처리 · 지난주 같은 요일의 입원 수(▲▼ 배지의 비교 기준)">입원예정 <b>{{ summary.admission_today_planned or 0 }}</b> · 완료 <b>{{ summary.admission_today_completed or 0 }}</b> · 지난주 {{ today_weekday }} <b>{{ mx.admission.last_week }}</b>{% if unassigned_planned %} · <em class="warn-text">병실 미배정 {{ unassigned_planned|length }}</em>{% endif %}</span>
+            <span class="s" title="퇴원 예정=퇴원 예정일이 오늘인 재원 · 완료=오늘 퇴원 처리(원무 명부 회차 + CRM 퇴원 처리를 한 사람으로 묶어 센다) · 지난주 같은 요일의 퇴원 수(▲▼ 배지의 비교 기준 — 이 배지만 명부 기준)">퇴원예정 <b>{{ discharge_today_due }}</b> · 완료 <b>{{ summary.discharge_today or 0 }}</b> · 지난주 {{ today_weekday }} <b>{{ mx.discharge.last_week }}</b></span>
         </a>
         <a class="kc" href="/consultations?from={{ mk.from }}&to={{ mk.to }}">
             <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 7l-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/></svg></span><svg data-spark="{{ mk.spark_total|join(',') }}" aria-hidden="true"></svg>
             <span class="l">이번달 상담 유입</span>
             <span class="v"><b class="num">{{ mk.total }}</b><small>건</small>{{ delta_chip(mk.delta_total) }}</span>
-            <span class="s">지난달 동기간 <b>{{ mk.prev.total }}건</b> · 일평균 <b>{{ (mk.total / (mk.spark_total|length or 1))|round(1) }}건</b></span>
+            <span class="s" title="지난달 같은 기간">지난달 <b>{{ mk.prev.total }}건</b> · 일평균 <b>{{ (mk.total / (mk.spark_total|length or 1))|round(1) }}건</b></span>
         </a>
         <a class="kc" href="/stats">
             <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg></span><svg data-spark="{{ mk.spark_done|join(',') }}" aria-hidden="true"></svg>
             <span class="l">이번달 입원 · 전환율</span>
             <span class="v"><b class="num">{{ mk.done }}</b><small>건</small><b class="num rate">{{ mk.rate }}<small>%</small></b>{% if mk.delta_rate > 0 %}<span class="d up">▲ +{{ mk.delta_rate }}%p</span>{% elif mk.delta_rate < 0 %}<span class="d dn">▼ {{ mk.delta_rate }}%p</span>{% else %}<span class="d n">= 지난달</span>{% endif %}</span>
-            <span class="s">지난달 동기간 <b>{{ mk.prev.done }}건 · {{ mk.prev.rate }}%</b> · 예정 <b>{{ mk.planned }}</b> · 보류 <b>{{ mk.hold }}</b></span>
+            <span class="s" title="지난달 같은 기간">지난달 <b>{{ mk.prev.done }}건 · {{ mk.prev.rate }}%</b> · 예정 <b>{{ mk.planned }}</b> · 보류 <b>{{ mk.hold }}</b></span>
         </a>
     </div>
     <div class="krow">
@@ -478,7 +485,7 @@
             <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14l3.5-3.5"/><path d="M3.3 19a10 10 0 1 1 17.4 0"/></svg></span><svg data-spark="{{ mx.census.spark|join(',') }}" aria-hidden="true"></svg>
             <span class="l">병상 가동률</span>
             <span class="v"><b class="num">{% if ws.bed_occupancy is not none %}{{ ws.bed_occupancy }}{% else %}–{% endif %}</b><small>%</small>{% if ws.admitted is not none and ws.bed_capacity %}{% set occ_delta = ((mx.census.delta / ws.bed_capacity * 100)|round(1)) %}{% if occ_delta > 0 %}<span class="d up">▲ +{{ occ_delta }}%p</span>{% elif occ_delta < 0 %}<span class="d dn">▼ {{ occ_delta }}%p</span>{% else %}<span class="d n">= 지난주</span>{% endif %}{% endif %}</span>
-            <span class="s">{% if ws.admitted is not none %}빈 병상 <b>{{ ws.bed_capacity - ws.admitted }}</b> · 허가 <b>{{ ws.bed_capacity }}</b>{% for w in ward_occupancy if w.level == 'full' %} · <b class="warn-text">{{ w.ward }} 포화</b>{% endfor %}{% else %}명부 필요 — 원무 입퇴원 명부를 올리면 표시됩니다{% endif %}</span>
+            <span class="s" title="빈 병상 / 허가 병상 · 포화(95% 이상) 병동">{% if ws.admitted is not none %}빈 병상 <b>{{ ws.bed_capacity - ws.admitted }}</b>/{{ ws.bed_capacity }}{% set full_wards = ward_occupancy|selectattr('level', 'equalto', 'full')|map(attribute='ward')|list %}{% if full_wards %} · 포화 <b class="warn-text">{{ full_wards|join('·') }}</b>{% endif %}{% else %}명부 필요 — 원무 입퇴원 명부를 올리면 표시됩니다{% endif %}</span>
         </a>
         <a class="kc" href="/ward?tab=away">
             <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3L4 7l4 4"/><path d="M4 7h16"/><path d="M16 21l4-4-4-4"/><path d="M20 17H4"/></svg></span><svg data-spark="{{ mx.away.spark|join(',') }}" aria-hidden="true"></svg>
@@ -490,8 +497,8 @@
             <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.2 15.9A10 10 0 1 1 8 2.8"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg></span>
             {% if mx.ratio and mx.ratio.spark %}<svg data-spark="{{ mx.ratio.spark|join(',') }}" aria-hidden="true"><title>최근 7일 회복기 비율(%)</title></svg>{% endif %}
             <span class="l">회복기 비율</span>
-            <span class="v"><b class="num">{% if ws.recovery_ratio is not none %}{{ ws.recovery_ratio|pct2 }}{% else %}–{% endif %}</b><small>%</small>{% if ws.recovery_ratio is not none %}{% if ws.recovery_ratio_ok %}<span class="d ok">✓ 기준 40%</span>{% else %}<span class="d dn">⚠ 40% 미만</span>{% endif %}{% endif %}</span>
-            <span class="s">{% if ws.recovery is not none %}회복기 <b>{{ ws.recovery }}/{{ ws.admitted }}</b>{% if rp %} · 7일 후 <b>{{ rp.ratio|pct2 }}%</b>{% if rp.margin >= 0 %} · 여유 <b>{{ rp.margin }}명</b>{% endif %}{% endif %}{% else %}명부 필요 — 원무 입퇴원 명부를 올리면 표시됩니다{% endif %}</span>
+            <span class="v"><b class="num">{% if ws.recovery_ratio is not none %}{{ ws.recovery_ratio|pct1 }}{% else %}–{% endif %}</b><small>%</small>{% if ws.recovery_ratio is not none %}{% if ws.recovery_ratio_ok %}<span class="d ok">✓ 기준 40%</span>{% else %}<span class="d dn">⚠ 40% 미만</span>{% endif %}{% endif %}</span>
+            <span class="s" title="회복기 인원 / 재원 · 7일 후 예상 비율 · 40% 기준 여유 인원">{% if ws.recovery is not none %}<b>{{ ws.recovery }}/{{ ws.admitted }}</b>{% if rp %} · 7일 후 <b>{{ rp.ratio|pct1 }}%</b>{% if rp.margin >= 0 %} · 여유 <b>{{ rp.margin }}명</b>{% endif %}{% endif %}{% else %}명부 필요 — 원무 입퇴원 명부를 올리면 표시됩니다{% endif %}</span>
         </a>
     </div>
 </section>
@@ -520,7 +527,7 @@
     </div>
     {% if unassigned_planned %}
     <div class="wait ws-wait">
-        병실 미배정 입원 예정 {{ unassigned_planned|length }}명
+        병실 미배정 입원예정 {{ unassigned_planned|length }}명
         <span>{% for c in unassigned_planned[:5] %}<a href="/consult/{{ c.id }}">{{ c.patient_name }}</a> {{ c.planned_admission_date[5:] }}{% if c.planned_admission_time %} {{ c.planned_admission_time }}{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}{% if unassigned_planned|length > 5 %} 외 {{ unassigned_planned|length - 5 }}명{% endif %}</span>
     </div>
     {% endif %}
@@ -787,7 +794,6 @@
 .dash-who { margin-left:4px; font-size:.78em; color:var(--muted,#6b7280); font-weight:600; white-space:nowrap; }
 .dash-note { max-width:260px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#475569; }
 .muted-sm { color:var(--text-light); font-size:0.82em; }
-.nowrap { white-space:nowrap; }
 .danger-text { color:#b91c1c; font-weight:700; }
 /* 기한 임박 D-day — 남은 기간별 색 */
 .dd { display:inline-block; padding:1px 7px; border-radius:999px; font-weight:800; font-size:.8rem; white-space:nowrap; }
@@ -883,7 +889,13 @@
 }
 
 /* 인박스 통합 액션 스타일 (구 인박스의 액션 셀을 대시보드로 이전) */
-.dash-action-cell { white-space:normal; }
+.dash-action-cell { white-space:normal; }   /* 부재중 → 재연락 팝오버(.ib-missed-pop)가 셀 안에서 줄바꿈되게 */
+.dash-action-cell .aq-more { display:inline-block; position:relative; margin:2px; vertical-align:middle; }
+.dash-action-cell .aq-more > summary { list-style:none; cursor:pointer; padding:2px 7px; line-height:1.2; }
+.dash-action-cell .aq-more > summary::-webkit-details-marker { display:none; }
+.dash-action-cell .aq-more-menu { position:absolute; right:0; top:calc(100% + 3px); z-index:30; display:flex; flex-direction:column; gap:3px;
+    min-width:96px; padding:6px; background:#fff; border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 24px rgba(15,23,42,.14); }
+.dash-action-cell .aq-more-menu .btn { display:inline-flex; justify-content:center; margin:0; }
 .dash-action-cell>.btn,.dash-action-cell>form { display:inline-flex; margin:2px; vertical-align:middle; }
 .dash-action-cell .btn-xs { padding:2px 8px; font-size:0.74em; white-space:nowrap; }
 .dash-inbound-tbl, .dash-callback-tbl { width:100%; }

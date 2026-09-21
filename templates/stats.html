@@ -208,7 +208,6 @@
 
 <style>
 /* 통계 페이지 — 컴팩트 레이아웃 */
-.page-header h1 { font-size:1.2em; }
 .stats-head-actions { display:flex; gap:6px; }
 .stats-print-title { display:none; }
 .period-bar { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; padding:8px 12px; margin-bottom:10px; }
@@ -228,14 +227,14 @@
 .section-heading small { color:#64748b; font-size:.72em; }
 .section-heading.priority b { display:inline-grid; place-items:center; width:22px; height:22px; border-radius:7px; color:#fff; background:linear-gradient(145deg,#166534,#16a34a); box-shadow:0 3px 7px rgba(22,101,52,.22); font-size:.72em; }
 .kpi-row { grid-template-columns: repeat(6, 1fr); gap:8px; margin-bottom:10px; }
-.kpi-row .stat-card { position:relative; overflow:hidden; padding:10px 12px; margin:0; min-width:0; height:112px; display:flex; flex-direction:column; justify-content:center; border:1px solid rgba(148,163,184,.24); box-shadow:0 6px 16px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.85); }
+.kpi-row .stat-card { position:relative; overflow:hidden; padding:14px 12px 10px; margin:0; min-width:0; height:112px; display:flex; flex-direction:column; justify-content:flex-start;   /* 위 정렬 — 증감 2줄(1~3번)과 보조줄(4~6번) 카드의 숫자 기준선이 15px 어긋나던 것(2026-09-21) */ border:1px solid rgba(148,163,184,.24); box-shadow:0 6px 16px rgba(15,23,42,.08), inset 0 1px 0 rgba(255,255,255,.85); }
 .kpi-row .stat-card::after { content:""; position:absolute; right:-18px; bottom:-25px; width:72px; height:72px; border-radius:50%; background:currentColor; opacity:.07; }
 .tone-blue{color:#2563eb}.tone-green{color:#15803d}.tone-teal{color:#0f766e}.tone-amber{color:#b45309}.tone-violet{color:#7c3aed}.tone-rose{color:#be123c}
 .kpi-row .stat-card .label { font-size:0.72em; margin-bottom:2px; }
 .kpi-row .stat-card .value { color:#0f172a; font-size:1.4em; line-height:1.15; font-weight:800; }
 .kpi-row .stat-card .value em { color:#64748b; font-size:.48em; font-style:normal; font-weight:600; }
 .kpi-row .stat-card .value.sm { font-size:0.95em; line-height:1.25; word-break:keep-all; }
-.kpi-row .stat-card .sub { font-size:0.7em; margin-top:2px; }
+.kpi-row .stat-card .sub { font-size:0.7em; margin-top:4px; }
 .kpi-row .split-value { display:flex; align-items:center; justify-content:center; gap:8px; }
 .kpi-row .split-value i { color:#94a3b8; font-size:.7em; font-style:normal; }
 .kpi-row .split-value + .sub { display:flex; justify-content:center; gap:22px; }

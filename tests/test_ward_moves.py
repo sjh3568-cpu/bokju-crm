@@ -64,7 +64,7 @@ class WardMovesTests(unittest.TestCase):
         # 표: 연번·연도 붙은 날짜·환자 (성별/나이)·호실만·퇴원일 열
         self.assertIn('<th>연번</th><th>날짜</th>', page); self.assertIn('<th>퇴원일</th>', page)
         self.assertIn('<td class="mv-no">1</td>', page); self.assertIn('2026-06-20(토)', page)
-        self.assertIn('(여/86)', page); self.assertIn('>502</td>', page); self.assertNotIn('5병동 · 502', page)
+        self.assertIn('(여/86)', page); self.assertIn('>502호</td>', page); self.assertNotIn('5병동 · 502', page)
         self.assertIn('재원 중', page)   # 입원 행의 퇴원일
         self.assertIn('<option value="">병동 전체</option>', page)
         self.assertEqual([r['patient_name'] for r in ward_moves.report({'date_from': '2026-06-01', 'date_to': '2026-06-30', 'ward': '5병동'})['rows']], ['퇴원자'])

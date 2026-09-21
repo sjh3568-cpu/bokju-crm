@@ -63,7 +63,7 @@
     {% else %}<p class="muted-sm">같은 이름의 기존 환자가 없습니다. 새 환자면 <b>상담 등록</b>으로 들어가면 이름·병명·모병원이 미리 채워집니다.</p>{% endif %}
    {% endif %}
    {% if can_edit %}<div class="doc-link-actions">
-    {% if doc.status != 'done' %}<button class="btn btn-secondary btn-sm" id="doc-done">처리 완료</button>{% else %}<button class="btn btn-secondary btn-sm" id="doc-reopen">다시 열기</button>{% endif %}
+    {% if doc.status != 'done' %}<button class="btn btn-secondary btn-sm" id="doc-done">처리완료</button>{% else %}<button class="btn btn-secondary btn-sm" id="doc-reopen">다시 열기</button>{% endif %}
     <button class="btn btn-secondary btn-sm doc-danger" id="doc-del" title="자료함에서만 지웁니다. NAS 파일은 남습니다">자료함에서 삭제</button>
    </div>{% endif %}
   </section>

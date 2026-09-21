@@ -133,7 +133,10 @@ header > .container { max-width:1480px; }
     cursor: pointer; margin-left: 8px;
 }
 
+/* main.container — .container{padding:0 20px}(위 :38)이 main 규칙을 덮어 상단 패딩이 0이 되고 제목이 상단바에 붙었다(2026-09-21).
+   base.html의 <main class="container"> 한 곳에만 걸린다(partner_embed의 <main>은 .coop-embedded main이 별도) */
 main { flex:1; padding:26px 0 34px; }
+main.container { padding-top:26px; padding-bottom:34px; }
 .personal-briefing{margin-bottom:12px;padding:13px 15px;border:1px solid #bcd9c7;border-radius:13px;background:linear-gradient(135deg,#f4fbf6,#edf7f0);box-shadow:0 5px 16px rgba(15,81,48,.065)}.personal-briefing-head{display:flex;justify-content:space-between;align-items:start;gap:20px}.personal-briefing-head>div>span{color:#287247;font-size:.76rem;font-weight:850}.personal-briefing-head h1{margin:2px 0;font-size:1.18rem;color:#173c28}.personal-briefing-head p{margin:0;color:#64748b;font-size:.82rem}.personal-briefing-grid{display:grid;grid-template-columns:.8fr repeat(3,1fr);gap:9px;margin-top:18px}.personal-briefing-grid>div,.personal-briefing-grid>a{display:grid;grid-template-rows:auto 1fr auto;min-height:100px;padding:13px;border-radius:11px;background:#fff;color:#294438;text-decoration:none}.personal-briefing-grid>a:hover{box-shadow:0 5px 16px rgba(15,81,48,.12);transform:translateY(-1px)}.personal-briefing-grid b{font-size:.78rem}.personal-briefing-grid strong{align-self:center;color:#17633a;font-size:1.8rem}.personal-briefing-grid span{color:#64748b;font-size:.76rem}.brief-label{background:transparent!important}.brief-label span{align-self:center;font-weight:750}.personal-briefing-note{margin:11px 0 0;color:#64748b;font-size:.75rem}.start-page-setting{position:relative}.start-page-setting summary{cursor:pointer;color:#315c43;font-size:.8rem;font-weight:800}.start-page-setting form{display:flex;gap:6px;margin-top:8px}.start-page-setting select{padding:7px;border:1px solid #b7c9bd;border-radius:7px;background:#fff}.start-page-setting small{display:block;margin-top:5px;color:#64748b;font-size:.68rem}
 @media(max-width:700px){.personal-briefing{padding:17px}.personal-briefing-head{display:block}.start-page-setting{margin-top:12px}.personal-briefing-grid{grid-template-columns:1fr}.brief-label{display:none!important}.personal-briefing-grid>a{grid-template-columns:1fr auto auto;grid-template-rows:auto;align-items:center;min-height:0}.personal-briefing-grid strong{font-size:1.4rem}.personal-briefing-grid a span{margin-left:12px}}
 /* 데스크톱에서는 두 줄의 좌우 기준선을 공유하고 메뉴를 일정한 간격으로 배치한다. */
@@ -163,6 +166,10 @@ footer p { color: var(--text-light); font-size: 0.82em; text-align: center; }
 .page-header h1 { font-size:1.48em; letter-spacing:-.035em; font-weight:820; color:#17251e; }
 .page-header h2 { font-size: 1.2em; }
 .page-header .hint { color: var(--text-light); font-size: 0.9em; flex-basis: 100%; margin-top: 4px; }
+/* 제목 줄의 버튼은 한 규격 36px (2026-09-21: 29·31·37·40·41·42px 6종이 섞여 있었다).
+   .primary-new-consult의 padding !important보다 특이성이 높아 여기서 이긴다. 상단바(.topbar)·본문 버튼은 별도 */
+.page-header .btn, .dash-head .btn { height:36px; min-height:36px; padding:0 14px !important; font-size:.88em; line-height:1.2; }
+.page-header .btn-sm, .dash-head .btn-sm { padding:0 12px !important; }
 .btn-back { color: var(--text-light); text-decoration: none; font-size: 0.9em; }
 .btn-back:hover { color: var(--primary); }
 
@@ -208,6 +215,8 @@ footer p { color: var(--text-light); font-size: 0.82em; text-align: center; }
 .tbl a { color: var(--primary); text-decoration: none; font-weight: 500; }
 .tbl a:hover { text-decoration: underline; }
 .tbl-wrap { overflow-x: auto; }
+/* 한 줄 유지 — 전역 (2026-09-21: dashboard/audit/stats_staff 안에만 있어 ward·consult_list 등 8개 템플릿에서 헛돌던 클래스) */
+.nowrap { white-space: nowrap; }
 
 /* Badges */
 .badge { display: inline-block; border-radius: 12px; padding: 2px 10px; font-size: 0.75em; font-weight: 600; white-space: nowrap; }
@@ -595,7 +604,9 @@ fieldset.opt-box legend { white-space: nowrap; }
 }
 
 .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
-.form-draft-state { position:sticky; top:67px; z-index:18; width:max-content; max-width:100%; margin:0 0 8px auto;
+/* 임시저장 상태 칩(form.js가 폼 맨 앞에 넣음) — 폼 흐름 안에 둔다. sticky였을 때 스크롤 내내 연락처·메모 칸 위에 얹혔고
+   consult_form.html에 top/z-index가 다른 정의가 하나 더 있어 둘이 싸웠다(2026-09-21: 여기 하나로) */
+.form-draft-state { position:static; width:max-content; max-width:100%; margin:0 0 8px auto;
     padding:5px 10px; border:1px solid #cde3d4; border-radius:999px; background:rgba(240,253,244,.96);
     color:#166534; box-shadow:0 2px 8px rgba(15,23,42,.07); font-size:.74rem; font-weight:700;
     display:flex; align-items:center; gap:6px; }
@@ -645,6 +656,10 @@ select,input,textarea { accent-color:var(--primary-light); }
     .card,.stat-card,.form-section { box-shadow:none!important; }
 }
 .filter-bar .field { margin: 0; }
+/* 기간 두 input 가로 배치 — 전역 (2026-09-21: consult_list 인라인에만 있어 audit.html에선 세로로 쌓였다) */
+.filter-bar .date-range { display: flex; gap: 4px; align-items: center; overflow: visible; }
+.filter-bar .date-range input { width: 145px; }
+.filter-bar .dr-sep { color: var(--text-light); font-size: 0.85em; }
 .filter-bar input, .filter-bar select { padding: 6px 8px; font-size: 0.88em; }
 .filter-bar label { font-size: 0.78em; }
 
@@ -1342,12 +1357,13 @@ header.topbar { background:#f4f7f6; }   /* 검색창(흰색)이 구분되게 상
 .topbar .logo { color:var(--text); text-shadow:none; display:flex; align-items:center; gap:9px; font-size:1rem; }
 .topbar .logo i { width:30px; height:30px; border-radius:8px; background:var(--teal); color:#fff; display:grid; place-items:center; font-style:normal; font-weight:850; font-size:.85rem; }
 .topbar .command-status { order:0; flex:0 0 auto; }
+.topbar .command-status > span, .topbar .command-status a { display:inline-flex; align-items:center; gap:.28em; height:36px; }   /* gap = 원래 텍스트 공백 자리 */
 .topbar .command-status > span { background:var(--teal-soft); color:var(--teal-ink); }
 .topbar .command-status a { color:var(--text); background:#f3f6f4; }
 .topbar .command-status a:hover { background:#e8efeb; }
 .topbar .command-status b { color:var(--text); }
 .topbar .global-search { order:0; flex:1 1 320px; max-width:620px; }
-.topbar .global-search form { height:38px; border:1px solid #c6d3cd; background:#fff; box-shadow:0 1px 2px rgba(20,30,40,.06), 0 2px 8px rgba(20,30,40,.05); }
+.topbar .global-search form { height:36px;   /* 상단바 3요소(현황 칩·검색·도구) 모두 36px (2026-09-21) */ border:1px solid #c6d3cd; background:#fff; box-shadow:0 1px 2px rgba(20,30,40,.06), 0 2px 8px rgba(20,30,40,.05); }
 .topbar .global-search form:hover { border-color:#9fc9bf; }
 .topbar .global-search form > span { color:var(--teal-ink); }
 .topbar .global-search form:focus-within { border-color:var(--teal); background:#fff; box-shadow:0 0 0 3px rgba(15,138,122,.14); }
@@ -1355,10 +1371,10 @@ header.topbar { background:#f4f7f6; }   /* 검색창(흰색)이 구분되게 상
 .topbar .global-search input { color:var(--text); }
 .topbar .global-search kbd { background:#e9eeec; color:var(--text-light); }
 .topbar .header-tools { margin-left:auto; order:0; }
-.topbar .header-tool-btn { border-color:var(--border); background:#fff; color:var(--text-light); }
+.topbar .header-tool-btn { width:36px; height:36px; border-color:var(--border); background:#fff; color:var(--text-light); }
 .topbar .header-tool-btn:hover, .topbar .header-tool-btn[aria-expanded="true"] { background:#f1f5f3; color:var(--teal-ink); transform:none; }
 .topbar .help-tool-btn.active { color:var(--teal-ink); background:var(--teal-soft); }
-.topbar .header-new-consult { order:0; background:var(--teal); color:#fff; box-shadow:0 4px 12px rgba(15,138,122,.25); }
+.topbar .header-new-consult { order:0; height:36px; padding:0 13px; background:var(--teal); color:#fff; box-shadow:0 4px 12px rgba(15,138,122,.25); }
 .topbar .header-new-consult:hover { background:var(--teal-ink); color:#fff; transform:none; }
 .header-popover { top:calc(var(--topbar-h) + 8px); }
 

@@ -45,7 +45,7 @@ class ConsultationDisplayTests(unittest.TestCase):
         # 날짜 열 순서 — 발병 → 입원 → 입원기간 만료 → 퇴원 (2026-09-19 요청)
         for a, b in (('발병일','입원완료일'), ('입원완료일','입원기간 만료일'), ('입원기간 만료일','퇴원완료일')):
             self.assertLess(html.index(f'<th>{a}</th>'), html.index(f'<th>{b}</th>'), f'{a} < {b}')
-        self.assertIn('26.01.02',html)
+        self.assertIn('>2026-01-02</td>',html)   # 발병일 — 화면 날짜 표기 2026-09-21 결정: 'YYYY-MM-DD'(옛 '26.01.02')
         parser=TableParser();parser.feed(html)
         self.assertEqual(parser.rows[:3],[20,20,20])   # 퇴원완료일 열이 늘어 19→20
 

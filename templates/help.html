@@ -14,7 +14,7 @@
 <nav class="help-menu-guide card" aria-label="메뉴별 간단 안내">
     <a href="#dashboard"><strong>대시보드</strong><span>오늘의 상담·입원·처리 업무 확인</span></a>
     <a href="#consult-new"><strong>새 상담</strong><span>신규 환자 상담일지 작성·등록</span></a>
-    <a href="#consult-list"><strong>상담 목록</strong><span>과거 상담 검색·수정·진행 관리</span></a>
+    <a href="#consult-list"><strong>상담목록</strong><span>과거 상담 검색·수정·진행 관리</span></a>
     <a href="#lifecycle"><strong>재원 관리</strong><span>입원 대기부터 재원·외진·퇴원 관리</span></a>
     <a href="#sms"><strong>문자</strong><span>입원·퇴원 안내 문구 작성·발송</span></a>
     <a href="#stats"><strong>통계</strong><span>기간별 상담·입원 성과 분석</span></a>
@@ -36,7 +36,7 @@
     <a href="#dashboard">🏠 대시보드</a> ·
     <a href="#inbox">📥 인박스</a> ·
     <a href="#consult-new">✍️ 새 상담</a> ·
-    <a href="#consult-list">📋 상담 목록</a> ·
+    <a href="#consult-list">📋 상담목록</a> ·
     <a href="#lifecycle">🏥 재원 관리</a> ·
     <a href="#sms">💬 문자</a> ·
     <a href="#stats">📊 통계</a> ·
@@ -53,7 +53,7 @@
     <ol class="help-steps">
         <li><b>대시보드 확인</b><span>공지 필수 확인 → 오늘 입원·재연락·공유 일정·미처리 문의 확인</span></li>
         <li><b>새 상담 등록</b><span>환자·보호자 → 모병원·질환·상태 → 유입경로 → 상담 결과 → 입원 진행 순으로 저장</span></li>
-        <li><b>상담 목록 관리</b><span>검색·상세필터로 이전 상담 확인, 보류·취소 사유와 입원예정일 보완</span></li>
+        <li><b>상담목록 관리</b><span>검색·상세필터로 이전 상담 확인, 보류·취소 사유와 입원예정일 보완</span></li>
         <li><b>입원 대기 관리</b><span>병상 부족 시 입원 진행을 ‘입원대기’로 변경하고 우선순위·병상 조건·다음 연락일 기록</span></li>
         <li><b>입원 확정</b><span>실제 입원일과 호실 입력 → 재원명부와 입원 회차에 자동 반영</span></li>
         <li><b>재원 중 관리</b><span>외진·복귀, 호실 변경, 회복기 전환·퇴원 D-30 안내 확인</span></li>
@@ -186,7 +186,7 @@
         <tbody>
             <tr><td><a href="/">🏠 대시보드</a></td><td>오늘 처리 To-Do + 우리 팀 컨디션 한곳에</td><td>출근 직후 + 수시</td></tr>
             <tr><td><a href="/consult/new">✍️ 새 상담</a></td><td>통화 끝나고 한 화면에 다 채워서 저장</td><td>통화 직후</td></tr>
-            <tr><td><a href="/consultations">📋 상담 목록</a></td><td>과거 상담 검색용 백과사전</td><td>이전 상담 확인</td></tr>
+            <tr><td><a href="/consultations">📋 상담목록</a></td><td>과거 상담 검색용 백과사전</td><td>이전 상담 확인</td></tr>
             <tr><td><a href="/ward">🏥 재원 관리</a></td><td>재원·외진 환자 명부</td><td>매일 아침 외진 확인</td></tr>
             <tr><td><a href="/sms">💬 문자</a></td><td>환자군별 정형 문구 1-click 발송</td><td>입원/퇴원 안내</td></tr>
             <tr><td><a href="/stats">📊 통계</a></td><td>자유 기간 깊은 분석 차트</td><td>분기/월 분석</td></tr>
@@ -276,7 +276,7 @@
 </div>
 
 <div class="card help-card" id="consult-list">
-    <h2>📋 상담 목록 <a href="/consultations" class="help-go">메뉴 열기 →</a></h2>
+    <h2>📋 상담목록 <a href="/consultations" class="help-go">메뉴 열기 →</a></h2>
     <p class="help-lead">"검색용 백과사전. 과거 어떤 상담이 있었는지 필터·정렬해서 찾는 곳."</p>
     <h4>주요 기능</h4>
     <ul>
@@ -330,7 +330,7 @@
     </ul>
     <h4>입원 전 단계는?</h4>
     <p class="muted-sm">상담 → 입원예정 → 보류·취소는 <a href="/">대시보드</a>와
-        <a href="/consultations">상담 목록</a>이 담당합니다. 이 화면은 <strong>입원 이후</strong>만 다룹니다.</p>
+        <a href="/consultations">상담목록</a>이 담당합니다. 이 화면은 <strong>입원 이후</strong>만 다룹니다.</p>
 </div>
 
 <div class="card help-card" id="sms">
@@ -366,7 +366,7 @@
     <ul>
         <li>KPI 카드 8장 (전월 대비 ±%)</li>
         <li>Claude AI 임원 요약 1단락</li>
-        <li>채널별 입원 전환 ROI 표 (행 클릭 → 필터된 상담 목록 드릴다운)</li>
+        <li>채널별 입원 전환 ROI 표 (행 클릭 → 필터된 상담목록 드릴다운)</li>
         <li>모병원 Top 10, 입원취소 사유 Top, 환자 포트폴리오 미니 도넛 3개</li>
     </ul>
     <p class="help-note">가용 데이터 한계: 가동률·재원일·매출은 EMR/청구 연계 시 차후 추가.</p>
@@ -417,7 +417,7 @@
     ↓ [상담 등록] 클릭 (자동 prefill)
 [✍️ 새 상담 폼]
     ↓ 저장
-[📋 상담 목록] ←─ 회복기·임박 마크 자동
+[📋 상담목록] ←─ 회복기·임박 마크 자동
     ↓ admission_status='입원완료'
 [🏥 재원 관리 · 입퇴원 현황] ←─ 환자 상담·접촉 이력 누적
     ↓ 입원 만료 30일 이내

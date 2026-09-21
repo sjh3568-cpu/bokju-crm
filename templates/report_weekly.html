@@ -30,7 +30,7 @@
                 <thead>
                     <tr><th rowspan="3">날짜</th><th colspan="8" class="grp-source">상담 유입경로(최초 병원 인지)</th><th colspan="8" class="grp-resistant">내성균(CRE·VRE) 상담 경로</th><th colspan="2" class="grp-region">지역</th><th colspan="3" class="grp-type">상담유형</th><th rowspan="3">입원<br>건수</th><th rowspan="3">입원율</th></tr>
                     <tr><th colspan="4">온라인 검색</th><th colspan="3">소개</th><th>기타</th><th colspan="4">온라인 검색</th><th colspan="3">소개</th><th>기타</th><th rowspan="2">안동</th><th rowspan="2">관외</th><th rowspan="2">전화</th><th rowspan="2">방문</th><th rowspan="2">홈·채널</th></tr>
-                    <tr>{% for repeat in range(2) %}{% for key in weekly_report.source_keys %}<th>{{ key }}</th>{% endfor %}{% endfor %}</tr>
+                    <tr>{% for repeat in range(2) %}{% for key in weekly_report.source_keys %}<th>{% if '(' in key %}{{ key.split('(')[0] }}<wbr>({{ key.split('(', 1)[1] }}{% else %}{{ key }}{% endif %}</th>{% endfor %}{% endfor %}</tr>
                 </thead>
                 <tbody>
                     {% for d in weekly_report.current.days + [weekly_report.current.totals] %}
@@ -67,6 +67,15 @@
 .weekly-report-table tbody th { background:#f8fafc; white-space:nowrap; }
 .weekly-report-table .total-row th,.weekly-report-table .total-row td { background:#fce4d6; font-weight:700; }
 @media (max-width:760px) { .weekly-compare-grid { grid-template-columns:1fr; } }
+.weekly-report-table thead th { word-break:keep-all; }
+/* 1440 노트북(카드 ≈1090px) — 최소폭 1500px가 410px 넘쳐 '지역·상담유형' 그룹이 숨던 것(2026-09-21).
+   화면에선 최소폭을 풀고 글자·여백을 한 단계 줄인다. PNG 저장은 weeklyReportPngBlob()이 1560px로 따로 그리므로 영향 없음 */
+@media (max-width:1500px) {
+    .weekly-report-table { min-width:0; font-size:10px; }
+    .weekly-report-table th,.weekly-report-table td { padding:3px 1px; }
+    .weekly-report-table thead tr:first-child th:first-child { width:56px; }
+    .weekly-report-table tbody th { font-size:9.5px; }
+}
 </style>
 <script src="/static/js/html2canvas.min.js?v=1.4.1"></script>
 <script>

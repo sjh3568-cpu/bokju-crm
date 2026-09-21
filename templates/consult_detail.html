@@ -398,7 +398,7 @@
         </dd>
         {% endif %}
         <dt>주치의</dt><dd><span id="kv-planned-doctor">{{ c.attending_doctor or '-' }}</span></dd>
-        <dt>호실</dt><dd><span id="kv-planned-room">{{ c.room_number or '-' }}</span></dd>
+        <dt>호실</dt><dd><span id="kv-planned-room">{{ c.room_number|room_no or '-' }}</span></dd>
         <dt>상담일시</dt><dd>{{ c.consult_date|krdate_wd_full}} {{ c.consult_time or '' }}</dd>
         <dt>상담자</dt><dd>{{ c.counselor or '-' }}</dd>
         <dt>상담방법</dt><dd>{{ c.consult_channel or '-' }}</dd>
@@ -667,7 +667,7 @@ document.querySelectorAll('.iso-btn').forEach(btn => btn.addEventListener('click
             {{ c.residence_sigungu or '-' }}
         </dd>
         <dt>가족사항</dt><dd>{{ c.family_info or '-' }}</dd>
-        <dt>보호자</dt><dd>{{ c.guardian_name or '-' }} {% if c.guardian_relation %}({{ c.guardian_relation }}){% endif %} {{ c.guardian_phone or '' }}</dd>
+        <dt>보호자</dt><dd>{% if c.guardian_name or c.guardian_relation or c.guardian_phone %}{{ c.guardian_name or '' }}{% if c.guardian_relation %} ({{ c.guardian_relation }}){% endif %} {{ c.guardian_phone or '' }}{% else %}-{% endif %}</dd>
         <dt>보험유형</dt><dd>{{ c.insurance_type or '-' }}</dd>
         <dt>환자 ID</dt><dd><a href="/patients/{{ c.patient_id }}">P{{ c.patient_id }} 상세</a></dd>
     </dl>
@@ -764,7 +764,7 @@ document.querySelectorAll('.iso-btn').forEach(btn => btn.addEventListener('click
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>회차</th><th>상태</th><th>대기 시작</th><th>입원</th><th>퇴원</th><th>호실</th><th>출처</th></tr></thead><tbody>
     {% for e in admission_episodes %}<tr {% if e.consultation_id == c.id %}style="background:#f0fdf4"{% endif %}>
         <td class="nowrap">{{ e.seq }}회{% if e.readmission %} <span class="badge" style="background:#fef3c7;color:#92400e">재입원</span>{% endif %}</td>
-        <td>{{ {'waiting':'입원 대기','planned':'입원 예정','admitted':'재원','discharged':'퇴원'}.get(e.status,e.status) }}</td>
+        <td>{{ {'waiting':'입원 대기','planned':'입원예정','admitted':'재원','discharged':'퇴원'}.get(e.status,e.status) }}</td>
         <td>{{ e.wait_started_at|krdate if e.wait_started_at else '-' }}</td><td>{{ e.admitted_at|krdate if e.admitted_at else '-' }}</td><td>{{ e.discharged_at|krdate if e.discharged_at else '-' }}</td><td>{{ e.room_number or '-' }}</td>
         <td class="muted-sm">{{ e.source }}</td>
     </tr>{% endfor %}

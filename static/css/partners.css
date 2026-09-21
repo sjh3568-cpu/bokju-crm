@@ -28,7 +28,9 @@
 /* 등록 기관 실적·방치 표시 */
 .coop-perf-cell{white-space:nowrap;font-size:.85em}.coop-perf-cell b{color:#166534}
 .coop-perf-line{color:#166534;font-size:.85em}
-.coop-neglect-tag{margin-left:6px;padding:1px 7px;border-radius:9px;background:#fef3c7;color:#92400e;font-size:.7rem;font-weight:800;white-space:nowrap}.coop-perf-cell .coop-neglect-tag{display:inline-block;margin:4px 0 0;white-space:nowrap}.coop-perf-cell{white-space:normal}.coop-perf-cell b{white-space:nowrap}
+.coop-neglect-tag{margin-left:6px;padding:1px 7px;border-radius:9px;background:#fef3c7;color:#92400e;font-size:.7rem;font-weight:800;white-space:nowrap}.coop-perf-cell .coop-neglect-tag{display:inline-block;margin:4px 0 0;white-space:nowrap}.coop-perf-cell{white-space:normal;overflow-wrap:normal;word-break:keep-all}.coop-perf-cell .coop-neglect-tag{display:block;width:max-content}.coop-perf-cell b{white-space:nowrap}
 .coop-neglected{background:#fffbeb}
 .coop-sort{display:flex;align-items:center;gap:5px}.coop-sort>span{color:var(--text-light);font-size:.76rem;font-weight:750}
 @media(max-width:650px){.coop-candidates-head{display:block}.coop-sort{flex-wrap:wrap;margin:8px 0}}
+/* 1440 노트북(카드 ≈1110px) — 최소폭 1180px가 70px 넘쳐 '다음 일정' 열이 숨던 것(2026-09-21). 열 폭이 %라 최소폭만 풀면 카드 안에 들어간다 */
+@media(max-width:1500px){.coop-partner-table{min-width:0}.coop-partner-table th,.coop-partner-table td{padding-left:7px;padding-right:7px}.coop-partner-table th:nth-child(1){width:16%}.coop-partner-table th:nth-child(2){width:11%}.coop-partner-table th:nth-child(4){width:14%}}

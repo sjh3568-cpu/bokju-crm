@@ -12,7 +12,7 @@
     --dshadow: 0 1px 2px rgba(20,30,40,.05), 0 2px 8px rgba(20,30,40,.04);
     --dradius: 14px;
 }
-.page-dashboard main { background: var(--dbg); padding-top: 14px; }
+.page-dashboard main { background: var(--dbg); }   /* 제목 위 여백은 전역 main.container(26px)와 같게 (2026-09-21) */
 .page-dashboard main.container { max-width: 1760px; }
 .page-dashboard .num { font-variant-numeric: tabular-nums; }
 
@@ -44,8 +44,8 @@
 .page-dashboard .card .tbl a:hover { color: var(--da-ink); }
 
 /* ── 헤더 ── */
-.page-dashboard .dash-head { display: flex; align-items: flex-end; gap: 14px; margin: 0 0 10px; }
-.page-dashboard .dash-head h1 { margin: 0; font-size: 1.3rem; font-weight: 800; letter-spacing: -.02em; color: var(--dtext); }
+.page-dashboard .dash-head { display: flex; align-items: center; gap: 14px; margin: 0 0 10px; }
+.page-dashboard .dash-head h1 { margin: 0; font-size: 1.48em; font-weight: 820; letter-spacing: -.035em; color: var(--dtext); }   /* 제목 크기는 .page-header h1과 같은 값 (2026-09-21) */
 .page-dashboard .dash-head p { margin: 2px 0 0; color: var(--dmuted); font-size: .86rem; }
 .page-dashboard .dash-head h1 small { font-size: .8rem; font-weight: 500; color: var(--dmuted); letter-spacing: 0; margin-left: 8px; }
 .page-dashboard .dash-calendar-link { border-radius: 10px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
@@ -75,7 +75,7 @@
 .page-dashboard .dash-kpi { display: grid; grid-template-columns: 1fr; gap: 8px; margin-bottom: 12px; }
 .page-dashboard .krow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 .page-dashboard .krow .gl { grid-column: 1 / -1; font-size: .7rem; font-weight: 800; letter-spacing: .06em; color: var(--dfaint); padding: 0 2px; margin-bottom: -6px; }
-.page-dashboard .kc { display: grid; grid-template-columns: minmax(0, 1fr) minmax(64px, 96px); overflow: hidden; grid-template-rows: auto auto auto; gap: 0 10px; min-width: 0; padding: 10px 16px 9px; background: var(--dcard); border: 1px solid var(--dborder); border-radius: var(--dradius); box-shadow: var(--dshadow); color: var(--dtext); text-decoration: none; transition: border-color .15s, transform .15s; }
+.page-dashboard .kc { display: grid; grid-template-columns: minmax(0, 1fr) minmax(64px, 96px); overflow: hidden; grid-template-rows: auto auto auto; align-content: start; gap: 0 10px;   /* 위 정렬 — 같은 줄 카드의 숫자·배지 위치가 보조줄 수에 따라 8px 어긋나던 것(2026-09-21) */ min-width: 0; padding: 10px 16px 9px; background: var(--dcard); border: 1px solid var(--dborder); border-radius: var(--dradius); box-shadow: var(--dshadow); color: var(--dtext); text-decoration: none; transition: border-color .15s, transform .15s; }
 .page-dashboard .kc:hover { border-color: var(--da); transform: translateY(-1px); }
 /* 아이콘 배지 — 연한 청록 바탕에 청록 선 아이콘, 그림자 없음 (숫자보다 눈에 띄지 않게) */
 .page-dashboard .kc .ic { grid-row: 1; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: var(--da-ink);
@@ -328,14 +328,14 @@
    같은 날 요청으로 성별/나이·보험·회복기를 이름·병실 아래 줄에서 제 열로 풀고, 중증도 열을 더했다. 여기가 한계다 —
    1400px 이하에서는 발병일 열을 접어야 주병명이 140px을 지킨다. 그 이상은 툴팁·배지·상세 화면으로. */
 .page-dashboard .dash-adm-tbl { width: 100%; table-layout: fixed; }
-.page-dashboard .dash-adm-tbl col.c-when { width: 84px; }   /* '09.14(월)' / '10:30' */
+.page-dashboard .dash-adm-tbl col.c-when { width: 84px; }   /* '09-14(월)' / '10:30' */
 .page-dashboard .dash-adm-tbl col.c-state { width: 88px; }  /* '입원완료'·'퇴원예정' 배지 + 아래 '재원 123일' */
 .page-dashboard .dash-adm-tbl col.c-who { width: 104px; }   /* '김영희' + 블랙·재입원 배지 */
 .page-dashboard .dash-adm-tbl col.c-sex { width: 66px; }    /* '여/78' — 머리글 '성별/나이'가 한 줄에 들어가는 폭 */
 .page-dashboard .dash-adm-tbl col.c-hosp { width: 150px; }  /* '서울아산병원' / 복귀 '응급전원 · ○○병원'(길면 줄바꿈) */
 /* 주병명(c-dx)·유입경로(c-ref)는 폭을 안 정해 남는 폭을 반씩 나눈다 */
 .page-dashboard .dash-adm-tbl col.c-sev { width: 168px; }   /* '높음' + 칩 서넛('CRE' '호흡기' '와상' '콧줄'), 많으면 둘째 줄 */
-.page-dashboard .dash-adm-tbl col.c-onset { width: 74px; }  /* '26.07.02' */
+.page-dashboard .dash-adm-tbl col.c-onset { width: 80px; }  /* '2026-07-02' */
 .page-dashboard .dash-adm-tbl col.c-room { width: 60px; }   /* '1004호' */
 .page-dashboard .dash-adm-tbl col.c-rh { width: 76px; }     /* '비회복기*' 배지 */
 .page-dashboard .dash-adm-tbl col.c-doc { width: 72px; }    /* '이성범' / '(RM1)' */
@@ -398,14 +398,14 @@
 .page-dashboard .dash-adm-tbl .adm-action-sel:disabled { opacity: .5; }
 @media (max-width: 1500px) {
     /* 노트북(표 ≈1,250px) — 전체 폭이라 열을 접지 않고 폭·글자만 한 단계 줄인다 */
-    .page-dashboard .dash-adm-tbl col.c-when { width: 74px; }
+    .page-dashboard .dash-adm-tbl col.c-when { width: 80px; }   /* '09-21(월)'이 잘리지 않는 폭 (2026-09-21) */
     .page-dashboard .dash-adm-tbl col.c-state { width: 78px; }
     .page-dashboard .dash-adm-tbl col.c-who { width: 92px; }
     .page-dashboard .dash-adm-tbl col.c-sex { width: 58px; }
-    .page-dashboard .dash-adm-tbl col.c-hosp { width: 130px; }
-    .page-dashboard .dash-adm-tbl col.c-sev { width: 132px; }
-    .page-dashboard .dash-adm-tbl col.c-onset { width: 66px; }
-    .page-dashboard .dash-adm-tbl col.c-room { width: 54px; }
+    .page-dashboard .dash-adm-tbl col.c-hosp { width: 124px; }
+    .page-dashboard .dash-adm-tbl col.c-sev { width: 126px; }
+    .page-dashboard .dash-adm-tbl col.c-onset { width: 74px; }  /* '2026-07-02' */
+    .page-dashboard .dash-adm-tbl col.c-room { width: 60px; }   /* '1004호' */
     .page-dashboard .dash-adm-tbl col.c-rh { width: 68px; }
     .page-dashboard .dash-adm-tbl col.c-doc { width: 62px; }
     .page-dashboard .dash-adm-tbl col.c-cs { width: 54px; }
@@ -473,7 +473,20 @@
 .page-dashboard .aq-kind.k-staff     { background: #eceff3; color: #4b5563; }   /* 담당자 — 회색 */
 .page-dashboard .aq-kind.k-planned   { background: #e8e9fb; color: #4646b8; }   /* 입원예정일 — 남색 */
 .page-dashboard .aq-meta.warn { color: var(--dwarn); font-weight: 700; }
-.page-dashboard .aq-detail { max-width: 240px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dmuted); }
+/* 표는 고정 레이아웃 — 카드 폭(1440에서 ≈534px) 안에 6열이 다 보이고 모든 행 높이가 같다(2026-09-21). 남는 폭은 '내용'이 갖는다 */
+.page-dashboard .aq-table { table-layout: fixed; width: 100%; }
+.page-dashboard .aq-table col.c-kind { width: 68px; }
+.page-dashboard .aq-table col.c-who { width: 72px; }
+.page-dashboard .aq-table col.c-dx { width: 66px; }
+.page-dashboard .aq-table col.c-meta { width: 100px; }
+/* 고정 레이아웃이라 이 표는 넘치지 않는다 — 마지막 행의 '…' 더보기 메뉴가 .tbl-wrap(overflow:auto)에 잘리지 않게 */
+.page-dashboard .tbl-wrap:has(> .aq-table) { overflow: visible; }
+.page-dashboard .aq-table col.c-act { width: 118px; }
+.page-dashboard .aq-table th, .page-dashboard .aq-table td { overflow: hidden; text-overflow: ellipsis; padding-left: 6px; padding-right: 6px; }
+.page-dashboard .aq-table td.dash-action-cell { overflow: visible; white-space: nowrap; padding-left: 4px; padding-right: 4px; }
+.page-dashboard .aq-table .dash-action-cell .btn-xs { padding: 2px 6px; margin: 1px; }
+.page-dashboard .aq-table .dash-dx { max-width: none; }
+.page-dashboard .aq-detail { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dmuted); }
 .page-dashboard .aq-meta { font-size: .78rem; color: var(--dmuted); }
 .page-dashboard .aq-meta.danger { color: var(--dcrit); font-weight: 800; }
 .page-dashboard .aq-row.stale td { color: var(--dmuted); }

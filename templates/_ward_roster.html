@@ -26,7 +26,7 @@
                         {% if r.consultation_id %}<a href="/consult/{{ r.consultation_id }}" class="rm-name">{{ r.name }}</a>{% else %}<span class="rm-name">{{ r.name }}</span>{% endif %}
                         <span class="rm-age muted-sm">({% if r.gender == 'M' %}남{% elif r.gender == 'F' %}여{% else %}-{% endif %})</span>
                     </div>
-                    <div class="rm-dx">{% if r.expected_date %}입원 예정 {{ r.expected_date|krdate_short }}{% if r.expected_date < today_str %} <b class="rm-res-late">지남</b>{% endif %}{% else %}입원일 미정{% endif %}{% if r.admission_status %} · {{ r.admission_status }}{% endif %}</div>
+                    <div class="rm-dx">{% if r.expected_date %}입원예정 {{ r.expected_date|krdate_short }}{% if r.expected_date < today_str %} <b class="rm-res-late">지남</b>{% endif %}{% else %}입원일 미정{% endif %}{% if r.admission_status %} · {{ r.admission_status }}{% endif %}</div>
                     {% if r.memo %}<div class="rm-dx" title="{{ r.memo }}">{{ r.memo }}</div>{% endif %}
                     <div class="rm-who"><span class="rm-doc">{{ r.created_by or '' }}{% if r.created_at %} · {{ r.created_at[:10]|krdate_short }}{% endif %}</span></div>
                     <div class="rm-act">
@@ -79,7 +79,7 @@
             <tbody>
                 {% for c in admitted %}
                 <tr {% if c.away %}class="wd-away-row"{% endif %}>
-                    <td class="nowrap"><strong>{{ c.room_number or '—' }}</strong></td>
+                    <td class="nowrap"><strong>{{ c.room_number|room_no or '-' }}</strong></td>
                     <td class="nowrap">
                         {% if c.away %}<span class="wd-mark">🚑</span>{% endif %}
                         {% if c.id %}<a href="/consult/{{ c.id }}">{{ c.patient_name }}</a>
@@ -119,7 +119,7 @@
                         <span class="wd-dd {% if c.discharge_dday < 0 %}over{% else %}warn{% endif %}">
                             {% if c.discharge_dday < 0 %}초과{% else %}D-{{ c.discharge_dday }}{% endif %}</span>
                         {% endif %}
-                        {% else %}<span class="muted-sm">—</span>{% endif %}
+                        {% else %}<span class="muted-sm">-</span>{% endif %}
                     </td>
                     {% if filt == 'recdue' %}
                     <td class="nowrap wd-follow-cell">

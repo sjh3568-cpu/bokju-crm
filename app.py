@@ -537,7 +537,7 @@ def _inject_globals():
         "command_metrics": command_metrics,
         "account_preferences": account_preferences,
         "today_str": date.today().isoformat(),   # 날짜 입력 기본값(외진 기록 등)
-        "today_header": date.today().strftime('%Y.%m.%d') + f" ({'월화수목금토일'[date.today().weekday()]})",
+        "today_header": date.today().strftime('%Y-%m-%d') + f"({'월화수목금토일'[date.today().weekday()]})",   # 화면 날짜 표기 규칙 2026-09-21(월)
         "INSURANCE_TYPES": INSURANCE_TYPES,
         "CONSULT_CHANNELS": CONSULT_CHANNELS,
         "ADMISSION_EVENT_TYPES": ADMISSION_EVENT_TYPES,
@@ -606,7 +606,7 @@ def global_search():
         ('consult','상담목록','환자 상담 검색·조회','/consultations'),
         ('consult','새 상담 등록','신규 환자 상담 접수','/consult/new'),
         ('ward','재원 관리','재원 현황·입원 대기·회복기 관리','/ward'),
-        ('ward','입원 대기','입원 예정·병상 대기 환자','/ward?tab=waiting'),
+        ('ward','입원 대기','입원예정·병상 대기 환자','/ward?tab=waiting'),
         ('partners','기관협력','협력기관·방문·연락·업무협약','/partners'),
         ('consult','팩스·문서 자료함','모병원 팩스 원본·AI 요약·환자 연결','/documents'),
         ('sms','문자','문자 발송·템플릿·발송 이력','/sms'),
@@ -652,9 +652,12 @@ def _krdate(value):
     return value.strftime("%Y-%m-%d")
 
 
+# ── 화면 날짜 표기 규칙 (사용자 결정 2026-09-21) ──
+#   기본형 '2026-09-21(월)' · 좁은 칸 축약형 '09-21(월)'(연도만 뺌) · 기간 '2026-09-01 ~ 2026-09-21'
+#   하이픈, 요일은 공백 없이 괄호. <input type=date> value·API·CSV·DB 저장 형식과는 무관 — 글자로 찍히는 것만.
 @app.template_filter("krdate_wd")
 def _krdate_wd(value):
-    """'2026-05-04' → '5/4(월)' (요일 포함)."""
+    """'2026-05-04' → '05-04(월)' (좁은 칸 축약형 — 연도만 뺀 같은 규칙)."""
     if not value:
         return ""
     if isinstance(value, str):
@@ -663,7 +666,7 @@ def _krdate_wd(value):
         except ValueError:
             return value
     wd = "월화수목금토일"[value.weekday()]
-    return f"{value.month}/{value.day}({wd})"
+    return f"{value.strftime('%m-%d')}({wd})"
 
 
 @app.template_filter("krdate_wd_full")
@@ -704,7 +707,7 @@ def _doctor_short(value):
 
 @app.template_filter("krdate_short")
 def _krdate_short(value):
-    """'2026-09-03' → '26.09.03' (요일 없는 목록용 축약 날짜)."""
+    """'2026-09-03' → '2026-09-03' (요일 없는 날짜 — 2026-09-21까지는 '26.09.03'이었다. 화면 표기 규칙에 맞춰 통일)."""
     if not value:
         return ""
     if isinstance(value, str):
@@ -712,12 +715,12 @@ def _krdate_short(value):
             value = datetime.strptime(value[:10], "%Y-%m-%d")
         except ValueError:
             return value
-    return value.strftime('%y.%m.%d')
+    return value.strftime('%Y-%m-%d')
 
 
 @app.template_filter("krdate_short_wd")
 def _krdate_short_wd(value):
-    """'2026-09-03' → '26.09.03(목)' (목록용 한 줄 축약 날짜)."""
+    """'2026-09-03' → '2026-09-03(목)' (기본형 — 2026-09-21까지는 '26.09.03(목)'. krdate_wd_full과 같은 결과)."""
     if not value:
         return ""
     if isinstance(value, str):
@@ -726,7 +729,7 @@ def _krdate_short_wd(value):
         except ValueError:
             return value
     wd = "월화수목금토일"[value.weekday()]
-    return f"{value.strftime('%y.%m.%d')}({wd})"
+    return f"{value.strftime('%Y-%m-%d')}({wd})"
 
 
 _SIDO_SHORT = {
@@ -852,15 +855,25 @@ def _simplify_label(label):
     return label.split("-", 1)[0]
 
 
-@app.template_filter("pct2")
-def _pct2(value):
-    """회복기 비율 표기 — 소수 둘째자리 고정(40 → 40.00, 42.5 → 42.50).
+@app.template_filter("comma")
+def _comma(value):
+    """1,000 이상 카운트에 천 단위 콤마 (8069 → '8,069'). 숫자가 아니면 그대로 (2026-09-21 표기 통일)."""
+    try:
+        return f"{int(value):,}"
+    except (TypeError, ValueError):
+        return value
 
-    round()는 40.0을 '40.0'으로 찍어 화면마다 자릿수가 들쭉날쭉해진다. 40% 기준선을
-    눈으로 비교하는 숫자라 표기 자릿수를 고정한다.
+
+@app.template_filter("pct1")
+def _pct1(value):
+    """비율 표기 — 소수 첫째자리 고정(40 → 40.0, 42.55 → 42.6).
+
+    2026-09-21까지는 pct2(둘째자리)였는데 같은 화면의 가동률 76.9%·전환율 14.3%와 자릿수가 달라
+    41.39%만 튀었다(사용자 결정: KPI 퍼센트는 1자리). round()는 40.0을 '40.0'/'40'으로 들쭉날쭉 찍어
+    자릿수를 고정한다. 40% 기준 판정은 값으로 하므로 표기 자릿수와 무관.
     """
     try:
-        return f"{float(value):.2f}"
+        return f"{float(value):.1f}"
     except (TypeError, ValueError):
         return value
 
@@ -1381,14 +1394,14 @@ def _dashboard_elapsed_label(dt):
     if not dt:
         return ""
     minutes = max(0, int((datetime.now() - dt).total_seconds() // 60))
+    # '경과' 열(100px)에 들어가므로 단위 하나만 — "1일 19시간 경과"가 잘리던 것(2026-09-21).
+    # 하루가 지나면 시간 정밀도는 의미가 없어 일수만 적는다.
     if minutes < 60:
-        return f"{minutes}분 경과"
+        return f"{minutes}분"
     hours = minutes // 60
     if hours < 24:
-        return f"{hours}시간 경과"
-    days = hours // 24
-    rem = hours % 24
-    return f"{days}일 {rem}시간 경과" if rem else f"{days}일 경과"
+        return f"{hours}시간"
+    return f"{hours // 24}일"
 
 
 def _dashboard_days_since(value):
@@ -1541,7 +1554,7 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
                 "danger",
                 r.get("patient_name") or "환자 미지정",
                 "누락: " + ", ".join(missing),
-                "오늘 입원 예정",
+                "오늘 입원예정",
                 f"/consult/{r.get('id')}" if r.get("id") else None,
                 2,
                 age_days=0,

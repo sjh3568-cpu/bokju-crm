@@ -160,7 +160,7 @@ class CooperationTests(unittest.TestCase):
         self.assertIn('내 담당',page)
         self.assertIn('입원예정',page)
         self.assertIn('입원완료',page)
-        self.assertRegex(page,r'\d{4}\.\d{2}\.\d{2} \([월화수목금토일]\)')
+        self.assertRegex(page,r'\d{4}-\d{2}-\d{2}\([월화수목금토일]\)')   # 상단바 날짜 '2026-09-21(월)' (2026-09-21 표기 결정)
         self.assertIn('내 계정 설정',page)
         with self.client.session_transaction() as s:
             csrf=s['start_page_csrf']

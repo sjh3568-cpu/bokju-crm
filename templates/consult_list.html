@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}상담 목록 — 복주 상담실{% endblock %}
+{% block title %}상담목록 — 복주 상담실{% endblock %}
 
 {# 정렬 가능 헤더 — 클릭 시 정렬 기준·방향 토글, 페이지는 1로 리셋 #}
 {% macro sort_th(key, label) %}
@@ -12,7 +12,7 @@
 
 {% block content %}
 <div class="page-header">
-    <h1>상담 목록 <span class="muted" style="font-size:0.7em">(총 {{ total }}건{% if total_pages > 1 %} · {{ page }}/{{ total_pages }}p{% endif %})</span></h1>
+    <h1>상담목록 <span class="muted" style="font-size:0.7em">(총 {{ total|comma }}건{% if total_pages > 1 %} · {{ page }}/{{ total_pages }}p{% endif %})</span></h1>
     <div style="display:flex; gap:8px">
         {% if current_user and current_user.role == 'admin' %}
         <a class="btn btn-secondary btn-sm" href="/consultations.csv?{{ request.query_string.decode() }}">CSV</a>
@@ -421,7 +421,7 @@
         <span class="pg pg-off">다음 ›</span>
         <span class="pg pg-off">»</span>
     {% endif %}
-    {% if rows %}<span class="pg-summary">{{ page_start + 1 }}–{{ page_start + rows|length }} / 총 {{ total }}건</span>{% endif %}
+    {% if rows %}<span class="pg-summary">{{ page_start + 1 }}–{{ page_start + rows|length }} / 총 {{ total|comma }}건</span>{% endif %}
 </nav>
 {% endif %}
 
@@ -451,7 +451,7 @@
 
 <style>
 /* 상담목록은 19컬럼이라 base.html의 1200px 제한 풀고 전체 화면 활용 */
-body .container { max-width: none; padding: 0 12px; }
+body .container { max-width: none; padding-left: 12px; padding-right: 12px; }   /* 상단 패딩은 전역 main.container 값 유지 (2026-09-21) */
 
 /* 표 영역을 '자체 스크롤 박스'로 만든다 — 높이를 화면 남는 만큼으로 고정(스크립트가 실측)하고
    가로·세로 모두 이 안에서만 스크롤. 그러면 thead가 이 박스 top:0에 안정적으로 고정돼
@@ -468,8 +468,9 @@ body .container { max-width: none; padding: 0 12px; }
 /* .tbl의 overflow:hidden(둥근 모서리용)은 표 자체를 클립 컨테이너로 만들어
    thead의 position:sticky를 무력화한다 → 목록에선 풀어서 헤더 고정이 동작하게. */
 /* 최소폭 1300px: 1440px 화면(사이드바 접힘 1346·상단메뉴 1416)엔 가로 스크롤 없이 들어가고,
-   1366px 노트북+사이드바(1272)처럼 더 좁을 때만 살짝 가로 스크롤 — 열을 더 눌러 못 읽게 만드는 것보다 낫다. */
-.tbl-compact { table-layout: fixed; width: 100%; min-width: 1380px; overflow: visible; border-radius: 0; }
+   1366px 노트북+사이드바(1272)처럼 더 좁을 때만 살짝 가로 스크롤 — 열을 더 눌러 못 읽게 만드는 것보다 낫다.
+   (2026-09-21: 1380으로 올라가 있어 1440 접힘 폭에서 34px 내부 스크롤로 '상담자' 열이 숨었다 → 주석대로 1300) */
+.tbl-compact { table-layout: fixed; width: 100%; min-width: 1300px; overflow: visible; border-radius: 0; }
 .tbl-compact th, .tbl-compact td {
     padding: 3px 2px; font-size:0.84em; line-height:1.3; vertical-align:middle;
     text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
@@ -493,7 +494,7 @@ body .container { max-width: none; padding: 0 12px; }
 /* 열 폭 — 화면(1440px 기준)에 가로 스크롤 없이 다 들어가도록 고정폭 열은 최소로 잡고,
    남는 폭은 연락처(8)·모병원(9)·유입경로(11)가 나눠 갖는다. 더 넓게 보고 싶으면
    '열 보기'에서 안 쓰는 열을 숨기면 그만큼 다른 열이 넓어진다. */
-.tbl-compact th:nth-child(2),  .tbl-compact td:nth-child(2)  { width:86px; }  /* 상담일 */
+.tbl-compact th:nth-child(2),  .tbl-compact td:nth-child(2)  { width:96px; }  /* 상담일 '2026-09-19(토)' */
 .tbl-compact th:nth-child(3),  .tbl-compact td:nth-child(3)  { width:84px; }  /* 환자 */
 .tbl-compact th:nth-child(4),  .tbl-compact td:nth-child(4),
 .tbl-compact th:nth-child(5),  .tbl-compact td:nth-child(5)  { width:30px; }  /* 성별·나이 */
@@ -504,7 +505,7 @@ body .container { max-width: none; padding: 0 12px; }
 .tbl-compact th:nth-child(13), .tbl-compact td:nth-child(13) { width:72px; }  /* 회복기대상 */
 .tbl-compact th:nth-child(14), .tbl-compact td:nth-child(14) { width:80px; }  /* 상담결과 */
 .tbl-compact th:nth-child(15), .tbl-compact td:nth-child(15) { width:96px; }  /* 입원진행 (퇴원 임박 액션은 hover 팝오버) */
-.tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:66px; }  /* 발병일 */
+.tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:74px; }  /* 발병일 '2026-08-31' */
 .tbl-compact th:nth-child(17), .tbl-compact td:nth-child(17) { width:78px; }  /* 입원완료일 */
 .tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:118px; } /* 입원기간 만료일 — 가장 가까운 기한 1개 */
 .tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:78px; }  /* 퇴원완료일 */
@@ -514,23 +515,23 @@ body .container { max-width: none; padding: 0 12px; }
 /* 좁은 화면(노트북)에선 글자만 한 단계 줄이고 한 줄 규칙은 유지 */
 @media (max-width: 1500px) {
     .tbl-compact th, .tbl-compact td { padding:3px 2px; font-size:0.76em; }
-    .tbl-compact th:nth-child(2),  .tbl-compact td:nth-child(2)  { width:80px; }
+    .tbl-compact th:nth-child(2),  .tbl-compact td:nth-child(2)  { width:100px; } /* '2026-09-19(토)' 실측 97 (2026-09-21 날짜 표기 통일) */
     .tbl-compact th:nth-child(3),  .tbl-compact td:nth-child(3)  { width:76px; }
     .tbl-compact th:nth-child(4),  .tbl-compact td:nth-child(4),
-    .tbl-compact th:nth-child(5),  .tbl-compact td:nth-child(5)  { width:27px; }
+    .tbl-compact th:nth-child(5),  .tbl-compact td:nth-child(5)  { width:32px; }  /* 머리글 '성별'·'나이'가 "성…"으로 잘리지 않는 최소폭 (2026-09-21) */
     .tbl-compact th:nth-child(6),  .tbl-compact td:nth-child(6)  { width:72px; }
     .tbl-compact th:nth-child(7),  .tbl-compact td:nth-child(7)  { width:48px; }
-    .tbl-compact th:nth-child(8),  .tbl-compact td:nth-child(8)  { width:134px; } /* 연락처 — '배우자 010-0000-0000'이 안 잘리는 최소폭. 모병원·유입경로가 나머지를 나눈다 */
+    .tbl-compact th:nth-child(8),  .tbl-compact td:nth-child(8)  { width:130px; } /* 연락처 — '배우자 010-0000-0000'이 안 잘리는 최소폭. 모병원·유입경로가 나머지를 나눈다 */
     .tbl-compact th:nth-child(10), .tbl-compact td:nth-child(10) { width:84px; }
-    .tbl-compact th:nth-child(12), .tbl-compact td:nth-child(12) { width:36px; }
-    .tbl-compact th:nth-child(13), .tbl-compact td:nth-child(13) { width:64px; }
+    .tbl-compact th:nth-child(12), .tbl-compact td:nth-child(12) { width:56px; }  /* '상담방법' 머리글 4자 */
+    .tbl-compact th:nth-child(13), .tbl-compact td:nth-child(13) { width:66px; }  /* 머리글 '회복기대상' 실측 65 */
     .tbl-compact th:nth-child(14), .tbl-compact td:nth-child(14) { width:72px; }
-    .tbl-compact th:nth-child(15), .tbl-compact td:nth-child(15) { width:88px; }
-    .tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:60px; }
-    .tbl-compact th:nth-child(17), .tbl-compact td:nth-child(17) { width:70px; }
-    .tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:108px; }
-    .tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:70px; }
-    .tbl-compact th:nth-child(20), .tbl-compact td:nth-child(20) { width:44px; }
+    .tbl-compact th:nth-child(15), .tbl-compact td:nth-child(15) { width:76px; }
+    .tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:64px; }  /* '2026-08-31' */
+    .tbl-compact th:nth-child(17), .tbl-compact td:nth-child(17) { width:74px; }  /* '2026-08-31' */
+    .tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:98px; }
+    .tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:74px; }
+    .tbl-compact th:nth-child(20), .tbl-compact td:nth-child(20) { width:46px; }
 }
 
 /* 넓은 화면(1800px 이상, 사무실 FHD 모니터) — 2026-09-15 사용자 요청: 열 사이 빈 공간 줄이고 글자를 키우고 열 간격을 고르게.
@@ -540,7 +541,7 @@ body .container { max-width: none; padding: 0 12px; }
 @media (min-width: 1800px) {
     .tbl-compact th, .tbl-compact td { padding:4px 3px; font-size:0.94em; line-height:1.35; }
     .tbl-compact th { padding-top:7px; padding-bottom:7px; }
-    .tbl-compact th:nth-child(2),  .tbl-compact td:nth-child(2)  { width:94px; }  /* 상담일 */
+    .tbl-compact th:nth-child(2),  .tbl-compact td:nth-child(2)  { width:108px; } /* 상담일 '2026-09-19(토)' */
     .tbl-compact th:nth-child(3),  .tbl-compact td:nth-child(3)  { width:92px; }  /* 환자 */
     .tbl-compact th:nth-child(4),  .tbl-compact td:nth-child(4),
     .tbl-compact th:nth-child(5),  .tbl-compact td:nth-child(5)  { width:34px; }  /* 성별·나이 */
@@ -554,7 +555,7 @@ body .container { max-width: none; padding: 0 12px; }
     .tbl-compact th:nth-child(13), .tbl-compact td:nth-child(13) { width:80px; }  /* 회복기대상 */
     .tbl-compact th:nth-child(14), .tbl-compact td:nth-child(14) { width:88px; }  /* 상담결과 */
     .tbl-compact th:nth-child(15), .tbl-compact td:nth-child(15) { width:104px; } /* 입원진행 */
-    .tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:74px; }  /* 발병일 */
+    .tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:82px; }  /* 발병일 '2026-08-31' */
     .tbl-compact th:nth-child(17), .tbl-compact td:nth-child(17) { width:86px; }  /* 입원완료일 */
     .tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:128px; } /* 입원기간 만료일 */
     .tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:86px; }  /* 퇴원완료일 */
@@ -765,11 +766,8 @@ body .container { max-width: none; padding: 0 12px; }
 .filter-bar .field { display: flex; flex-direction: column; gap: 2px; min-width: 100px; }
 .filter-bar .field label { font-size: 0.72em; color: var(--text-light); }
 .filter-bar .field input, .filter-bar .field select { padding: 3px 6px; font-size: 0.85em; border: 1px solid var(--border); border-radius: 4px; font-family: inherit; }
-/* 기간 두 input 가로 배치 */
-.filter-bar .date-range { display: flex; gap: 4px; align-items: center; }
-.filter-bar .date-range input { width: 145px; }
-.filter-bar,.filter-bar .date-range { overflow:visible; }
-.filter-bar .dr-sep { color: var(--text-light); font-size: 0.85em; }
+/* 기간 두 input 가로 배치(.date-range)·구분자(.dr-sep)는 style.css 전역 */
+.filter-bar { overflow:visible; }
 .quick-filter-row {
     display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
     margin: 6px 0 8px; padding: 0 12px;
@@ -845,8 +843,10 @@ body .container { max-width: none; padding: 0 12px; }
 /* 정렬 가능 헤더 — 헤더 패딩도 컴팩트와 일치 */
 .tbl-compact th.sortable { padding: 0; }
 .tbl-compact th.sortable a { display: block; padding: 4px 5px; color: inherit; text-decoration: none; }
-@media (max-width: 1400px) {
-    .tbl-compact th.sortable a { padding: 3px 4px; }
+@media (max-width: 1500px) {
+    .tbl-compact th.sortable a { padding: 3px 3px; }
+    /* 좁은 폭에선 정렬 안 된 열의 ⇅ 표시를 숨겨 머리글이 "상담방…"으로 잘리지 않게 — hover·정렬 중인 열에서만 보인다 (2026-09-21) */
+    .tbl-compact th.sortable:not(.sorted):not(:hover) .sort-ind { display: none; }
 }
 .tbl-compact th.sortable a:hover { background: #eef2f7; }
 .tbl-compact th.sorted { background: #e0e7ff; }
@@ -866,7 +866,8 @@ body .container { max-width: none; padding: 0 12px; }
 .admexp-cell { font-size:0.84em; }
 .admexp-row { display:grid; grid-template-columns:auto auto; justify-content:center; align-items:center; gap:3px; white-space:normal; }
 .admexp-row .admexp-dday, .admexp-row .admexp-est { grid-column:1 / -1; justify-self:center; }
-.tbl-compact td.onset-date-cell { white-space:normal; overflow-wrap:anywhere; }
+.admexp-row > span { white-space:nowrap; }   /* '2027-03-19'가 하이픈에서 꺾이지 않게 */
+.tbl-compact td.onset-date-cell { white-space:nowrap; }   /* 날짜는 한 줄 — '2026-08-31'이 하이픈에서 꺾이던 것(2026-09-21). 전체 값은 title */
 /* 원무 명부에서 채운 발병일 — 폼 입력값과 구분되게 옅게 표시(마우스오버 시 출처 안내) */
 .tbl-compact td.onset-date-cell.onset-roster { color: var(--text-light); }
 .tbl-compact td.admission-date-cell, .tbl-compact td.admexp-cell { white-space:normal; }
@@ -1429,19 +1430,19 @@ body .container { max-width: none; padding: 0 12px; }
                     <div style="font-size:0.85em;color:#64748b">ID #${p.id} · ${escHtml(genderLabel(p.gender))}</div>
                 </td>
                 <td class="${p.guardian_phone ? 'ns-phone' : 'ns-empty'}">
-                    ${p.guardian_phone ? escHtml(p.guardian_phone) : '—'}
+                    ${p.guardian_phone ? escHtml(p.guardian_phone) : '-'}
                 </td>
                 <td class="${p.guardian_name ? '' : 'ns-empty'}">
-                    ${p.guardian_name ? escHtml(p.guardian_name) : '—'}${p.guardian_relation ? ' <span style="color:#94a3b8">(' + escHtml(p.guardian_relation) + ')</span>' : ''}
+                    ${p.guardian_name ? escHtml(p.guardian_name) : '-'}${p.guardian_relation ? ' <span style="color:#94a3b8">(' + escHtml(p.guardian_relation) + ')</span>' : ''}
                 </td>
-                <td>${escHtml(residence(p)) || '<span class="ns-empty">—</span>'}</td>
-                <td>${p.insurance_type ? escHtml(p.insurance_type) : '<span class="ns-empty">—</span>'}</td>
+                <td>${escHtml(residence(p)) || '<span class="ns-empty">-</span>'}</td>
+                <td>${p.insurance_type ? escHtml(p.insurance_type) : '<span class="ns-empty">-</span>'}</td>
                 <td><strong>${p.consultation_count}</strong>회</td>
                 <td>
-                    ${last.consult_date ? escHtml(last.consult_date) : '<span class="ns-empty">—</span>'}
+                    ${last.consult_date ? escHtml(last.consult_date) : '<span class="ns-empty">-</span>'}
                     ${last.source_hospital ? '<div style="font-size:0.85em;color:#64748b">' + escHtml(last.source_hospital) + '</div>' : ''}
                 </td>
-                <td>${last.admission_status ? escHtml(last.admission_status) : (last.consult_result ? escHtml(last.consult_result) : '<span class="ns-empty">—</span>')}</td>
+                <td>${last.admission_status ? escHtml(last.admission_status) : (last.consult_result ? escHtml(last.consult_result) : '<span class="ns-empty">-</span>')}</td>
             </tr>`;
         }).join('');
         const mergeBar = nsIsAdmin ? `
@@ -1494,7 +1495,7 @@ body .container { max-width: none; padding: 0 12px; }
             const a = nsCurrentItems.find(p => String(p.id) === sel[0].value);
             const b = nsCurrentItems.find(p => String(p.id) === sel[1].value);
             const detail = (p) =>
-                `  #${p.id}  보호자 ${p.guardian_phone || '—'}  상담 ${p.consultation_count}회` +
+                `  #${p.id}  보호자 ${p.guardian_phone || '-'}  상담 ${p.consultation_count}회` +
                 (p.blacklist ? '  ⚠블랙' : '');
             const targetStr = prompt(
                 `병합 — 어느 환자를 "유지"하시겠습니까? (1 또는 2)\n\n` +
@@ -1507,8 +1508,8 @@ body .container { max-width: none; padding: 0 12px; }
             const source = targetStr.trim() === '1' ? b : a;
             if (!confirm(
                 `다음 병합을 실행합니다:\n\n` +
-                `[유지] #${target.id}  보호자 ${target.guardian_phone || '—'}  상담 ${target.consultation_count}회\n` +
-                `[삭제] #${source.id}  보호자 ${source.guardian_phone || '—'}  상담 ${source.consultation_count}회\n\n` +
+                `[유지] #${target.id}  보호자 ${target.guardian_phone || '-'}  상담 ${target.consultation_count}회\n` +
+                `[삭제] #${source.id}  보호자 ${source.guardian_phone || '-'}  상담 ${source.consultation_count}회\n\n` +
                 `→ source(#${source.id})의 모든 상담·문자·접촉 이력·문서가 ` +
                 `target(#${target.id})으로 이전되고, source 환자 레코드는 삭제됩니다.\n\n` +
                 `이 작업은 되돌릴 수 없습니다. 계속할까요?`
@@ -1602,7 +1603,7 @@ body .container { max-width: none; padding: 0 12px; }
                 </div>
                 <div class="bl-summary-row">
                     <span class="bl-label">성별·거주</span>
-                    <span class="bl-val">${escHtml(genderLabel(d.gender) || '?')} · ${escHtml(residence(d) || (d.address_full || '—'))}</span>
+                    <span class="bl-val">${escHtml(genderLabel(d.gender) || '?')} · ${escHtml(residence(d) || (d.address_full || '-'))}</span>
                 </div>
                 <div class="bl-summary-row">
                     <span class="bl-label">보호자</span>
@@ -1610,7 +1611,7 @@ body .container { max-width: none; padding: 0 12px; }
                 </div>
                 <div class="bl-summary-row">
                     <span class="bl-label">보험</span>
-                    <span class="bl-val">${escHtml(d.insurance_type || '—')}</span>
+                    <span class="bl-val">${escHtml(d.insurance_type || '-')}</span>
                 </div>
             </div>
             <h4 class="bl-section">상담 이력 (${consults.length}건)</h4>

@@ -211,8 +211,9 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
 - **앱 셸**: `base.html` = `body.has-sidebar > aside.sidebar + div.app-main(header.topbar + main + footer)`.
   1024px 미만은 ☰ 서랍. `body.has-sidebar{height:auto}`가 없으면 사이드바 sticky가 안 붙는다.
 - **CSS 파일 역할**: `style.css`(전역·폼·표) / `dashboard.css`(대시보드 전용 스킨) / `partners.css` / `support.css`.
-- ⚠ **클래스를 쓰기 전에 그 화면에 정의가 있는지 먼저 확인한다** — `grep -n "\.클래스명" static/css/*.css`.
+- ⚠ **클래스를 쓰기 전에 그 화면에 정의가 있는지 먼저 확인한다** — `grep -n "\.클래스명" static/css/*.css templates/*.html`.
   다른 화면에만 있는 클래스를 써서 아무 효과가 없었던 사고가 반복됐다(`nowrap`, 작은 글자·버튼 클래스).
+  정의가 다른 템플릿의 인라인 `<style>`에만 있으면 그 화면에서만 먹는다 — `static/css/`만 grep하면 놓친다(2026-09-21 대시보드 `tbl-compact`).
 - 셀렉터를 고칠 때는 **그 셀렉터가 걸리는 템플릿을 전부 세어 본다** — 의도한 카드 하나만 바뀌는지 확인.
 - ⚠ **폰트가 CDN에서 온다** — `style.css:1`이 Pretendard를 jsdelivr `@import`로 받는다.
   사내망에서 CDN으로 못 나가면 조용히 실패해 맑은 고딕으로 떨어진다(`docs/work/2026-09-20-폰트정리.md`).

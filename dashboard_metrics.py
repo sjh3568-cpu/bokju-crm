@@ -118,7 +118,7 @@ def consult_weekday_matrix(weeks=8, today=None):
                 totals[i] += n
                 peak = max(peak, n)
         out_weeks.append({
-            "label": start.strftime("%m.%d"),
+            "label": start.strftime("%m-%d"),
             "start": start.isoformat(),
             "current": start == monday,
             "counts": counts,
