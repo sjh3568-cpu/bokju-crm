@@ -70,10 +70,23 @@ class AwayAsDischargeTests(unittest.TestCase):
         self.assertEqual(r["room_number" if "room_number" in r else "ep_room"], "309호")
 
     def test_week_out_counts_the_departure(self):
+        """외진 나감이 주간·월간 퇴원 수에 들어간다.
+
+        사건일이 '이틀 전'이라 월·화요일이나 매달 1·2일에는 이번 주/이번 달 창 밖으로 나간다 —
+        그래서 집계는 사건일을 포함하는 창으로 직접 확인하고, 대시보드 스트립은 실제 창에
+        맞춰 기대값을 계산한다(요일 따라 깨지던 테스트, 2026-09-21).
+        """
+        flow = models.admission_flow_counts(d(-7), d(0), d(-7), d(0))
+        self.assertEqual((flow["week_out"], flow["month_out"]), (2, 2))   # 권현수(외진 나감) + 명부퇴원
+
+        today = date.today()
+        event = today - timedelta(days=2)
+        in_week = event >= today - timedelta(days=today.weekday())        # 스트립의 창 = 이번 주 월요일부터
+        in_month = event.month == today.month
         with main.app.test_request_context():
             strip = main._ward_status_strip()
-        self.assertEqual(strip["week_out"], 2)     # 권현수(외진 나감) + 명부퇴원
-        self.assertEqual(strip["month_out"], 2)
+        self.assertEqual(strip["week_out"], 2 if in_week else 0)
+        self.assertEqual(strip["month_out"], 2 if in_month else 0)
 
     def test_flow_events_has_it_as_a_discharge_row(self):
         """입원·퇴원 이력·대시보드 입·퇴원 현황이 함께 쓰는 근거(admission_flow_events)에 '퇴원(외진)' 행이 선다."""
