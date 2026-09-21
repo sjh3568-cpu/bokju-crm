@@ -4135,7 +4135,8 @@ def weekly_report(week_start=None):
     weekly_report_rows = conn.execute(
         """
         SELECT c.consult_date, c.consult_channel, c.referral_source_detail,
-               c.special_care, c.special_vre_note, c.special_cre_note,
+               c.special_care, c.special_vre_note, c.special_cre_note, c.special_mrsa_note,
+               c.diseases, c.primary_diagnosis, c.secondary_diagnosis, c.disease_detail,
                c.admission_status,
                p.residence_sido, p.residence_sigungu
         FROM consultations c JOIN patients p ON p.id = c.patient_id
@@ -4146,6 +4147,20 @@ def weekly_report(week_start=None):
 
     conn.close()
 
+    # 실제 입원 — 그 주에 병원에 들어온 사람. 대시보드·재원관리와 같은 단일 근거(admission_flow_events).
+    # '입원'이 "이 주 상담자 중 지금까지 입원완료된 수"였을 때는 첫 주에 1명으로 보여
+    # 원장이 묻는 "지난주 입원 몇 명?"(명부 36명)과 어긋났다(2026-09-21 사용자 결정).
+    # 외진 복귀도 그날의 입원으로 센다(집계 원칙) — 총평에 복귀 수를 따로 적어 준다.
+    real_in_by_date = {}
+    for lo, hi in report_ranges.values():
+        for ev in admission_flow_events(lo.isoformat(), hi.isoformat()):
+            if ev["kind"] != ADMISSION_EVENT_IN:
+                continue
+            slot = real_in_by_date.setdefault(str(ev["date"])[:10], {"all": 0, "return": 0})
+            slot["all"] += 1
+            if ev.get("is_return"):
+                slot["return"] += 1
+
     report_source_keys = ["카페", "검색(블로그)", "유튜브", "SNS", "지인추천", "직원소개", "기관연계", "지역민"]
 
     def _empty_report_day(day_value):
@@ -4155,7 +4170,8 @@ def weekly_report(week_start=None):
             "sources": {key: 0 for key in report_source_keys},
             "resistant": {key: 0 for key in report_source_keys},
             "andong": 0, "outside": 0, "phone": 0, "visit": 0,
-            "home_channel": 0, "admitted": 0, "admission_rate": 0.0,
+            "home_channel": 0, "admitted": 0, "admitted_return": 0,
+            "conversion": 0, "conversion_rate": 0.0,
             "resistant_total": 0,   # 내성균 상담 건수(상담 단위). resistant[경로]는 경로별이라 합치면 겹친다
         }
 
@@ -4177,9 +4193,9 @@ def weekly_report(week_start=None):
                 special = json.loads(raw["special_care"] or "[]")
             except (TypeError, json.JSONDecodeError):
                 special = []
-            is_resistant = ("CRE" in special or "VRE" in special
-                            or bool((raw["special_cre_note"] or "").strip())
-                            or bool((raw["special_vre_note"] or "").strip()))
+            # 대시보드·재원관리와 같은 판정 — 체크박스만 보면 0건이다. 운영 자료는 거의 전부
+            # 병명 상세에 'VRE'라고 글로 적혀 있다(2026-09-21 확인: 지난주 4건 전부 disease_detail).
+            is_resistant = bool(detected_organisms(dict(raw)))
             if is_resistant:
                 item["resistant_total"] += 1
             for detail in details:
@@ -4198,10 +4214,13 @@ def weekly_report(week_start=None):
                 item["visit"] += 1
             else:
                 item["home_channel"] += 1
-            if (raw["admission_status"] or "").strip() == "입원완료":
-                item["admitted"] += 1
+            if (raw["admission_status"] or "").strip() in ("입원완료", "퇴원완료"):
+                item["conversion"] += 1
         for item in days:
-            item["admission_rate"] = round(100.0 * item["admitted"] / item["total"], 1) if item["total"] else 0.0
+            slot = real_in_by_date.get(item["date"], {})
+            item["admitted"] = slot.get("all", 0)
+            item["admitted_return"] = slot.get("return", 0)
+            item["conversion_rate"] = round(100.0 * item["conversion"] / item["total"], 1) if item["total"] else 0.0
         totals = _empty_report_day(start_d)
         totals["label"], totals["weekday"] = "소계", ""
         for item in days:
@@ -4212,11 +4231,13 @@ def weekly_report(week_start=None):
             totals["visit"] += item["visit"]
             totals["home_channel"] += item["home_channel"]
             totals["admitted"] += item["admitted"]
+            totals["admitted_return"] += item["admitted_return"]
+            totals["conversion"] += item["conversion"]
             totals["resistant_total"] += item["resistant_total"]
             for key in report_source_keys:
                 totals["sources"][key] += item["sources"][key]
                 totals["resistant"][key] += item["resistant"][key]
-        totals["admission_rate"] = round(100.0 * totals["admitted"] / totals["total"], 1) if totals["total"] else 0.0
+        totals["conversion_rate"] = round(100.0 * totals["conversion"] / totals["total"], 1) if totals["total"] else 0.0
         return {"days": days, "totals": totals}
 
     weekly_report = {key: _report_period(*dates) for key, dates in report_ranges.items()}
@@ -4224,7 +4245,7 @@ def weekly_report(week_start=None):
     weekly_report["period_label"] = f"{report_ranges['current'][0].strftime('%Y-%m-%d')} ~ {report_ranges['current'][1].strftime('%Y-%m-%d')}"
     weekly_report["source_keys"] = report_source_keys
     weekly_report["comparisons"] = []
-    for key, label in (("total", "상담"), ("admitted", "입원"), ("admission_rate", "입원율")):
+    for key, label in (("total", "상담"), ("admitted", "입원"), ("conversion_rate", "전환율")):
         current_value = current_total[key]
         row = {"key": key, "label": label, "current": current_value}
         for period_key, prefix in (("previous", "previous"), ("year_ago", "year")):
@@ -4245,8 +4266,8 @@ def _weekly_headline(report):
     규칙으로만 만든다(AI 없음). 비교는 '전주'로 적는다 — 보고서 자체가 지난주라 '지난주 대비'라고 쓰면
     지지난주를 뜻하게 돼 헷갈린다. 채널별 전주 비교는 넣지 않는다(주당 1~7건이라 ±2는 우연)."""
     tot = report["current"]["totals"]
-    if not tot["total"]:
-        return "이 주에는 상담이 없었습니다."
+    if not tot["total"] and not tot["admitted"]:
+        return "이 주에는 상담도 입원도 없었습니다."
     cmp = {c["key"]: c for c in report["comparisons"]}
 
     def signed(v, unit):
@@ -4255,10 +4276,14 @@ def _weekly_headline(report):
         text = f"{v:.1f}" if unit == "%p" else f"{int(v)}"
         return f"{'+' if v > 0 else ''}{text}{unit}"
 
+    admitted_txt = f"입원 {tot['admitted']}명({signed(cmp['admitted']['previous_diff'], '명')}"
+    if tot.get("admitted_return"):
+        admitted_txt += f", 외진 복귀 {tot['admitted_return']} 포함"
+    admitted_txt += ")"
     parts = [
         f"상담 {tot['total']}건(전주 대비 {signed(cmp['total']['previous_diff'], '건')})",
-        f"입원 {tot['admitted']}건({signed(cmp['admitted']['previous_diff'], '건')})",
-        f"입원율 {tot['admission_rate']}%({signed(cmp['admission_rate']['previous_diff'], '%p')})",
+        admitted_txt,
+        f"상담→입원 전환 {tot['conversion']}건({tot['conversion_rate']}%)",
     ]
     head = ", ".join(parts) + "."
     tail = []

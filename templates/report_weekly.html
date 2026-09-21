@@ -29,16 +29,16 @@
         <div class="weekly-compare-grid">
             {% for c in weekly_report.comparisons %}
             <div class="weekly-compare-card" data-label="{{ c.label }}" data-current="{{ c.current }}" data-prev-diff="{{ c.previous_diff }}" data-year-diff="{{ c.year_diff }}">
-                <span>{{ c.label }}</span><strong>{{ c.current }}{% if c.key == 'admission_rate' %}%{% else %}건{% endif %}</strong>
-                <small>전주 <b class="{{ 'up' if c.previous_diff > 0 else 'down' if c.previous_diff < 0 else '' }}">{{ '+' if c.previous_diff > 0 else '' }}{{ c.previous_diff }}{% if c.key == 'admission_rate' %}%p{% else %}건{% endif %}</b>{% if c.previous_rate is not none %} ({{ '+' if c.previous_rate > 0 else '' }}{{ c.previous_rate }}%){% else %} (비교 불가){% endif %}</small>
-                <small>전년 <b class="{{ 'up' if c.year_diff > 0 else 'down' if c.year_diff < 0 else '' }}">{{ '+' if c.year_diff > 0 else '' }}{{ c.year_diff }}{% if c.key == 'admission_rate' %}%p{% else %}건{% endif %}</b>{% if c.year_rate is not none %} ({{ '+' if c.year_rate > 0 else '' }}{{ c.year_rate }}%){% else %} (비교 불가){% endif %}</small>
+                <span>{{ c.label }}{% if c.key == 'admitted' %} <i class="weekly-card-note" title="원무 명부·회차 기준 — 그 주에 실제로 들어온 사람(외진 복귀 포함). 대시보드·재원관리와 같은 근거">실제</i>{% elif c.key == 'conversion_rate' %} <i class="weekly-card-note" title="이 주에 상담한 사람 중 지금까지 입원(또는 입원 후 퇴원)한 비율 — 시간이 지나면 올라간다">상담→입원</i>{% endif %}</span><strong>{{ c.current }}{% if c.key == 'conversion_rate' %}%{% elif c.key == 'admitted' %}명{% else %}건{% endif %}</strong>
+                <small>전주 <b class="{{ 'up' if c.previous_diff > 0 else 'down' if c.previous_diff < 0 else '' }}">{{ '+' if c.previous_diff > 0 else '' }}{{ c.previous_diff }}{% if c.key == 'conversion_rate' %}%p{% elif c.key == 'admitted' %}명{% else %}건{% endif %}</b>{% if c.previous_rate is not none %} ({{ '+' if c.previous_rate > 0 else '' }}{{ c.previous_rate }}%){% else %} (비교 불가){% endif %}</small>
+                <small>전년 <b class="{{ 'up' if c.year_diff > 0 else 'down' if c.year_diff < 0 else '' }}">{{ '+' if c.year_diff > 0 else '' }}{{ c.year_diff }}{% if c.key == 'conversion_rate' %}%p{% elif c.key == 'admitted' %}명{% else %}건{% endif %}</b>{% if c.year_rate is not none %} ({{ '+' if c.year_rate > 0 else '' }}{{ c.year_rate }}%){% else %} (비교 불가){% endif %}</small>
             </div>
             {% endfor %}
         </div>
         <div class="tbl-wrap weekly-report-wrap">
             <table class="weekly-report-table">
                 <thead>
-                    <tr><th rowspan="3">날짜</th><th colspan="8" class="grp-source">상담 유입경로(최초 병원 인지)</th><th colspan="8" class="grp-resistant">내성균(CRE·VRE) 상담 경로</th><th colspan="2" class="grp-region">지역</th><th colspan="3" class="grp-type">상담유형</th><th rowspan="3">입원<br>건수</th><th rowspan="3">입원율</th></tr>
+                    <tr><th rowspan="3">날짜</th><th colspan="8" class="grp-source">상담 유입경로(최초 병원 인지)</th><th colspan="8" class="grp-resistant">내성균(CRE·VRE) 상담 경로</th><th colspan="2" class="grp-region">지역</th><th colspan="3" class="grp-type">상담유형</th><th rowspan="3" title="그 날 실제로 입원한 사람 — 원무 명부·회차 기준(외진 복귀 포함)">입원<br>(실제)</th><th rowspan="3" title="그 날 상담한 사람 중 지금까지 입원한 수">상담→<br>입원</th></tr>
                     <tr><th colspan="4">온라인 검색</th><th colspan="3">소개</th><th>기타</th><th colspan="4">온라인 검색</th><th colspan="3">소개</th><th>기타</th><th rowspan="2">안동</th><th rowspan="2">관외</th><th rowspan="2">전화</th><th rowspan="2">방문</th><th rowspan="2">홈·채널</th></tr>
                     <tr>{% for repeat in range(2) %}{% for key in weekly_report.source_keys %}<th>{% if '(' in key %}{{ key.split('(')[0] }}<wbr>({{ key.split('(', 1)[1] }}{% else %}{{ key }}{% endif %}</th>{% endfor %}{% endfor %}</tr>
                 </thead>
@@ -48,7 +48,7 @@
                         <th>{{ d.label }}{% if d.weekday %}({{ d.weekday }}){% endif %}</th>
                         {% for key in weekly_report.source_keys %}<td>{{ d.sources[key] or '' }}</td>{% endfor %}
                         {% for key in weekly_report.source_keys %}<td>{{ d.resistant[key] or '' }}</td>{% endfor %}
-                        <td>{{ d.andong or '' }}</td><td>{{ d.outside or '' }}</td><td>{{ d.phone or '' }}</td><td>{{ d.visit or '' }}</td><td>{{ d.home_channel or '' }}</td><td>{{ d.admitted or '' }}</td><td>{{ d.admission_rate }}%</td>
+                        <td>{{ d.andong or '' }}</td><td>{{ d.outside or '' }}</td><td>{{ d.phone or '' }}</td><td>{{ d.visit or '' }}</td><td>{{ d.home_channel or '' }}</td><td>{{ d.admitted or '' }}</td><td>{% if d.label == '소계' %}{{ d.conversion }} ({{ d.conversion_rate }}%){% else %}{{ d.conversion or '' }}{% endif %}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -69,6 +69,7 @@
 .weekly-compare-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-bottom:12px; }
 .weekly-compare-card { border:1px solid #dbe3ee; border-radius:8px; padding:9px 11px; display:grid; grid-template-columns:auto 1fr; gap:2px 8px; }
 .weekly-compare-card > span { color:#64748b; font-size:.8em; }
+.weekly-card-note { font-style:normal; font-size:.85em; padding:1px 5px; border-radius:4px; background:#f1f5f9; color:#475569; cursor:help; }
 .weekly-compare-card > strong { grid-row:span 3; font-size:1.35em; text-align:right; }
 .weekly-compare-card small { font-size:.75em; color:#64748b; }
 .weekly-compare-card b.up { color:#dc2626; }.weekly-compare-card b.down { color:#2563eb; }
@@ -120,7 +121,7 @@ function downloadWeeklyReportBlob(blob) {
 }
 document.getElementById('weekly-copy-text')?.addEventListener('click', async () => {
     const cards=[...document.querySelectorAll('.weekly-compare-card')];
-    const lines=['복주회복병원 주간 상담 현황', '{{ weekly_report.period_label }}', {{ weekly_report.headline|tojson }}, ...cards.map(c => `${c.dataset.label} ${c.dataset.current}${c.dataset.label==='입원율'?'%':'건'} · 전주 대비 ${Number(c.dataset.prevDiff)>0?'+':''}${c.dataset.prevDiff} · 전년 대비 ${Number(c.dataset.yearDiff)>0?'+':''}${c.dataset.yearDiff}`)];
+    const lines=['복주회복병원 주간 상담 현황', '{{ weekly_report.period_label }}', {{ weekly_report.headline|tojson }}, ...cards.map(c => `${c.dataset.label} ${c.dataset.current}${c.dataset.label==='전환율'?'%':c.dataset.label==='입원'?'명':'건'} · 전주 대비 ${Number(c.dataset.prevDiff)>0?'+':''}${c.dataset.prevDiff} · 전년 대비 ${Number(c.dataset.yearDiff)>0?'+':''}${c.dataset.yearDiff}`)];
     await navigator.clipboard.writeText(lines.join('\n')); alert('카카오톡용 요약문을 복사했습니다.');
 });
 document.getElementById('weekly-copy-image')?.addEventListener('click', async () => {

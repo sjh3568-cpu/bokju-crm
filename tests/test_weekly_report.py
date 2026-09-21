@@ -31,16 +31,27 @@ class WeeklyReportTests(unittest.TestCase):
         # 지난주 화요일 1건(입원완료), 이번 주 월요일 1건(상담완료)
         for day, status in ((self.last_mon + timedelta(days=1), '입원완료'), (self.this_mon, '상담완료')):
             pid = models.find_or_create_patient(name=f"주간{day}", guardian_phone=None)
+            extra = {'actual_admission_date': (self.last_mon + timedelta(days=2)).isoformat()} if status == '입원완료' else {}
             models.create_consultation(patient_id=pid, consult_date=day.isoformat(), counselor='테스트',
-                                       consult_channel='전화상담', admission_status=status)
+                                       consult_channel='전화상담', admission_status=status, **extra)
+        # 상담 없이 원무 명부로만 지난주 목요일에 들어온 사람 — '실제 입원'에는 잡히고 '전환'에는 안 잡혀야 한다
+        rpid = models.find_or_create_patient(name="명부만", guardian_phone=None)
+        conn = models.get_db()
+        with conn:
+            conn.execute("""INSERT INTO admission_episodes (patient_id,episode_no,status,admitted_at,room_number,ward,roster_key)
+                            VALUES (?,1,'admitted',?,'401호','4병동',?)""",
+                         (rpid, (self.last_mon + timedelta(days=3)).isoformat(), f'c{rpid}|x'))
 
     def test_default_is_last_week_monday_to_sunday(self):
         r = models.weekly_report()
         self.assertEqual(r['week_start'], self.last_mon.isoformat())
         self.assertEqual(r['week_end'], (self.last_mon + timedelta(days=6)).isoformat())
         self.assertEqual(date.fromisoformat(r['week_start']).weekday(), 0)          # 월요일
-        self.assertEqual(r['current']['totals']['total'], 1)                           # 지난주 것만
-        self.assertEqual(r['current']['totals']['admitted'], 1)
+        t = r['current']['totals']
+        self.assertEqual(t['total'], 1)                       # 지난주 상담만
+        self.assertEqual(t['admitted'], 2)                    # 실제 입원 = 상담자(수) 1 + 명부만(목) 1 — admission_flow_events 기준
+        self.assertEqual(t['conversion'], 1)                  # 상담→입원 전환은 상담자만
+        self.assertEqual([d['admitted'] for d in r['current']['days']], [0, 0, 1, 1, 0, 0, 0])
         self.assertEqual(len(r['current']['days']), 7)
 
     def test_any_weekday_snaps_to_that_weeks_monday(self):
@@ -66,12 +77,15 @@ class WeeklyReportTests(unittest.TestCase):
         # 지난주 수요일: 경로 2개(카페+SNS) + CRE → 내성균 상담 '1건'이어야 한다
         pid = models.find_or_create_patient(name="내성균검증", guardian_phone=None)
         models.create_consultation(patient_id=pid, consult_date=(self.last_mon + timedelta(days=2)).isoformat(),
-                                   counselor='테스트', consult_channel='전화상담', admission_status='상담완료',
-                                   referral_source_detail=json.dumps(["카페", "SNS"]), special_care=json.dumps(["CRE"]))
+                                   counselor='테스트', consult_channel='전화상담', admission_status='퇴원완료',
+                                   referral_source_detail=json.dumps(["카페", "SNS"]),
+                                   disease_detail="뇌경색 -OP, VRE 보균")          # 체크박스 아님 — 병명 상세에 글로
         r = models.weekly_report()
         h = r['headline']
-        self.assertTrue(h.startswith('상담 2건(전주 대비 +2건), 입원 1건(+1건), 입원율 50.0%(+50.0%p).'), h)
-        self.assertIn('내성균 상담 1건', h)                    # 경로 합(2)이 아니라 상담 수(1)
+        self.assertTrue(h.startswith('상담 2건(전주 대비 +2건), 입원 2명(+2명), 상담→입원 전환 2건(100.0%).'), h)
+        self.assertIn('내성균 상담 1건', h)                    # 경로 합(2)이 아니라 상담 수(1), 그리고 disease_detail 에서 잡힘
+        self.assertEqual(r['current']['totals']['resistant']['카페'], 1)
+        self.assertEqual(r['current']['totals']['resistant']['SNS'], 1)   # 표는 경로별 그대로
         self.assertNotIn('지난주 대비', h)
         self.assertEqual(r['current']['totals']['resistant_total'], 1)
         html = self.client.get('/report/weekly').get_data(as_text=True)
@@ -83,7 +97,7 @@ class WeeklyReportTests(unittest.TestCase):
 
     def test_headline_when_week_is_empty(self):
         r = models.weekly_report(self.last_mon - timedelta(days=700))
-        self.assertEqual(r['headline'], '이 주에는 상담이 없었습니다.')
+        self.assertEqual(r['headline'], '이 주에는 상담도 입원도 없었습니다.')
 
     def test_dashboard_no_longer_computes_weekly_report(self):
         """대시보드가 열릴 때마다 1년치 상담을 읽던 낭비를 없앴다 — 키 자체가 없어야 한다."""
