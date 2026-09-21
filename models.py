@@ -4156,6 +4156,7 @@ def weekly_report(week_start=None):
             "resistant": {key: 0 for key in report_source_keys},
             "andong": 0, "outside": 0, "phone": 0, "visit": 0,
             "home_channel": 0, "admitted": 0, "admission_rate": 0.0,
+            "resistant_total": 0,   # 내성균 상담 건수(상담 단위). resistant[경로]는 경로별이라 합치면 겹친다
         }
 
     def _report_period(start_d, end_d):
@@ -4179,6 +4180,8 @@ def weekly_report(week_start=None):
             is_resistant = ("CRE" in special or "VRE" in special
                             or bool((raw["special_cre_note"] or "").strip())
                             or bool((raw["special_vre_note"] or "").strip()))
+            if is_resistant:
+                item["resistant_total"] += 1
             for detail in details:
                 if detail in item["sources"]:
                     item["sources"][detail] += 1
@@ -4209,6 +4212,7 @@ def weekly_report(week_start=None):
             totals["visit"] += item["visit"]
             totals["home_channel"] += item["home_channel"]
             totals["admitted"] += item["admitted"]
+            totals["resistant_total"] += item["resistant_total"]
             for key in report_source_keys:
                 totals["sources"][key] += item["sources"][key]
                 totals["resistant"][key] += item["resistant"][key]
@@ -4232,7 +4236,42 @@ def weekly_report(week_start=None):
 
     weekly_report["week_start"] = report_week_start_d.isoformat()
     weekly_report["week_end"] = (report_week_start_d + timedelta(days=6)).isoformat()
+    weekly_report["headline"] = _weekly_headline(weekly_report)
     return weekly_report
+
+
+def _weekly_headline(report):
+    """한 줄 총평 — 표를 읽지 않아도 카톡 한 줄로 그 주가 어땠는지 알게 (2026-09-21 요청).
+    규칙으로만 만든다(AI 없음). 비교는 '전주'로 적는다 — 보고서 자체가 지난주라 '지난주 대비'라고 쓰면
+    지지난주를 뜻하게 돼 헷갈린다. 채널별 전주 비교는 넣지 않는다(주당 1~7건이라 ±2는 우연)."""
+    tot = report["current"]["totals"]
+    if not tot["total"]:
+        return "이 주에는 상담이 없었습니다."
+    cmp = {c["key"]: c for c in report["comparisons"]}
+
+    def signed(v, unit):
+        # 건수는 정수, %p는 카드와 같이 소수 한 자리(+13.2%p, +50.0%p)
+        v = round(v, 1)
+        text = f"{v:.1f}" if unit == "%p" else f"{int(v)}"
+        return f"{'+' if v > 0 else ''}{text}{unit}"
+
+    parts = [
+        f"상담 {tot['total']}건(전주 대비 {signed(cmp['total']['previous_diff'], '건')})",
+        f"입원 {tot['admitted']}건({signed(cmp['admitted']['previous_diff'], '건')})",
+        f"입원율 {tot['admission_rate']}%({signed(cmp['admission_rate']['previous_diff'], '%p')})",
+    ]
+    head = ", ".join(parts) + "."
+    tail = []
+    top = max(tot["sources"].items(), key=lambda kv: kv[1]) if tot["sources"] else None
+    if top and top[1]:
+        tail.append(f"유입 1위 {top[0]} {top[1]}건")
+    region_n = tot["andong"] + tot["outside"]
+    if region_n:
+        tail.append(f"관외 비중 {round(100.0 * tot['outside'] / region_n)}%")
+    resistant = tot.get("resistant_total", 0)
+    if resistant:
+        tail.append(f"내성균 상담 {resistant}건")
+    return head + (" " + ", ".join(tail) + "." if tail else "")
 
 
 def dashboard_summary(admission_lookup_from: str | None = None,

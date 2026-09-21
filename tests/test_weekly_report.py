@@ -59,6 +59,32 @@ class WeeklyReportTests(unittest.TestCase):
         self.assertEqual(bad.status_code, 200)                                          # 잘못된 값은 기본으로
         self.assertIn(f'value="{self.last_mon.isoformat()}"', bad.get_data(as_text=True))
 
+    def test_headline_one_liner_uses_prev_week_wording_and_counts_resistant_per_consult(self):
+        """한 줄 총평 — '전주 대비'로 쓴다(보고서가 지난주라 '지난주 대비'는 지지난주로 읽힘).
+        내성균은 상담 단위로 센다(경로별 칸을 합치면 경로 2개인 상담이 두 번 잡힌다)."""
+        import json
+        # 지난주 수요일: 경로 2개(카페+SNS) + CRE → 내성균 상담 '1건'이어야 한다
+        pid = models.find_or_create_patient(name="내성균검증", guardian_phone=None)
+        models.create_consultation(patient_id=pid, consult_date=(self.last_mon + timedelta(days=2)).isoformat(),
+                                   counselor='테스트', consult_channel='전화상담', admission_status='상담완료',
+                                   referral_source_detail=json.dumps(["카페", "SNS"]), special_care=json.dumps(["CRE"]))
+        r = models.weekly_report()
+        h = r['headline']
+        self.assertTrue(h.startswith('상담 2건(전주 대비 +2건), 입원 1건(+1건), 입원율 50.0%(+50.0%p).'), h)
+        self.assertIn('내성균 상담 1건', h)                    # 경로 합(2)이 아니라 상담 수(1)
+        self.assertNotIn('지난주 대비', h)
+        self.assertEqual(r['current']['totals']['resistant_total'], 1)
+        html = self.client.get('/report/weekly').get_data(as_text=True)
+        self.assertIn('class="weekly-headline"', html)
+        self.assertIn('<small>전주 ', html)                     # 카드 라벨도 같은 말
+        self.assertNotIn('<small>지난주 ', html)
+        self.assertIn('const lines=[', html)                    # 요약문 복사 둘째 줄에 총평
+        self.assertIn(r'전주 대비', html)   # '전주 대비' (tojson 이스케이프)
+
+    def test_headline_when_week_is_empty(self):
+        r = models.weekly_report(self.last_mon - timedelta(days=700))
+        self.assertEqual(r['headline'], '이 주에는 상담이 없었습니다.')
+
     def test_dashboard_no_longer_computes_weekly_report(self):
         """대시보드가 열릴 때마다 1년치 상담을 읽던 낭비를 없앴다 — 키 자체가 없어야 한다."""
         self.assertNotIn('weekly_report', models.dashboard_summary())

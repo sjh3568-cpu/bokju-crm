@@ -25,11 +25,12 @@
     <div id="weekly-report-export" class="weekly-report-export">
         <h2>복주회복병원 주간 상담 현황</h2>
         <p>{{ weekly_report.period_label }}</p>
+        <p class="weekly-headline">{{ weekly_report.headline }}</p>
         <div class="weekly-compare-grid">
             {% for c in weekly_report.comparisons %}
             <div class="weekly-compare-card" data-label="{{ c.label }}" data-current="{{ c.current }}" data-prev-diff="{{ c.previous_diff }}" data-year-diff="{{ c.year_diff }}">
                 <span>{{ c.label }}</span><strong>{{ c.current }}{% if c.key == 'admission_rate' %}%{% else %}건{% endif %}</strong>
-                <small>지난주 <b class="{{ 'up' if c.previous_diff > 0 else 'down' if c.previous_diff < 0 else '' }}">{{ '+' if c.previous_diff > 0 else '' }}{{ c.previous_diff }}{% if c.key == 'admission_rate' %}%p{% else %}건{% endif %}</b>{% if c.previous_rate is not none %} ({{ '+' if c.previous_rate > 0 else '' }}{{ c.previous_rate }}%){% else %} (비교 불가){% endif %}</small>
+                <small>전주 <b class="{{ 'up' if c.previous_diff > 0 else 'down' if c.previous_diff < 0 else '' }}">{{ '+' if c.previous_diff > 0 else '' }}{{ c.previous_diff }}{% if c.key == 'admission_rate' %}%p{% else %}건{% endif %}</b>{% if c.previous_rate is not none %} ({{ '+' if c.previous_rate > 0 else '' }}{{ c.previous_rate }}%){% else %} (비교 불가){% endif %}</small>
                 <small>전년 <b class="{{ 'up' if c.year_diff > 0 else 'down' if c.year_diff < 0 else '' }}">{{ '+' if c.year_diff > 0 else '' }}{{ c.year_diff }}{% if c.key == 'admission_rate' %}%p{% else %}건{% endif %}</b>{% if c.year_rate is not none %} ({{ '+' if c.year_rate > 0 else '' }}{{ c.year_rate }}%){% else %} (비교 불가){% endif %}</small>
             </div>
             {% endfor %}
@@ -61,6 +62,7 @@
 .weekly-report-export > h2 { margin:0; text-align:center; font-size:1.25em; }
 .weekly-report-export > p { margin:3px 0 12px; text-align:center; color:#64748b; }
 .weekly-share-actions { display:flex; gap:5px; flex-wrap:wrap; justify-content:flex-end; }
+.weekly-headline { margin:2px 0 12px; padding:9px 12px; border-left:3px solid var(--primary); background:#f0fdf4; color:#14532d; font-size:.95rem; font-weight:650; line-height:1.5; }
 .week-picker { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
 .week-picker input[type=date] { padding:4px 8px; border:1px solid var(--border); border-radius:6px; font-family:inherit; }
 .week-picker .btn.disabled { opacity:.4; pointer-events:none; }
@@ -118,7 +120,7 @@ function downloadWeeklyReportBlob(blob) {
 }
 document.getElementById('weekly-copy-text')?.addEventListener('click', async () => {
     const cards=[...document.querySelectorAll('.weekly-compare-card')];
-    const lines=['복주회복병원 주간 상담 현황', '{{ weekly_report.period_label }}', ...cards.map(c => `${c.dataset.label} ${c.dataset.current}${c.dataset.label==='입원율'?'%':'건'} · 지난주 대비 ${Number(c.dataset.prevDiff)>0?'+':''}${c.dataset.prevDiff} · 전년 대비 ${Number(c.dataset.yearDiff)>0?'+':''}${c.dataset.yearDiff}`)];
+    const lines=['복주회복병원 주간 상담 현황', '{{ weekly_report.period_label }}', {{ weekly_report.headline|tojson }}, ...cards.map(c => `${c.dataset.label} ${c.dataset.current}${c.dataset.label==='입원율'?'%':'건'} · 전주 대비 ${Number(c.dataset.prevDiff)>0?'+':''}${c.dataset.prevDiff} · 전년 대비 ${Number(c.dataset.yearDiff)>0?'+':''}${c.dataset.yearDiff}`)];
     await navigator.clipboard.writeText(lines.join('\n')); alert('카카오톡용 요약문을 복사했습니다.');
 });
 document.getElementById('weekly-copy-image')?.addEventListener('click', async () => {
