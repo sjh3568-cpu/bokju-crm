@@ -105,7 +105,14 @@
                 <td class="dash-adm-ref" title="{{ ref_main }}{% if ref_sub %} · {{ ref_sub }}{% endif %}"><span class="ref-main">{{ ref_main or '-' }}</span>{% if ref_sub %}<small{% if not ref_who and needs_who %} class="ref-missing"{% endif %}>{{ ref_sub }}</small>{% endif %}</td>
                 <td class="dash-action-cell">
                     {% if is_discharge %}<span class="adm-done adm-done-out" title="퇴원완료 {{ r.admission_display_date|krdate }}{% if r.discharge_source %} · {{ r.discharge_source }} 기준{% endif %}">퇴원</span>
-                    {% elif is_discharge_plan %}<span class="adm-done adm-done-outplan" title="퇴원예정 {{ r.admission_display_date|krdate }} — 재원 관리에서 [퇴원]으로 확정합니다">예정</span>
+                    {% elif is_discharge_plan %}
+                    {# 퇴원예정도 여기서 바로 확정한다(2026-09-21 요청) — 전에는 재원 관리로 가야 했다.
+                       /api/consult/<id>/discharge complete 가 상담 상태·퇴원일과 함께 명부 회차를 닫으므로 재원 명단에서도 그 자리에서 빠진다. #}
+                    <select class="adm-action-sel" data-kind="discharge" data-cid="{{ r.id }}" data-name="{{ r.patient_name }}" data-due="{{ r.admission_display_date }}" title="퇴원 처리 — 완료(퇴원일 확정, 재원에서 빠짐) / 예정일 변경">
+                        <option value="">처리</option>
+                        <option value="퇴원완료">퇴원</option>
+                        <option value="예정변경">예정 변경</option>
+                    </select>
                     {% elif is_return and is_planned %}
                     <select class="adm-action-sel" data-kind="return" data-aevent="{{ r.away_event_id }}" data-name="{{ r.patient_name }}" title="외진 복귀 처리 — 복귀(오늘 복귀 완료) / 취소(복귀 예정 취소). 날짜·병실 지정은 재원 관리 외진 중에서">
                         <option value="">처리</option>
@@ -1122,6 +1129,18 @@ document.querySelectorAll('.adm-action-sel').forEach(sel => {
                 if (!confirm(`${sel.dataset.name} 님 외진 복귀를 오늘(${today}) 완료 처리할까요? (입원 완료로 집계)`)) return reset();
                 url = `/api/admission-event/${sel.dataset.aevent}/return`;
                 body = { return_date: today };
+            }
+        } else if (sel.dataset.kind === 'discharge') {
+            // 퇴원예정 행 — 날짜를 한 번 확인받는다. 예정일이 지난 건은 오늘이 아니라 실제 나간 날일 수 있어서.
+            url = `/api/consult/${sel.dataset.cid}/discharge`;
+            if (v === '퇴원완료') {
+                const d = prompt(`${sel.dataset.name} 님 퇴원일 (YYYY-MM-DD)\n확정하면 재원 명단에서 빠집니다.`, today);
+                if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d.trim())) return reset();
+                body = { action: 'complete', discharge_date: d.trim() };
+            } else {
+                const d = prompt(`${sel.dataset.name} 님 새 퇴원예정일 (YYYY-MM-DD)`, sel.dataset.due || today);
+                if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d.trim())) return reset();
+                body = { action: 'extend', discharge_due_date: d.trim() };
             }
         } else {
             body = { admission_status: v };
