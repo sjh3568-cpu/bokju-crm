@@ -112,14 +112,16 @@ class CancelDischargeTests(unittest.TestCase):
         self.assertNotIn('data-act="cancel"', lst)
         self.assertIn('data-act="fix-date"', lst)
 
-    def test_list_script_keeps_multiline_messages_escaped(self):
-        """안내 문구의 줄바꿈은 \\n이어야 한다 — 생 줄바꿈이 들어가 스크립트가 통째로 죽었었다.
+    def test_list_date_fix_lives_in_discharge_date_column(self):
+        """퇴원일 수정은 '퇴원완료일' 열의 날짜를 눌러 여는 팝오버 — 입원진행 칸의 버튼은 발병일을 가렸다(2026-09-21).
 
-        '날짜 수정' 안내문에 줄바꿈이 그대로 들어가 SyntaxError가 나면서 상담목록 인라인
-        스크립트의 모든 기능(상태 변경·퇴원 버튼·행 선택)이 멈췄다. 같은 실수를 막는다.
+        안내문은 팝오버 안에 들어가고(예전 prompt의 생 줄바꿈 SyntaxError 재발 방지), 입원진행 칸에는
+        '퇴원완료' 배지만 남는다.
         """
         html = self.client.get("/consultations").get_data(as_text=True)
-        self.assertIn("(YYYY-MM-DD)\\n여기 값이", html)
+        self.assertIn('class="dc-date-edit"', html)
+        self.assertIn("여기 값이 기준입니다 — 원무 명부를 다시 올려도", html)
+        self.assertNotIn('class="dc-btn dc-fix"', html)
 
 
 if __name__ == "__main__":

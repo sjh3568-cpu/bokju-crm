@@ -271,7 +271,7 @@
                         {% if r.guardian_name and not r.guardian_phone %}{{ r.guardian_name }}{% endif %}{% if r.guardian_relation %}<span class="rel">{{ r.guardian_relation|replace('형제/자매','형제') }}</span>{% endif %}{% if r.guardian_phone %}<span class="phone">{{ r.guardian_phone }}</span>{% endif %}
                     {% endif %}
                 </td>
-                <td class="hospital-cell" title="{{ r.source_hospital or '' }}">{{ r.source_hospital or '' }}</td>
+                <td class="hospital-cell" title="{{ r.source_hospital or '' }}"><span class="hospital-name">{{ r.source_hospital or '' }}</span></td>
                 <td class="disease-cell">
                     {% set dx_raw = (r.diseases or [])|hide_chronic %}
                     {% set dx = [] %}
@@ -302,7 +302,7 @@
                 </td>
                 <td class="referral-cell" title="{% if r.referral_source_type %}{{ r.referral_source_type|join('/') }}{% endif %}{% if r.referral_source_detail %} · {{ r.referral_source_detail|join(', ') }}{% endif %}">
                     {% if r.referral_source_type %}<span class="referral-main">{{ r.referral_source_type|join('/') }}</span>{% endif %}
-                    {% if r.referral_source_detail %}<span class="referral-detail">({{ r.referral_source_detail|join(', ') }})</span>{% endif %}
+                    {% if r.referral_source_detail %}<span class="referral-detail">{{ r.referral_source_detail|join(', ') }}</span>{% endif %}
                 </td>
                 <td class="nowrap">
                     {% if r.consult_channel == '전화상담' %}전화{% elif r.consult_channel == '내원상담' %}내원{% else %}{{ r.consult_channel or '' }}{% endif %}
@@ -334,10 +334,8 @@
                 </td>
                 <td class="status-cell">
                     {% if status == '퇴원완료' %}
+                        {# 퇴원일 수정은 '퇴원완료일' 열의 날짜를 눌러서 — 여기 두면 96px 칸을 넘쳐 발병일을 가린다(2026-09-21) #}
                         <span class="badge st-discharge-done">퇴원완료</span>
-                        <button type="button" class="dc-btn dc-fix" data-act="fix-date" data-cid="{{ r.id }}"
-                                data-cur="{{ r.discharge_date or r.roster_discharged_at or '' }}"
-                                title="퇴원일 수정 — 여기 값이 기준입니다(원무 명부를 다시 올려도 안 바뀝니다)">날짜 수정</button>
                     {% else %}
                         <select class="status-select badge-select st-{{ {'미정':'pending','입원보류':'hold','입원취소':'cancelled','입원완료':'completed'}.get(status,'pending') }}"
                                 data-cid="{{ r.id }}" data-current="{{ status }}" title="입원 진행 인라인 변경">
@@ -373,16 +371,20 @@
                         {% set show_billing = ax.billing_date and ax.billing_left is not none and ax.billing_left >= 0 %}
                         <span class="admexp-row" title="{{ _full|join(' / ') }}">
                         {% if show_billing %}
-                            <span class="admexp-kind billing">회복기</span><span>{{ ax.billing_date|krdate_short }}</span>{% if ax.billing_left <= 30 %} <span class="admexp-dday urgent">D-{{ ax.billing_left }}</span>{% endif %}
+                            <span class="admexp-kind billing">회복기</span><span class="admexp-date">{{ ax.billing_date|krdate_short }}</span>{% if ax.billing_left <= 30 %} <span class="admexp-dday urgent">D-{{ ax.billing_left }}</span>{% endif %}
                         {% else %}
-                            <span class="admexp-kind total">{% if ax.total_days == 365 %}만기{% else %}만료{% endif %}</span><span>{{ ax.total_date|krdate_short }}</span>{% if ax.basis == 'planned' %} <span class="admexp-est">예정</span>{% endif %}{% if ax.total_left is not none %}{% if ax.total_left < 0 %} <span class="admexp-dday over">{{ -ax.total_left }}일초과</span>{% elif ax.total_left <= 30 %} <span class="admexp-dday urgent">D-{{ ax.total_left }}</span>{% endif %}{% endif %}
+                            <span class="admexp-kind total">{% if ax.total_days == 365 %}만기{% else %}만료{% endif %}</span><span class="admexp-date">{{ ax.total_date|krdate_short }}</span>{% if ax.basis == 'planned' %} <span class="admexp-est">예정</span>{% endif %}{% if ax.total_left is not none %}{% if ax.total_left < 0 %} <span class="admexp-dday over">{{ -ax.total_left }}일초과</span>{% elif ax.total_left <= 30 %} <span class="admexp-dday urgent">D-{{ ax.total_left }}</span>{% endif %}{% endif %}
                         {% endif %}
                         </span>
                     {% endif %}
                 </td>
                 <td class="discharge-date-cell">
                     {% set dis = r.discharge_date or r.roster_discharged_at %}
-                    {% if dis %}<span class="discharge-date-main" title="퇴원 {{ dis|krdate_short_wd }}{% if not r.discharge_date %} · 원무 명부 기준(상담에는 아직 안 적힘){% endif %}">{{ dis|krdate_short }}</span>{% if not r.discharge_date %}<span class="dc-roster" title="원무 입퇴원 명부에서 온 값">명부</span>{% endif %}
+                    {% if status == '퇴원완료' %}
+                    {# 날짜를 누르면 수정 팝오버 — 저장값이 기준(원무 명부를 다시 올려도 안 바뀐다) #}
+                    <button type="button" class="dc-date-edit{% if not dis %} dc-date-empty{% endif %}" data-act="fix-date" data-cid="{{ r.id }}" data-cur="{{ dis or '' }}"
+                            title="퇴원일 수정 — 눌러서 고칩니다. 여기 값이 기준입니다(원무 명부를 다시 올려도 안 바뀝니다){% if dis and not r.discharge_date %} · 지금은 원무 명부 기준{% endif %}">{{ dis|krdate_short if dis else '날짜 입력' }}</button>{% if dis and not r.discharge_date %}<span class="dc-roster" title="원무 입퇴원 명부에서 온 값">명부</span>{% endif %}
+                    {% elif dis %}<span class="discharge-date-main" title="퇴원 {{ dis|krdate_short_wd }}{% if not r.discharge_date %} · 원무 명부 기준(상담에는 아직 안 적힘){% endif %}">{{ dis|krdate_short }}</span>{% if not r.discharge_date %}<span class="dc-roster" title="원무 입퇴원 명부에서 온 값">명부</span>{% endif %}
                     {% else %}<span class="muted-sm">-</span>{% endif %}
                 </td>
                 <td class="nowrap">{{ r.counselor or '' }}</td>
@@ -488,8 +490,13 @@ body .container { max-width: none; padding-left: 12px; padding-right: 12px; }   
 /* 너비 제한 + 말줄임 — 가급적 좁게 (hover나 클릭으로 전체 정보 확인) */
 .tbl-compact td.muted-sm { max-width:none; }
 .tbl-compact td.referral-cell { color:var(--text-light); }
+/* 유입경로 — 2줄: 1줄 유형 / 2줄 상세 (2026-09-22 사용자 결정). 각 줄은 한 줄 유지, 넘치면 말줄임(전체는 title) */
+.referral-main, .referral-detail { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-left:0; line-height:1.25; }   /* 1.25 — 두 줄 행이 40px을 넘지 않게(1.3이면 41.6) */
 .referral-main { color:var(--text); }
-.referral-detail { color:var(--text-light); margin-left:2px; }
+.referral-detail { color:var(--text-light); }
+/* 모병원 — 2줄까지 (2026-09-22 사용자 결정). td에 -webkit-box를 주면 셀이 깨지므로 span에. 긴 이름은 2줄 뒤 말줄임(전체는 title) */
+.tbl-compact td.hospital-cell { white-space:normal; }
+.hospital-name { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; word-break:break-all; line-height:1.25; white-space:normal; }
 .tbl-compact td.info-cell { color:var(--text-light); }
 /* 열 폭 — 화면(1440px 기준)에 가로 스크롤 없이 다 들어가도록 고정폭 열은 최소로 잡고,
    남는 폭은 연락처(8)·모병원(9)·유입경로(11)가 나눠 갖는다. 더 넓게 보고 싶으면
@@ -512,26 +519,37 @@ body .container { max-width: none; padding-left: 12px; padding-right: 12px; }   
 .tbl-compact th:nth-child(20), .tbl-compact td:nth-child(20) { width:50px; }  /* 상담자 */
 .guardian-cell .phone { margin-left:2px; font-feature-settings:"tnum"; }
 .guardian-cell .rel { display:inline-block; padding:0 3px; margin-right:1px; border-radius:6px; background:#f1f5f9; color:var(--text-light); font-size:0.78em; line-height:1.5; vertical-align:middle; }
-/* 좁은 화면(노트북)에선 글자만 한 단계 줄이고 한 줄 규칙은 유지 */
+/* 좁은 화면(노트북)에선 글자만 한 단계 줄이고 한 줄 규칙은 유지.
+   2026-09-22 폭 예산 재배분 — 1440×850·사이드바 접힘에서 표 실폭은 1316px(1346 − 세로 스크롤바 2개 34).
+   20열 중 폭을 안 준 모병원(9)·유입경로(11)가 40px씩밖에 못 받아 "제천 …"·"온라…"로 잘렸다.
+   → 셀 좌우 패딩 2→1(열당 2px, 총 40px 회수) + 실측 내용폭보다 남던 열(체크·상담일·성별·나이·병명·상담결과·머리글 패딩)을 깎고,
+     사용자 결정(같은 날)으로 모병원(9)·유입경로(11)·만료일(18)은 두 줄 배치 — 모병원 58·만료일 88로 잡고 나머지(≈89)는 유입경로가 받는다.
+     각 폭은 아래 실측(첫 100행, 패딩 포함) 근거. */
 @media (max-width: 1500px) {
-    .tbl-compact th, .tbl-compact td { padding:3px 2px; font-size:0.76em; }
-    .tbl-compact th:nth-child(2),  .tbl-compact td:nth-child(2)  { width:100px; } /* '2026-09-19(토)' 실측 97 (2026-09-21 날짜 표기 통일) */
-    .tbl-compact th:nth-child(3),  .tbl-compact td:nth-child(3)  { width:76px; }
+    .tbl-compact th, .tbl-compact td { padding:3px 1px; font-size:0.76em; }
+    .tbl-compact th.check-col, .tbl-compact td.check-col { width:20px; }   /* 체크박스 13 + 패딩 4 = 17 */
+    .tbl-compact th:nth-child(2),  .tbl-compact td:nth-child(2)  { width:92px; }  /* '2026-09-19(토)' 실측 88+패딩 2 */
+    .tbl-compact th:nth-child(3),  .tbl-compact td:nth-child(3)  { width:74px; }  /* 이름 3자+⚠ 47, ⚠+↻N 둘 다 붙은 2행만 77 */
     .tbl-compact th:nth-child(4),  .tbl-compact td:nth-child(4),
-    .tbl-compact th:nth-child(5),  .tbl-compact td:nth-child(5)  { width:32px; }  /* 머리글 '성별'·'나이'가 "성…"으로 잘리지 않는 최소폭 (2026-09-21) */
-    .tbl-compact th:nth-child(6),  .tbl-compact td:nth-child(6)  { width:72px; }
-    .tbl-compact th:nth-child(7),  .tbl-compact td:nth-child(7)  { width:48px; }
-    .tbl-compact th:nth-child(8),  .tbl-compact td:nth-child(8)  { width:130px; } /* 연락처 — '배우자 010-0000-0000'이 안 잘리는 최소폭. 모병원·유입경로가 나머지를 나눈다 */
-    .tbl-compact th:nth-child(10), .tbl-compact td:nth-child(10) { width:84px; }
-    .tbl-compact th:nth-child(12), .tbl-compact td:nth-child(12) { width:56px; }  /* '상담방법' 머리글 4자 */
-    .tbl-compact th:nth-child(13), .tbl-compact td:nth-child(13) { width:66px; }  /* 머리글 '회복기대상' 실측 65 */
-    .tbl-compact th:nth-child(14), .tbl-compact td:nth-child(14) { width:72px; }
-    .tbl-compact th:nth-child(15), .tbl-compact td:nth-child(15) { width:76px; }
-    .tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:64px; }  /* '2026-08-31' */
-    .tbl-compact th:nth-child(17), .tbl-compact td:nth-child(17) { width:74px; }  /* '2026-08-31' */
-    .tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:98px; }
-    .tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:74px; }
-    .tbl-compact th:nth-child(20), .tbl-compact td:nth-child(20) { width:46px; }
+    .tbl-compact th:nth-child(5),  .tbl-compact td:nth-child(5)  { width:28px; }  /* 머리글 '성별' 24.3+패딩 2 — "성…" 안 됨(실측) */
+    .tbl-compact th:nth-child(6),  .tbl-compact td:nth-child(6)  { width:70px; }  /* '경기 남양주시' 69 */
+    .tbl-compact th:nth-child(7),  .tbl-compact td:nth-child(7)  { width:46px; }  /* '건강보험' 45 */
+    .tbl-compact th:nth-child(8),  .tbl-compact td:nth-child(8)  { width:126px; } /* '배우자 010-0000-0000' 123 — 번호 끝자리가 잘리면 안 된다 */
+    .tbl-compact th:nth-child(9),  .tbl-compact td:nth-child(9)  { width:58px; }  /* 모병원 — 2줄 클램프(4~5자×2줄 ≈ 9자, p90). 그 이상은 2줄 뒤 말줄임+title */
+    .tbl-compact th:nth-child(10), .tbl-compact td:nth-child(10) { width:78px; }  /* '비사용증후군' 칩 72, '뇌경색 +1' 62 */
+    /* 11 유입경로 — 폭을 안 줘 남는 폭(≈89)을 다 받는다. 2줄(유형/상세)이라 최빈값 '검색(블로그)' ≈ 85면 잘림 0. 88 밑으로 내려가면 안 된다 */
+    .tbl-compact th:nth-child(12), .tbl-compact td:nth-child(12) { width:52px; }  /* 머리글 '상담방법' 49+정렬링크 패딩 2 */
+    .tbl-compact th:nth-child(13), .tbl-compact td:nth-child(13) { width:64px; }  /* 머리글 '회복기대상' 61+패딩 2 */
+    .tbl-compact th:nth-child(14), .tbl-compact td:nth-child(14) { width:68px; }  /* '상담완료' 배지 62. select는 max-width:100% */
+    .tbl-compact th:nth-child(15), .tbl-compact td:nth-child(15) { width:76px; }  /* '입원완료' 배지 73 */
+    .tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:73px; }  /* '2026-08-31' 실측 69+패딩 2 */
+    .tbl-compact th:nth-child(17), .tbl-compact td:nth-child(17) { width:73px; }
+    .tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:88px; }  /* [만료 25일초과] 1줄 ≈ 84 / [2027-03-19] 2줄 ≈ 62 */
+    .tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:73px; }
+    .tbl-compact th:nth-child(20), .tbl-compact td:nth-child(20) { width:40px; }  /* 머리글 '상담자' 39, 이름 3자 34. 'admin(비상)'(65)만 잘린다 */
+    .admexp-row { gap:1px 2px; }
+    .admexp-kind { padding:1px 2px; }
+}
 }
 
 /* 넓은 화면(1800px 이상, 사무실 FHD 모니터) — 2026-09-15 사용자 요청: 열 사이 빈 공간 줄이고 글자를 키우고 열 간격을 고르게.
@@ -718,6 +736,7 @@ body .container { max-width: none; padding-left: 12px; padding-right: 12px; }   
 .badge-select.st-hold      { background-color: #fef3c7; color: #92400e; }
 .badge-select.st-completed { background-color: #dcfce7; color: #166534; }
 .badge-select.st-cancelled { background-color: #fee2e2; color: #991b1b; }
+.consult-result-cell .badge-select, .status-cell .badge-select { max-width:100%; }   /* 고유폭(가장 긴 option 기준 81px)이 칸(68~76)을 넘겨 ▾가 잘리던 것 — 칸 안으로 (2026-09-22) */
 .badge-select.flash-ok { box-shadow: 0 0 0 2px #16a34a; }
 .badge-select.flash-err { box-shadow: 0 0 0 2px #dc2626; }
 .status-cell .muted-sm { display: block; margin-top: 2px; font-size: 0.78em; }
@@ -844,7 +863,7 @@ body .container { max-width: none; padding-left: 12px; padding-right: 12px; }   
 .tbl-compact th.sortable { padding: 0; }
 .tbl-compact th.sortable a { display: block; padding: 4px 5px; color: inherit; text-decoration: none; }
 @media (max-width: 1500px) {
-    .tbl-compact th.sortable a { padding: 3px 3px; }
+    .tbl-compact th.sortable a { padding: 3px 1px; }   /* 좌우 1 — 셀 패딩과 같게 (2026-09-22) */
     /* 좁은 폭에선 정렬 안 된 열의 ⇅ 표시를 숨겨 머리글이 "상담방…"으로 잘리지 않게 — hover·정렬 중인 열에서만 보인다 (2026-09-21) */
     .tbl-compact th.sortable:not(.sorted):not(:hover) .sort-ind { display: none; }
 }
@@ -864,9 +883,12 @@ body .container { max-width: none; padding-left: 12px; padding-right: 12px; }   
 
 /* 입원 만료 컬럼 */
 .admexp-cell { font-size:0.84em; }
-.admexp-row { display:grid; grid-template-columns:auto auto; justify-content:center; align-items:center; gap:3px; white-space:normal; }
-.admexp-row .admexp-dday, .admexp-row .admexp-est { grid-column:1 / -1; justify-self:center; }
-.admexp-row > span { white-space:nowrap; }   /* '2027-03-19'가 하이픈에서 꺾이지 않게 */
+/* 2026-09-22: [종류 + D-day/초과] 1줄 / [날짜] 2줄 — 예전 그리드(종류+날짜 1줄, D-day 셋째 줄)는 '회복기 2027-03-19' 한 줄에 113px이 필요했다 */
+.admexp-row { display:flex; flex-wrap:wrap; justify-content:center; align-items:center; gap:1px 3px; white-space:normal; }
+.admexp-row > span { white-space:nowrap; line-height:1.2; }   /* '2027-03-19'가 하이픈에서 꺾이지 않게. 1.2 — 두 줄 행이 40px을 넘지 않게(1.3이면 41.6) */
+.admexp-row .admexp-kind { order:0; }
+.admexp-row .admexp-est, .admexp-row .admexp-dday { order:1; }
+.admexp-row .admexp-date { order:2; flex-basis:100%; }
 .tbl-compact td.onset-date-cell { white-space:nowrap; }   /* 날짜는 한 줄 — '2026-08-31'이 하이픈에서 꺾이던 것(2026-09-21). 전체 값은 title */
 /* 원무 명부에서 채운 발병일 — 폼 입력값과 구분되게 옅게 표시(마우스오버 시 출처 안내) */
 .tbl-compact td.onset-date-cell.onset-roster { color: var(--text-light); }
@@ -875,8 +897,25 @@ body .container { max-width: none; padding-left: 12px; padding-right: 12px; }   
 /* 퇴원완료일 — 상담에 없으면 원무 명부 회차 값을 '명부' 꼬리표와 함께 보여준다(2026-09-19) */
 .tbl-compact td.discharge-date-cell { white-space:normal; }
 .discharge-date-main { display:block; white-space:nowrap; color:var(--text); }
-.status-cell .dc-fix { margin-left:3px; padding:0 5px; border:1px solid #d1d5db; border-radius:5px; background:#fff; color:#374151; font:700 .72em inherit; cursor:pointer; }
-.status-cell .dc-fix:hover { border-color:#b91c1c; color:#b91c1c; }
+/* 퇴원완료 건의 퇴원일은 누르는 버튼 — 날짜 수정 팝오버(입원진행 칸의 [날짜 수정]이 발병일을 가려서 옮김, 2026-09-21) */
+.tbl-compact td.discharge-date-cell { overflow:visible; position:relative; }
+/* 칸(78px)에 '2026-09-18'이 꽉 차므로 테두리·패딩 없이 점선 밑줄만 — 테두리를 주면 6px 넘쳐 '상담자' 칸을 침범한다 */
+.dc-date-edit { display:block; width:100%; padding:0; border:0; background:none; color:var(--text); font:inherit; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; cursor:pointer; text-decoration:underline dotted #94a3b8; text-underline-offset:2px; }
+.dc-date-edit:hover { color:#b91c1c; text-decoration-color:#b91c1c; }
+.dc-date-edit.dc-date-empty { color:#b91c1c; font-weight:700; }
+.dc-date-pop { display:none; position:absolute; top:calc(100% - 2px); right:0; z-index:8; padding:8px 10px; width:220px;
+    background:#fff; border:1px solid var(--border); border-radius:8px; box-shadow:0 6px 18px rgba(15,23,42,.16);
+    text-align:left; white-space:normal; font-size:.9em; }
+.dc-date-pop.open { display:block; }
+.tbl-compact td.discharge-date-cell.dc-editing { z-index:9; }   /* 팝오버가 아래 행 위로 오게 */
+.dc-date-pop .dc-pop-title { font-weight:700; margin-bottom:4px; }
+.dc-date-pop .dc-pop-hint { color:var(--text-light); font-size:.82em; line-height:1.35; margin-bottom:6px; }
+.dc-date-pop input[type=date] { width:100%; padding:3px 5px; border:1px solid var(--border); border-radius:5px; font:inherit; }
+.dc-date-pop .dc-pop-actions { display:flex; gap:6px; justify-content:flex-end; margin-top:6px; }
+.dc-date-pop .dc-pop-actions button { padding:2px 8px; border:1px solid var(--border); border-radius:6px; background:#fff; font:inherit; font-size:.9em; cursor:pointer; }
+.dc-date-pop .dc-pop-actions button.dc-pop-save { background:#b91c1c; border-color:#b91c1c; color:#fff; font-weight:700; }   /* 위 button 규칙보다 구체적이어야 색이 먹는다 */
+.dc-date-pop .dc-pop-actions button.dc-pop-save:disabled { opacity:.6; cursor:default; }
 .discharge-date-cell .dc-roster { display:inline-block; margin-top:1px; padding:0 4px; border-radius:5px; background:#eef2f7; color:#64748b; font-size:.76em; font-weight:700; }
 .admexp-kind { display:inline-block; padding:1px 4px; border-radius:7px; font-weight:700; white-space:nowrap; }
 .admexp-kind.billing { background:#dcfce7; color:#166534; }
@@ -1110,12 +1149,7 @@ body .container { max-width: none; padding-left: 12px; padding-right: 12px; }   
             const act = btn.dataset.act;
             const today = todayISO();
             let body;
-            if (act === 'fix-date') {
-                const cur = btn.dataset.cur || today;
-                const d = prompt('실제 퇴원일자로 고칩니다 (YYYY-MM-DD)\n여기 값이 기준입니다 — 원무 명부를 다시 올려도 되돌아가지 않습니다.', cur);
-                if (!d || !d.trim()) return;
-                body = { action: 'fix-date', discharge_date: d.trim() };
-            } else if (act === 'complete') {
+            if (act === 'complete') {
                 const d = prompt('실제 퇴원일자를 입력하세요 (YYYY-MM-DD)', today);
                 if (!d || !d.trim()) return;
                 body = { action: 'complete', discharge_date: d.trim() };
@@ -1141,6 +1175,66 @@ body .container { max-width: none; padding-left: 12px; padding-right: 12px; }   
             }
         });
     });
+
+    // ─── 퇴원일 수정 — '퇴원완료일' 열의 날짜를 누르면 날짜 입력 팝오버 (2026-09-21) ───
+    // 한 번에 하나만 연다. 바깥 클릭·Esc로 닫힌다. 저장값이 기준이라 원무 명부를 다시 올려도 되돌아가지 않는다.
+    let dcPop = null;
+    function closeDatePop() {
+        if (!dcPop) return;
+        dcPop.closest('td')?.classList.remove('dc-editing');
+        dcPop.remove();
+        dcPop = null;
+    }
+    document.querySelectorAll('.dc-date-edit').forEach(btn => {
+        btn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            const wasMine = dcPop && dcPop.dataset.cid === btn.dataset.cid;
+            closeDatePop();
+            if (wasMine) return;
+            const cid = btn.dataset.cid;
+            const today = todayISO();
+            const cur = btn.dataset.cur || today;
+            const pop = document.createElement('div');
+            pop.className = 'dc-date-pop open';
+            pop.dataset.cid = cid;
+            pop.innerHTML = `
+                <div class="dc-pop-title">퇴원일 수정</div>
+                <div class="dc-pop-hint">실제 퇴원일자로 고칩니다. 여기 값이 기준입니다 — 원무 명부를 다시 올려도 되돌아가지 않습니다.</div>
+                <input type="date" class="dc-pop-input" value="${cur}" max="${today}">
+                <div class="dc-pop-actions"><button type="button" class="dc-pop-cancel">취소</button><button type="button" class="dc-pop-save">저장</button></div>`;
+            pop.addEventListener('click', e => e.stopPropagation());
+            const td = btn.closest('td');
+            td.classList.add('dc-editing');
+            td.appendChild(pop);
+            dcPop = pop;
+            const input = pop.querySelector('.dc-pop-input');
+            const save = pop.querySelector('.dc-pop-save');
+            pop.querySelector('.dc-pop-cancel').addEventListener('click', closeDatePop);
+            input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); save.click(); } });
+            save.addEventListener('click', async () => {
+                const d = (input.value || '').trim();
+                if (!d) { input.focus(); return; }
+                if (d === (btn.dataset.cur || '')) { closeDatePop(); return; }
+                save.disabled = true;
+                try {
+                    const r = await fetch(`/api/consult/${cid}/discharge`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ action: 'fix-date', discharge_date: d }),
+                    });
+                    const j = await r.json();
+                    if (!r.ok) throw new Error(j.error || r.status);
+                    location.reload();
+                } catch (e) {
+                    alert('처리 실패: ' + e.message);
+                    save.disabled = false;
+                }
+            });
+            input.focus();
+        });
+    });
+    document.addEventListener('click', closeDatePop);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDatePop(); });
 
     // ─── 행 선택 ───
     const checkAll = document.getElementById('check-all');
