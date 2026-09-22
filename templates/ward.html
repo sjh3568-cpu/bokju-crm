@@ -290,6 +290,13 @@
         <button type="button" class="btn btn-primary btn-xs wd-af-save">기록</button>
         <button type="button" class="btn btn-secondary btn-xs wd-af-cancel">취소</button>
     </div>
+    <div class="rm-inline rm-inline-plan">
+        <input type="date" class="wd-plan-date" value="{{ today_str }}" title="퇴원 예정일">
+        <input type="text" class="wd-plan-destination" placeholder="퇴원 기관·장소 (선택)">
+        <input type="text" class="wd-plan-reason" placeholder="퇴원 사유 (선택)">
+        <button type="button" class="btn btn-primary btn-xs wd-plan-save">예정 저장</button>
+        <button type="button" class="btn btn-secondary btn-xs wd-plan-cancel">취소</button>
+    </div>
     <div class="rm-inline rm-inline-discharge">
         <input type="date" class="wd-dis-date" value="{{ today_str }}">
         <input type="text" class="wd-dis-destination" placeholder="퇴원 기관·장소">
@@ -1218,19 +1225,34 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
 
     // 퇴원 예정 — 날짜만 잡아 둔다. 재원에는 그대로 있고 '퇴원 예정' 칸에 D-day가 뜬다.
     // 최종 퇴원은 [퇴원] 버튼(아래 saveDischarge)이 맡는다 — 그때 재원에서 빠진다(2026-09-19 요청).
-    root.querySelectorAll('.wd-dplan').forEach(btn => btn.addEventListener('click', async (e) => {
-        e.preventDefault(); e.stopPropagation();
-        const cur = btn.dataset.due || todayISO();
-        const d = prompt(`${btn.dataset.name || ''} 퇴원 예정일 (YYYY-MM-DD)\n재원에는 그대로 있고, 실제로 나가면 [퇴원]을 눌러 확정합니다.`, cur);
-        if (d === null) return;
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(d.trim())) { alert('날짜는 YYYY-MM-DD 형식으로 입력하세요.'); return; }
-        btn.disabled = true;
+    // 퇴원 예정 — 날짜만이 아니라 행선지·사유도 함께 받는다(2026-09-22 요청). 전에는 prompt로 날짜만 물었다.
+    // 재원에는 그대로 남고, 적어 둔 행선지·사유는 대시보드 '퇴원예정' 행과 최종 퇴원 폼이 그대로 쓴다.
+    const savePlan = async (form, name) => {
+        const date = form.querySelector('.wd-plan-date').value;
+        if (!date) { alert('퇴원 예정일을 입력하세요.'); return; }
+        const btn = form.querySelector('.wd-plan-save'); btn.disabled = true;
         try {
-            await api.post(`/api/consult/${btn.dataset.cid}/discharge`, { action: 'extend', discharge_due_date: d.trim() });
-            toast(`퇴원 예정 ${d.trim()} 저장 — 실제 퇴원은 [퇴원]으로 확정`, 'success');
+            await api.post(`/api/consult/${form.dataset.cid}/discharge`, {
+                action: 'extend', discharge_due_date: date,
+                discharge_destination: form.querySelector('.wd-plan-destination').value.trim(),
+                discharge_reason: form.querySelector('.wd-plan-reason').value.trim() });
+            toast(`${name || ''} 퇴원 예정 ${date} 저장 — 실제 퇴원은 [퇴원]으로 확정`, 'success');
             setTimeout(() => location.reload(), 400);
         } catch (err) { btn.disabled = false; alert('퇴원 예정 저장 실패: ' + err.message); }
-    }));
+    };
+    root.querySelectorAll('tr .wd-dplan').forEach(btn => {
+        const row = btn.closest('tr'), formRow = row.nextElementSibling;
+        const form = formRow && formRow.querySelector('.wd-inline-plan');
+        if (!form) return;
+        btn.addEventListener('click', (e) => {
+            e.preventDefault(); e.stopPropagation();
+            formRow.hidden = false; form.hidden = !form.hidden;
+            formRow.querySelectorAll('.wd-inline-away, .wd-inline-discharge').forEach(o => { o.hidden = true; });
+            if (!form.hidden) form.querySelector('.wd-plan-date').focus();
+        });
+        form.querySelector('.wd-plan-cancel').addEventListener('click', () => { form.hidden = true; });
+        form.querySelector('.wd-plan-save').addEventListener('click', () => savePlan(form, btn.dataset.name));
+    });
 
     // 외진 기록 — 행 아래 인라인 폼
     root.querySelectorAll('.wd-away-btn').forEach(btn => {
@@ -1238,7 +1260,7 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
         const row = btn.closest('tr');
         const formRow = row.nextElementSibling;
         const form = formRow.querySelector('.wd-inline-away');
-        btn.addEventListener('click', () => { formRow.hidden = !formRow.hidden; form.hidden=false; const d=formRow.querySelector('.wd-inline-discharge'); if(d)d.hidden=true; });
+        btn.addEventListener('click', () => { formRow.hidden = !formRow.hidden; form.hidden=false; formRow.querySelectorAll('.wd-inline-discharge, .wd-inline-plan').forEach(o => { o.hidden = true; }); });
         form.querySelector('.wd-af-cancel').addEventListener('click', () => { formRow.hidden = true; });
         form.querySelector('.wd-af-save').addEventListener('click', async () => {
             const save = form.querySelector('.wd-af-save');
@@ -1256,7 +1278,7 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
     root.querySelectorAll('.wd-dis').forEach(btn => {
         if (btn.closest('.rm-bed')) return;
         const row=btn.closest('tr'), formRow=row.nextElementSibling, form=formRow.querySelector('.wd-inline-discharge');
-        btn.addEventListener('click', () => { formRow.hidden=false; form.hidden=false; formRow.querySelector('.wd-inline-away').hidden=true; });
+        btn.addEventListener('click', () => { formRow.hidden=false; form.hidden=false; formRow.querySelectorAll('.wd-inline-away, .wd-inline-plan').forEach(o => { o.hidden = true; }); });
         form.querySelector('.wd-dis-cancel').addEventListener('click',()=>{formRow.hidden=true;});
         form.querySelector('.wd-dis-save').addEventListener('click',()=>saveDischarge(form,btn.dataset.name));
         });
@@ -1280,7 +1302,17 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
                     reload(`🚑 ${name} 외진 기록`);
                 } catch (err) { e.target.disabled = false; alert('외진 기록 실패: ' + err.message); }
             });
+        } else if (kind === 'plan') {
+            form.dataset.cid = cid;
+            if (bed.dataset.due) form.querySelector('.wd-plan-date').value = bed.dataset.due;
+            form.querySelector('.wd-plan-destination').value = bed.dataset.dest || '';
+            form.querySelector('.wd-plan-reason').value = bed.dataset.dreason || '';
+            form.querySelector('.wd-plan-cancel').addEventListener('click',()=>{form.hidden=true;});
+            form.querySelector('.wd-plan-save').addEventListener('click',()=>savePlan(form,name));
         } else if (kind === 'discharge') {
+            if (bed.dataset.due) form.querySelector('.wd-dis-date').value = bed.dataset.due;
+            form.querySelector('.wd-dis-destination').value = bed.dataset.dest || '';
+            form.querySelector('.wd-dis-reason').value = bed.dataset.dreason || '';
             form.querySelector('.wd-dis-cancel').addEventListener('click',()=>{form.hidden=true;});
             form.querySelector('.wd-dis-save').addEventListener('click',()=>saveDischarge(form,name));
         } else if (kind === 'move') {
@@ -1324,6 +1356,8 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
     root.querySelectorAll('.rm-bed').forEach(bed => {
         const btnAway = bed.querySelector('.rm-away-btn'), btnMove = bed.querySelector('.rm-move');
         const btnDis = bed.querySelector('.rm-dis'), btnBack = bed.querySelector('.rm-back-btn');
+        const btnPlan = bed.querySelector('.wd-dplan');
+        if (btnPlan) btnPlan.addEventListener('click', () => toggleEditor(bed, 'plan'));
         if (btnBack) btnBack.addEventListener('click', () => toggleEditor(bed, 'back'));
         if (btnAway) btnAway.addEventListener('click', () => toggleEditor(bed, 'away'));
         if (btnMove) btnMove.addEventListener('click', () => toggleEditor(bed, 'move'));

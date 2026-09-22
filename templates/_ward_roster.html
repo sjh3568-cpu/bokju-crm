@@ -150,7 +150,7 @@
                         <button type="button" class="btn btn-secondary btn-xs wd-away-btn" data-cid="{{ c.id }}" data-name="{{ c.patient_name }}">🚑 외진</button>
                         <button type="button" class="btn btn-secondary btn-xs wd-dplan" data-cid="{{ c.id }}" data-name="{{ c.patient_name }}"
                                 data-due="{{ c.discharge_due or '' }}"
-                                title="퇴원 예정일만 잡아 둔다 — 재원에는 그대로 있고 '퇴원 예정' 칸에 D-day가 뜬다">퇴원예정</button>
+                                title="퇴원 예정일·행선지·사유를 미리 잡아 둔다 — 재원에는 그대로 있고 '퇴원 예정' 칸에 D-day가 뜬다">퇴원예정</button>
                         <button type="button" class="btn btn-secondary btn-xs wd-dis" data-cid="{{ c.id }}" data-name="{{ c.patient_name }}"
                                 data-due="{{ c.discharge_due or '' }}"
                                 title="최종 퇴원 — 재원에서 빠진다">퇴원</button>
@@ -175,11 +175,21 @@
                             <button type="button" class="btn btn-primary btn-xs wd-af-save">기록</button>
                             <button type="button" class="btn btn-secondary btn-xs wd-af-cancel">취소</button>
                         </div>
+                        {# 퇴원 예정 — 날짜만이 아니라 행선지·사유도 여기서 받는다(2026-09-22 요청).
+                           나갈 곳은 보통 예정을 잡을 때 이미 정해져 있고, 대시보드 '퇴원예정' 행의 행선 칸이 이 값을 읽는다. #}
+                        <div class="wd-inline wd-inline-plan" data-cid="{{ c.id }}" hidden>
+                            <span class="muted-sm">📅 {{ c.patient_name }} 퇴원 예정 <b>— 재원에는 그대로 있습니다</b></span>
+                            <input type="date" class="wd-plan-date" value="{{ c.discharge_due or today_str }}" title="퇴원 예정일">
+                            <input type="text" class="wd-plan-destination" placeholder="퇴원 기관·장소 (선택)" value="{{ c.discharge_destination or '' }}">
+                            <input type="text" class="wd-plan-reason" placeholder="퇴원 사유 (선택)" value="{{ c.discharge_reason or '' }}">
+                            <button type="button" class="btn btn-primary btn-xs wd-plan-save">예정 저장</button>
+                            <button type="button" class="btn btn-secondary btn-xs wd-plan-cancel">취소</button>
+                        </div>
                         <div class="wd-inline wd-inline-discharge" data-cid="{{ c.id }}" hidden>
                             <span class="muted-sm">🚪 {{ c.patient_name }} 최종 퇴원 <b>— 재원에서 빠집니다</b></span>
                             <input type="date" class="wd-dis-date" value="{{ c.discharge_due or today_str }}">
-                            <input type="text" class="wd-dis-destination" placeholder="퇴원 기관·장소">
-                            <input type="text" class="wd-dis-reason" placeholder="퇴원 사유">
+                            <input type="text" class="wd-dis-destination" placeholder="퇴원 기관·장소" value="{{ c.discharge_destination or '' }}">
+                            <input type="text" class="wd-dis-reason" placeholder="퇴원 사유" value="{{ c.discharge_reason or '' }}">
                             <button type="button" class="btn btn-primary btn-xs wd-dis-save">퇴원 처리</button>
                             <button type="button" class="btn btn-secondary btn-xs wd-dis-cancel">취소</button>
                         </div>

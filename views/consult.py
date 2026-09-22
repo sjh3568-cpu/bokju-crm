@@ -1475,6 +1475,14 @@ def api_consult_discharge(cid):
         except ValueError:
             return jsonify({"error": "퇴원예정일 형식 오류 (YYYY-MM-DD)"}), 400
         fields["discharge_due_date"] = due
+        # 예정 단계에서도 행선지·사유를 받는다(2026-09-22 요청) — 나갈 곳은 보통 예정을 잡을 때 이미 정해져 있고,
+        # 대시보드 '퇴원예정' 행의 행선 칸이 이 값을 읽는다. 최종 퇴원 때 다시 적을 필요도 없어진다.
+        # 빈 값으로 덮어써 지우는 일은 없게, 값이 온 항목만 고친다.
+        for key in ("discharge_destination", "discharge_reason"):
+            if key in payload:
+                val = (payload.get(key) or "").strip()[:120]
+                if val:
+                    fields[key] = val
     else:
         return jsonify({"error": "허용되지 않은 동작"}), 400
 

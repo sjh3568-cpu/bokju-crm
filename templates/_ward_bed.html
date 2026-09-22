@@ -1,7 +1,7 @@
 {# 재원 관리 병실 배치도 침상 카드 — ward.html(본문)과 _ward_roster.html(지연 로딩 부분)이 같이 쓴다 #}
 {% macro bed(c) %}
 <div class="rm-bed {% if c.away %}rm-away {{ 'rm-dim' if c.away.days_out is none or c.away.days_out <= 7 else 'rm-away-long' }}{% endif %}"
-     data-cid="{{ c.id or '' }}" data-name="{{ c.patient_name }}" data-room="{{ c.room_number or '' }}"{% if c.away %} data-aevent="{{ c.away.id }}" data-event-date="{{ c.away.event_date or '' }}" data-return-date="{{ c.away.expected_return_date or '' }}" data-return-room="{{ c.away.return_room or c.room_number or '' }}"{% endif %}>
+     data-cid="{{ c.id or '' }}" data-name="{{ c.patient_name }}" data-room="{{ c.room_number or '' }}" data-due="{{ c.discharge_due or '' }}" data-dest="{{ c.discharge_destination or '' }}" data-dreason="{{ c.discharge_reason or '' }}"{% if c.away %} data-aevent="{{ c.away.id }}" data-event-date="{{ c.away.event_date or '' }}" data-return-date="{{ c.away.expected_return_date or '' }}" data-return-room="{{ c.away.return_room or c.room_number or '' }}"{% endif %}>
     {# 1행 이름(성별/나이) · 관리태그 · 외진 표시 #}
     <div class="rm-bed-top">
         {% if c.id %}<a href="/consult/{{ c.id }}" class="rm-name">{{ c.patient_name }}</a>{% if c.readmit_kind %} {% include "_readmit_badge.html" %}{% endif %}
@@ -53,7 +53,7 @@
         <button type="button" class="btn btn-primary btn-xs rm-back-btn">↩ 복귀</button>
         {% else %}
         <button type="button" class="btn btn-secondary btn-xs rm-away-btn">🚑 외진</button>
-        <button type="button" class="btn btn-secondary btn-xs wd-dplan" data-cid="{{ c.id }}" data-name="{{ c.patient_name }}" data-due="{{ c.discharge_due or '' }}" title="퇴원 예정일만 잡아 둔다 — 재원에는 그대로 있다">퇴원예정</button>
+        <button type="button" class="btn btn-secondary btn-xs wd-dplan" data-cid="{{ c.id }}" data-name="{{ c.patient_name }}" data-due="{{ c.discharge_due or '' }}" title="퇴원 예정일·행선지·사유를 미리 잡아 둔다 — 재원에는 그대로 있다">퇴원예정</button>
         <button type="button" class="btn btn-secondary btn-xs rm-dis" title="최종 퇴원 — 재원에서 빠진다">퇴원</button>
         <button type="button" class="btn btn-secondary btn-xs rm-move">호실</button>
         {% endif %}
