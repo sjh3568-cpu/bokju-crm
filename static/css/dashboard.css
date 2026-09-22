@@ -476,16 +476,22 @@
 /* 표는 고정 레이아웃 — 카드 폭(1440에서 ≈534px) 안에 6열이 다 보이고 모든 행 높이가 같다(2026-09-21). 남는 폭은 '내용'이 갖는다 */
 .page-dashboard .aq-table { table-layout: fixed; width: 100%; }
 .page-dashboard .aq-table col.c-kind { width: 68px; }
-.page-dashboard .aq-table col.c-who { width: 72px; }
-.page-dashboard .aq-table col.c-dx { width: 66px; }
-.page-dashboard .aq-table col.c-meta { width: 100px; }
+.page-dashboard .aq-table col.c-who { width: 92px; }
+.page-dashboard .aq-table col.c-dx { width: 92px; }
+.page-dashboard .aq-table col.c-meta { width: 72px; }
 /* 고정 레이아웃이라 이 표는 넘치지 않는다 — 마지막 행의 '…' 더보기 메뉴가 .tbl-wrap(overflow:auto)에 잘리지 않게 */
 .page-dashboard .tbl-wrap:has(> .aq-table) { overflow: visible; }
-.page-dashboard .aq-table col.c-act { width: 118px; }
+.page-dashboard .aq-table col.c-act { width: 106px; }
 .page-dashboard .aq-table th, .page-dashboard .aq-table td { overflow: hidden; text-overflow: ellipsis; padding-left: 6px; padding-right: 6px; }
 .page-dashboard .aq-table td.dash-action-cell { overflow: visible; white-space: nowrap; padding-left: 4px; padding-right: 4px; }
 .page-dashboard .aq-table .dash-action-cell .btn-xs { padding: 2px 6px; margin: 1px; }
-.page-dashboard .aq-table .dash-dx { max-width: none; }
+/* 환자·주상병이 잘리던 것(2026-09-22 요청) — '김차임…'에 성별/나이는 아예 안 보이고 '근골…'로 끊겼다.
+   폭은 '내용'에서 덜어 왔다(어차피 대부분 …으로 잘려 정보가 없고 툴팁에 전문이 있다).
+   환자는 이름 한 줄 + 성별/나이 아랫줄로 쪼개고, 주상병은 두 줄까지 흐르게 둔다. */
+.page-dashboard .aq-table td.aq-who { white-space: normal; line-height: 1.25; }
+.page-dashboard .aq-table td.aq-who > a { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.page-dashboard .aq-table td.aq-who .dash-who { display: block; font-size: .82em; color: var(--dmuted); }
+.page-dashboard .aq-table .dash-dx { max-width: none; white-space: normal; line-height: 1.25; word-break: keep-all; }
 .page-dashboard .aq-detail { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dmuted); }
 .page-dashboard .aq-meta { font-size: .78rem; color: var(--dmuted); }
 .page-dashboard .aq-meta.danger { color: var(--dcrit); font-weight: 800; }

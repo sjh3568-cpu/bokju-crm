@@ -215,9 +215,12 @@ class DashboardDueQueueTests(DashboardStripTests):
         self._add_admitted_consult(7, 7, base, (self.today + timedelta(days=30)).isoformat())  # 기한 임박(D-30)
         html = self.client.get("/").get_data(as_text=True)
         self.assertGreaterEqual(html.count("<th>주상병</th>"), 3)     # 처리 큐 · 회복기 전환 · 퇴원 예정
-        self.assertIn('최근초과</a> <span class="dash-who">여/70세</span>', html)
+        # 오늘 처리 필요는 칸이 좁아 성별/나이를 이름 아랫줄로 내렸다(2026-09-22) — 사이 공백 없음.
+        # 기한 임박은 폭이 넉넉해 이름 옆에 그대로 붙는다.
+        self.assertIn('최근초과</a><span class="dash-who">여/70세</span>', html)
+        self.assertIn('재연락대기</a><span class="dash-who">남/65세</span>', html)
         self.assertIn('곧만료</a> <span class="dash-who">남/70세</span>', html)
-        self.assertIn('재연락대기</a> <span class="dash-who">남/65세</span>', html)
+        self.assertIn('<td class="aq-who" title="최근초과 · 여/70세">', html)      # 잘려도 툴팁으로 읽힌다
         # 주상병 칸은 뇌졸중·근골격계·비사용증후군이면 색 구분 클래스(dxg-*)가 붙는다(2026-09-20 요청).
         # 뇌졸중은 출혈(dxg-stroke-hem)·경색(dxg-stroke-inf)·그 밖(dxg-stroke)으로 갈린다.
         # 툴팁은 병명 그대로 두고 색 뜻은 표 머리의 범례로. 주상병으로 적힌 파킨슨병은

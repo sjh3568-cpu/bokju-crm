@@ -339,7 +339,7 @@
 <tr class="aq-row {{ item.tone }}{% if stale %} stale{% endif %}">
     {% set kslug = {'퇴원지연':'discharge','퇴원예정':'discharge','재연락':'callback','문의':'inquiry','입원준비':'prep','담당자':'staff','운행':'transport','입원예정일':'planned'}.get(item.group, 'hold-adm' if item.kind == '입원보류' else 'hold') %}
     <td class="nowrap"><span class="aq-kind k-{{ kslug }}">{{ item.kind }}</span></td>
-    <td class="nowrap"><a href="{{ item.href or '#' }}">{{ item.title }}</a>{% if item.who %} <span class="dash-who">{{ item.who }}</span>{% endif %}</td>
+    <td class="aq-who" title="{{ item.title }}{% if item.who %} · {{ item.who }}{% endif %}"><a href="{{ item.href or '#' }}">{{ item.title }}</a>{% if item.who %}<span class="dash-who">{{ item.who }}</span>{% endif %}</td>
     <td class="dash-dx{% if item.dx|dx_group %} dxg-{{ item.dx|dx_group }}{% endif %}" title="{{ item.dx }}">{{ item.dx or '-' }}</td>
     <td class="aq-detail" title="{{ item.detail }}">{{ item.detail or '-' }}</td>
     <td class="nowrap aq-meta age-{{ item.age_tier }}" title="경과 {{ item.age_days }}일 — 오늘=초록 · 1~2일=주황 · 3~7일=빨강 · 8일 이상=방치">{% if stale %}{{ item.age_days }}일 방치{% if item.meta %} <span class="muted-sm">· {{ item.meta }}</span>{% endif %}{% else %}{{ item.meta }}{% endif %}</td>
