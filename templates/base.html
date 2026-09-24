@@ -27,6 +27,12 @@
             <button type="button" class="sidebar-collapse" id="sidebar-collapse" aria-label="메뉴 접기/펼치기" title="메뉴 접기/펼치기">⟨</button>
         </div>
                 <nav class="main-nav" aria-label="주 메뉴">
+                    {# 구역 제목(2026-09-25 요청) — 항목을 <div>로 감싸지 않는다. style.css의 `.main-nav > 항목`
+                       직계 자식 셀렉터(상단바 레이아웃 순서·'새 상담' 강조)가 통째로 끊기기 때문에 제목만 형제로 끼운다.
+                       권한으로 항목이 다 빠진 구역은 제목도 함께 숨긴다 — 그 판정을 아래 sec_* 한 곳에서만 한다. #}
+                    {% set sec_consult  = P.get('consult',0) >= 1 or P.get('sms',0) >= 1 %}
+                    {% set sec_ward     = P.get('ward',0) >= 1 or P.get('partners',0) >= 1 %}
+                    {% set sec_analysis = P.get('stats',0) >= 1 %}
                     {% if P.get('dashboard',0) >= 1 %}
                     <div class="nav-menu-group {% if request.path == '/' or request.path.startswith('/calendar') %}active{% endif %}">
                         <a href="/" {% if request.path == '/' %}class="active"{% endif %}><span class="nav-icon nav-icon-dashboard">🏠</span>대시보드{% if inbound_badge %}<span class="nav-notice-new" id="nav-inbound-badge" title="미처리 상담 문의">{{ inbound_badge }}</span>{% else %}<span class="nav-notice-new" id="nav-inbound-badge" hidden></span>{% endif %}</a>
@@ -40,11 +46,9 @@
                     {% if inbox_enabled %}
                     <a href="/inbox" class="nav-inbox {% if request.path.startswith('/inbox') %}active{% endif %}"><span class="nav-icon">📥</span>통합 인박스{% if inbound_badge %}<span class="nav-notice-new">{{ inbound_badge }}</span>{% endif %}</a>
                     {% endif %}
+                    {% if sec_consult %}<h3 class="nav-section-title"><span>상담</span></h3>{% endif %}
                     {% if P.get('consult',0) >= 3 %}
                     <a href="/consult/new" {% if request.path == '/consult/new' %}class="active"{% endif %}><span class="nav-icon nav-icon-new">✍️</span>새 상담</a>
-                    {% endif %}
-                    {% if P.get('consult',0) >= 1 %}
-                    <a href="/documents" {% if request.path.startswith('/documents') %}class="active"{% endif %}><span class="nav-icon">📠</span>팩스·문서</a>
                     {% endif %}
                     {% if P.get('consult',0) >= 1 %}
                     <div class="nav-menu-group {% if request.path.startswith('/consultations') %}active{% endif %}">
@@ -56,6 +60,13 @@
                         </div>
                     </div>
                     {% endif %}
+                    {% if P.get('consult',0) >= 1 %}
+                    <a href="/documents" {% if request.path.startswith('/documents') %}class="active"{% endif %}><span class="nav-icon">📠</span>팩스·문서</a>
+                    {% endif %}
+                    {% if P.get('sms',0) >= 1 %}
+                    <a href="/sms" {% if request.path.startswith('/sms') %}class="active"{% endif %}><span class="nav-icon nav-icon-sms">💬</span>문자</a>
+                    {% endif %}
+                    {% if sec_ward %}<h3 class="nav-section-title"><span>환자·병상</span></h3>{% endif %}
                     {% if P.get('ward',0) >= 1 %}
                     <div class="nav-menu-group {% if request.path.startswith('/ward') or request.path.startswith('/patients') %}active{% endif %}">
                         <a href="/ward" {% if request.path.startswith('/ward') or request.path.startswith('/patients') %}class="active"{% endif %}><span class="nav-icon nav-icon-ward">🏥</span>재원 관리</a>
@@ -71,9 +82,8 @@
                         </div>
                     </div>
                     {% endif %}
-                    {% if P.get('sms',0) >= 1 %}
-                    <a href="/sms" {% if request.path.startswith('/sms') %}class="active"{% endif %}><span class="nav-icon nav-icon-sms">💬</span>문자</a>
-                    {% endif %}
+                    {% if P.get('partners',0) >= 1 %}<a href="/partners" {% if request.path.startswith('/partners') %}class="active"{% endif %}><span class="nav-icon">🤝</span>기관협력</a>{% endif %}
+                    {% if sec_analysis %}<h3 class="nav-section-title"><span>분석</span></h3>{% endif %}
                     {% if P.get('stats',0) >= 1 %}
                     <div class="nav-menu-group {% if request.path.startswith('/stats') or request.path.startswith('/report') %}active{% endif %}">
                         <a href="/stats" {% if request.path.startswith('/stats') %}class="active"{% endif %}><span class="nav-icon nav-icon-stats">📊</span>통계·보고</a>
@@ -87,7 +97,7 @@
                         </div>
                     </div>
                     {% endif %}
-                    {% if P.get('partners',0) >= 1 %}<a href="/partners" {% if request.path.startswith('/partners') %}class="active"{% endif %}><span class="nav-icon">🤝</span>기관협력</a>{% endif %}
+                    <h3 class="nav-section-title"><span>관리</span></h3>
                     <a href="/notices" {% if request.path.startswith('/notices') %}class="active"{% endif %}><span class="nav-icon nav-icon-notice">📢</span>공지사항{% if has_unread_required_notice %}<span class="nav-notice-new">필수</span>{% endif %}</a>
                     <a href="/support/" class="nav-support {% if request.path.startswith('/support') %}active{% endif %}" title="기능 개선·오류 신고·사용 문의"><span class="nav-icon" aria-hidden="true">💡</span>개선 요청</a>
                     {% if P.get('users',0) >= 2 %}

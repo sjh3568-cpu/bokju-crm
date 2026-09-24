@@ -1296,6 +1296,17 @@ body.has-sidebar.sidebar-collapsed { --sbw:70px; }
 .sidebar .main-nav { display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start; gap:2px; flex:1 1 auto; order:0; padding:4px 0; border:0; overflow:visible; }
 .page-dashboard .topbar .header-new-consult { display:none; }
 .sidebar .main-nav > a, .sidebar .main-nav > .nav-menu-group { order:0 !important; margin:0; }
+/* 구역 제목 — 사이드바에서만 보인다(2026-09-25 요청: 메뉴를 업무 단위로 묶어 보이게).
+   상단바 레이아웃은 .main-nav 가 가로 flex 라 제목이 버튼들 사이에 끼면 줄이 깨진다 → 거기선 숨김. */
+.nav-section-title { display:none; }
+.sidebar .nav-section-title { display:flex; align-items:center; gap:7px; margin:9px 0 1px; padding:0 12px;
+    font-size:var(--fs-xs); font-weight:800; letter-spacing:.02em; color:var(--text-light); white-space:nowrap; }
+.sidebar .nav-section-title::after { content:""; flex:1 1 auto; height:1px; background:var(--border); }
+.sidebar .main-nav > .nav-section-title:first-of-type { margin-top:4px; }   /* 첫 구역은 위 여백을 줄여 한 줄이라도 아낀다 */
+/* 접힘(70px)에서는 글자를 빼고 구분선만 — 상담목록은 사이드바가 자동으로 접히므로 이 상태가 사실상 기본이다. */
+.sidebar-collapsed .sidebar .nav-section-title { margin:7px 10px; padding:0; gap:0; font-size:0; border-top:1px solid var(--border); }
+.sidebar-collapsed .sidebar .nav-section-title > span { display:none; }
+.sidebar-collapsed .sidebar .nav-section-title::after { display:none; }
 .sidebar .main-nav a { display:flex; align-items:center; gap:10px; min-height:40px; padding:8px 12px; border:0; border-radius:10px; color:var(--text); background:transparent; text-shadow:none; font-size:.92rem; font-weight:650; letter-spacing:-.01em; overflow:visible; box-shadow:none; white-space:nowrap; }
 .sidebar .main-nav a::after { display:none; }
 .sidebar .main-nav a:hover { color:var(--text); background:#f1f5f3; transform:none; }
