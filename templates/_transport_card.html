@@ -1,13 +1,14 @@
 {# 🚐 차량 운행(픽업) 요청 — 상담 상세에 include. transport.py 가 템플릿 전역 transport_info() 를 제공한다. #}
 {% set ti = transport_info(c.id) %}
 {% set tr = ti.req %}
-<div class="card" id="transport" data-cid="{{ c.id }}">
+{% set tp_date = (tr.pickup_date if tr and tr.pickup_date else c.planned_admission_date) or '' %}
+<div class="card" id="transport" data-cid="{{ c.id }}" data-sheet="{{ 1 if ti.sheet_configured else 0 }}">
     <h3>🚐 차량 운행(픽업) 요청
         <span class="muted" style="font-size:0.66em">— 안동·예천 인근은 관리과 차량으로 모셔옵니다. 저장하면 운행팀 구글 시트에 자동 기입</span>
-        {% if ti.sheet_link %}<a class="tp-sheet-link" href="{{ ti.tab_link or ti.sheet_link }}" target="_blank" rel="noopener" title="운행팀 구글 시트를 새 탭에서 엽니다">운행 시트 열기 ↗</a>{% endif %}</h3>
+        {% if ti.sheet_configured or ti.sheet_link %}<a class="tp-sheet-link" id="tp-open" data-root="{{ ti.sheet_link }}" href="{{ ('/transport/open?date=' ~ tp_date) if tp_date else ti.sheet_link }}" target="_blank" rel="noopener" title="운행팀 구글 시트의 날짜(탭) 칸 날짜 탭을 새 탭에서 엽니다">운행 시트 열기 ↗</a>{% endif %}</h3>
     <div class="tp-status {% if tr %}tp-{{ tr.sheet_status }}{% endif %}" id="tp-status">
         {% if not tr %}<b>미정</b> — 운행 필요 여부를 아직 정하지 않았습니다.
-        {% elif tr.needed == 'no' %}<b>운행 불필요</b> (보호자 직접 이동)
+        {% elif tr.needed == 'no' %}<b>운행 불필요</b> ({{ tr.skip_reason or '보호자 직접' }})
         {% else %}<b>{{ ti.status_label }}</b>
             {% if tr.sheet_status == 'sent' %}· {% if ti.tab_link %}<a href="{{ ti.tab_link }}" target="_blank" rel="noopener">탭 {{ tr.sheet_tab }} {{ tr.sheet_row }}행 ↗</a>{% else %}탭 {{ tr.sheet_tab }} {{ tr.sheet_row }}행{% endif %}
                 {% if tr.driver or tr.vehicle %}· <span class="tp-assign">배정: {{ tr.driver or '?' }} / {{ tr.vehicle or '차량 미정' }}</span>
@@ -20,9 +21,10 @@
     </div>
     <div class="tp-form">
         <label class="tp-need"><input type="radio" name="tp-needed" value="yes" {% if tr and tr.needed == 'yes' %}checked{% endif %}> 차량 필요</label>
-        <label class="tp-need"><input type="radio" name="tp-needed" value="no" {% if tr and tr.needed == 'no' %}checked{% endif %}> 불필요 (보호자 직접)</label>
+        <label class="tp-need"><input type="radio" name="tp-needed" value="no" {% if tr and tr.needed == 'no' and tr.skip_reason != '사설구급차' %}checked{% endif %}> 불필요 (보호자 직접)</label>
+        <label class="tp-need"><input type="radio" name="tp-needed" value="private" {% if tr and tr.needed == 'no' and tr.skip_reason == '사설구급차' %}checked{% endif %}> 불필요 (사설구급차)</label>
         <div class="tp-fields" id="tp-fields" {% if tr and tr.needed == 'no' %}hidden{% endif %}>
-            <label>날짜(탭) <input type="date" id="tp-date" value="{{ (tr.pickup_date if tr and tr.pickup_date else c.planned_admission_date) or '' }}"></label>
+            <label>날짜(탭) <input type="date" id="tp-date" value="{{ tp_date }}"></label>
             <label>이동수단
                 <select id="tp-mobility">
                     <option value="">선택</option>
@@ -66,11 +68,16 @@
 (function () {
     const card = document.getElementById('transport'); if (!card) return;
     const cid = card.dataset.cid, msg = document.getElementById('tp-msg'), fields = document.getElementById('tp-fields');
-    card.querySelectorAll('input[name="tp-needed"]').forEach(r => r.addEventListener('change', () => { fields.hidden = r.value === 'no' && r.checked; }));
+    const dateEl = document.getElementById('tp-date'), openLink = document.getElementById('tp-open');
+    const openUrl = d => d ? `/transport/open?date=${d}` : ((openLink && openLink.dataset.root) || '');
+    if (openLink) dateEl.addEventListener('change', () => { openLink.href = openUrl(dateEl.value); });   // 날짜(탭)를 바꾸면 링크도 그 날짜 탭
+    card.querySelectorAll('input[name="tp-needed"]').forEach(r => r.addEventListener('change', () => { fields.hidden = r.checked && r.value !== 'yes'; }));
     document.getElementById('tp-save').addEventListener('click', async () => {
         const needed = (card.querySelector('input[name="tp-needed"]:checked') || {}).value;
         if (!needed) { msg.className = 'tp-msg err'; msg.textContent = '차량 필요 / 불필요를 선택하세요.'; return; }
-        const payload = { needed, pickup_date: document.getElementById('tp-date').value,
+        // 저장 후 그 날짜 탭을 열려면 클릭 순간에 빈 탭을 열어 둬야 한다(await 뒤에 열면 팝업 차단). 전송 성공일 때만 보내고 아니면 닫는다
+        const win = (needed === 'yes' && card.dataset.sheet === '1') ? window.open('', '_blank') : null;
+        const payload = { needed, pickup_date: dateEl.value,
             mobility: document.getElementById('tp-mobility').value, reason: document.getElementById('tp-reason').value,
             place: document.getElementById('tp-place').value, arrive_time: document.getElementById('tp-time').value,
             contact: document.getElementById('tp-contact').value };
@@ -80,11 +87,13 @@
             const j = await r.json();
             if (!r.ok) throw new Error(j.error || r.status);
             const p = j.push || {};
-            if (p.status === 'sent') alert(`운행 시트 전송 완료 (${p.tab} 탭 ${p.row}행)`);
+            if (p.status === 'sent' && win) win.location = openUrl((j.request || {}).pickup_date || dateEl.value);
+            else if (win) win.close();
+            if (p.status === 'sent') alert(`운행 시트 전송 완료 (${p.tab} 탭 ${p.row}행)${win ? ' — 그 날짜 탭을 열었습니다' : ''}`);
             else if (p.status === 'pending') alert('시트에 해당 날짜 탭이 없어 전송 대기 — 운행팀에 탭 요청. 탭이 생기면 자동 전송됩니다.');
             else if (p.status === 'error') alert('CRM에는 저장됐지만 시트 전송 실패: ' + (p.error || ''));
             location.reload();
-        } catch (e) { msg.className = 'tp-msg err'; msg.textContent = '저장 실패: ' + e.message; }
+        } catch (e) { if (win) win.close(); msg.className = 'tp-msg err'; msg.textContent = '저장 실패: ' + e.message; }
     });
 })();
 </script>

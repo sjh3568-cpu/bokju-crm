@@ -15,6 +15,7 @@ class TransportTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.db_patch = patch.object(models, 'DB_PATH', os.path.join(self.tmp.name, 't.db')); self.db_patch.start()
         models.init_db(); transport.init_schema()
+        transport._GID_CACHE.clear(); transport._SHEET_LINK_CACHE['url'] = None   # 모듈 캐시가 테스트 사이에 새지 않게
         self.tomorrow = (date.today() + timedelta(days=1)).isoformat()
         db = models.get_db()
         pid = db.execute("INSERT INTO patients(name, guardian_relation, guardian_phone) VALUES ('한영도','형님','010-6378-2866')").lastrowid
@@ -46,6 +47,17 @@ class TransportTests(unittest.TestCase):
     def test_required_fields(self):
         r = self._save(place='')
         self.assertEqual(r.status_code, 400); self.assertIn('요청 장소', r.get_json()['error'])
+
+    def test_reason_must_match_sheet_validation(self):
+        # 시트 F열(요청이유)의 데이터 확인 규칙에 없는 값은 시트가 거부한다 — CRM 선택지와 검증을 그 규칙에 맞춘다
+        self.assertEqual(transport.reason_options(), ['픽업(입원)', '외진', '단순운행', '혈액요청', '기관방문', '출장수행', '식당퇴근'])
+        with patch.dict(os.environ, {'TRANSPORT_SHEET_URL': ''}):
+            r = self._save(reason='픽업')
+            self.assertEqual(r.status_code, 400); self.assertIn('요청이유', r.get_json()['error'])
+            r = self._save(reason='')
+            self.assertEqual(r.get_json()['request']['reason'], '픽업(입원)')
+        with patch.dict(os.environ, {'TRANSPORT_REASON_OPTIONS': '픽업(입원), 외진'}):
+            self.assertEqual(transport.reason_options(), ['픽업(입원)', '외진'])
 
     def test_save_without_sheet_keeps_draft(self):
         with patch.dict(os.environ, {'TRANSPORT_SHEET_URL': ''}):
@@ -98,6 +110,46 @@ class TransportTests(unittest.TestCase):
             # 수정 저장 → 같은 행 갱신 요청(match_row)
             self._save(arrive_time='15:00')
             self.assertEqual(calls[-1][1]['match_row'], 14)
+
+    def test_private_ambulance_is_skip_with_reason(self):
+        # '불필요(사설구급차)' — 관리과 차량은 안 나가므로 needed='no'와 같은 취급(시트 전송 없음·경고 없음), 사유만 따로 남긴다
+        r = self._save(needed='private'); j = r.get_json()
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual((j['request']['needed'], j['request']['skip_reason'], j['request']['sheet_status']), ('no', '사설구급차', 'skip'))
+        self.assertEqual(transport.dashboard_alerts(), [])
+        page = self.c.get(f'/consult/{self.cid}').get_data(as_text=True)
+        self.assertIn('운행 불필요</b> (사설구급차)', page)
+        self.assertIn('value="private" checked', page)
+        self.assertEqual(self._save(needed='no').get_json()['request']['skip_reason'], '보호자 직접')
+        db = models.get_db(); db.execute("UPDATE consultations SET admission_status='입원대기'"); db.commit(); db.close()
+        self._save(needed='private')
+        ward = self.c.get('/ward?tab=waiting').get_data(as_text=True)
+        self.assertIn('wd-tp-skip', ward); self.assertIn('불필요(사설구급차)', ward)
+
+    def test_open_tab_resolves_gid_by_date(self):
+        # 클릭 시점에 날짜로 탭을 찾아 연다 — 전송 전이거나 서버 재시작 뒤라 gid를 몰라도 첫 탭(9.22)으로 떨어지지 않게
+        calls = []
+        def fake(action, **p):
+            calls.append((action, p))
+            if p.get('date') == '2026-09-28':
+                return {'ok': True, 'tab_for_date': '2026.09.28', 'url': 'https://docs.google.com/spreadsheets/d/X/edit', 'gid': 77}
+            return {'ok': True, 'tab_for_date': None, 'url': 'https://docs.google.com/spreadsheets/d/X/edit', 'gid': None}
+        with patch.dict(os.environ, {'TRANSPORT_SHEET_URL': 'https://x/exec', 'TRANSPORT_SHEET_TOKEN': 't', 'TRANSPORT_SHEET_LINK': ''}), \
+             patch.object(transport, '_call_sheet', side_effect=fake):
+            r = self.c.get('/transport/open?date=2026-09-28')
+            self.assertEqual(r.status_code, 302); self.assertEqual(r.headers['Location'], 'https://docs.google.com/spreadsheets/d/X/edit#gid=77')
+            r = self.c.get('/transport/open?date=2026-09-28')      # 두 번째는 캐시 — 스크립트 왕복 없음
+            self.assertEqual(r.status_code, 302); self.assertEqual(len(calls), 1)
+            r = self.c.get('/transport/open?date=2026-10-05')
+            self.assertEqual(r.status_code, 200); self.assertIn('탭이 아직 없습니다', r.get_data(as_text=True))
+            self.assertEqual(self.c.get('/transport/open').status_code, 400)
+            # 탭은 있는데 gid가 없음 = 구글 쪽 스크립트가 옛 버전 → '탭 없음'이 아니라 재배포 안내
+            with patch.object(transport, '_call_sheet', return_value={'ok': True, 'tab_for_date': '2026.10.06', 'tab_last_row': 20}):
+                r = self.c.get('/transport/open?date=2026-10-06')
+                self.assertEqual(r.status_code, 200); self.assertIn('옛 버전', r.get_data(as_text=True))
+            # 카드 상단 '운행 시트 열기'는 이 경로로 — 날짜(탭) 칸 값 기준
+            page = self.c.get(f'/consult/{self.cid}').get_data(as_text=True)
+            self.assertIn(f'/transport/open?date={self.tomorrow}', page)
 
     def test_detail_and_waiting_pages_render(self):
         page = self.c.get(f'/consult/{self.cid}').get_data(as_text=True)

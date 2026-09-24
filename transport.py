@@ -3,7 +3,8 @@
 
 흐름
   상담사: 상담 상세 → 🚐 운행 요청 칸에 필요 여부·이동수단·장소·도착시간·연락처 저장
-  CRM   : 저장 즉시 시트의 해당 날짜 탭에 '진료협력' 행 추가 (탭이 없으면 전송 대기)
+  CRM   : 저장 즉시 시트의 해당 날짜 탭에 '진료협력' 행 추가 (탭이 없으면 전송 대기), 전송되면 브라우저가 그 날짜 탭을 연다
+          ('운행 시트 열기'도 /transport/open?date= 로 클릭 시점에 탭을 찾아 연다 — 전송 전·재시작 뒤에도 첫 탭으로 안 떨어지게)
   스케줄: 15분마다 전송 대기분 재시도 + 운행팀이 채운 배정자·차량을 읽어와 표시, 새로 배정되면 상담사 화면에 알림
   대시보드: 내일 입원인데 운행 여부 미정 / 전송 안 됨 / 배정 대기 경고
 
@@ -14,6 +15,7 @@
   TRANSPORT_SHEET_URL    Apps Script 웹앱 URL (없으면 CRM 안에만 기록)
   TRANSPORT_SHEET_TOKEN  스크립트와 맞춘 비밀 토큰
   TRANSPORT_MOBILITY_OPTIONS  이동수단 선택지 (기본 "W/C,walk,Rec") — 시트 드롭다운 값과 같게
+  TRANSPORT_REASON_OPTIONS    요청이유 선택지 — 시트 F열의 데이터 확인 규칙과 같게 (규칙 밖 값은 시트가 거부한다)
   TRANSPORT_SYNC_MINUTES 재시도·배정 읽기 주기 (기본 15)
 """
 from __future__ import annotations
@@ -27,7 +29,7 @@ from datetime import date, datetime, timedelta
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from flask import Blueprint, g, jsonify, request, session
+from flask import Blueprint, g, jsonify, redirect, request, session
 
 import models
 from auth import login_required
@@ -37,7 +39,8 @@ bp = Blueprint("transport", __name__)
 
 DEPARTMENT = "진료협력"
 DEFAULT_REASON = "픽업(입원)"
-REASON_OPTIONS = ["픽업(입원)", "픽업", "외진", "퇴원"]
+# 시트 F열(요청이유) 데이터 확인 규칙의 허용값. '픽업'·'퇴원'처럼 규칙에 없는 값은 시트가 거부한다(2026-09-25 #8070)
+DEFAULT_REASON_OPTIONS = "픽업(입원),외진,단순운행,혈액요청,기관방문,출장수행,식당퇴근"
 STATUS_LABELS = {
     "draft": "CRM에만 기록", "pending": "전송 대기 (시트에 날짜 탭 없음)", "sent": "시트 전송 완료",
     "error": "전송 실패", "skip": "운행 불필요",
@@ -68,6 +71,11 @@ def sheet_link(gid=None) -> str:
 
 def mobility_options() -> list[str]:
     raw = os.getenv("TRANSPORT_MOBILITY_OPTIONS") or "W/C,walk,Rec"
+    return [x.strip() for x in raw.split(",") if x.strip()]
+
+
+def reason_options() -> list[str]:
+    raw = os.getenv("TRANSPORT_REASON_OPTIONS") or DEFAULT_REASON_OPTIONS
     return [x.strip() for x in raw.split(",") if x.strip()]
 
 
@@ -103,6 +111,7 @@ def init_schema(conn=None):
     models._ensure_columns(conn, "transport_requests", {
         "assigned_at": "DATETIME",       # 운행팀이 배정자를 채운 것을 처음 확인한 시각 — 상담사 알림 기준
         "sheet_gid": "TEXT",             # 날짜 탭 id — 시트 바로가기(#gid=)용
+        "skip_reason": "TEXT",           # needed='no'의 사유 — '보호자 직접' | '사설구급차' (둘 다 관리과 차량은 안 나감)
     })
     if own:
         conn.commit(); conn.close()
@@ -132,7 +141,7 @@ def info_for_template(cid: int) -> dict:
             "req": r,
             "status_label": STATUS_LABELS.get((r or {}).get("sheet_status") or "draft", ""),
             "mobility_options": mobility_options(),
-            "reason_options": REASON_OPTIONS,
+            "reason_options": reason_options(),
             "sheet_configured": bool(sheet_url()),
             "sheet_link": sheet_link(),
             "tab_link": _tab_link(r),
@@ -377,26 +386,31 @@ def api_save(cid):
         return jsonify({"error": "not found"}), 404
     p = request.get_json(silent=True) or {}
     needed = p.get("needed")
-    if needed not in ("yes", "no"):
-        return jsonify({"error": "운행 필요 여부(yes/no)를 지정하세요"}), 400
+    if needed not in ("yes", "no", "private"):
+        return jsonify({"error": "운행 필요 여부(yes/no/private)를 지정하세요"}), 400
+    # '불필요(사설구급차)'도 관리과 차량은 안 나가므로 needed='no' — 배지·경고·전송 분기는 그대로 두고 사유만 남긴다
+    skip_reason = {"no": "보호자 직접", "private": "사설구급차"}.get(needed)
+    needed = "no" if needed == "private" else needed
     f = {k: ((p.get(k) or "").strip()[:200] or None) for k in ("mobility", "reason", "place", "arrive_time", "contact")}
     if needed == "yes":
         missing = [lbl for k, lbl in (("mobility", "이동수단"), ("place", "요청 장소"), ("arrive_time", "도착시간")) if not f[k]]
         if missing:
             return jsonify({"error": "필수: " + ", ".join(missing)}), 400
+        if f["reason"] and f["reason"] not in reason_options():
+            return jsonify({"error": f"요청이유 '{f['reason']}'는 운행 시트가 받지 않습니다 — " + " / ".join(reason_options()) + " 중 선택"}), 400
     pickup_date = (p.get("pickup_date") or c.get("planned_admission_date") or "").strip() or None
     conn = models.get_db()
     existing = conn.execute("SELECT id, sheet_status FROM transport_requests WHERE consultation_id=?", (cid,)).fetchone()
     status = "skip" if needed == "no" else ("sent" if existing and existing["sheet_status"] == "sent" else "draft")
     if existing:
-        conn.execute("""UPDATE transport_requests SET needed=?, pickup_date=?, mobility=?, reason=?, place=?, arrive_time=?, contact=?,
+        conn.execute("""UPDATE transport_requests SET needed=?, skip_reason=?, pickup_date=?, mobility=?, reason=?, place=?, arrive_time=?, contact=?,
                         requested_by=COALESCE(NULLIF(?,''), requested_by), sheet_status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?""",
-                     (needed, pickup_date, f["mobility"], f["reason"] or DEFAULT_REASON, f["place"], f["arrive_time"], f["contact"],
+                     (needed, skip_reason, pickup_date, f["mobility"], f["reason"] or DEFAULT_REASON, f["place"], f["arrive_time"], f["contact"],
                       _display_name(), status, existing["id"]))
     else:
-        conn.execute("""INSERT INTO transport_requests(consultation_id, patient_id, needed, pickup_date, mobility, reason, place, arrive_time,
-                        contact, requested_by, sheet_status) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-                     (cid, c["patient_id"], needed, pickup_date, f["mobility"], f["reason"] or DEFAULT_REASON, f["place"], f["arrive_time"],
+        conn.execute("""INSERT INTO transport_requests(consultation_id, patient_id, needed, skip_reason, pickup_date, mobility, reason, place, arrive_time,
+                        contact, requested_by, sheet_status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     (cid, c["patient_id"], needed, skip_reason, pickup_date, f["mobility"], f["reason"] or DEFAULT_REASON, f["place"], f["arrive_time"],
                       f["contact"], _display_name(), status))
     conn.commit(); conn.close()
     result = push(cid) if needed == "yes" else {"ok": True, "status": "skip"}
@@ -422,6 +436,53 @@ def api_ping():
     if not sheet_url():
         return jsonify({"ok": False, "error": "TRANSPORT_SHEET_URL 미설정"})
     return jsonify(_call_sheet("ping", date=date.today().isoformat()))
+
+
+@bp.route("/transport/open")
+@login_required
+def open_tab():
+    """'운행 시트 열기' — 클릭 시점에 그 날짜 탭(gid)을 찾아 연다. gid는 전송이 성공해야 DB에 남으므로 전송 전·실패
+    건이나 서버 재시작 뒤엔 첫 탭(예: 9.22)으로 떨어지던 문제(2026-09-25). 캐시 → DB → 스크립트 ping 순으로 찾는다."""
+    d = (request.args.get("date") or "").strip()
+    try:
+        datetime.strptime(d, "%Y-%m-%d")
+    except ValueError:
+        return "date=YYYY-MM-DD 가 필요합니다", 400
+    gid = _GID_CACHE.get(d)
+    if not gid:
+        conn = models.get_db()
+        row = conn.execute("SELECT sheet_gid FROM transport_requests WHERE pickup_date=? AND sheet_gid IS NOT NULL LIMIT 1", (d,)).fetchone()
+        conn.close()
+        gid = row["sheet_gid"] if row else None
+    if not gid and sheet_url():
+        res = _call_sheet("ping", date=d)
+        if res.get("url"):
+            _SHEET_LINK_CACHE["url"] = res["url"]
+        if not res.get("ok"):
+            return _notice_page("시트 연결 실패", str(res.get("error") or ""), sheet_link()), 502
+        if res.get("gid") is not None:
+            gid = str(res["gid"])
+        elif res.get("tab_for_date"):
+            # 탭은 있는데 gid가 안 옴 = 구글 쪽 스크립트가 gid를 돌려주기 전(2026-09-13) 버전
+            return _notice_page(f"{d[5:].replace('-', '/')} 탭은 있지만 주소를 받지 못했습니다",
+                                "구글 Apps Script가 옛 버전입니다 — docs/TRANSPORT-SHEET.md 의 '배포 관리 → 새 버전' 을 하면 바로 그 탭으로 열립니다.", sheet_link())
+    if gid:
+        _GID_CACHE[d] = str(gid)
+        link = sheet_link(gid)
+        if link:
+            return redirect(link)
+    label = d[5:].replace("-", "/")
+    if not sheet_url() and not sheet_link():
+        return _notice_page("시트 연동 미설정", ".env 에 TRANSPORT_SHEET_URL 또는 TRANSPORT_SHEET_LINK 가 없습니다(관리자).", "")
+    return _notice_page(f"{label} 탭이 아직 없습니다", "운행팀에 그 날짜 탭 추가를 요청하세요. 탭이 생기면 대기 중인 요청은 자동으로 전송됩니다.", sheet_link())
+
+
+def _notice_page(title: str, body: str, link: str) -> str:
+    more = f'<p><a href="{link}" target="_blank" rel="noopener">운행 시트 첫 화면 열기 ↗</a></p>' if link else ""
+    return (f'<!doctype html><meta charset="utf-8"><title>{title}</title>'
+            f'<body style="font-family:sans-serif;padding:24px;max-width:640px">'
+            f'<h2>🚐 {title}</h2><p>{body}</p>{more}'
+            f'<p style="color:#64748b;font-size:.9em"><a href="javascript:window.close()">이 탭 닫기</a></p></body>')
 
 
 @bp.route("/transport/check")
