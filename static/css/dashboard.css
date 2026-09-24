@@ -342,8 +342,15 @@
 .page-dashboard .dash-adm-tbl col.c-cs { width: 64px; }     /* 상담사 이름 */
 .page-dashboard .dash-adm-tbl col.c-ins { width: 62px; }    /* '건보' '차상1' 약칭 칩 — 전체 이름은 툴팁 */
 .page-dashboard .dash-adm-tbl col.c-act { width: 72px; }    /* 처리 드롭다운 */
+/* 칸이 좁아도 '…'로 자르지 않는다 — 줄을 내려서라도 전부 보여준다(사용자 지시 2026-09-25:
+   어떤 열도 접히지 않고 가로 스크롤도 없어야 하며, 두 줄이 되는 건 괜찮다).
+   style.css 의 `td{word-break:keep-all}` 이 같이 걸려 어절 단위로만 꺾인다. */
 .page-dashboard .dash-adm-tbl th, .page-dashboard .dash-adm-tbl td { padding: 6px 5px; font-size: .88rem; line-height: 1.25;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+    white-space: normal; overflow: hidden; text-overflow: clip; vertical-align: middle; }
+/* 일시·성별/나이·발병일·병실은 한 줄 고정 — '2026-07-02'는 하이픈에서, '여/79'는 슬래시에서 꺾여
+   keep-all 로도 못 막는다(상담목록에서 '2026-08…'로 잘렸던 것과 같은 자리, 2026-09-21). */
+.page-dashboard .dash-adm-tbl td:nth-child(1), .page-dashboard .dash-adm-tbl td:nth-child(4),
+.page-dashboard .dash-adm-tbl td:nth-child(9), .page-dashboard .dash-adm-tbl td:nth-child(10) { white-space: nowrap; }
 .page-dashboard .dash-adm-tbl th { font-size: .78rem; white-space: normal; line-height: 1.15; word-break: keep-all; }
 .page-dashboard .dash-adm-tbl td:first-child, .page-dashboard .dash-adm-tbl th:first-child { padding-left: 8px; }
 .page-dashboard .dash-adm-tbl td:last-child, .page-dashboard .dash-adm-tbl th:last-child { padding-right: 6px; }
@@ -425,10 +432,10 @@
     .page-dashboard .dash-adm-tbl col.c-who { width: 76px; }
     .page-dashboard .dash-adm-tbl col.c-sex { width: 46px; }    /* 머리글 '성별/나이'는 두 줄로 */
     .page-dashboard .dash-adm-tbl col.c-hosp { width: 92px; }
-    .page-dashboard .dash-adm-tbl col.c-sev { width: 96px; }
+    .page-dashboard .dash-adm-tbl col.c-sev { width: 88px; }
     .page-dashboard .dash-adm-tbl col.c-onset { width: 76px; }  /* 접지 않는다 — '2026-07-02'가 들어가는 최소폭 */
     .page-dashboard .dash-adm-tbl col.c-room { width: 46px; }
-    .page-dashboard .dash-adm-tbl col.c-rh { width: 54px; }
+    .page-dashboard .dash-adm-tbl col.c-rh { width: 62px; }   /* '비회복기' 배지 실측 62 — 54에서 끝 글자가 잘렸다(2026-09-25) */
     .page-dashboard .dash-adm-tbl col.c-doc { width: 52px; }
     .page-dashboard .dash-adm-tbl col.c-cs { width: 44px; }
     .page-dashboard .dash-adm-tbl col.c-ins { width: 44px; }

@@ -20,6 +20,13 @@
     --shadow-md: 0 8px 28px rgba(15,23,42,.075), 0 1px 3px rgba(15,23,42,.05);
     --surface-soft: #f6f9f7;
     --focus-ring: rgba(22,163,74,.14);
+    /* 글자 크기 토큰 — 새 규칙은 이 5단계만 쓴다(rem). em 중첩 금지 (2026-09-21 사용자 지시: 정돈) */
+    --fs-xs: .72rem;   /* 보조 캡션·배지 */
+    --fs-sm: .8rem;    /* 표 머리글·메타 */
+    --fs-md: .88rem;   /* 표 본문·목록 */
+    --fs-base: 1rem;   /* 본문 */
+    --fs-lg: 1.15rem;  /* 소제목 */
+    --fs-xl: 1.5rem;   /* KPI 숫자·제목 */
 }
 
 html, body { height: 100%; }
@@ -205,6 +212,12 @@ footer p { color: var(--text-light); font-size: 0.82em; text-align: center; }
 .stat-card.danger .value { color: var(--danger); }
 
 /* Table */
+/* 표 안 글자는 한 줄이 원칙, 두 줄이 되더라도 어절 단위로만 꺾인다 (2026-09-21 사용자 지시).
+   keep-all: 한글이 글자 중간에서 꺾이지 않는다('입원보/류', '소개 (기관연계/)' 방지).
+   break-word: 어절 폭만큼 열을 먼저 넓히고, 한 어절이 칸보다 길 때만 마지막 수단으로 꺾는다
+   (anywhere 는 열 폭 계산에 잡혀 열이 안 넓어지므로 쓰지 않는다). */
+th, td { word-break: keep-all; overflow-wrap: break-word; }
+td.nw, th.nw { white-space: nowrap; }   /* 날짜·전화·이름·배지처럼 절대 안 꺾을 칸 */
 .tbl { width:100%; border-collapse:separate; border-spacing:0; background:var(--card-bg); border-radius:10px; overflow:hidden; box-shadow:0 0 0 1px rgba(226,232,240,.8); }
 .tbl th, .tbl td { box-sizing:border-box; padding:10px 12px; text-align:left; border-bottom:1px solid var(--border); font-size:.9em; line-height:1.4; vertical-align:middle; }
 .tbl th { background:linear-gradient(180deg,#f4f7f5,#edf3ef); font-weight:720; color:#50645a; font-size:.78em; text-transform:none; letter-spacing:.015em; white-space:nowrap; }
