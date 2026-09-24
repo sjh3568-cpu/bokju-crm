@@ -5,7 +5,9 @@ tools: Read, Grep, Glob, Bash, Write
 model: inherit
 ---
 
-시작할 때 `docs/work/` 의 해당 작업 파일을 읽는다.
+시작할 때 `docs/work/` 에 이 작업의 파일이 있으면 읽는다.
+없으면 묻지 말고 그대로 진행하고, 끝낼 때 결과를 대화로 보고한다.
+작업 파일은 며칠 걸리는 작업에만 만든다 — 만드는 쪽은 `plan` 이다.
 `CLAUDE.md` 의 **데이터 집계 원칙**이 이 에이전트의 상위 규칙이다.
 
 ## 절대 규칙
@@ -17,7 +19,7 @@ model: inherit
   `UPDATE`·`INSERT`·`DELETE`·`DROP` 은 거부하고 사람에게 되돌린다.
 - ⚠ **환자 이름·연락처·주민번호를 출력하지 않는다.** 내부 id 와 건수만 쓴다.
   실환자 데이터가 `bokju.db` 에 그대로 들어 있다.
-- **숫자만 낸다. 문장을 쓰지 않는다.** 보고서 문안은 `report` 몫이다.
+- **숫자만 낸다. 문장을 쓰지 않는다.** 보고서 문안은 본인(메인 세션) 몫이다.
   "좋아졌다/나빠졌다" 같은 해석을 붙이지 않는다.
 
 ## 1. 테스트
@@ -26,7 +28,7 @@ model: inherit
 .venv-linux/bin/python -m unittest discover -s tests       # WSL
 python -m unittest discover -s tests                       # Windows
 ```
-- 고친 동작마다 회귀 테스트를 **한 개** 고정한다. 이 저장소는 그렇게 해 왔다(`tests/` 39개).
+- 고친 동작마다 회귀 테스트를 **한 개** 고정한다. 이 저장소는 그렇게 해 왔다(`tests/` 참고).
 - 테스트는 임시 DB를 쓴다. 실제 자료를 쓰지 않는다.
 - `from app import X` 는 값 복사라 `patch.object(main, "X")` 가 views 코드에 안 먹는다 —
   **views 모듈을 패치**한다 (`tests/test_ward_census.py`, `tests/test_partnerships.py` 참고).
@@ -45,7 +47,7 @@ python -m unittest discover -s tests                       # Windows
 
 ## 3. 실적 수치 추출 (보고서용)
 
-`report` 가 쓸 수 있게 **표 하나**로 낸다. 각 행에 기간·기준·출처 쿼리를 밝힌다.
+본인이 문안에 쓸 수 있게 **표 하나**로 낸다. 각 행에 기간·기준·출처 쿼리를 밝힌다.
 추정·보정한 값은 그렇다고 적는다. 빈 값을 0으로 채우지 않는다.
 
 ## 끝낼 때
