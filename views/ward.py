@@ -484,9 +484,11 @@ def ward_view():
     """재원 관리 — 지금 병원 안에 누가 있고, 누가 외진 나가 있는가.
 
     별도의 단계 필드를 두지 않는다. 화면의 모든 구분이 실제 사실에서 파생된다:
-      · 재원      = 입원완료 + 실제 입원일 있음 + 퇴원일 없음
-      · 외진 중   = 그 중 admission_events.returned_at IS NULL 인 건이 있는 환자
-      · 입원 미확정 = 입원완료인데 실제 입원일이 아직 없는 건 (입력 큐)
+      · 재원      = 입원완료 + 실제 입원일 있음 + 퇴원일 없음 + 외진 나가 있지 않음
+      · 외진 중   = admission_events.returned_at IS NULL 인 건이 있는 환자 — 재원이 **아니다**
+                    (2026-09-25 사용자 결정: 외진 나감 = 그날의 퇴원이므로 명부에서도 뺀다.
+                    복귀하면 그날의 입원으로 다시 재원). 재원 판정식은 models.crm_discharge_sql 한 곳.
+      · 입원 미확정 = 입원완료인데 실제 입원일이 아직 없는 건 (입력 큐) — 외진 중은 여기도 아님
     유지해야 할 상태값이 없으므로 아무도 손대지 않아도 명부가 어긋나지 않는다.
     """
     q = (request.args.get("q") or "").strip() or None
@@ -558,17 +560,25 @@ def ward_view():
     # 않아 2024년 입원 환자가 아직 재원으로 잡히고, 올해 입원한 환자는 한 명도
     # 안 잡혔다. 회차 테이블은 원무 명부를 그대로 받은 것이라 사실과 같다.
     census = models.current_admission_census()
+    # 외진 중(미복귀)은 재원이 아니라 census에 없다(2026-09-25). 그 환자의 상담에 실제 입원일이
+    # 없으면(명부가 준 날짜뿐인 황재명 님 같은 경우) 아래 미확정 큐 조건에 걸리므로 여기서 먼저 뺀다 —
+    # 그 사람은 '외진 환자' 탭에만 있어야 한다.
+    away_records = models.away_now()
+    away_by_pid = {a["pid"]: a for a in away_records}
+    away_pids = set(away_by_pid)
     # 전체 상담 8천 건을 매번 읽지 않는다 — 입원 미확정 큐는 '입원완료' 상담만, 재원 명단은 census에 붙은 상담만.
     pool = models.list_consultations(admission_status="입원완료", q=db_q, q_scope="ward", limit=10000)
     pending_pool = [c for c in pool
                     if not (c.get("discharge_date") or "").strip()
                     and not (c.get("actual_admission_date") or c.get("admission_date") or "").strip()
-                    and c.get("patient_id") not in census["patients"]]
+                    and c.get("patient_id") not in census["patients"]
+                    and c.get("patient_id") not in away_pids]
     if not census["has_roster"]:
         # 명부를 아직 안 올린 설치. 회차가 통째로 비어 있으면 재원 명단도 비므로
         # 옛 방식(상담의 입원완료·미퇴원)으로 돌아간다.
         rows = [c for c in pool
-                if not (c.get("discharge_date") or "").strip()]
+                if not (c.get("discharge_date") or "").strip()
+                and c.get("patient_id") not in away_pids]          # 명부 없는 설치에서도 외진 중은 재원 아님
         pending_pool = [c for c in rows
                         if not (c.get("actual_admission_date") or c.get("admission_date") or "").strip()]
         rows = [c for c in rows
@@ -655,8 +665,7 @@ def ward_view():
     wait_kpis["planned_total"] = len(planned_list)
     wait_kpis["planned_overdue"] = sum(1 for c in planned_list if c.get("plan_overdue"))
 
-    away_records = models.away_now()
-    away_by_pid = {a["pid"]: a for a in away_records}
+    # away_records·away_by_pid 는 위(미확정 큐 앞)에서 한 번만 읽는다.
     # 입원일 미확정(pending)은 상담 기준 그대로 둔다 — 데이터 점검 목록이다.
     admitted, pending = [], list(pending_pool)
     # 재입원 표시 — 지금 입원보다 앞서 퇴원한 회차가 있으면 이전 입원·퇴원일을 함께(2026-09-16 요청)

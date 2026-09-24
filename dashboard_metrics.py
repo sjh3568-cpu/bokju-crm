@@ -14,7 +14,7 @@ from datetime import date, timedelta
 import models
 from config import ROOM_BED_CAPACITIES, WARD_BED_CAPACITIES
 from models import (AWAY_EVENT_TYPES, active_reservations_by_room,
-                    crm_discharge_sql, get_db)
+                    crm_admission_scope_sql, crm_discharge_sql, get_db)
 
 ROSTER = "roster_key IS NOT NULL"
 # 재원 판정은 재원 명단(models.current_admission_census)과 같은 규칙을 써야 한다 —
@@ -196,7 +196,15 @@ def admission_flow_by_date(dates):
 
 
 def census_by_date(dates):
-    """dates별 그날 자정 기준 재원 인원(명부 회차: 입원일 ≤ d < 퇴원일)."""
+    """dates별 그날 자정 기준 재원 인원 — 재원 머릿수(current_admission_census)와 같은 정의를
+    날짜 d로 자른 것. 오늘 값이 머릿수와 같아야 하고, 지난주 값·스파크라인도 같은 잣대다(2026-09-25).
+
+    두 갈래를 환자 단위로 합친다:
+      · 명부 회차: 입원일 ≤ d < 퇴원일
+      · 명부 이후 CRM에서 입원완료한 회차(crm_admission_scope_sql, 조건 ①③): 입원일 ≤ d, 아직 재원
+    퇴원일은 명부가 찍은 날과 'CRM이 아는 퇴원일'(crm_discharge_sql — 앱 회차·상담 퇴원완료·
+    미복귀 외진 출발) 중 빠른 쪽이다. 명부 이전의 열린 CRM 회차는 조건 ①에 걸려 어느 날짜에도 안 센다.
+    """
     if not dates:
         return {}
     conn = get_db()
@@ -204,11 +212,21 @@ def census_by_date(dates):
         out = {}
         for d in dates:
             out[d] = conn.execute(
-                f"SELECT COUNT(*) FROM admission_episodes "
-                f"WHERE {ROSTER} AND admitted_at IS NOT NULL AND admitted_at != '' "
-                f"AND date(admitted_at) <= ? "
-                f"AND (discharged_at IS NULL OR discharged_at = '' OR date(discharged_at) > ?)",
-                (d, d)).fetchone()[0]
+                f"SELECT COUNT(DISTINCT patient_id) FROM ("
+                f"  SELECT e.patient_id FROM admission_episodes e "
+                f"   WHERE e.{ROSTER} AND e.admitted_at IS NOT NULL AND e.admitted_at != '' "
+                f"     AND date(e.admitted_at) <= ? "
+                f"     AND (e.discharged_at IS NULL OR e.discharged_at = '' OR date(e.discharged_at) > ?) "
+                f"     AND COALESCE({crm_discharge_sql('e')}, '9999-12-31') > ? "
+                f"  UNION ALL "
+                f"  SELECT e.patient_id FROM admission_episodes e "
+                f"    JOIN consultations c ON c.id = e.consultation_id "
+                f"   WHERE {crm_admission_scope_sql('e')} "
+                f"     AND date(e.admitted_at) <= ? "
+                f"     AND c.admission_status IN ('입원완료', '퇴원완료') "
+                f"     AND (e.discharged_at IS NULL OR e.discharged_at = '' OR date(e.discharged_at) > ?) "
+                f"     AND COALESCE({crm_discharge_sql('e')}, '9999-12-31') > ?)",
+                (d, d, d, d, d, d)).fetchone()[0]
     finally:
         conn.close()
     return out
