@@ -39,7 +39,7 @@
                         <button type="button" class="nav-menu-toggle" aria-label="대시보드 하위 메뉴" aria-expanded="false">▾</button>
                         <div class="nav-dropdown">
                             <a href="/calendar" {% if request.path.startswith('/calendar') %}class="active"{% endif %}><span>🗓️</span><span><b>통합 달력</b><small>상담·입원·퇴원·To-Do 일정</small></span>{% if calendar_badge %}<b class="calendar-tool-badge" title="오늘 일정·ToDo {{ calendar_badge }}건">{{ calendar_badge }}</b>{% endif %}</a>
-                            <a href="/#admission-schedule"><span>🏥</span><span><b>입원 현황</b><small>과거·오늘·입원예정 조회</small></span></a>
+                            <a href="/#admission-schedule"><span>🏥</span><span><b>입·퇴원 현황</b><small>기간별 입원·퇴원 조회</small></span></a>
                         </div>
                     </div>
                     {% endif %}
@@ -66,7 +66,7 @@
                     {% if P.get('sms',0) >= 1 %}
                     <a href="/sms" {% if request.path.startswith('/sms') %}class="active"{% endif %}><span class="nav-icon nav-icon-sms">💬</span>문자</a>
                     {% endif %}
-                    {% if sec_ward %}<h3 class="nav-section-title"><span>환자·병상</span></h3>{% endif %}
+                    {% if sec_ward %}<h3 class="nav-section-title"><span>재원·기관</span></h3>{% endif %}
                     {% if P.get('ward',0) >= 1 %}
                     <div class="nav-menu-group {% if request.path.startswith('/ward') or request.path.startswith('/patients') %}active{% endif %}">
                         <a href="/ward" {% if request.path.startswith('/ward') or request.path.startswith('/patients') %}class="active"{% endif %}><span class="nav-icon nav-icon-ward">🏥</span>재원 관리</a>
@@ -78,12 +78,11 @@
                             <a href="/ward?tab=moves"><span>🔁</span><span><b>입원·퇴원 이력</b><small>기간별 입·퇴원 명부·엑셀</small></span></a>
                             <a href="/ward?tab=trend"><span>📈</span><span><b>회복기 비율 추이</b><small>일별·월별 변화 확인</small></span></a>
                             <a href="/ward?tab=blacklist"><span>⚠️</span><span><b>블랙리스트</b><small>지정 환자·사유 확인</small></span></a>
-                            {% if current_user.role == 'admin' %}<a href="/ward?tab=quality"><span>🛡️</span><span><b>데이터·백업 점검</b><small>품질 오류·복구 상태</small></span></a>{% endif %}
                         </div>
                     </div>
                     {% endif %}
                     {% if P.get('partners',0) >= 1 %}<a href="/partners" {% if request.path.startswith('/partners') %}class="active"{% endif %}><span class="nav-icon">🤝</span>기관협력</a>{% endif %}
-                    {% if sec_analysis %}<h3 class="nav-section-title"><span>분석</span></h3>{% endif %}
+                    {% if sec_analysis %}<h3 class="nav-section-title"><span>통계</span></h3>{% endif %}
                     {% if P.get('stats',0) >= 1 %}
                     <div class="nav-menu-group {% if request.path.startswith('/stats') or request.path.startswith('/report') %}active{% endif %}">
                         <a href="/stats" {% if request.path.startswith('/stats') %}class="active"{% endif %}><span class="nav-icon nav-icon-stats">📊</span>통계·보고</a>
@@ -102,12 +101,13 @@
                     <a href="/support/" class="nav-support {% if request.path.startswith('/support') %}active{% endif %}" title="기능 개선·오류 신고·사용 문의"><span class="nav-icon" aria-hidden="true">💡</span>개선 요청</a>
                     {% if P.get('users',0) >= 2 %}
                     <div class="nav-menu-group nav-admin-group {% if request.path.startswith('/admin') %}active{% endif %}">
-                        <a href="/admin/users" {% if request.path.startswith('/admin') %}class="active"{% endif %}><span class="nav-icon nav-icon-admin">⚙️</span>관리{% if password_reset_badge %}<span class="nav-notice-new">{{ password_reset_badge }}</span>{% endif %}</a>
-                        <button type="button" class="nav-menu-toggle" aria-label="관리 하위 메뉴" aria-expanded="false">▾</button>
+                        <a href="/admin/users" {% if request.path.startswith('/admin') %}class="active"{% endif %}><span class="nav-icon nav-icon-admin">⚙️</span>시스템{% if password_reset_badge %}<span class="nav-notice-new">{{ password_reset_badge }}</span>{% endif %}</a>
+                        <button type="button" class="nav-menu-toggle" aria-label="시스템 하위 메뉴" aria-expanded="false">▾</button>
                         <div class="nav-dropdown">
                             <a href="/admin/users" {% if request.path.startswith('/admin/users') or request.path.startswith('/admin/password-reset') %}class="active"{% endif %}><span class="nav-icon nav-icon-users">👥</span><span><b>사용자 관리</b><small>계정·권한·초기화 요청</small></span></a>
                             <a href="/admin/audit" {% if request.path.startswith('/admin/audit') %}class="active"{% endif %}><span class="nav-icon nav-icon-audit">🕘</span><span><b>이력 관리</b><small>조회·등록·변경 기록</small></span></a>
                             <a href="/admin/import" {% if request.path.startswith('/admin/import') %}class="active"{% endif %}><span class="nav-icon nav-icon-import">📥</span><span><b>엑셀 적재</b><small>상담내역 시트 → 상담목록</small></span></a>
+                            {% if current_user.role == 'admin' %}<a href="/ward?tab=quality" {% if request.args.get('tab') == 'quality' %}class="active"{% endif %}><span class="nav-icon">🛡️</span><span><b>데이터·백업 점검</b><small>품질 오류·복구 상태</small></span></a>{% endif %}
                         </div>
                     </div>
                     {% endif %}

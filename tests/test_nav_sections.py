@@ -1,7 +1,7 @@
 """사이드바 구역 제목 — 메뉴를 업무 단위로 묶어 보이게 (2026-09-25 사용자 요청).
 
 최상위 11개가 한 줄로 늘어서 있어 무엇이 무엇인지 안 보인다는 요청. 클릭 수·메뉴 이름은
-그대로 두고, 사이드바에 구역 제목(상담/환자·병상/분석/관리)만 얹는다.
+그대로 두고, 사이드바에 구역 제목(상담/재원·기관/통계/관리)만 얹는다.
 
 여기서 지키는 것:
 ① 구역 제목 4개가 나온다.
@@ -18,7 +18,7 @@ import models
 import partnerships
 import support_requests
 
-SECTION_TITLES = ["상담", "환자·병상", "분석", "관리"]
+SECTION_TITLES = ["상담", "재원·기관", "통계", "관리"]
 
 # 최상위에 있어야 할 링크 — 구역으로 감싼 뒤에도 하나도 빠지면 안 된다.
 TOP_LINKS = [
@@ -27,7 +27,7 @@ TOP_LINKS = [
     'href="/consultations"',
     'href="/documents"',
     'href="/sms"',
-    'href="/ward"',             # 환자·병상
+    'href="/ward"',             # 재원·기관
     'href="/partners"',
     'href="/stats"',            # 분석
     'href="/notices"',          # 관리
@@ -78,7 +78,7 @@ class NavSectionTests(unittest.TestCase):
     def test_section_disappears_with_its_last_item(self):
         """권한이 없으면 항목도 구역 제목도 같이 사라진다 — 빈 제목만 남으면 안 된다.
 
-        '분석' 구역에는 통계(stats)뿐이라, stats 권한을 0으로 두면 구역째 사라져야 한다.
+        '통계' 구역에는 통계(stats)뿐이라, stats 권한을 0으로 두면 구역째 사라져야 한다.
         """
         perms = {k: 3 for k in main.MENU_KEYS}
         perms["stats"] = 0
