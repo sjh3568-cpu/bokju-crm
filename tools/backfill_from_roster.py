@@ -162,7 +162,29 @@ def promote_undecided(conn, *, apply=False) -> dict:
     return {"stats": stats, "targets": len(targets)}
 
 
-def close_discharged(conn, *, apply=False) -> dict:
+MATCH_AFTER_DAYS = 30   # 상담 입원일(대개 예정일)보다 며칠 뒤까지의 명부 입원을 '같은 입원'으로 볼지
+
+
+def _pick_roster_discharge(cands, adm):
+    """이 상담 입원의 명부 퇴원일을 고른다. cands=[(명부 입원일, 퇴원일)], adm=상담 입원일(없을 수 있음).
+
+    같은 날 입원한 회차 → 없으면 입원일이 가장 가까운 회차(뒤쪽은 MATCH_AFTER_DAYS 이내만 —
+    상담에 적힌 날은 예정일이라 실제 입원이 며칠 뒤인 게 흔하다, 2026-09-25에 12건).
+    퇴원일이 상담 입원일보다 앞선 회차는 이 입원의 짝이 아니다(옛 입원의 퇴원을 갖다 붙이지 않게).
+    """
+    if not cands:
+        return None
+    if not adm:
+        return max(cands, key=lambda t: t[0])[1]          # 입원일을 모르면 가장 최근 퇴원
+    same = [d for a, d in cands if a == adm]
+    if same:
+        return same[0]
+    near = [(abs((a - adm).days), a, d) for a, d in cands
+            if d >= adm and (a <= adm or (a - adm).days <= MATCH_AFTER_DAYS)]
+    return min(near)[2] if near else None
+
+
+def close_discharged(conn, *, apply=False, snapshot=None) -> dict:
     """명부에 퇴원일이 있는 입원완료 상담을 '퇴원완료'로 바꾸고 퇴원일을 적는다.
 
     사용자 규칙(2026-09-19): "현재 재원환자 현황은 절대 변경하면 안 되고, 그 외 입원 환자는 다
@@ -170,8 +192,13 @@ def close_discharged(conn, *, apply=False) -> dict:
       ① 열린 명부 회차가 하나라도 있는 환자(= 지금 재원)는 통째로 건너뛴다. 옛 상담도 안 건드린다.
       ② 퇴원일을 아는 건만 바꾼다 — 명부에 없어 퇴원일을 모르는 상담은 그대로 둔다(빈 퇴원일 방지).
       ③ 상담에 이미 퇴원일이 적혀 있으면 손대지 않는다(화면에서 넣은 값 보호).
-    상담과 회차는 입원일로 맞춘다: 같은 날 입원한 회차 → 없으면 상담 입원일 직전의 가장 가까운 회차.
-    UPDATE 전용·멱등. 회차의 consultation_id는 건드리지 않는다.
+    상담과 회차는 입원일로 맞춘다(_pick_roster_discharge). UPDATE 전용·멱등. 회차의 consultation_id는 건드리지 않는다.
+
+    snapshot(날짜, 2026-09-25 사용자 결정 "최근 명부에 없는 사람은 퇴원자"): 그 날짜의 명부는
+    그날 재원 전원을 담은 완전 스냅샷이다. 그 날짜 **이전에 입원**했는데 지금 명부에 없는 상담은
+    퇴원일을 몰라도 퇴원완료로 본다 — 퇴원일은 비워 두고 사유에 '명부 미등재'를 적는다(엉뚱한
+    날짜를 넣으면 입·퇴원 이력에 가짜 퇴원이 생긴다). 스냅샷 **이후** 입원은 명부가 아직 모르는
+    CRM 재원이므로 그대로 둔다. ①·③은 그대로다.
     """
     stats = Counter()
     resident = {r["patient_id"] for r in conn.execute(
@@ -189,7 +216,8 @@ def close_discharged(conn, *, apply=False) -> dict:
         "SELECT id, patient_id, consult_date, actual_admission_date, admission_date, discharge_date "
         "FROM consultations WHERE admission_status = '입원완료'").fetchall()
     stats["대상 입원완료 상담"] = len(rows)
-    updates = []
+    snap = to_date(snapshot) if snapshot else None
+    updates, absent = [], []
     for c in rows:
         if (c["discharge_date"] or "").strip():
             stats["이미 퇴원일 있음 — 건너뜀"] += 1
@@ -197,34 +225,69 @@ def close_discharged(conn, *, apply=False) -> dict:
         if c["patient_id"] in resident:
             stats["현재 재원 — 건드리지 않음"] += 1
             continue
-        cands = closed.get(c["patient_id"]) or []
-        if not cands:
-            stats["명부에 퇴원 기록 없음 — 그대로 둠"] += 1
-            continue
         adm = to_date(c["actual_admission_date"] or c["admission_date"] or "")
-        if adm:
-            same = [d for a, d in cands if a == adm]
-            pick = same[0] if same else None
-            if pick is None:
-                before = [(a, d) for a, d in cands if a <= adm]
-                pick = max(before, key=lambda t: t[0])[1] if before else None
-        else:
-            pick = max(cands, key=lambda t: t[0])[1]      # 입원일을 모르면 가장 최근 퇴원
-        if pick is None:
-            stats["입원일이 명부 회차와 안 맞음 — 보류"] += 1
+        pick = _pick_roster_discharge(closed.get(c["patient_id"]) or [], adm)
+        if pick is not None:
+            updates.append((c["id"], pick.isoformat()))
+            stats["퇴원완료로 전환"] += 1
             continue
-        updates.append((c["id"], pick.isoformat()))
-        stats["퇴원완료로 전환"] += 1
+        had_roster = bool(closed.get(c["patient_id"]))
+        if snap is None:
+            stats["입원일이 명부 회차와 안 맞음 — 보류" if had_roster else "명부에 퇴원 기록 없음 — 그대로 둠"] += 1
+            continue
+        # 스냅샷 모드 — 입원일을 모르는 상담은 상담일로 판단한다(입원완료인데 날짜 없는 옛 상담).
+        judged = adm or to_date(c["consult_date"] or "")
+        if judged and judged > snap:
+            stats["스냅샷 이후 입원 — 그대로 둠"] += 1
+            continue
+        absent.append(c["id"])
+        stats["명부 미등재 — 퇴원완료(퇴원일 미상)로 전환"] += 1
     if apply and updates:
         conn.executemany(
             "UPDATE consultations SET admission_status='퇴원완료', discharge_date=?, "
             "updated_at=CURRENT_TIMESTAMP WHERE id=?",
             [(d, cid) for cid, d in updates])
-    return {"stats": stats, "updates": updates, "residents": len(resident)}
+    if apply and absent:
+        reason = f"명부 미등재 정리({snap.isoformat()} 스냅샷에 없음 — 퇴원일 미상)"
+        conn.executemany(
+            "UPDATE consultations SET admission_status='퇴원완료', "
+            "discharge_reason=COALESCE(NULLIF(discharge_reason,''), ?), "
+            "updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            [(reason, cid) for cid in absent])
+    return {"stats": stats, "updates": updates, "absent": absent, "residents": len(resident)}
+
+
+def close_roster_by_consultation(conn, *, apply=False) -> dict:
+    """상담이 퇴원완료(퇴원일 있음)인데 열린 채 남은 명부 회차를 그 날짜로 닫는다(멱등).
+
+    명부는 '그날 재원자' 스냅샷으로도 올라와 이미 퇴원한 사람의 행이 없고, 행이 없다고 적재기가
+    회차를 닫지는 않는다. 그래서 9/17~18 퇴원자 6명의 명부 회차가 열린 채 남았다(2026-09-25).
+    재원 판정(crm_discharge_sql)은 이미 상담 퇴원일을 보고 빼지만, 회차 자체도 사실과 맞춘다.
+    상담 퇴원일이 회차 입원일보다 앞선 건(옛 입원의 퇴원)은 짝이 아니라 건드리지 않는다.
+    미복귀 외진은 여기서 닫지 않는다 — 복귀하면 그 자리에서 다시 재원이어야 하기 때문.
+    """
+    rows = conn.execute(
+        """SELECT e.id, e.patient_id, e.admitted_at,
+                  (SELECT MIN(date(c.discharge_date)) FROM consultations c
+                    WHERE c.patient_id = e.patient_id AND c.admission_status = '퇴원완료'
+                      AND COALESCE(c.discharge_date,'') <> ''
+                      AND date(c.discharge_date) >= date(e.admitted_at)) AS dis
+             FROM admission_episodes e
+            WHERE e.roster_key IS NOT NULL AND (e.discharged_at IS NULL OR e.discharged_at = '')
+              AND COALESCE(e.admitted_at,'') <> ''""").fetchall()
+    targets = [(r["dis"], r["id"]) for r in rows if r["dis"]]
+    if apply and targets:
+        conn.executemany(
+            "UPDATE admission_episodes SET discharged_at=?, status='discharged', "
+            "discharge_reason=COALESCE(NULLIF(discharge_reason,''), '상담 퇴원완료 반영'), "
+            "updated_at=CURRENT_TIMESTAMP WHERE id=? AND roster_key IS NOT NULL "
+            "AND (discharged_at IS NULL OR discharged_at = '')",
+            targets)
+    return {"closed": len(targets), "episodes": [eid for _, eid in targets]}
 
 
 def run(conn, *, apply=False, overwrite_insurance=False, promote=False, quiet=False, close=False,
-        out=None):
+        out=None, snapshot=None):
     """회차에 들어간 값을 환자·상담 행으로 옮겨 적는다.
 
     out: 진행 문구를 받는 콜백(기본은 stdout). 관리 화면(/admin/import)은 리스트에 모아
@@ -245,7 +308,10 @@ def run(conn, *, apply=False, overwrite_insurance=False, promote=False, quiet=Fa
     ins = backfill_insurance(conn, overwrite=overwrite_insurance, apply=apply)
     adm = backfill_admission_dates(conn, apply=apply)
     pro = promote_undecided(conn, apply=apply) if promote else None
-    clo = close_discharged(conn, apply=apply) if close else None
+    rcl = close_roster_by_consultation(conn, apply=apply) if close else None
+    clo = close_discharged(conn, apply=apply, snapshot=snapshot) if close else None
+    if clo is not None:
+        clo["roster_closed"] = rcl["closed"]
     if apply:
         conn.commit()
     if quiet:
@@ -268,7 +334,9 @@ def run(conn, *, apply=False, overwrite_insurance=False, promote=False, quiet=Fa
             emit("  %-28s %5d건" % (k, n))
     if clo is not None:
         emit()
-        emit("퇴원완료 전환 — 현재 재원 %d명은 제외" % clo["residents"])
+        emit("상담 퇴원완료인데 열린 명부 회차 — %d건 닫음" % clo["roster_closed"])
+        emit("퇴원완료 전환 — 현재 재원 %d명은 제외%s"
+             % (clo["residents"], f" · 스냅샷 {snapshot} 이전 입원 중 명부 미등재는 퇴원일 미상으로" if snapshot else ""))
         for k, n in clo["stats"].most_common():
             emit("  %-28s %5d건" % (k, n))
     if not apply:
@@ -286,12 +354,17 @@ def main():
                     help="명부에 퇴원일이 있는 입원완료 상담을 퇴원완료로 (현재 재원 제외)")
     ap.add_argument("--promote-undecided", action="store_true",
                     help="상태 미정 상담에 30일 내 명부 입원이 있으면 입원완료로 바꾼다")
+    ap.add_argument("--snapshot", metavar="YYYY-MM-DD",
+                    help="--close-discharged와 함께: 이 날짜의 완전 명부에 없는 사람(그 이전 입원)은 "
+                         "퇴원일 미상이어도 퇴원완료로 (2026-09-25 규칙)")
     args = ap.parse_args()
+    if args.snapshot and not args.close_discharged:
+        ap.error("--snapshot 은 --close-discharged 와 함께 써야 합니다")
     if args.apply:
         backup_db("backfill_from_roster")
     conn = models.get_db()
     run(conn, apply=args.apply, overwrite_insurance=args.overwrite_insurance,
-        promote=args.promote_undecided, close=args.close_discharged)
+        promote=args.promote_undecided, close=args.close_discharged, snapshot=args.snapshot)
 
 
 if __name__ == "__main__":
