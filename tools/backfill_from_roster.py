@@ -261,6 +261,68 @@ def close_discharged(conn, *, apply=False, snapshot=None) -> dict:
     return {"stats": stats, "updates": updates, "absent": absent, "residents": len(resident)}
 
 
+MERGE_GAP_AFTER = 30    # 명부 입원일이 CRM보다 늦어도 이만큼은 같은 입원 (상담에 적힌 날은 예정일인 경우)
+MERGE_GAP_BEFORE = 3    # 반대로 CRM이 더 늦으면 명부가 아직 모르는 **새 입원**일 수 있다 — 이만큼만
+
+
+def merge_duplicate_episodes(conn, *, apply=False) -> dict:
+    """한 번의 입원이 명부 회차 + CRM 회차 두 줄로 남은 것을 **명부 회차 하나로** 합친다(2026-09-26).
+
+    상담사가 [입원완료]를 눌러 만든 회차(roster_key 없음)와, 나중에 원무 명부를 적재해 만든
+    회차가 같은 입원을 가리켜 재원 환자 190명이 두 줄씩 갖고 있었다. 두 줄이면 CRM 회차의
+    퇴원일이 안 채워져 재원이 부풀고, 그걸 피하려 조건 ①③ 같은 우회 장치를 계속 붙여야 한다.
+
+    합치는 방법 — `consultation_id`가 UNIQUE라 상담 연결을 명부 회차로 옮기고 CRM 회차를 지운다:
+      ① 상담 연결 이전(명부 회차가 비어 있을 때만) → 이후 sync_admission_episode 의
+         ON CONFLICT(consultation_id) 가 명부 회차를 UPDATE 하므로 새 중복이 안 생긴다
+      ② 외진 기록(admission_events.episode_id)을 명부 회차로 다시 붙인다 — 안 하면 삭제로 끊긴다
+      ③ 명부에 없는 CRM 전용 값(퇴원예정일·입원예정일시·대기 시작일)만 옮긴다. 입·퇴원일·병실은 명부가 사실
+      ④ CRM 회차 삭제
+    한 명부 회차에 CRM 회차가 둘이면 입원일이 가장 가까운 하나만 흡수한다(나머지는 남겨 두고 보고).
+    둘 다 '열린' 회차일 때만 대상 — 닫힌 회차는 다른 입원이다. UPDATE/DELETE 전용·멱등.
+    """
+    pairs = conn.execute(
+        f"""SELECT r.id AS rid, c.id AS cid, r.patient_id, c.consultation_id,
+                   c.discharge_due_date, c.planned_admission_date, c.planned_admission_time, c.wait_started_at,
+                   CAST(julianday(r.admitted_at) - julianday(c.admitted_at) AS INTEGER) AS gap
+              FROM admission_episodes r
+              JOIN admission_episodes c
+                ON c.patient_id = r.patient_id AND c.roster_key IS NULL
+               AND (c.discharged_at IS NULL OR c.discharged_at = '')
+               AND COALESCE(c.admitted_at, '') <> ''
+             WHERE r.roster_key IS NOT NULL AND (r.discharged_at IS NULL OR r.discharged_at = '')
+               AND COALESCE(r.admitted_at, '') <> ''
+               -- 명부 회차가 이미 **다른 상담**과 연결돼 있으면 흡수하지 않는다. 흡수하면 그 상담의
+               -- 회차 연결이 소리 없이 끊긴다(2026-09-26에 실제로 4건 끊어 복구했다).
+               AND (r.consultation_id IS NULL OR r.consultation_id = c.consultation_id)
+               AND julianday(r.admitted_at) - julianday(c.admitted_at) BETWEEN {-MERGE_GAP_BEFORE} AND {MERGE_GAP_AFTER}
+             ORDER BY abs(julianday(r.admitted_at) - julianday(c.admitted_at)), c.id""").fetchall()
+    chosen, used_r, used_c = [], set(), set()
+    for p in pairs:                      # 가까운 쌍부터 1:1로 짝짓는다
+        if p["rid"] in used_r or p["cid"] in used_c:
+            continue
+        used_r.add(p["rid"]); used_c.add(p["cid"]); chosen.append(dict(p))
+    if apply:
+        for p in chosen:
+            # 순서가 중요하다 — consultation_id 가 UNIQUE라 CRM 회차를 지운 **뒤에야** 명부 회차에 붙일 수 있다.
+            conn.execute("UPDATE admission_events SET episode_id=? WHERE episode_id=?", (p["rid"], p["cid"]))
+            conn.execute("DELETE FROM admission_episodes WHERE id=? AND roster_key IS NULL", (p["cid"],))
+            conn.execute(
+                """UPDATE admission_episodes SET
+                     consultation_id=COALESCE(consultation_id, :cons),
+                     discharge_due_date=COALESCE(discharge_due_date, :due),
+                     planned_admission_date=COALESCE(planned_admission_date, :pdate),
+                     planned_admission_time=COALESCE(planned_admission_time, :ptime),
+                     wait_started_at=COALESCE(wait_started_at, :wait),
+                     updated_at=CURRENT_TIMESTAMP
+                   WHERE id=:r""",
+                {"cons": p["consultation_id"], "due": p["discharge_due_date"],
+                 "pdate": p["planned_admission_date"], "ptime": p["planned_admission_time"],
+                 "wait": p["wait_started_at"], "r": p["rid"]})
+    leftover = len({p["cid"] for p in pairs}) - len(used_c)
+    return {"merged": len(chosen), "pairs": chosen, "leftover": leftover}
+
+
 def close_roster_by_consultation(conn, *, apply=False) -> dict:
     """상담이 퇴원완료(퇴원일 있음)인데 열린 채 남은 명부 회차를 그 날짜로 닫는다(멱등).
 
@@ -312,6 +374,8 @@ def run(conn, *, apply=False, overwrite_insurance=False, promote=False, quiet=Fa
     ins = backfill_insurance(conn, overwrite=overwrite_insurance, apply=apply)
     adm = backfill_admission_dates(conn, apply=apply)
     pro = promote_undecided(conn, apply=apply) if promote else None
+    # 중복 회차 합치기는 구조 복구라 조건 없이 항상 돈다(멱등·UPDATE/DELETE 전용).
+    mrg = merge_duplicate_episodes(conn, apply=apply)
     rcl = close_roster_by_consultation(conn, apply=apply) if close else None
     clo = close_discharged(conn, apply=apply, snapshot=snapshot) if close else None
     if clo is not None:
@@ -320,6 +384,9 @@ def run(conn, *, apply=False, overwrite_insurance=False, promote=False, quiet=Fa
         conn.commit()
     if quiet:
         return ins, adm, pro, clo
+    emit("중복 회차 합치기 — 같은 입원이 명부·CRM 두 줄인 것을 명부 회차로 %d건 합침%s"
+         % (mrg["merged"], (" · 짝을 못 지은 CRM 회차 %d건" % mrg["leftover"]) if mrg["leftover"] else ""))
+    emit()
     emit("보험유형 — 명부에 보험이 있는 환자 %d명" % ins["patients"])
     for k, n in ins["stats"].most_common():
         emit("  %-16s %5d명" % (k, n))
