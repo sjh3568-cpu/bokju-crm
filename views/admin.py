@@ -443,12 +443,14 @@ def admin_import():
             apply_changes = action == "roster-apply"
             close = bool(request.form.get("close_discharged"))
             create_missing = bool(request.form.get("create_missing"))
+            # 하루치 스냅샷 파일이면 파일에 없는 열린 회차를 퇴원 처리(2026-09-26). 체크박스로 끌 수 있다.
+            absent = bool(request.form.get("absent_discharge"))
             lines = []
             from tools.import_admission_roster import run as roster_run
             from tools.backfill_onset import read_rows as onset_rows
             try:
                 summary = roster_run(str(path), apply=apply_changes, create_missing=create_missing,
-                                     out=lines.append, close_discharged=close)
+                                     out=lines.append, close_discharged=close, absent_discharge=absent)
             except Exception as exc:                      # 파일 형식 오류 등
                 current_app.logger.exception("명부 적재 실패")
                 flash(f"명부 적재 실패: {exc}", "error")
@@ -468,7 +470,8 @@ def admin_import():
                 action="roster_import", target_type="file", target_id=None,
                 detail=f"{'적재' if apply_changes else '미리보기'} {path.name} "
                        f"행 {summary['rows']} 확정 {summary['matched']}/{summary['patients']} "
-                       f"보류 {summary['held']}{' 퇴원전환' if close else ''}",
+                       f"보류 {summary['held']}{' 퇴원전환' if close else ''}"
+                       f"{(' 스냅샷' + summary['snapshot'] + ' 미등재퇴원 ' + str(summary['absent'])) if summary.get('snapshot') else ''}",
                 ip=request.remote_addr)
             if apply_changes:
                 flash(f"명부 적재 완료 — 회차 {summary['episodes']}건, 보류 {summary['held']}행. "

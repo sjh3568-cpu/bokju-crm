@@ -58,6 +58,13 @@
             <small>명부에 퇴원일이 있는 입원완료 상담을 퇴원완료로. <b>현재 재원 환자는 제외</b>하고,
                    퇴원일을 모르는 건과 이미 퇴원일이 적힌 건은 그대로 둡니다.</small>
         </label>
+        <label class="ei-sheet" style="display:block;margin-bottom:6px">
+            <input type="checkbox" name="absent_discharge" value="1" checked>
+            <b>명부에 없는 사람은 퇴원 처리</b>
+            <small>파일명이 하루치(예: 20260919-20260919)인 완전 명부일 때만. 파일에 없는 재원자는 그날 이전에 퇴원한 것으로
+                   보고 회차를 닫습니다 — CRM에 퇴원일·외진 출발일이 있으면 그 날, 없으면 명부 날짜에 '추정' 표시.
+                   행 수가 현재 재원의 90% 미만이면 부분 파일로 보고 건너뜁니다. 미리보기에 닫힐 명단이 나옵니다.</small>
+        </label>
         <label class="ei-sheet" style="display:block">
             <input type="checkbox" name="create_missing" value="1">
             <b>상담 없는 환자 새로 만들기</b>

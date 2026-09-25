@@ -175,13 +175,13 @@ def _pick_roster_discharge(cands, adm):
     if not cands:
         return None
     if not adm:
-        return max(cands, key=lambda t: t[0])[1]          # 입원일을 모르면 가장 최근 퇴원
-    same = [d for a, d in cands if a == adm]
+        return max(cands, key=lambda t: t[0])[1:]          # 입원일을 모르면 가장 최근 퇴원
+    same = [t[1:] for t in cands if t[0] == adm]
     if same:
         return same[0]
-    near = [(abs((a - adm).days), a, d) for a, d in cands
+    near = [(abs((a - adm).days), a, d, why) for a, d, why in cands
             if d >= adm and (a <= adm or (a - adm).days <= MATCH_AFTER_DAYS)]
-    return min(near)[2] if near else None
+    return min(near)[2:] if near else None
 
 
 def close_discharged(conn, *, apply=False, snapshot=None) -> dict:
@@ -204,14 +204,14 @@ def close_discharged(conn, *, apply=False, snapshot=None) -> dict:
     resident = {r["patient_id"] for r in conn.execute(
         "SELECT DISTINCT patient_id FROM admission_episodes "
         "WHERE roster_key IS NOT NULL AND discharged_at IS NULL AND COALESCE(admitted_at,'') <> ''")}
-    closed = defaultdict(list)      # patient_id -> [(admitted_at, discharged_at)]
+    closed = defaultdict(list)      # patient_id -> [(admitted_at, discharged_at, discharge_reason)]
     for r in conn.execute(
-            "SELECT patient_id, admitted_at, discharged_at FROM admission_episodes "
+            "SELECT patient_id, admitted_at, discharged_at, discharge_reason FROM admission_episodes "
             "WHERE roster_key IS NOT NULL AND COALESCE(discharged_at,'') <> '' "
             "AND COALESCE(admitted_at,'') <> ''"):
         a, d = to_date(r["admitted_at"]), to_date(r["discharged_at"])
         if a and d:
-            closed[r["patient_id"]].append((a, d))
+            closed[r["patient_id"]].append((a, d, r["discharge_reason"] or ""))
     rows = conn.execute(
         "SELECT id, patient_id, consult_date, actual_admission_date, admission_date, discharge_date "
         "FROM consultations WHERE admission_status = '입원완료'").fetchall()
@@ -228,7 +228,10 @@ def close_discharged(conn, *, apply=False, snapshot=None) -> dict:
         adm = to_date(c["actual_admission_date"] or c["admission_date"] or "")
         pick = _pick_roster_discharge(closed.get(c["patient_id"]) or [], adm)
         if pick is not None:
-            updates.append((c["id"], pick.isoformat()))
+            when, why = pick
+            # 회차가 '명부 미등재(추정)'로 닫힌 것이면 상담에도 그 사유를 남긴다 — 날짜는 회차와 같아
+            # 새 퇴원 행이 생기지 않지만, 추정임은 상담에서도 보여야 한다.
+            updates.append((c["id"], when.isoformat(), why if "명부 미등재" in why else None))
             stats["퇴원완료로 전환"] += 1
             continue
         had_roster = bool(closed.get(c["patient_id"]))
@@ -245,8 +248,9 @@ def close_discharged(conn, *, apply=False, snapshot=None) -> dict:
     if apply and updates:
         conn.executemany(
             "UPDATE consultations SET admission_status='퇴원완료', discharge_date=?, "
+            "discharge_reason=COALESCE(NULLIF(discharge_reason,''), ?), "
             "updated_at=CURRENT_TIMESTAMP WHERE id=?",
-            [(d, cid) for cid, d in updates])
+            [(d, why, cid) for cid, d, why in updates])
     if apply and absent:
         reason = f"명부 미등재 정리({snap.isoformat()} 스냅샷에 없음 — 퇴원일 미상)"
         conn.executemany(

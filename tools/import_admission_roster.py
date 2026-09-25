@@ -365,11 +365,83 @@ def upsert_episode(conn, pid, rec):
     return "신규"
 
 
-def run(path, *, apply=False, create_missing=False, report=None, out=print, close_discharged=False):
+SNAPSHOT_MIN_RATIO = 0.9   # 하루치 파일의 행 수가 열린 명부 회차의 이 비율 미만이면 부분 파일로 보고 '없는 사람 퇴원'을 건너뛴다
+_SNAPSHOT_NAME = re.compile(r"\((\d{8})-(\d{8})\)")
+
+
+def snapshot_date_from_name(path):
+    """파일명 `입퇴재원환자현황(20260919-20260919).xlsx` → 2026-09-19. 기간 파일·날짜 없는 파일은 None.
+
+    원무 명부는 '그날 재원자 전원'의 하루치 스냅샷으로 올라온다(시작일=끝일). 그 파일에 없는
+    열린 회차는 그날 이전에 퇴원한 것이다(2026-09-26 사용자 결정). 기간 파일(예: 20230701-20260916)은
+    이력 적재라 이 판단을 하지 않는다.
+    """
+    m = _SNAPSHOT_NAME.search(Path(str(path)).name)
+    if not m or m.group(1) != m.group(2):
+        return None
+    try:
+        return datetime.strptime(m.group(1), "%Y%m%d").date()
+    except ValueError:
+        return None
+
+
+def plan_absent_discharges(conn, rows, snap):
+    """스냅샷 파일에 없는 열린 명부 회차와, 각각 어느 날짜로 닫을지.
+
+    반환 {"ok": 가드 통과, "reason": 건너뛴 이유, "targets": [{id, name, room, admitted_at, discharged_at, basis}]}
+      · 대상: roster_key 있고 열린 회차 중 파일에 같은 열쇠(차트|입원일)가 없고, 입원일 ≤ 스냅샷 날짜인 것.
+        스냅샷 뒤에 입원한 회차는 명부가 아직 모를 뿐이라 제외.
+      · 날짜: CRM이 아는 퇴원(상담 퇴원완료일·앱 회차 퇴원일·미복귀 외진 출발일 — crm_discharge_sql)이
+        있으면 그 날, 없으면 스냅샷 날짜에 '추정'. 날짜를 모른다고 안 닫으면 재원에 영원히 남는다.
+      · 가드: 파일 행 수 < 열린 회차 × SNAPSHOT_MIN_RATIO 면 부분 파일이다 — 예전에 이 이유로
+        아예 안 닫았었다(안 그러면 나머지 전원이 퇴원 처리된다). 이유를 적고 아무것도 안 한다.
+    """
+    present = {"%s|%s" % (r["chart_no"], r["admitted_at"].isoformat()) for r in rows}
+    open_rows = conn.execute(
+        f"""SELECT e.id, e.roster_key, e.admitted_at, e.room_number, p.name,
+                   {models.crm_discharge_sql('e')} AS known,
+                   {models.away_departure_sql('e')} AS away_out
+              FROM admission_episodes e JOIN patients p ON p.id = e.patient_id
+             WHERE e.roster_key IS NOT NULL AND (e.discharged_at IS NULL OR e.discharged_at = '')
+               AND COALESCE(e.admitted_at, '') <> '' AND date(e.admitted_at) <= date(?)""",
+        (snap.isoformat(),)).fetchall()
+    if open_rows and len(rows) < len(open_rows) * SNAPSHOT_MIN_RATIO:
+        return {"ok": False, "targets": [],
+                "reason": "부분 파일로 보임(행 %d건 < 열린 명부 회차 %d건의 %d%%) — 없는 사람 퇴원 처리는 건너뜀"
+                          % (len(rows), len(open_rows), int(SNAPSHOT_MIN_RATIO * 100))}
+    targets = []
+    for r in open_rows:
+        if r["roster_key"] in present:
+            continue
+        if r["known"]:
+            basis = "외진 출발일" if r["away_out"] and r["known"] == r["away_out"] else "CRM 퇴원일"
+            when = r["known"]
+        else:
+            basis, when = "스냅샷 날짜(추정)", snap.isoformat()
+        targets.append({"id": r["id"], "name": r["name"], "room": r["room_number"],
+                        "admitted_at": str(r["admitted_at"])[:10], "discharged_at": when, "basis": basis})
+    return {"ok": True, "reason": "", "targets": targets}
+
+
+def apply_absent_discharges(conn, targets, snap):
+    """plan_absent_discharges 의 대상을 닫는다(열린 명부 회차만, 멱등)."""
+    for t in targets:
+        reason = ("명부 미등재(추정) — %s 스냅샷에 없음" % snap.isoformat() if t["basis"].startswith("스냅샷")
+                  else "명부 미등재 — %s 반영(%s 스냅샷에 없음)" % (t["basis"], snap.isoformat()))
+        conn.execute(
+            "UPDATE admission_episodes SET discharged_at=?, status='discharged', "
+            "discharge_reason=COALESCE(NULLIF(discharge_reason,''), ?), updated_at=CURRENT_TIMESTAMP "
+            "WHERE id=? AND roster_key IS NOT NULL AND (discharged_at IS NULL OR discharged_at='')",
+            (t["discharged_at"], reason, t["id"]))
+
+
+def run(path, *, apply=False, create_missing=False, report=None, out=print, close_discharged=False,
+        absent_discharge=True):
     """명부 적재 본체 — CLI(main)와 관리 화면(/admin/import)이 같이 쓴다.
 
     out: 진행 문구를 받는 콜백(기본 print). 화면에서는 리스트에 모아 리포트로 보여준다.
     close_discharged: 백필 때 '퇴원완료 전환'까지 (현재 재원 제외).
+    absent_discharge: 파일명이 하루치 스냅샷이면 파일에 없는 열린 회차를 퇴원 처리(plan_absent_discharges).
     """
     class _Args:
         pass
@@ -443,7 +515,24 @@ def run(path, *, apply=False, create_missing=False, report=None, out=print, clos
             action = "적재 예정"
         results.append((rec, pid, why, action))
 
+    # ── 하루치 완전 스냅샷이면 "없는 사람은 퇴원자"(2026-09-26 사용자 결정). 미리보기에도 명단을 보여준다.
+    snap = snapshot_date_from_name(args.path) if absent_discharge else None
+    absent = plan_absent_discharges(conn, rows, snap) if snap else None
+    if absent is not None:
+        print()
+        print("── %s 스냅샷에 없는 열린 명부 회차 → 퇴원 처리%s ──" % (snap.isoformat(), "" if args.apply else " (미리보기)"))
+        if not absent["ok"]:
+            print("  " + absent["reason"])
+        elif not absent["targets"]:
+            print("  없음 — 열린 명부 회차가 전부 파일에 있다")
+        for t in absent["targets"]:
+            print("  %s (%s, 입원 %s) → 퇴원 %s [%s]" % (t["name"], t["room"] or "병실 미상", t["admitted_at"],
+                                                      t["discharged_at"], t["basis"]))
+    absent_ok = bool(absent and absent["ok"])
+
     if args.apply:
+        if absent_ok and absent["targets"]:
+            apply_absent_discharges(conn, absent["targets"], snap)
         conn.commit()
         # 회차에만 들어간 보험유형·입원일을 환자·상담 행으로 옮겨 적는다 —
         # 상담목록의 '보험'·'입원완료일' 칸은 그쪽을 읽는다. (멱등, UPDATE 전용)
@@ -453,7 +542,9 @@ def run(path, *, apply=False, create_missing=False, report=None, out=print, clos
         # promote: 상담 상태가 미정인데 30일 내 명부 입원이 있으면 입원완료로 — 원무 기록이 기준(사용자 결정).
         # out을 넘겨야 백필 문구도 적재 리포트에 함께 남는다 — 안 넘기면 컨테이너 stdout으로
         # 새어 화면에서 사라지고, Windows 콘솔에서는 cp949로 터진다(2026-09-19).
-        backfill_run(conn, apply=True, promote=True, close=close_discharged, out=out)
+        # snapshot: 스냅샷 이전 입원인데 명부에 없는 상담은 퇴원일 미상이어도 퇴원완료로.
+        backfill_run(conn, apply=True, promote=True, close=close_discharged, out=out,
+                     snapshot=(snap.isoformat() if absent_ok else None))
 
     patients_seen = len(resolved)
     matched = sum(1 for p in resolved.values() if p is not None)
@@ -483,7 +574,10 @@ def run(path, *, apply=False, create_missing=False, report=None, out=print, clos
         print("  리포트: %s" % args.report)
     return {"rows": len(rows), "patients": patients_seen, "matched": matched,
             "episodes": sum(1 for r in results if r[1] is not None),
-            "held": sum(1 for r in results if r[1] is None), "stats": dict(stats)}
+            "held": sum(1 for r in results if r[1] is None), "stats": dict(stats),
+            "snapshot": snap.isoformat() if snap else None,
+            "absent": len(absent["targets"]) if absent_ok else 0,
+            "absent_skipped": (absent["reason"] if absent is not None and not absent["ok"] else None)}
 
 
 def main():
@@ -495,9 +589,12 @@ def main():
     ap.add_argument("--report", help="행별 판정 결과를 CSV로 저장할 경로")
     ap.add_argument("--close-discharged", action="store_true",
                     help="백필 때 명부 퇴원자를 퇴원완료로 (현재 재원 제외)")
+    ap.add_argument("--no-absent-discharge", action="store_true",
+                    help="하루치 스냅샷 파일이라도 '없는 사람 퇴원 처리'를 하지 않는다")
     args = ap.parse_args()
     run(args.path, apply=args.apply, create_missing=args.create_missing,
-        report=args.report, close_discharged=args.close_discharged)
+        report=args.report, close_discharged=args.close_discharged,
+        absent_discharge=not args.no_absent_discharge)
 
 
 if __name__ == "__main__":
