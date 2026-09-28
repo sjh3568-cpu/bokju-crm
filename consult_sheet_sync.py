@@ -373,6 +373,14 @@ def _sync_sheet(conn, ei, name, rep, rows, apply, report, touched):
     t["skipped"] += sr["skipped"]
     now = datetime.now().isoformat(timespec="seconds")
 
+    # 이름 칸이 '0'처럼 숫자뿐인 행은 사람이 아니라 빈 행(수식·서식이 0으로 보이는 칸)이다 — 첫 미리보기에서
+    # 50행이 '새 상담'으로 잡혔다(2026-09-28). 상담으로 만들지 않고 '읽지 못함'에 센다.
+    junk = [(row_no, parsed) for row_no, parsed in rows if _junk_name(parsed.get("patient_name"))]
+    if junk:
+        rows = [(row_no, parsed) for row_no, parsed in rows if not _junk_name(parsed.get("patient_name"))]
+        sr["rows"] = len(rows); sr["skipped"] += len(junk); t["rows"] -= len(junk); t["skipped"] += len(junk)
+        sr["junk_names"] = len(junk)
+
     # 같은 이름·날짜가 한 시트에 두 번이면 키에 #2, #3을 붙여 구분한다(순서 기준).
     seen = {}
     current = []                                  # (row_no, key, parsed)
@@ -512,6 +520,12 @@ def _new_or_adopt(conn, ei, name, row_no, key, parsed, apply, report, sr, touche
         touched.append((cid, pid, parsed["admission_status"]))
 
 
+def _junk_name(name) -> bool:
+    """환자이름이 이름일 수 없는 값('0', '-', 한 글자)이면 True."""
+    s = (name or "").strip()
+    return not s or s.isdigit() or len(s) < 2 or s in ("-", "–", "—", ".")
+
+
 def _find_patient(conn, parsed):
     """엑셀 적재의 환자 찾기와 같은 규칙(이름+보호자 연락처 → 이름만) — 단, 만들지는 않는다."""
     name, phone = parsed.get("patient_name"), parsed.get("guardian_phone")
@@ -557,7 +571,8 @@ def render_report(report: dict) -> str:
             lines.append(f"  · {s['sheet']} ({s.get('schema')}): 행 {s['rows']} / 새 {s['new']} · 수정 {s['updated']} · "
                          f"연결 {s['adopted']} · 그대로 {s['unchanged']} · 충돌 {s['conflicts']} · 사라짐 {s['missing']}"
                          f"{' · 중복 ' + str(s['duplicates']) if s['duplicates'] else ''}"
-                         f"{' · 읽지 못함 ' + str(s['skipped']) if s['skipped'] else ''}")
+                         f"{' · 읽지 못함 ' + str(s['skipped']) if s['skipped'] else ''}"
+                         f"{' (이름이 숫자인 빈 행 ' + str(s['junk_names']) + ')' if s.get('junk_names') else ''}")
     if report.get("new_rows"):
         lines.append("새 상담:")
         lines += [f"  + {r['sheet']} {r['row']}행 {r['patient']} {r['date']} {r.get('status') or ''}" for r in report["new_rows"]]

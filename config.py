@@ -4,7 +4,7 @@
 """
 
 # 화면에 표시하는 CRM 제품 정보. 릴리스 시 APP_VERSION을 갱신한다.
-APP_VERSION = "1.9.37"
+APP_VERSION = "1.9.38"
 APP_DEVELOPER = "미래전략실 신재희"
 
 # 상담실 IP전화(LG헬로비전 biz070) 통화 녹음 조회 사이트. 사이드바 도구 모음에서 새 탭으로 연다.
@@ -213,6 +213,7 @@ AUDIT_ACTION_LABELS = {
     "create_consult": "상담 등록",
     "update_consult": "상담 수정",
     "delete_consult": "상담 삭제",
+    "sheet_sync": "구글 시트 자동 반영",
     "confirm_admission": "입원 확정",
     "reserve_bed": "병상 예약",
     "release_bed": "병상 예약 해제",

@@ -162,6 +162,13 @@ class ConsultSheetSyncTests(unittest.TestCase):
         self.assertEqual([s["sheet"] for s in rep["sheets"] if s.get("skipped")], ["입원환자 대기 명단", "메모"])
         self.assertIn("대기 명단", sync.render_report(rep))
 
+    def test_numeric_name_rows_are_skipped_not_created(self):
+        """이름 칸이 '0'인 행(수식·서식이 0으로 보이는 빈 행)은 상담이 되지 않는다 — 첫 미리보기에서 50행."""
+        rep = sync.run(apply=True, book=book([row("0", "2026-09-10"), row("김새롬", "2026-09-11"), row("-", "2026-09-12")]))
+        self.assertEqual((rep["totals"]["new"], rep["totals"]["skipped"], rep["totals"]["rows"]), (1, 2, 1))
+        self.assertEqual([c["name"] for c in self._consults()], ["김새롬"])
+        self.assertIn("이름이 숫자인 빈 행 2", sync.render_report(rep))
+
     def test_status_file_and_auto_toggle(self):
         self.assertFalse(sync.auto_enabled())
         sync.set_auto(True)
@@ -181,7 +188,9 @@ class ConsultSheetSyncTests(unittest.TestCase):
         with client.session_transaction() as s:
             s.update(user_id=uid, username="sheet-admin", display_name="관리", role="admin",
                      cooperation_permissions_v2=True, perms={k: 3 for k in main.MENU_KEYS})
-        html = client.get("/admin/import").get_data(as_text=True)
+        # 개발 PC의 .env엔 실제 URL·토큰이 있을 수 있어(2026-09-28 연결 뒤) '연결 안 됨' 화면은 값을 비워 놓고 본다
+        with patch.dict(os.environ, {"CONSULT_SHEET_URL": "", "CONSULT_SHEET_TOKEN": ""}):
+            html = client.get("/admin/import").get_data(as_text=True)
         self.assertIn("구글 시트 자동 반영", html)
         self.assertIn("아직 연결되지 않았습니다", html)               # .env 없음
         with patch.dict(os.environ, {"CONSULT_SHEET_URL": "https://x/exec", "CONSULT_SHEET_TOKEN": "t"}), \

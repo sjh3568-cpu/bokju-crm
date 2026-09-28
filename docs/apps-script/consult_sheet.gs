@@ -29,6 +29,13 @@ function doPost(e) {
   return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
 }
 
+/** 설치 점검 — 편집기에서 이 함수를 골라 ▶실행하면 시트 접근 권한 승인 창이 뜬다(한 번만).
+ *  승인 뒤 실행 로그에 시트 이름·탭 수가 찍히면 CRM 쪽 미리보기가 된다. */
+function checkAccess() {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  Logger.log(JSON.stringify(ping(ss)));
+}
+
 function doGet() {
   return ContentService.createTextOutput(JSON.stringify({ ok: true, hint: 'POST only' })).setMimeType(ContentService.MimeType.JSON);
 }
