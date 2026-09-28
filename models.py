@@ -8220,12 +8220,31 @@ def admission_spans():
     try:
         episodes = [dict(r) for r in conn.execute(
             "SELECT e.id, e.patient_id, e.admitted_at, e.care_type, "
-            "e.rehab_end_date, e.rehab_end_imported, "
+            "e.rehab_end_date, e.rehab_end_imported, e.diagnosis_name, "
             f"{effective_discharge_sql('e')} AS discharged_at "
             "FROM admission_episodes e WHERE e.roster_key IS NOT NULL "
             "AND e.admitted_at IS NOT NULL AND e.admitted_at != ''")]
         if not episodes:
             return []
+        # 명부 이후 CRM에서 입원완료한 회차도 재원이다 — 재원 머릿수(current_admission_census)·
+        # 대시보드 30일 census와 같은 범위(crm_admission_scope_sql). 이게 빠지면 추이의 오늘 값이
+        # KPI 카드보다 분모·분자 1씩 작다(백승환 님, 2026-09-28). 명부에 열린 회차가 있는 환자는 제외.
+        open_roster = {e["patient_id"] for e in episodes if not e["discharged_at"]}
+        for r in conn.execute(
+                f"""SELECT e.id, e.patient_id, e.admitted_at, e.care_type,
+                           e.rehab_end_date, e.rehab_end_imported, e.diagnosis_name,
+                           {crm_discharge_sql('e')} AS discharged_at
+                      FROM admission_episodes e
+                      JOIN consultations c ON c.id = e.consultation_id
+                     WHERE {crm_admission_scope_sql('e')}
+                       AND e.discharged_at IS NULL
+                       AND c.admission_status = '입원완료'
+                       AND COALESCE(c.discharge_date, '') = ''
+                       AND {away_departure_sql('e')} IS NULL"""):
+            if r["patient_id"] in open_roster:
+                continue
+            open_roster.add(r["patient_id"])
+            episodes.append(dict(r))
         by_patient = {}
         placeholders = ",".join("?" * len(episodes))
         for row in conn.execute(
@@ -8239,12 +8258,39 @@ def admission_spans():
         conn.close()
     by_consultation, _ = _link_episodes(episodes, by_patient)
     owner = {ep["id"]: cid for cid, ep in by_consultation.items()}
-    return [{"episode_id": ep["id"], "care_type": ep.get("care_type"),
+    return [{"episode_id": ep["id"], "patient_id": ep["patient_id"], "care_type": ep.get("care_type"),
              "rehab_end_date": ep.get("rehab_end_date"),
              "rehab_end_imported": ep.get("rehab_end_imported"),
              "admitted_at": ep["admitted_at"][:10],
              "discharged_at": (ep["discharged_at"] or "")[:10] or None,
              "consultation_id": owner.get(ep["id"])} for ep in episodes]
+
+
+def patient_diagnosis_hint(patient_ids):
+    """환자별 진단 근거(진단군·병명 상세) — 회차에 상담이 안 붙었을 때 쓰는 보조값.
+
+    admission_spans()는 과거 회차까지 한 상담을 놓고 겨루기 때문에, 상담이 하나뿐인 환자는
+    옛 회차가 가져가고 지금 열린 회차가 빈손이 된다(권중근·김한진 님 등 5명, 2026-09-28).
+    그러면 회복기 추이에서만 판정 불가가 되어 같은 카드의 KPI와 숫자가 어긋난다.
+    """
+    ids = [int(p) for p in set(patient_ids or []) if p]
+    if not ids:
+        return {}
+    out = {}
+    conn = get_db()
+    try:
+        for chunk in (ids[i:i + 900] for i in range(0, len(ids), 900)):
+            ph = ",".join("?" * len(chunk))
+            for r in conn.execute(
+                    f"""SELECT patient_id, diseases, disease_detail, consult_date
+                          FROM consultations
+                         WHERE patient_id IN ({ph})
+                           AND (COALESCE(diseases,'') != '' OR COALESCE(disease_detail,'') != '')
+                         ORDER BY patient_id, consult_date DESC""", chunk):
+                out.setdefault(r["patient_id"], _deserialize_consultation(dict(r)))
+    finally:
+        conn.close()
+    return out
 
 
 def stay_report(year: int, month: int) -> dict:

@@ -177,11 +177,11 @@ class WardCensusTests(unittest.TestCase):
         self.assertIn('value="90" checked', html)
 
     def test_ratio_insight_margins(self):
-        """40% 기준선까지의 여유·필요 인원 산식."""
+        """40% 기준선까지의 여유·필요 인원 산식 — 분모는 재원 전체(total). KPI·추이와 같은 기준(2026-09-28)."""
         from datetime import date
         ratio_at = lambda d: {"total": 0, "known": 0, "recovery": 0, "ratio": 0}
-        # 회복기 5 / 판정 10 = 50% → 회복기 1명 나가면 4/9=44.4%, 2명이면 3/8=37.5%
-        ins = main._ratio_insight({"total": 12, "known": 10, "recovery": 5, "ratio": 50.0}, [], ratio_at, date(2026, 9, 11))
+        # 회복기 5 / 재원 10 = 50% → 회복기 1명 나가면 4/9=44.4%, 2명이면 3/8=37.5%
+        ins = main._ratio_insight({"total": 10, "known": 10, "recovery": 5, "ratio": 50.0}, [], ratio_at, date(2026, 9, 11))
         self.assertTrue(ins["ok"])
         self.assertEqual((ins["rec_out"], ins["rec_out_ratio"]), (1, 37.5))
         # 비회복기는 2명까지 (5/12=41.7%), 3명째 5/13=38.5%
@@ -422,7 +422,9 @@ class WardCensusTests(unittest.TestCase):
         self.assertEqual(phase("회복기", [], str(start), end), "회복기")
         self.assertEqual(phase("회복기", ["뇌출혈"], None, end), "회복기")
         self.assertEqual(phase("회복기", ["비사용증후군"], str(start), start + timedelta(days=59)), "회복기")
-        self.assertEqual(phase("회복기", ["비사용증후군"], str(start), start + timedelta(days=60)), "단일구간")
+        # 비사용증후군 같은 비중추 회복기 대상은 기간이 지나도 입원 중이면 회복기 — 전에는 '단일구간'으로
+        # 내려가 분자에서 빠졌다(원장 확인 2026-09-28: "입원해 있으면 무조건 회복기").
+        self.assertEqual(phase("회복기", ["비사용증후군"], str(start), start + timedelta(days=60)), "회복기")
 
     def test_q_end_date_drives_screen_trend_and_csv(self):
         from datetime import date, timedelta

@@ -88,6 +88,9 @@ from app import (  # noqa: E402 — app.py 공용 헬퍼·상수 (app.py 맨 아
     _valid_date,
     app,
     compute_admission_period,
+    is_cns_diseases,
+    is_recovery_noncns_diseases,
+    phase_diseases,
 )
 
 logger = logging.getLogger(__name__)
@@ -842,6 +845,23 @@ def ward_view():
     spans = models.admission_spans()
     trend_rows = {c["id"]: c for c in models.list_consultations(
         ids=[sp["consultation_id"] for sp in spans if sp.get("consultation_id")], limit=100000)}
+    # 상담이 안 붙은 '열린 회차'는 환자의 다른 상담에서 진단을 빌려 온다 — 옛 회차가 그 상담을
+    # 가져가 버려 지금 회차가 빈손인 경우가 있다(2026-09-28). 그냥 두면 추이에서만 판정 불가가 되어
+    # 같은 카드의 KPI와 숫자가 어긋난다. 과거 회차까지 넓히면 비용이 커서 열린 회차만 본다.
+    _hint = models.patient_diagnosis_hint(
+        [sp["patient_id"] for sp in spans if not sp.get("discharged_at")])
+    # 지금 열린 회차는 재원 명단(census)이 고른 상담을 그대로 쓴다 — admission_spans 는 과거 회차까지
+    # 한 상담을 놓고 겨뤄 현재 회차가 다른 상담을 잡거나 빈손이 된다. 근거가 다르면 같은 환자를
+    # 카드는 회복기, 추이는 아님으로 세게 된다(이필기·장광진·한영도 님, 2026-09-28).
+    _open_con = {ep["id"]: cid for cid, ep in census["by_consultation"].items()}
+    _extra = [cid for cid in _open_con.values() if cid not in trend_rows]
+    if _extra:
+        trend_rows.update({c["id"]: c for c in models.list_consultations(ids=_extra, limit=10000)})
+
+    def _con_for(sp):
+        cid = _open_con.get(sp["episode_id"]) or sp.get("consultation_id")
+        return (trend_rows.get(cid) if cid else None) or _hint.get(sp["patient_id"])
+
     # 상담이 안 붙은 회차는 진단·발병일을 몰라 회복기 판정을 못 한다. 과거로
     # 갈수록 연결률이 떨어져(전체 73%) 이들을 '비회복기'로 세면 비율이 실제보다
     # 낮게 나온다 — 40% 기준선을 보는 지표라 그 왜곡이 위험하다. 그래서 비율은
@@ -849,7 +869,7 @@ def ward_view():
     #
     # 회차마다 회복기 구간의 끝을 한 번만 계산해 둔다(rec_end: None=회복기 아님,
     # date.max=끝없음). 날짜별 계산은 비교만 하므로 1년치 일별도 바로 나온다.
-    trend_spans = [_trend_span(span, trend_rows.get(span["consultation_id"])) for span in spans]
+    trend_spans = [_trend_span(span, _con_for(span)) for span in spans]
     def _ratio_at(snapshot):
         snapshot_iso = snapshot.isoformat()
         total = known = recovery_count = 0
@@ -861,8 +881,10 @@ def ward_view():
                 known += 1
                 if rec_end is not None and snapshot <= rec_end:
                     recovery_count += 1
+        # 분모는 그날 재원 전체다. 전에는 '판정 가능(known)'만 나눠, 같은 카드 안에서
+        # 위 KPI(전체 분모)와 9%p씩 어긋났다(2026-09-28 원장 지적).
         return {"total": total, "known": known, "recovery": recovery_count,
-                "ratio": round(recovery_count * 100 / known, 2) if known else 0}
+                "ratio": round(recovery_count * 100 / total, 2) if total else 0}
 
     # 추이 기간 — 통계 페이지와 같은 preset/from/to 방식. 프리셋(30/90/180/365일)
     # 또는 custom(직접지정). 일별은 선택 기간 그대로, 월별은 기간을 덮는 달을 최소
@@ -1417,22 +1439,32 @@ def _recovery_ratio_spark(dates):
         raw_spans = models.admission_spans()
         trend_rows = {c["id"]: c for c in models.list_consultations(
             ids=[sp["consultation_id"] for sp in raw_spans if sp.get("consultation_id")], limit=100000)}
-        spans = [_trend_span(sp, trend_rows.get(sp["consultation_id"])) for sp in raw_spans]
+        # 상담이 안 붙은 열린 회차는 환자의 다른 상담에서 진단을 빌려 온다(위 _ratio_at 과 같은 규칙)
+        hint = models.patient_diagnosis_hint(
+            [sp["patient_id"] for sp in raw_spans if not sp.get("discharged_at")])
+        # 열린 회차는 재원 명단이 고른 상담을 쓴다 — 위 _ratio_at 과 같은 규칙
+        open_con = {ep["id"]: cid for cid, ep in models.current_admission_census()["by_consultation"].items()}
+        extra = [cid for cid in open_con.values() if cid not in trend_rows]
+        if extra:
+            trend_rows.update({c["id"]: c for c in models.list_consultations(ids=extra, limit=10000)})
+        def _con(sp):
+            cid = open_con.get(sp["episode_id"]) or sp.get("consultation_id")
+            return (trend_rows.get(cid) if cid else None) or hint.get(sp["patient_id"])
+        spans = [_trend_span(sp, _con(sp)) for sp in raw_spans]
     except Exception:
         logger.exception("회복기 비율 스파크 계산 실패")
         return []
     out = []
     for iso in dates:
         d = date.fromisoformat(iso)
-        known = rec = 0
+        total = rec = 0
         for admitted_iso, discharged_iso, is_known, rec_end in spans:
             if admitted_iso > iso or (discharged_iso and discharged_iso <= iso):
                 continue
-            if is_known:
-                known += 1
-                if rec_end is not None and d <= rec_end:
-                    rec += 1
-        out.append(round(rec * 100 / known, 2) if known else 0)
+            total += 1      # 분모는 그날 재원 전체 — KPI·추이와 같은 기준(2026-09-28)
+            if is_known and rec_end is not None and d <= rec_end:
+                rec += 1
+        out.append(round(rec * 100 / total, 2) if total else 0)
     _RATIO_SPARK_CACHE.update(key=key, value=out)
     return out
 
@@ -1445,14 +1477,29 @@ def _trend_span(span, con):
       rec_end date.max = 재원 내내 회복기 (종료일을 계산할 수 없는 경우)
     """
     admitted_iso, discharged_iso = span["admitted_at"], span.get("discharged_at")
+    # 판정 순서는 카드(_care_phase)와 같아야 한다 — 전에는 순서가 달라 같은 환자를
+    # 카드는 비회복기, 추이는 회복기로 세는 일이 40건 있었다(2026-09-28).
+    #   ① 명부 재활종료일(Q열)이 적재됐으면 그 날짜가 사실이다
+    #   ② 명부 수가구분이 있으면 그것
+    #   ③ 둘 다 없으면 진단군 — 비중추 회복기 대상(대퇴·고관절·골반 골절, 비사용증후군,
+    #      슬관절치환술, 하지 절단)은 입원해 있는 동안 회복기(원장 확인 2026-09-28)
+    if span.get("rehab_end_imported"):
+        end = span.get("rehab_end_date")
+        return admitted_iso, discharged_iso, True, (date.fromisoformat(end) if end else None)
     roster_phase = _roster_care_phase(span.get("care_type"))
+    # 진단 근거는 상담일지가 먼저, 없으면 명부 상병명 — 상담이 안 붙은 회차(orphan)나
+    # 진단군 칸이 빈 상담도 '대퇴골 경부의 골절' 같은 명부 상병명으로는 판정할 수 있다.
+    dz = phase_diseases(con) if con is not None else []
+    if not dz and span.get("diagnosis_name"):
+        dz = phase_diseases({"disease_detail": span["diagnosis_name"]})
+    # 중추신경계가 섞여 있으면 중추 규칙이 먼저다 — 카드(_care_phase)가 그렇게 판정한다.
+    # 안 그러면 '뇌출혈+비사용증후군' 환자를 추이만 회복기로 세어 어긋난다(오일록 님, 2026-09-28).
+    if not roster_phase and not is_cns_diseases(dz) and is_recovery_noncns_diseases(dz):
+        return admitted_iso, discharged_iso, True, date.max
     if roster_phase:
-        if span.get("rehab_end_imported"):
-            end = span.get("rehab_end_date")
-            return admitted_iso, discharged_iso, True, (date.fromisoformat(end) if end else None)
         if roster_phase != "회복기":
             return admitted_iso, discharged_iso, True, None
-        period = compute_admission_period((con or {}).get("diseases"), "회복기")
+        period = compute_admission_period(phase_diseases(con or {}), "회복기")
         if not period:
             return admitted_iso, discharged_iso, True, date.max
         try:
@@ -1465,7 +1512,7 @@ def _trend_span(span, con):
         return admitted_iso, discharged_iso, False, None
     if _recovery_status(con).get("label") != "회복기":
         return admitted_iso, discharged_iso, True, None
-    period = compute_admission_period(con.get("diseases"), "회복기")
+    period = compute_admission_period(phase_diseases(con), "회복기")
     try:
         admitted_on = date.fromisoformat(admitted_iso)
     except (TypeError, ValueError):
@@ -1477,15 +1524,18 @@ def _trend_span(span, con):
 def _trend_summary(daily, monthly, threshold=40):
     """선택 기간의 요약 — 상단 카드용.
 
-    기간 평균은 '회복기 연인원 ÷ 판정 가능 연인원'(재원일수 가중)으로 낸다. 일별
+    기간 평균은 '회복기 연인원 ÷ 재원 연인원'(재원일수 가중)으로 낸다. 일별
     비율의 단순 평균은 인원이 적은 날이 과대 반영되는데, 지정 기준 평가도 연인원
     기준이라 이쪽이 실제와 맞는다. 단순 평균은 참고로 함께 둔다.
+
+    분모는 KPI 카드·그래프와 같은 '그날 재원 전체'다. 전에는 '판정 가능(known)'만 나눠,
+    요약 카드가 자기가 요약하는 그래프보다 높게 나왔다(365일 기준 43.3% vs 39.3%, 2026-09-28).
     """
-    days = [d for d in daily if d["known"]]
+    days = [d for d in daily if d["total"]]
     if not days:
         return None
     rec_sum = sum(d["recovery"] for d in days)
-    known_sum = sum(d["known"] for d in days)
+    known_sum = sum(d["total"] for d in days)      # 분모 = 재원 연인원
     below = [d for d in days if d["ratio"] < threshold]
     low = min(days, key=lambda d: (d["ratio"], d["date"]))
     high = max(days, key=lambda d: (d["ratio"], d["date"]))
@@ -1503,8 +1553,8 @@ def _trend_summary(daily, monthly, threshold=40):
                 runs.append(run)
         else:
             run = None
-    months = [m for m in monthly if m["known"]]
-    month_avg = (round(sum(m["recovery"] for m in months) * 100 / sum(m["known"] for m in months), 2)
+    months = [m for m in monthly if m["total"]]
+    month_avg = (round(sum(m["recovery"] for m in months) * 100 / sum(m["total"] for m in months), 2)
                  if months else None)
     return {
         "avg": round(rec_sum * 100 / known_sum, 2),
@@ -1521,7 +1571,7 @@ def _trend_summary(daily, monthly, threshold=40):
 def _ratio_insight(now, admitted, ratio_at, today, threshold=40, horizon=60):
     """회복기 비율 40% 기준선에 대한 여유·필요 인원과 향후 예상 추이.
 
-    비율은 추이 그래프와 같은 분모(회복기 판정이 가능한 재원 인원 known)로 낸다.
+    비율은 추이 그래프·KPI와 같은 분모(그날 재원 전체)로 낸다.
     정수 산식(비율 = R/K, 기준 t = threshold/100):
       · 회복기 k명 퇴원해도 유지 → (R-k) ≥ t(K-k)  → k ≤ (R - tK)/(1-t)
       · 비회복기 m명 입원해도 유지 → R ≥ t(K+m)      → m ≤ R/t - K
@@ -1530,7 +1580,7 @@ def _ratio_insight(now, admitted, ratio_at, today, threshold=40, horizon=60):
     예상 추이는 '지금 재원이 그대로 있다'고 가정하고 회복기 종료일이 지나는 환자만
     비회복기로 바꿔 계산한다 — ratio_at이 미래 날짜도 같은 규칙으로 판정하므로 그대로 쓴다.
     """
-    R, K = now["recovery"], now["known"]
+    R, K = now["recovery"], now["total"]      # 분모 = 재원 전체 (2026-09-28 통일)
     if not K:
         return None
     t_num, t_den = threshold, 100          # t = t_num/t_den
@@ -1561,7 +1611,7 @@ def _ratio_insight(now, admitted, ratio_at, today, threshold=40, horizon=60):
         point = {"label": snapshot.strftime("%m-%d"), "date": snapshot.isoformat(),
                  **ratio_at(snapshot)}
         forecast.append(point)
-        if cross is None and ok and point["known"] and point["recovery"] * t_den < t_num * point["known"]:
+        if cross is None and ok and point["total"] and point["recovery"] * t_den < t_num * point["total"]:
             cross = point
     ending = sorted(
         [c for c in admitted if c.get("care_phase") == "회복기"
@@ -1647,7 +1697,7 @@ def _trend_flow(insight, admitted, today, horizon=DASHBOARD_DUE_WINDOW_DAYS):
     active = [d for d in series if d["in_total"] or d["out_total"] or d["rec_end"]]
     return {"horizon": horizon, "days": series, "active": active, "sum": total,
             "start_ratio": insight["ratio"], "end": series[-1], "cross": cross,
-            "ok": series[-1]["known"] > 0 and series[-1]["recovery"] * 100 >= insight["threshold"] * series[-1]["known"]}
+            "ok": series[-1]["total"] > 0 and series[-1]["recovery"] * 100 >= insight["threshold"] * series[-1]["total"]}
 
 _WARD_TREND_RANGES = {"30": "최근 30일", "90": "최근 90일", "180": "최근 6개월", "365": "최근 1년"}
 

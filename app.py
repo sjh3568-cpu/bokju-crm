@@ -1032,9 +1032,43 @@ _NONCNS_STAY_RULES = [
 ]
 
 
+# 중추신경계가 아니어도 '회복기 재활' 대상인 진단군 — 입원해 있는 동안은 회복기로 센다.
+# 원장 확인(2026-09-28): "중추신경계만 회복기/비회복기로 나뉘고, 근골격계(대퇴골절·고관절 골절·
+# 골반 골절)·비사용증후군·양측 슬관절치환술·하지 부위 절단은 입원해 있으면 무조건 회복기."
+# 전에는 이들을 '단일구간'(전환 개념 없음)으로 빼 두어 회복기 비율 분자에서 통째로 빠졌다 —
+# 재원 271명 중 9명이 그래서 빠졌고 비율이 39.11%로 나왔다(맞게 세면 42.44%).
+_RECOVERY_NONCNS_KW = ("근골격계", "대퇴", "고관절", "골반", "비사용증후군",
+                       "슬관절", "치환술", "절단")
+
+
 def is_cns_diseases(diseases):
     """중추신경계 진단군인지."""
     return any(any(kw in str(d) for kw in _CNS_KW) for d in (diseases or []) if d)
+
+
+def is_recovery_noncns_diseases(diseases):
+    """비중추 중 회복기 재활 대상 진단군인지 — 입원 중이면 회복기."""
+    return any(any(kw in str(d) for kw in _RECOVERY_NONCNS_KW) for d in (diseases or []) if d)
+
+
+def phase_diseases(consultation):
+    """수가 구간 판정에 쓸 진단군 — 비어 있으면 상담일지의 병명 상세에서 읽는다.
+
+    진단군 칸이 비어 있는 재원 환자가 있다(김한진 님 '비사용 증후군 / 림프종',
+    차진섭 님 '뇌손상 / 수두증'). 칸만 비었을 뿐 병명은 적혀 있는데, 진단군이 없다는
+    이유로 회복기에서 빠졌다(원장 확인 2026-09-28: 두 분 다 회복기). 그래서 판정할 때만
+    상세 문구를 같은 키워드로 훑어 보조로 쓴다 — 저장된 진단군 값은 건드리지 않는다.
+    """
+    diseases = [d for d in (consultation.get("diseases") or []) if str(d).strip()]
+    if diseases:
+        return diseases
+    detail = str(consultation.get("disease_detail") or "")
+    if not detail.strip():
+        return diseases
+    # 상세는 사람이 적은 글이라 띄어쓰기가 제각각이다('비사용 증후군' vs '비사용증후군') — 공백을 지우고 본다
+    flat = "".join(detail.split())
+    found = [kw for kw in _CNS_KW + _RECOVERY_NONCNS_KW if "".join(kw.split()) in flat]
+    return found or diseases
 
 
 def noncns_stay_days(diseases):
@@ -1248,12 +1282,15 @@ def _care_phase(consultation):
     rec = _recovery_status(consultation) or {}
     label = (rec.get("label") or "").strip()
     ax = _admission_expiry(consultation) or {}
+    dz = phase_diseases(consultation)      # 진단군이 비면 병명 상세로 보완 (판정에만)
     if not label:
         phase = "미판정"
-    elif not is_cns_diseases(consultation.get("diseases")):
+    elif not is_cns_diseases(dz):
         # 비중추신경계는 S005 하나뿐 — 회복기→비회복기 '전환' 자체가 없다.
-        # 재원 기간이 진단군별로 고정이라 별도 레인(단일구간)으로 묶는다.
-        phase = "단일구간"
+        # 그래도 회복기 재활 대상 진단군(대퇴·고관절·골반 골절, 비사용증후군, 슬관절치환술,
+        # 하지 절단)은 입원해 있는 동안 회복기다(원장 확인 2026-09-28). 그 밖의 비중추
+        # (암·폐질환 등)만 전환 개념이 없는 '단일구간'으로 남긴다.
+        phase = "회복기" if is_recovery_noncns_diseases(dz) else "단일구간"
     elif label == "비회복기":
         phase = "비회복기"
     elif label == "회복기":
@@ -1264,7 +1301,10 @@ def _care_phase(consultation):
         # 85명을 빼면 82명(32%)이다. 월별 추이는 원래 만료를 반영하고 있어서
         # 같은 화면 안에서 KPI와 추이가 서로 달랐다.
         left = ax.get("billing_left")
-        phase = "비회복기" if left is not None and left < 0 else "회복기"
+        if is_recovery_noncns_diseases(dz):
+            phase = "회복기"      # 비중추 회복기 대상 — 입원 중에는 기간이 지나도 회복기(2026-09-28)
+        else:
+            phase = "비회복기" if left is not None and left < 0 else "회복기"
     else:
         # 일반재활·요양 — 중추신경계라도 회복기/비회복기 '구간' 밖이다.
         # 회복기로 뭉뚱그리면 재원 카드에 엉뚱한 구간이 찍히고, recovery_due
@@ -1273,7 +1313,7 @@ def _care_phase(consultation):
     roster_phase = consultation.get("roster_care_phase")
     if roster_phase:
         phase = _effective_roster_care_phase(
-            roster_phase, consultation.get("diseases"),
+            roster_phase, dz,
             consultation.get("actual_admission_date") or consultation.get("admission_date"),
             date.today(),
         )
@@ -1828,6 +1868,10 @@ def _effective_roster_care_phase(phase, diseases, admitted_at, snapshot,
         return phase
     if snapshot <= end:
         return phase
+    # 비중추 회복기 대상(대퇴·고관절·골반 골절, 비사용증후군, 슬관절치환술, 하지 절단)은
+    # 입원 중이면 기간이 지나도 회복기다(원장 확인 2026-09-28).
+    if is_recovery_noncns_diseases(diseases):
+        return "회복기"
     # 단일 수가 질환은 S006 연장 대상이 아니므로 기존 단일구간을 유지한다.
     return "단일구간" if period.get("mandatory") else "비회복기"
 
