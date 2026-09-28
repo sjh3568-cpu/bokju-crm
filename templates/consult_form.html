@@ -1331,7 +1331,7 @@ input.room-invalid { border-color:#ef4444 !important; box-shadow:0 0 0 2px rgba(
             {# 발병일/수술일 — 기저질환 박스 아래 배치 #}
             <div class="onset-row" style="flex:1 1 100%">
                 <span class="onset-label">발병일/수술일</span>
-                <input type="date" class="onset-input" id="onset-date"
+                <input type="date" class="onset-input" id="onset-date" data-date-presets="off"
                        max="{{ now().strftime('%Y-%m-%d') }}">
                 <input type="text" class="onset-input" id="onset-text" style="display:none"
                        placeholder="예: 2025년 12월경, 작년 겨울 — 회복기 자동 판정은 안 됩니다">

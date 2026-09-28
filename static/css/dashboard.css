@@ -490,25 +490,41 @@
 .page-dashboard .aq-meta.warn { color: var(--dwarn); font-weight: 700; }
 /* 표는 고정 레이아웃 — 카드 폭(1440에서 ≈534px) 안에 6열이 다 보이고 모든 행 높이가 같다(2026-09-21). 남는 폭은 '내용'이 갖는다 */
 .page-dashboard .aq-table { table-layout: fixed; width: 100%; }
+/* 열 폭(2026-09-28 재배분) — 1440에서 표 폭 ≈514px. 칸 좌우 여백 6px 기준으로 각 칸의 가장 긴 값 + 6px 여유:
+   구분 배지 4자 ≈50(카카오채널 5자 ≈60은 칸 여백으로 4px 넘침, 낱자로 안 쪼갬) · 환자 이름 4자 ≈60(미연결 문의의 연락처는 하이픈에서 꺾임)
+   · 주상병 6자(비사용증후군) ≈77, 넓은 대체 글꼴(자간 +.08em)에서도 한 줄 · 경과 '3일 초과' ≈45 · 액션 버튼 2개 ≈92.
+   남는 폭은 '내용'이 갖는다(설명성 칸 — 3-2 규칙). */
 .page-dashboard .aq-table col.c-kind { width: 68px; }
-.page-dashboard .aq-table col.c-who { width: 92px; }
-.page-dashboard .aq-table col.c-dx { width: 92px; }
-.page-dashboard .aq-table col.c-meta { width: 72px; }
+.page-dashboard .aq-table col.c-who { width: 88px; }
+.page-dashboard .aq-table col.c-dx { width: 98px; }
+.page-dashboard .aq-table col.c-meta { width: 64px; }
 /* 고정 레이아웃이라 이 표는 넘치지 않는다 — 마지막 행의 '…' 더보기 메뉴가 .tbl-wrap(overflow:auto)에 잘리지 않게 */
 .page-dashboard .tbl-wrap:has(> .aq-table) { overflow: visible; }
+/* 액션 — 가장 넓은 조합 '상담 등록 + …'(≈92px)이 버튼 여백 2px 6px 기준으로 칸(내용 98px) 안에 든다 */
 .page-dashboard .aq-table col.c-act { width: 106px; }
-/* 말줄임 금지 — 입·퇴원 현황과 같은 규칙(2026-09-23 요청). 모자라면 숨기지 말고 둘째 줄로. */
-.page-dashboard .aq-table th, .page-dashboard .aq-table td { white-space: normal; word-break: keep-all; overflow-wrap: break-word; padding-left: 6px; padding-right: 6px; }
-.page-dashboard .aq-table td.dash-action-cell { overflow: visible; white-space: nowrap; padding-left: 4px; padding-right: 4px; }
-.page-dashboard .aq-table .dash-action-cell .btn-xs { padding: 2px 6px; margin: 1px; }
+/* 말줄임 금지 — 입·퇴원 현황과 같은 규칙(2026-09-23 요청). 모자라면 숨기지 말고 둘째 줄로.
+   ⚠ 셀렉터에 #action-queue 를 넣는다 — 위 '글자 한 단계 키움' 규칙(#action-queue .dash-table td, 명시도 1-2-1)이
+   id 로 이겨서 여기 적은 여백 6px·버튼 크기·경과 글자 크기가 전부 무시되고 있었다(2026-09-28 발견).
+   줄높이도 칸마다 1.25/1.4 로 달랐던 것을 1.3 하나로. */
+.page-dashboard #action-queue .aq-table th, .page-dashboard #action-queue .aq-table td { white-space: normal; word-break: keep-all; overflow-wrap: break-word; padding-left: 6px; padding-right: 6px; line-height: 1.3; }
+.page-dashboard #action-queue .aq-table td.dash-action-cell { overflow: visible; white-space: nowrap; padding-left: 4px; padding-right: 4px; }
+.page-dashboard #action-queue .aq-table .dash-action-cell .btn-xs { padding: 2px 6px; margin: 1px; }
+.page-dashboard #action-queue .aq-table .dash-action-cell .aq-more { margin: 1px; }
+/* 배지는 칸보다 넓으면 낱자로 쪼개지 말고(카카오채널) 여백으로 조금 넘친다 */
+.page-dashboard #action-queue .aq-table .aq-kind { padding: 1px 5px; white-space: nowrap; }
 /* 환자·주상병이 잘리던 것(2026-09-22 요청) — '김차임…'에 성별/나이는 아예 안 보이고 '근골…'로 끊겼다.
    폭은 '내용'에서 덜어 왔다(어차피 대부분 …으로 잘려 정보가 없고 툴팁에 전문이 있다).
    환자는 이름 한 줄 + 성별/나이 아랫줄로 쪼개고, 주상병은 두 줄까지 흐르게 둔다. */
-.page-dashboard .aq-table td.aq-who { white-space: normal; line-height: 1.25; }
+.page-dashboard .aq-table td.aq-who { white-space: normal; }
 .page-dashboard .aq-table td.aq-who > a { display: block; white-space: normal; word-break: keep-all; }
-.page-dashboard .aq-table td.aq-who .dash-who { display: block; font-size: .82em; color: var(--dmuted); }
-.page-dashboard .aq-table .dash-dx { max-width: none; white-space: normal; line-height: 1.25; word-break: keep-all; }
+/* margin-left:0 — 대시보드 인라인 .dash-who{margin-left:4px}(이름 옆에 붙일 때 쓰는 간격)가 아랫줄에도 남아 성별/나이가 4px 들여쓰기돼 있었다 */
+.page-dashboard .aq-table td.aq-who .dash-who { display: block; margin-left: 0; font-size: .82em; color: var(--dmuted); }
+/* overflow·text-overflow — 대시보드 인라인 .dash-dx 의 말줄임(overflow:hidden; ellipsis)이 이 표에서도 살아 있었다 */
+.page-dashboard .aq-table .dash-dx { max-width: none; white-space: normal; word-break: keep-all; overflow: visible; text-overflow: clip; }
+/* 내용은 설명성 칸 — 이름·주상병보다 한 단계 작게(같은 카드의 보조 글자 .82rem 과 같은 크기) */
+.page-dashboard #action-queue .aq-table td.aq-detail { font-size: .82rem; }
 .page-dashboard .aq-detail { white-space: normal; word-break: keep-all; color: var(--dmuted); }
+.page-dashboard #action-queue .aq-table td.aq-meta { font-size: .8rem; }
 .page-dashboard .aq-meta { font-size: .78rem; color: var(--dmuted); }
 .page-dashboard .aq-meta.danger { color: var(--dcrit); font-weight: 800; }
 .page-dashboard .aq-row.stale td { color: var(--dmuted); }

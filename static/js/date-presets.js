@@ -99,7 +99,9 @@
         panel.addEventListener('click', e => e.stopPropagation());
     }
     function mountSingle(form, input, index) {
-        if (form.dataset.datePresets === 'off' || input._datePresetPanel || input.disabled
+        // 칸 단위로도 끌 수 있다 — 발병일처럼 몇 달·몇 년 전 하루를 고르는 칸은 빠른 버튼이 쓸모없고
+        // 선택 창 안의 달력을 한 번 더 눌러야 해서, 브라우저 기본 달력만 띄운다(2026-09-28 사용자 요청).
+        if (form.dataset.datePresets === 'off' || input.dataset.datePresets === 'off' || input._datePresetPanel || input.disabled
             || (input.readOnly && !input.classList.contains('date-preset-trigger'))
             || input.closest('.date-preset-panel')) return;
         const panel = document.createElement('div'); panel.className = 'date-preset-panel'; panel.id = `date-preset-${index}`; panel.hidden = true;

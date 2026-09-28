@@ -8,7 +8,7 @@
         {% if request.args.get('embed') == '1' %}<input type="hidden" name="embed" value="1">{% endif %}
         <label>
             <span class="calc-field-title"><i>1</i>발병일 / 수술일</span>
-            <input type="date" name="onset" value="{{ onset }}" required>
+            <input type="date" name="onset" value="{{ onset }}" required data-date-presets="off">
             <small>진단 또는 수술이 발생한 기준일</small>
         </label>
         <label>

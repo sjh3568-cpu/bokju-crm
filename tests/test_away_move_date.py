@@ -83,11 +83,11 @@ class AwayMoveDateTests(unittest.TestCase):
         self.assertIn(f'data-event-date="{d(-2)}"', html)
         self.assertNotIn(f'min="{d(-2)}"', html)
 
-    def test_away_date_inputs_start_empty(self):
-        # 외진일 기본값 '오늘'이 늦게 등록한 외진을 등록일로 남겼다 — 비워 두고 고르게 한다(2026-09-28)
+    def test_away_date_inputs_default_today(self):
+        # 외진일 기본값은 오늘 — v1.9.34에서 비웠다가 같은 날 사용자 결정으로 되돌림(2026-09-28).
+        # 미래 날짜는 여전히 막는다(max=오늘).
         html = self.client.get("/ward?tab=away").get_data(as_text=True)
-        self.assertIn(f'<input type="date" name="event_date" max="{d(0)}" required', html)
-        self.assertNotIn(f'<input type="date" class="wd-af-date" value="{d(0)}"', html)
+        self.assertIn(f'<input type="date" name="event_date" value="{d(0)}" max="{d(0)}" required', html)
 
 
 if __name__ == "__main__":
