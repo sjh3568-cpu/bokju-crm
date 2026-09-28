@@ -42,15 +42,21 @@
             </div>
         </div>
         <div class="card">
-            <h3>2. 환자군 템플릿</h3>
+            <h3>2. 템플릿</h3>
+            {# 시점 탭 × 대상 질환 필터 (2026-09-28) — 수신자를 고르면 그 환자 병명의 질환군과 '공통'만 보인다 #}
+            <div class="sms-tpl-tabs" role="tablist" aria-label="발송 시점">
+                {% for s in SMS_TIMINGS %}<button type="button" role="tab" data-timing="{{ s }}"{% if loop.first %} class="on" aria-selected="true"{% endif %}>{{ s }}</button>{% endfor %}
+            </div>
+            <label class="sms-tpl-all"><input type="checkbox" id="sms-tpl-all"> 모든 질환 보기</label>
             <div class="sms-tpl-list">
                 {% for t in templates %}
                 <button type="button" class="sms-tpl" data-tid="{{ t.id }}"
-                        data-body="{{ t.body }}">
+                        data-body="{{ t.body }}" data-timing="{{ t.timing }}" data-group="{{ t.template_group }}">
                     <span class="sms-tpl-grp">{{ t.template_group }}</span>
                     <span class="sms-tpl-name">{{ t.name }}</span>
                 </button>
                 {% endfor %}
+                <div class="empty sms-tpl-none" hidden>이 시점·질환의 템플릿이 없습니다. <a href="/sms/templates">템플릿 관리</a>에서 추가하세요.</div>
                 {% if not templates %}<div class="empty">등록된 템플릿이 없습니다. <a href="/sms/templates">템플릿 관리</a>에서 추가하세요.</div>{% endif %}
             </div>
         </div>
@@ -179,6 +185,12 @@
 .sms-recipient input { padding:5px 8px; border:1px solid var(--border);
     border-radius:6px; font-family:inherit; font-size:0.92em; }
 .sms-tpl-list { display:flex; flex-direction:column; gap:5px; max-height:340px; overflow-y:auto; }
+.sms-tpl-tabs { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:6px; }
+.sms-tpl-tabs button { padding:3px 9px; border:1px solid var(--border); border-radius:999px; background:#fff;
+    font-family:inherit; font-size:0.8em; cursor:pointer; white-space:nowrap; }
+.sms-tpl-tabs button.on { background:#0f766e; color:#fff; border-color:#0f766e; }
+.sms-tpl-all { font-size:0.78em; color:var(--text-light); display:flex; gap:4px; align-items:center; margin-bottom:6px; }
+.sms-tpl[hidden] { display:none; }
 .sms-tpl { display:flex; align-items:center; gap:8px; text-align:left;
     padding:7px 10px; border:1px solid var(--border); border-radius:7px;
     background:#fff; cursor:pointer; font-family:inherit; }

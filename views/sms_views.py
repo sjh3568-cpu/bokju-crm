@@ -60,7 +60,7 @@ from config import (
     STAFF_REFERRAL_ORGS, STAFF_REFERRAL_DEPTS,
     LIFECYCLE_STAGES, LIFECYCLE_EVENT_TYPES, LEGACY_STAGE_MAP, CARE_PHASES,
     SIDO_LIST, SIGUNGU_INDEX, SIGUNGU_LIST,
-    SMS_TEMPLATE_GROUPS, SMS_PLACEHOLDERS,
+    SMS_TEMPLATE_GROUPS, SMS_TIMINGS, SMS_TIMING_DEFAULT, SMS_PLACEHOLDERS,
     SPECIAL_CARE_OPTIONS, SPECIAL_CARE_NOTE_FIELDS,
     THERAPY_OPTIONS, TRANSPORT_OPTIONS, WOUND_CARE_OPTIONS, WOUND_CARE_NOTE_FIELDS,
 )
@@ -137,9 +137,11 @@ def api_sms_template_create():
     group = (payload.get("template_group") or "공통").strip()
     if not name or not body:
         return jsonify({"error": "템플릿 이름과 본문을 입력하세요."}), 400
+    timing = (payload.get("timing") or "").strip()
     tid = models.create_sms_template(
         name=name, body=body,
         template_group=group if group in SMS_TEMPLATE_GROUPS else "공통",
+        timing=timing if timing in SMS_TIMINGS else SMS_TIMING_DEFAULT,
     )
     return jsonify({"ok": True, "id": tid})
 
@@ -157,6 +159,9 @@ def api_sms_template_update(tid):
     if "template_group" in payload:
         gr = (payload.get("template_group") or "공통").strip()
         fields["template_group"] = gr if gr in SMS_TEMPLATE_GROUPS else "공통"
+    if "timing" in payload:
+        tm = (payload.get("timing") or "").strip()
+        fields["timing"] = tm if tm in SMS_TIMINGS else SMS_TIMING_DEFAULT
     if "active" in payload:
         fields["active"] = 1 if payload.get("active") else 0
     if fields.get("name") == "" or fields.get("body") == "":

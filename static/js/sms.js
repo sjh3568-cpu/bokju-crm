@@ -159,10 +159,37 @@
     document.addEventListener('click', e => { if (!e.target.closest('.sms-search-wrap')) listEl.hidden = true; });
 
     phoneEl.addEventListener('input', renderPreview);  // 테스트 모드 머리말에 수신 번호가 들어간다
-    bodyEl.addEventListener('input', () => { rawTemplate = ''; updateCount(); });
+    bodyEl.addEventListener('input', () => { rawTemplate = ''; templateId = null; updateCount(); });
+
+    // 템플릿 — 시점 탭 × 대상 질환 필터. 질환군은 수신자 최근 상담의 병명(models.consult_disease_groups).
+    let timing = document.querySelector('.sms-tpl-tabs button.on')?.dataset.timing || '';
+    let templateId = null;
+    const allCb = document.getElementById('sms-tpl-all');
+    function filterTemplates() {
+        const all = allCb.checked;
+        const groups = (current && current.disease_groups) || [];
+        let shown = 0;
+        document.querySelectorAll('.sms-tpl').forEach(b => {
+            const okGroup = all || !groups.length || b.dataset.group === '공통' || groups.includes(b.dataset.group);
+            b.hidden = !(b.dataset.timing === timing && okGroup);
+            if (!b.hidden) shown++;
+        });
+        const none = document.querySelector('.sms-tpl-none');
+        if (none) none.hidden = shown > 0 || !document.querySelectorAll('.sms-tpl').length;
+    }
+    document.querySelectorAll('.sms-tpl-tabs button').forEach(tab => tab.addEventListener('click', () => {
+        document.querySelectorAll('.sms-tpl-tabs button').forEach(x => {
+            x.classList.toggle('on', x === tab); x.setAttribute('aria-selected', String(x === tab));
+        });
+        timing = tab.dataset.timing; filterTemplates();
+    }));
+    allCb.addEventListener('change', filterTemplates);
+    document.addEventListener('sms:recipient', filterTemplates);
+    window.SMS_SELECT_TIMING = t => document.querySelector(`.sms-tpl-tabs button[data-timing="${t}"]`)?.click();
 
     document.querySelectorAll('.sms-tpl').forEach(btn => {
         btn.addEventListener('click', () => {
+            templateId = Number(btn.dataset.tid) || null;
             rawTemplate = btn.dataset.body || '';
             bodyEl.value = fillTokens(rawTemplate);
             updateCount();
@@ -219,6 +246,7 @@
             to_phone: phone, body: body, to_name: nameEl.value.trim(),
             consultation_id: current ? current.consultation_id : null,
             patient_id: current ? current.patient_id : null,
+            template_id: templateId,
             mode: mode || null,
         };
         goBtn.disabled = true;
@@ -256,6 +284,7 @@
     document.getElementById('sms-confirm-cancel').addEventListener('click', () => dlg.close());
     goBtn.addEventListener('click', () => doSend());
 
+    filterTemplates();
     if (current) setRecipient(current);
     updateCount();
 })();

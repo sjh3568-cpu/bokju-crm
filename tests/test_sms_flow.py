@@ -129,5 +129,27 @@ class GuardTests(Base):
         self.assertIn(">확인하고 보내기<", html)
 
 
+
+class TemplateAxisTests(Base):
+    def test_api_saves_timing_and_rejects_unknown(self):
+        r = self.client.post("/api/sms/template", json={"name": "퇴원 안내", "body": "x",
+                                                       "template_group": "공통", "timing": "퇴원 당일"})
+        tid = r.get_json()["id"]
+        self.assertEqual(models.get_sms_template(tid)["timing"], "퇴원 당일")
+        self.client.post(f"/api/sms/template/{tid}", json={"timing": "없는시점"})
+        self.assertEqual(models.get_sms_template(tid)["timing"], "수시")
+
+    def test_compose_page_has_timing_tabs(self):
+        html = self.client.get("/sms").get_data(as_text=True)
+        for t in config.SMS_TIMINGS:
+            self.assertIn(f'data-timing="{t}"', html)
+        self.assertIn('id="sms-tpl-all"', html)
+
+    def test_manage_page_has_both_selects(self):
+        html = self.client.get("/sms/templates").get_data(as_text=True)
+        self.assertIn('class="t-timing"', html)
+        self.assertIn("대상 질환", html)
+
+
 if __name__ == "__main__":
     unittest.main()

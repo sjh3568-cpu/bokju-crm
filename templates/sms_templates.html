@@ -2,7 +2,7 @@
 {% block title %}문자 템플릿 관리 — 복주 상담실{% endblock %}
 {% block content %}
 <div class="page-header">
-    <h1>문자 템플릿 관리 <span class="muted" style="font-size:0.66em">환자군별 정형 안내문</span></h1>
+    <h1>문자 템플릿 관리 <span class="muted" style="font-size:0.66em">대상 질환 × 시점별 안내문</span></h1>
     <a class="btn btn-secondary btn-sm" href="/sms">← 문자 전송</a>
 </div>
 
@@ -10,10 +10,13 @@
     <h3>새 템플릿 추가</h3>
     <div class="tpl-edit" id="tpl-new">
         <div class="tpl-row">
-            <input type="text" class="t-name" placeholder="템플릿 이름 (예: 입원 예정 안내)">
-            <select class="t-group">
+            <input type="text" class="t-name" placeholder="템플릿 이름 (예: 입원 전날 준비물 안내)">
+            <label class="t-lbl">대상 질환 <select class="t-group">
                 {% for g in SMS_TEMPLATE_GROUPS %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
-            </select>
+            </select></label>
+            <label class="t-lbl">시점 <select class="t-timing">
+                {% for s in SMS_TIMINGS %}<option value="{{ s }}" {% if s == '수시' %}selected{% endif %}>{{ s }}</option>{% endfor %}
+            </select></label>
         </div>
         <textarea class="t-body" rows="3" placeholder="문자 본문 — {환자명} {보호자명} {병원명} {입원예정일} {주치의} 토큰 사용 가능"></textarea>
         <div class="tpl-actions">
@@ -29,9 +32,12 @@
     <div class="tpl-edit tpl-item{% if not t.active %} inactive{% endif %}" data-tid="{{ t.id }}">
         <div class="tpl-row">
             <input type="text" class="t-name" value="{{ t.name }}">
-            <select class="t-group">
+            <label class="t-lbl">대상 질환 <select class="t-group">
                 {% for g in SMS_TEMPLATE_GROUPS %}<option value="{{ g }}" {% if t.template_group == g %}selected{% endif %}>{{ g }}</option>{% endfor %}
-            </select>
+            </select></label>
+            <label class="t-lbl">시점 <select class="t-timing">
+                {% for s in SMS_TIMINGS %}<option value="{{ s }}" {% if t.timing == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+            </select></label>
             <label class="t-active"><input type="checkbox" class="t-active-cb" {% if t.active %}checked{% endif %}> 사용</label>
         </div>
         <textarea class="t-body" rows="3">{{ t.body }}</textarea>
@@ -52,7 +58,8 @@
 .tpl-row { display:flex; gap:8px; align-items:center; margin-bottom:6px; flex-wrap:wrap; }
 .tpl-row .t-name { flex:1; min-width:180px; padding:5px 9px; border:1px solid var(--border);
     border-radius:6px; font-family:inherit; font-size:0.9em; }
-.tpl-row .t-group { padding:5px 9px; border:1px solid var(--border); border-radius:6px;
+.t-lbl { font-size:0.8em; color:var(--text-light); display:flex; gap:4px; align-items:center; white-space:nowrap; }
+.tpl-row .t-group, .tpl-row .t-timing { padding:5px 9px; border:1px solid var(--border); border-radius:6px;
     font-family:inherit; font-size:0.88em; }
 .t-active { font-size:0.85em; display:flex; gap:4px; align-items:center; white-space:nowrap; }
 .tpl-edit .t-body { width:100%; padding:7px 9px; border:1px solid var(--border);
@@ -74,6 +81,7 @@
         const body = {
             name: newBox.querySelector('.t-name').value.trim(),
             template_group: newBox.querySelector('.t-group').value,
+            timing: newBox.querySelector('.t-timing').value,
             body: newBox.querySelector('.t-body').value.trim(),
         };
         if (!body.name || !body.body) {
@@ -91,6 +99,7 @@
             const body = {
                 name: item.querySelector('.t-name').value.trim(),
                 template_group: item.querySelector('.t-group').value,
+                timing: item.querySelector('.t-timing').value,
                 body: item.querySelector('.t-body').value.trim(),
                 active: item.querySelector('.t-active-cb').checked,
             };
