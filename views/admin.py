@@ -538,9 +538,41 @@ def admin_import():
                     n += 1
             sheets.append({"name": ws.title, "rows": n, "waiting": ei.is_waiting_sheet(ws.title)})
         wb.close()
+    import consult_sheet_sync
     return render_template("admin_import.html", files=file_rows, selected_file=path.name if path else "",
                            sheets=sheets, selected_sheets=selected_sheets, is_roster=is_roster,
-                           report_text=report_text, mode=mode, data_dir=str(data_dir))
+                           report_text=report_text, mode=mode, data_dir=str(data_dir),
+                           sheet_sync=consult_sheet_sync.panel_info())
+
+
+@bp.route("/admin/consult-sheet", methods=["POST"])
+@admin_required
+def admin_consult_sheet():
+    """구글 시트 자동 반영(과도기) — 미리보기·지금 반영·자동 켜기/끄기. 결과는 엑셀 적재 화면 카드에 남는다."""
+    import consult_sheet_sync
+    action = request.form.get("action") or ""
+    if action in ("preview", "apply"):
+        if not consult_sheet_sync.configured():
+            flash(".env에 CONSULT_SHEET_URL / CONSULT_SHEET_TOKEN이 없습니다(관리자).", "error")
+            return redirect(url_for("admin.admin_import") + "#sheet-sync")
+        rep = consult_sheet_sync.run(apply=(action == "apply"), trigger=g.user["username"])
+        t = rep.get("totals") or {}
+        if rep.get("ok"):
+            flash(f"{'반영' if action == 'apply' else '미리보기'} 완료 — 새 상담 {t.get('new', 0)} · 고친 행 {t.get('updated', 0)} · "
+                  f"충돌 {t.get('conflicts', 0)} · 사라짐 {t.get('missing', 0)}", "success")
+        else:
+            flash(f"동기화 실패: {rep.get('error')}", "error")
+        models.log_audit(user_id=g.user["id"], username=g.user["username"], action="sheet_sync",
+                         target_type="sheet", target_id=None,
+                         detail=f"{'반영' if action == 'apply' else '미리보기'} — {consult_sheet_sync.render_report(rep).splitlines()[1][:300] if rep.get('ok') else rep.get('error')}",
+                         ip=request.remote_addr)
+    elif action in ("auto_on", "auto_off"):
+        consult_sheet_sync.set_auto(action == "auto_on")
+        models.log_audit(user_id=g.user["id"], username=g.user["username"], action="sheet_sync",
+                         target_type="sheet", target_id=None,
+                         detail=f"자동 반영 {'켬' if action == 'auto_on' else '끔'}", ip=request.remote_addr)
+        flash(f"자동 반영을 {'켰습니다' if action == 'auto_on' else '껐습니다'}.", "success")
+    return redirect(url_for("admin.admin_import") + "#sheet-sync")
 
 
 def _roster_onset(path, read_rows, apply_changes):

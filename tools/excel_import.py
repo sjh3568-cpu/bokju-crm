@@ -698,8 +698,13 @@ def is_waiting_sheet(sheet_name):
     return sheet_name.strip() in WAITING_SHEETS
 
 
-def import_sheet(wb, sheet_name, *, apply_changes=False, schema_hint=None, skip_backup=False,
-                 waiting_mode=None):
+def parse_sheet(wb, sheet_name, *, schema_hint=None, waiting_mode=None):
+    """시트 하나를 읽어 (report, rows) 로 돌려준다. rows = [(행번호, parsed)] — DB는 건드리지 않는다.
+
+    엑셀 적재(import_sheet)와 구글 시트 자동 동기화(consult_sheet_sync)가 함께 쓴다 — 스키마 감지·
+    헤더 매핑·행 해석·날짜 보정·빈 행 건너뛰기가 한 곳에만 있어야 두 경로의 결과가 같다(2026-09-28).
+    wb는 openpyxl Workbook 또는 같은 모양(sheetnames, wb[name].iter_rows(min_row, max_row, values_only))이면 된다.
+    """
     if sheet_name not in wb.sheetnames:
         raise SystemExit(f"시트 없음: {sheet_name}")
     ws = wb[sheet_name]
@@ -813,6 +818,14 @@ def import_sheet(wb, sheet_name, *, apply_changes=False, schema_hint=None, skip_
                 report["unmapped_values"][fld][str(val)] += 1
 
         rows_to_apply.append((ri, parsed))
+    return report, rows_to_apply
+
+
+def import_sheet(wb, sheet_name, *, apply_changes=False, schema_hint=None, skip_backup=False,
+                 waiting_mode=None):
+    if waiting_mode is None:
+        waiting_mode = is_waiting_sheet(sheet_name)
+    report, rows_to_apply = parse_sheet(wb, sheet_name, schema_hint=schema_hint, waiting_mode=waiting_mode)
 
     # ── 적재 (apply 모드) ──
     if apply_changes:

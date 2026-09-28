@@ -117,6 +117,7 @@ import support_requests
 app.register_blueprint(partnerships.bp)
 app.register_blueprint(support_requests.bp)
 import transport
+import consult_sheet_sync
 import homepage_board
 app.register_blueprint(transport.bp)
 import ward_moves
@@ -158,6 +159,7 @@ def initialize():
         partnerships.init_schema()
         support_requests.init_schema()
         transport.init_schema()
+        consult_sheet_sync.init_schema()
         release_notes.publish_release_notes()
         admin_pw = os.getenv("APP_PASSWORD", "").strip()
         if admin_pw:
@@ -192,6 +194,11 @@ def initialize():
         transport.start_scheduler()
     except Exception:
         app.logger.exception("운행 시트 동기화를 시작하지 못했습니다")
+    # 상담내역 구글 시트 자동 반영(과도기) — CONSULT_SHEET_URL/TOKEN이 있을 때만, 실제 반영은 관리 화면에서 켠다
+    try:
+        consult_sheet_sync.start_scheduler()
+    except Exception:
+        app.logger.exception("상담 시트 동기화를 시작하지 못했습니다")
     # 홈페이지 문의 메일 브릿지 — IMAP 설정 시에만 활성 (빌더형 홈페이지 대응)
     try:
         import homepage_inbox
