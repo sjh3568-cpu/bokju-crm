@@ -232,6 +232,7 @@ AUDIT_ACTION_LABELS = {
     "update_blacklist": "블랙리스트 변경",
     "merge_patient": "환자 병합",
     "send_sms": "문자 발송",
+    "sms_reminder_close": "안내 문자 안 보냄",
     "export_csv": "CSV 내보내기",
     "excel_import": "엑셀 적재",
     "report_insight": "월간보고서 AI 분석",
@@ -264,7 +265,7 @@ AUDIT_CATEGORIES = {
     ]),
     "delete": ("삭제", ["delete_consult", "delete_lifecycle_event"]),
     "view": ("조회", ["view_patient", "view_consult"]),
-    "outbound": ("반출·발송", ["send_sms", "export_csv", "report_insight", "stats_insight"]),
+    "outbound": ("반출·발송", ["send_sms", "sms_reminder_close", "export_csv", "report_insight", "stats_insight"]),
     "import": ("엑셀 적재", ["excel_import"]),
     "account": ("계정 관리", [
         "create_user", "update_user", "delete_user", "reset_password",

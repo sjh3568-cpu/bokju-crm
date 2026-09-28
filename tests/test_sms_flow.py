@@ -151,5 +151,118 @@ class TemplateAxisTests(Base):
         self.assertIn("대상 질환", html)
 
 
+
+def flow(kind, day, pid, sources=("명부",), is_return=False, cid=None):
+    return {"kind": kind, "date": day, "patient_id": pid, "consultation_id": cid, "patient_name": "홍길동",
+            "sources": list(sources), "is_return": is_return}
+
+
+def fake_flows(rows):
+    return patch.object(models, "admission_flow_events",
+                        side_effect=lambda a, b: [r for r in rows if a <= r["date"] <= b])
+
+
+class ReminderTests(Base):
+    def turn_on(self, *timings):
+        # 시점 알림은 그 시점에 사용 중 템플릿이 있어야 켜진다(시드에는 상담 직후·입원 전날만 있다)
+        for t in timings:
+            models.create_sms_template(name=f"{t} 안내", body="x", timing=t)
+
+    def keys(self, today=TODAY):
+        return {r["key"] for r in models.sms_reminders(today)}
+
+    def test_consult_followup_until_sent(self):
+        pid = self.patient(); cid = self.consult(pid, consult_date=d(-2))
+        key = f"상담 직후:c{cid}"
+        self.assertIn(key, self.keys())
+        models.log_sms(patient_id=pid, consultation_id=cid, to_phone="01011112222", body="x",
+                       status="phone", reminder_key=key)
+        self.assertNotIn(key, self.keys())
+
+    def test_failed_or_unconfirmed_send_keeps_reminder(self):
+        pid = self.patient(); cid = self.consult(pid)
+        key = f"상담 직후:c{cid}"
+        for st in ("failed", "manual"):
+            models.log_sms(patient_id=pid, to_phone="01011112222", body="x", status=st, reminder_key=key)
+        self.assertIn(key, self.keys())
+
+    def test_consult_followup_window_and_cancel(self):
+        pid = self.patient()
+        old = self.consult(pid, consult_date=d(-config.SMS_CONSULT_FOLLOWUP_DAYS))
+        edge = self.consult(pid, consult_date=d(-(config.SMS_CONSULT_FOLLOWUP_DAYS - 1)))
+        cancel = self.consult(pid, consult_date=TODAY, consult_result="상담취소", consult_result_reason="타병원")
+        keys = self.keys()
+        self.assertNotIn(f"상담 직후:c{old}", keys)
+        self.assertIn(f"상담 직후:c{edge}", keys)
+        self.assertNotIn(f"상담 직후:c{cancel}", keys)
+
+    def test_close_removes_and_requires_reason(self):
+        pid = self.patient(); cid = self.consult(pid)
+        key = f"상담 직후:c{cid}"
+        self.assertEqual(self.client.post("/api/sms/reminder/close", json={"key": key, "reason": " "}).status_code, 400)
+        r = self.client.post("/api/sms/reminder/close", json={"key": key, "reason": "전화로 안내함", "consultation_id": cid})
+        self.assertTrue(r.get_json()["ok"])
+        self.assertNotIn(key, self.keys())
+        again = self.client.post("/api/sms/reminder/close", json={"key": key, "reason": "또"}).get_json()
+        self.assertTrue(again["already"])
+
+    def test_admission_tomorrow(self):
+        pid = self.patient(); self.consult(pid, consult_date=d(-20), planned_admission_date=d(1))
+        done = self.patient(name="이미입원"); self.consult(done, consult_date=d(-20), planned_admission_date=d(1),
+                                                           admission_status="입원완료")
+        keys = self.keys()
+        self.assertIn(f"입원 전날:p{pid}:{d(1)}", keys)
+        self.assertNotIn(f"입원 전날:p{done}:{d(1)}", keys)
+
+    def test_flow_based_timings(self):
+        pid = self.patient()
+        n = config.SMS_AFTER_DISCHARGE_DAYS
+        self.turn_on("입원 당일", "퇴원 당일", "퇴원 후")
+        with fake_flows([flow("in", TODAY, pid), flow("out", TODAY, pid), flow("out", d(-n), pid, ("상담",))]):
+            keys = self.keys()
+        self.assertTrue({f"입원 당일:p{pid}:{TODAY}", f"퇴원 당일:p{pid}:{TODAY}", f"퇴원 후:p{pid}:{d(-n)}"} <= keys)
+
+    def test_away_events_excluded(self):
+        pid = self.patient()
+        self.turn_on("입원 당일", "퇴원 당일")
+        with fake_flows([flow("in", TODAY, pid, ("외진",), is_return=True), flow("out", TODAY, pid, ("외진",))]):
+            keys = self.keys()
+        self.assertFalse(any(k.startswith(("입원 당일", "퇴원 당일")) for k in keys))
+
+    def test_same_patient_same_day_one_reminder(self):
+        pid = self.patient()
+        self.turn_on("입원 당일")
+        with fake_flows([flow("in", TODAY, pid, ("명부", "상담"), cid=1), flow("in", TODAY, pid, ("CRM",))]):
+            n = sum(1 for r in models.sms_reminders(TODAY) if r["timing"] == "입원 당일")
+        self.assertEqual(n, 1)
+
+    def test_timing_without_template_is_off(self):
+        pid = self.patient(); cid = self.consult(pid)
+        for t in models.list_sms_templates(timing="상담 직후"):
+            models.update_sms_template(t["id"], active=0)
+        self.assertNotIn(f"상담 직후:c{cid}", self.keys())
+        with fake_flows([flow("in", TODAY, pid)]):   # 입원 당일 템플릿은 시드에 없다
+            self.assertFalse(any(k.startswith("입원 당일") for k in self.keys()))
+
+    def test_reminder_without_phone_flagged(self):
+        pid = self.patient(phone=""); cid = self.consult(pid)
+        r = [x for x in models.sms_reminders(TODAY) if x["key"] == f"상담 직후:c{cid}"][0]
+        self.assertFalse(r["has_phone"])
+
+    def test_compose_opens_with_reminder(self):
+        import json, re
+        pid = self.patient(); cid = self.consult(pid)
+        html = self.client.get(f"/sms?reminder=상담 직후:c{cid}&cid={cid}").get_data(as_text=True)
+        rem = json.loads(re.search(r"window\.SMS_REMINDER = (.*?);\n", html).group(1))
+        self.assertEqual(rem, {"key": f"상담 직후:c{cid}", "timing": "상담 직후"})
+
+    def test_send_records_reminder_key(self):
+        pid = self.patient(); cid = self.consult(pid)
+        key = f"상담 직후:c{cid}"
+        with patch.dict(os.environ, {}, clear=True):
+            self.client.post("/api/sms/send", json={"to_phone": "01011112222", "body": "안내", "reminder_key": key})
+        self.assertEqual(models.list_sms_log(1)[0]["reminder_key"], key)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -247,6 +247,7 @@
             consultation_id: current ? current.consultation_id : null,
             patient_id: current ? current.patient_id : null,
             template_id: templateId,
+            reminder_key: window.SMS_REMINDER ? window.SMS_REMINDER.key : null,
             mode: mode || null,
         };
         goBtn.disabled = true;
@@ -284,6 +285,7 @@
     document.getElementById('sms-confirm-cancel').addEventListener('click', () => dlg.close());
     goBtn.addEventListener('click', () => doSend());
 
+    if (window.SMS_REMINDER) window.SMS_SELECT_TIMING(window.SMS_REMINDER.timing);
     filterTemplates();
     if (current) setRecipient(current);
     updateCount();

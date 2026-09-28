@@ -91,6 +91,10 @@ def sms_compose():
     # 수신자 — 이름 검색이 기본. cid/pid로 들어오면 그 환자를 미리 채운다(최근 N건 제한 없음, 2026-09-28).
     preselect = (models.sms_recipient(consultation_id=cid) if cid
                  else models.sms_recipient(patient_id=pid) if pid else None)
+    # 대시보드 '안내 문자'에서 들어오면 그 시점 탭을 열고, 보낸 문자에 알림 키를 남긴다(models.sms_reminders).
+    reminder_key = (request.args.get("reminder") or "").strip()
+    reminder_timing = reminder_key.split(":", 1)[0]
+    reminder = {"key": reminder_key, "timing": reminder_timing} if reminder_timing in SMS_TIMINGS else None
     date_from = _valid_date(request.args.get("from"))
     date_to = _valid_date(request.args.get("to"))
     if date_from and date_to and date_from > date_to:
@@ -110,8 +114,27 @@ def sms_compose():
         gateway=sms_gateway.gateway_info(),
         gateway_ready=sms_gateway.gateway_configured(),
         sms_max_bytes=sms_gateway.SMS_MAX_BYTES, lms_max_bytes=sms_gateway.LMS_MAX_BYTES,
-        back_url=back_url, back_label=back_label,
+        back_url=back_url, back_label=back_label, reminder=reminder,
     )
+
+@bp.route("/api/sms/reminder/close", methods=["POST"])
+@login_required
+def api_sms_reminder_close():
+    """안내 문자 알림 '안 보냄' — 전화로 안내했거나 보낼 필요가 없을 때 사유를 남기고 닫는다."""
+    payload = request.get_json(silent=True) or {}
+    key = (payload.get("key") or "").strip()
+    reason = (payload.get("reason") or "").strip()
+    if not key or not reason:
+        return jsonify({"error": "안 보내는 사유를 적어 주세요."}), 400
+    first = models.close_sms_reminder(
+        key=key, reason=reason[:200], closed_by=g.user.get("display_name"),
+        patient_id=payload.get("patient_id"), consultation_id=payload.get("consultation_id"))
+    if first:
+        models.log_audit(
+            user_id=g.user["id"], username=g.user["username"], action="sms_reminder_close",
+            target_type="consultation", target_id=payload.get("consultation_id"),
+            detail=f"{key} — {reason[:80]}", ip=request.remote_addr)
+    return jsonify({"ok": True, "already": not first})
 
 @bp.route("/api/sms/recipient")
 @login_required

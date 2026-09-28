@@ -7226,6 +7226,122 @@ def log_sms(*, consultation_id=None, patient_id=None, template_id=None,
     return sid
 
 
+# ─── 안내 문자 알림 (2026-09-28) — 대시보드 '오늘 처리 필요'의 '안내 문자'와 상담 상세가 같이 쓴다 ───
+# 알림 하나 = reminder_key. 상담 직후는 상담마다(`상담 직후:c<id>`), 나머지는 환자·기준일마다(`<시점>:p<id>:<날짜>`).
+# 보냄(sms_log.reminder_key + 실제로 나간 status) 또는 '안 보냄'(sms_reminder_closures)이면 사라진다.
+_SMS_DONE_STATUSES = ("sent", "test", "phone")
+_SMS_REMINDER_ORDER = ("입원 당일", "퇴원 당일", "입원 전날", "상담 직후", "퇴원 후")
+
+
+def _sms_reminder_done_keys(conn, keys) -> set:
+    keys = list(keys)
+    done = set()
+    for i in range(0, len(keys), 900):
+        chunk = keys[i:i + 900]
+        ph = ",".join("?" * len(chunk))
+        done |= {r[0] for r in conn.execute(
+            f"SELECT reminder_key FROM sms_log WHERE reminder_key IN ({ph}) "
+            f"AND status IN ({','.join('?' * len(_SMS_DONE_STATUSES))})", [*chunk, *_SMS_DONE_STATUSES])}
+        done |= {r[0] for r in conn.execute(
+            f"SELECT reminder_key FROM sms_reminder_closures WHERE reminder_key IN ({ph})", chunk)}
+    return done
+
+
+def sms_reminders(today=None) -> list[dict]:
+    """오늘 보낼 안내 문자. 시점에 사용 중 템플릿이 없으면 그 시점은 꺼진 것으로 본다.
+    입·퇴원은 admission_flow_events 하나만 쓴다(대시보드 입·퇴원 현황과 같은 근거). 외진 나감·복귀는 안내 대상이 아니다."""
+    from config import SMS_CONSULT_FOLLOWUP_DAYS, SMS_AFTER_DISCHARGE_DAYS
+    today = (today or datetime.now().strftime("%Y-%m-%d"))[:10]
+    t0 = datetime.strptime(today, "%Y-%m-%d").date()
+    on = {t["timing"] for t in list_sms_templates()}
+    out = {}
+
+    def add(key, timing, patient_id, consultation_id, name, phone, anchor):
+        out.setdefault(key, {"key": key, "timing": timing, "patient_id": patient_id,
+                             "consultation_id": consultation_id, "patient_name": name or "",
+                             "guardian_phone": phone or "", "anchor_date": anchor,
+                             "has_phone": bool((phone or "").strip())})
+
+    conn = get_db()
+    try:
+        if "상담 직후" in on:
+            since = (t0 - timedelta(days=SMS_CONSULT_FOLLOWUP_DAYS - 1)).isoformat()
+            for r in conn.execute(
+                    """SELECT c.id, c.patient_id, c.consult_date, p.name, p.guardian_phone
+                         FROM consultations c JOIN patients p ON p.id = c.patient_id
+                        WHERE c.consult_date BETWEEN ? AND ?
+                          AND COALESCE(c.consult_result, '') != '상담취소'""", (since, today)):
+                add(f"상담 직후:c{r['id']}", "상담 직후", r["patient_id"], r["id"], r["name"],
+                    r["guardian_phone"], r["consult_date"])
+        if "입원 전날" in on:
+            tomorrow = (t0 + timedelta(days=1)).isoformat()
+            for r in conn.execute(
+                    """SELECT c.id, c.patient_id, p.name, p.guardian_phone
+                         FROM consultations c JOIN patients p ON p.id = c.patient_id
+                        WHERE c.planned_admission_date = ?
+                          AND COALESCE(c.admission_status, '') NOT IN ('입원완료', '입원취소', '퇴원완료')""",
+                    (tomorrow,)):
+                add(f"입원 전날:p{r['patient_id']}:{tomorrow}", "입원 전날", r["patient_id"], r["id"],
+                    r["name"], r["guardian_phone"], tomorrow)
+        after = (t0 - timedelta(days=SMS_AFTER_DISCHARGE_DAYS)).isoformat()
+        flows = []
+        if on & {"입원 당일", "퇴원 당일"}:
+            flows += admission_flow_events(today, today)
+        if "퇴원 후" in on:
+            flows += admission_flow_events(after, after)
+        phones = {}
+        for e in flows:
+            pid, day = e.get("patient_id"), e.get("date")
+            if not pid or e.get("is_return") or "외진" in (e.get("sources") or []):
+                continue
+            if e["kind"] == ADMISSION_EVENT_IN and day == today and "입원 당일" in on:
+                timing = "입원 당일"
+            elif e["kind"] == ADMISSION_EVENT_OUT and day == today and "퇴원 당일" in on:
+                timing = "퇴원 당일"
+            elif e["kind"] == ADMISSION_EVENT_OUT and day == after and "퇴원 후" in on:
+                timing = "퇴원 후"
+            else:
+                continue
+            if pid not in phones:
+                row = conn.execute("SELECT guardian_phone FROM patients WHERE id=?", (pid,)).fetchone()
+                phones[pid] = row["guardian_phone"] if row else ""
+            add(f"{timing}:p{pid}:{day}", timing, pid, e.get("consultation_id"), e.get("patient_name"),
+                phones[pid], day)
+        done = _sms_reminder_done_keys(conn, out.keys())
+    finally:
+        conn.close()
+    order = {t: i for i, t in enumerate(_SMS_REMINDER_ORDER)}
+    return sorted((v for k, v in out.items() if k not in done),
+                  key=lambda r: (order.get(r["timing"], 9), r["anchor_date"], r["patient_name"]))
+
+
+def close_sms_reminder(*, key, reason, closed_by, patient_id=None, consultation_id=None) -> bool:
+    """'안 보냄' — 사유를 남기고 알림을 닫는다. 이미 닫혀 있으면 False(첫 사유를 지킨다)."""
+    conn = get_db()
+    cur = conn.execute(
+        "INSERT OR IGNORE INTO sms_reminder_closures "
+        "(reminder_key, patient_id, consultation_id, reason, closed_by) VALUES (?, ?, ?, ?, ?)",
+        (key, patient_id, consultation_id, reason, closed_by))
+    conn.commit()
+    conn.close()
+    return cur.rowcount == 1
+
+
+def reminder_status(consultation_id: int) -> dict:
+    """상담 상세 한 줄 — 이 상담의 보낼 안내(sms_reminders와 같은 판정)·보낸 문자·안 보냄 사유."""
+    pending = [r for r in sms_reminders() if r["consultation_id"] == consultation_id]
+    conn = get_db()
+    sent = [dict(r) for r in conn.execute(
+        "SELECT datetime(created_at, 'localtime') AS created_at, status FROM sms_log "
+        "WHERE consultation_id = ? AND status IN ('sent', 'test', 'phone') ORDER BY created_at DESC, id DESC",
+        (consultation_id,))]
+    closed = [dict(r) for r in conn.execute(
+        "SELECT reason, datetime(created_at, 'localtime') AS created_at FROM sms_reminder_closures "
+        "WHERE consultation_id = ? ORDER BY created_at DESC", (consultation_id,))]
+    conn.close()
+    return {"pending": pending, "sent": sent, "closed": closed}
+
+
 def list_sms_log(limit: int = 100, *, date_from: str | None = None,
                  date_to: str | None = None):
     conn = get_db()
