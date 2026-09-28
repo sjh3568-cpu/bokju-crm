@@ -85,19 +85,16 @@ bp = Blueprint("sms", __name__)
 @bp.route("/sms")
 @login_required
 def sms_compose():
-    """문자 전송 — 최근 상담에서 보호자 선택 → 환자군 템플릿 → 발송."""
-    recent = models.list_consultations(limit=200)
+    """문자 전송 — 이름 검색으로 수신자 선택 → 템플릿 → 확인 창 → 발송."""
     cid = request.args.get("cid", type=int)
     pid = request.args.get("pid", type=int)
-    preselect = models.get_consultation(cid) if cid else None
+    # 수신자 — 이름 검색이 기본. cid/pid로 들어오면 그 환자를 미리 채운다(최근 N건 제한 없음, 2026-09-28).
+    preselect = (models.sms_recipient(consultation_id=cid) if cid
+                 else models.sms_recipient(patient_id=pid) if pid else None)
     date_from = _valid_date(request.args.get("from"))
     date_to = _valid_date(request.args.get("to"))
     if date_from and date_to and date_from > date_to:
         date_from, date_to = date_to, date_from
-    # 선택 대상이 최근 200건 밖이면 드롭다운에 옵션이 없어 프리필이 안 된다
-    # (인박스 퇴원예정 등 오래된 상담의 '문자' 버튼 진입 케이스) → 목록 맨 앞에 보강.
-    if preselect and not any(r["id"] == preselect["id"] for r in recent):
-        recent = [preselect] + recent
     # ← 돌아가기 — 진입 경로 추론 (cid → 상담상세 / pid → 환자상세 / 그 외 → 대시보드)
     if cid and preselect:
         back_url, back_label = f"/consult/{cid}", "← 상담 상세"
@@ -106,7 +103,7 @@ def sms_compose():
     else:
         back_url, back_label = "/", "← 대시보드"
     return render_template(
-        "sms.html", recent=recent, templates=models.list_sms_templates(),
+        "sms.html", templates=models.list_sms_templates(),
         preselect=preselect, log=models.list_sms_log(200, date_from=date_from, date_to=date_to),
         date_from=date_from, date_to=date_to,
         placeholders=SMS_PLACEHOLDERS,
@@ -115,6 +112,13 @@ def sms_compose():
         sms_max_bytes=sms_gateway.SMS_MAX_BYTES, lms_max_bytes=sms_gateway.LMS_MAX_BYTES,
         back_url=back_url, back_label=back_label,
     )
+
+@bp.route("/api/sms/recipient")
+@login_required
+def api_sms_recipient():
+    r = models.sms_recipient(patient_id=request.args.get("pid", type=int),
+                             consultation_id=request.args.get("cid", type=int))
+    return jsonify(r) if r else (jsonify({"error": "not_found"}), 404)
 
 @bp.route("/sms/templates")
 @login_required

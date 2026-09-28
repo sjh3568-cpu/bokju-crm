@@ -7176,6 +7176,33 @@ def delete_sms_template(tid: int):
     conn.close()
 
 
+def sms_recipient(*, patient_id=None, consultation_id=None):
+    """문자 수신자 — 환자의 최근 상담(또는 지정 상담)에서 보호자·토큰 값·질환군을 모은다.
+    문자 화면의 이름 검색·cid/pid 진입·알림 진입이 모두 이 모양을 쓴다."""
+    conn = get_db()
+    if consultation_id:
+        row = conn.execute("SELECT id FROM consultations WHERE id=?", (consultation_id,)).fetchone()
+    elif patient_id:
+        row = conn.execute("SELECT id FROM consultations WHERE patient_id=? "
+                           "ORDER BY consult_date DESC, id DESC LIMIT 1", (patient_id,)).fetchone()
+    else:
+        row = None
+    conn.close()
+    if row:
+        c = get_consultation(row["id"])
+        return {"patient_id": c["patient_id"], "consultation_id": c["id"],
+                "patient_name": c.get("patient_name") or "", "guardian_name": c.get("guardian_name") or "",
+                "guardian_phone": c.get("guardian_phone") or "",
+                "planned": c.get("planned_admission_date") or "", "doctor": c.get("attending_doctor") or "",
+                "disease_groups": consult_disease_groups(c)}
+    p = get_patient(patient_id) if patient_id else None
+    if p:
+        return {"patient_id": p["id"], "consultation_id": None, "patient_name": p.get("name") or "",
+                "guardian_name": p.get("guardian_name") or "", "guardian_phone": p.get("guardian_phone") or "",
+                "planned": "", "doctor": "", "disease_groups": []}
+    return None
+
+
 def log_sms(*, consultation_id=None, patient_id=None, template_id=None,
             to_name=None, to_phone=None, body=None, status="manual",
             sent_by=None, msg_type=None, provider=None, provider_msg_id=None,

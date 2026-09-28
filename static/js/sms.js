@@ -1,24 +1,23 @@
 // 문자 전송 — 환자군 템플릿 선택 + 토큰 치환 + 발송 (5번 요청)
 (() => {
-    const consultSel = document.getElementById('sms-consult');
-    if (!consultSel) return;
+    const searchEl = document.getElementById('sms-search');
+    if (!searchEl) return;
     const phoneEl = document.getElementById('sms-phone');
     const nameEl = document.getElementById('sms-name');
     const bodyEl = document.getElementById('sms-body');
     const countEl = document.getElementById('sms-count');
     const msgEl = document.querySelector('.sms-msg');
-    const CONSULTS = window.SMS_CONSULTS || {};
+    const listEl = document.getElementById('sms-search-list');
+    const pickedEl = document.getElementById('sms-picked');
+    let current = window.SMS_PRESELECT || null;   // /api/sms/recipient 모양 — 선택한 수신자
 
     let rawTemplate = '';  // 마지막 선택한 템플릿 원본(토큰 미치환)
 
-    function currentConsult() {
-        return CONSULTS[consultSel.value] || null;
-    }
     function fillTokens(text) {
-        const c = currentConsult();
+        const c = current;
         const map = {
-            '{환자명}': c ? c.name : '',
-            '{보호자명}': c ? c.guardian : '',
+            '{환자명}': c ? c.patient_name : '',
+            '{보호자명}': c ? c.guardian_name : '',
             '{병원명}': '복주회복병원',
             '{입원예정일}': c ? c.planned : '',
             '{주치의}': c ? c.doctor : '',
@@ -121,17 +120,44 @@
         note.append(tip);
     }
 
-    function applyConsult() {
-        const c = currentConsult();
-        if (c) {
-            phoneEl.value = c.phone || '';
-            nameEl.value = c.guardian || '';
-        }
+    function setRecipient(r) {
+        current = r;
+        phoneEl.value = r ? (r.guardian_phone || '') : '';
+        nameEl.value = r ? (r.guardian_name || '') : '';
+        pickedEl.textContent = r
+            ? `${r.patient_name} · 보호자 ${r.guardian_name || '-'} ${r.guardian_phone || '(번호 없음)'}`
+            : '선택한 환자 없음';
         if (rawTemplate) { bodyEl.value = fillTokens(rawTemplate); }
+        document.dispatchEvent(new CustomEvent('sms:recipient', {detail: r}));  // 템플릿 질환 필터가 듣는다
         updateCount();
     }
+    // 이름 검색 — 상담일지와 같은 환자 자동완성(/api/autocomplete/patient)을 쓴다
+    let searchTimer = null;
+    searchEl.addEventListener('input', () => {
+        clearTimeout(searchTimer);
+        const q = searchEl.value.trim();
+        if (!q) { listEl.hidden = true; return; }
+        searchTimer = setTimeout(async () => {
+            let res;
+            try { res = await api.get('/api/autocomplete/patient?q=' + encodeURIComponent(q)); }
+            catch { return; }
+            const items = res.items || [];
+            listEl.replaceChildren(...items.map(p => {
+                const b = document.createElement('button'); b.type = 'button';
+                b.textContent = `${p.name} · ${p.guardian_name || '보호자'} ${p.guardian_phone || '(번호 없음)'}`;
+                b.addEventListener('click', async () => {
+                    listEl.hidden = true; searchEl.value = p.name;
+                    try { setRecipient(await api.get('/api/sms/recipient?pid=' + p.id)); }
+                    catch (e) { msgEl.className = 'sms-msg err'; msgEl.textContent = '환자 정보를 불러오지 못했습니다: ' + e.message; }
+                });
+                return b;
+            }));
+            listEl.hidden = !items.length;
+        }, 200);
+    });
+    searchEl.addEventListener('keydown', e => { if (e.key === 'Escape') listEl.hidden = true; });
+    document.addEventListener('click', e => { if (!e.target.closest('.sms-search-wrap')) listEl.hidden = true; });
 
-    consultSel.addEventListener('change', applyConsult);
     phoneEl.addEventListener('input', renderPreview);  // 테스트 모드 머리말에 수신 번호가 들어간다
     bodyEl.addEventListener('input', () => { rawTemplate = ''; updateCount(); });
 
@@ -161,11 +187,10 @@
         if (!phone) { msgEl.className = 'sms-msg err'; msgEl.textContent = '수신 번호를 입력하세요.'; return; }
         if (!body) { msgEl.className = 'sms-msg err'; msgEl.textContent = '문자 내용을 입력하세요.'; return; }
         if (bodyBytes(body) > LMS_MAX) { msgEl.className = 'sms-msg err'; msgEl.textContent = '본문이 장문(LMS) 한도를 넘습니다. 내용을 줄이세요.'; return; }
-        const c = currentConsult();
         const payload = {
             to_phone: phone, body: body, to_name: nameEl.value.trim(),
-            consultation_id: consultSel.value ? Number(consultSel.value) : null,
-            patient_id: c ? c.pid : null,
+            consultation_id: current ? current.consultation_id : null,
+            patient_id: current ? current.patient_id : null,
         };
         msgEl.className = 'sms-msg muted'; msgEl.textContent = '전송 처리 중...';
         try {
@@ -193,6 +218,6 @@
         }
     });
 
-    if (consultSel.value) applyConsult();
+    if (current) setRecipient(current);
     updateCount();
 })();
