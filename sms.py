@@ -61,6 +61,17 @@ def normalize_phone(phone: str) -> str:
     return re.sub(r"\D", "", phone or "")
 
 
+def unresolved_tokens(body: str) -> list[str]:
+    """본문에 남은 치환 토큰 — 이대로 나가면 '{환자명}'이 글자 그대로 보호자에게 간다(2026-09-28)."""
+    from config import SMS_PLACEHOLDERS
+    return [t for t in SMS_PLACEHOLDERS if t in (body or "")]
+
+
+def valid_mobile(phone: str) -> bool:
+    """휴대폰 번호 형식(01X + 7~8자리). 화면 확인 창·발송 API·QR이 같은 기준을 쓴다."""
+    return bool(re.fullmatch(r"01[016789]\d{7,8}", normalize_phone(phone)))
+
+
 def provider_name() -> str:
     return (os.getenv("SMS_PROVIDER") or "").strip().lower()
 
@@ -104,7 +115,7 @@ def send_sms(to_phone: str, body: str, *, title: str | None = None) -> dict:
         return {**base, "status": "failed",
                 "error": f"본문이 {n}바이트 — LMS 한도 {LMS_MAX_BYTES}바이트 초과"}
     receiver = normalize_phone(to_phone)
-    if not re.fullmatch(r"01[016789]\d{7,8}", receiver):
+    if not valid_mobile(receiver):
         return {**base, "status": "failed", "error": f"휴대폰 번호 형식이 아닙니다: {to_phone}"}
 
     redirected = test_to()

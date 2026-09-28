@@ -104,5 +104,30 @@ class RecipientTests(Base):
         self.assertEqual(self.preselect(f"/sms?cid={cid}")["patient_name"], "오래된환자")
 
 
+
+class GuardTests(Base):
+    def test_unresolved_tokens(self):
+        self.assertEqual(sms.unresolved_tokens("{환자명}님 {주치의} 안내"), ["{환자명}", "{주치의}"])
+        self.assertEqual(sms.unresolved_tokens("홍길동님 안내"), [])
+
+    def test_send_rejects_unresolved_token(self):
+        with patch.object(sms, "send_sms") as send:
+            r = self.client.post("/api/sms/send", json={"to_phone": "01011112222", "body": "{환자명}님 안내"})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("{환자명}", r.get_json()["error"])
+        send.assert_not_called()
+        self.assertEqual(models.list_sms_log(5), [])
+
+    def test_send_rejects_bad_phone(self):
+        r = self.client.post("/api/sms/send", json={"to_phone": "054-550-1700", "body": "안내"})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(models.list_sms_log(5), [])
+
+    def test_page_has_confirm_dialog(self):
+        html = self.client.get("/sms").get_data(as_text=True)
+        self.assertIn('<dialog id="sms-confirm"', html)
+        self.assertIn(">확인하고 보내기<", html)
+
+
 if __name__ == "__main__":
     unittest.main()

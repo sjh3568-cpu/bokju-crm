@@ -181,20 +181,51 @@
         });
     }
 
-    document.getElementById('sms-send').addEventListener('click', async () => {
+    // ─── 확인 창 (2026-09-28) — 문자는 회수가 안 되므로 '전송'이 곧 발송이 되지 않게 한 번 더 본다.
+    // 미치환 토큰·번호 형식·길이 문제가 있으면 보내기 버튼이 꺼진다(서버 /api/sms/send도 같은 조건으로 거절).
+    const dlg = document.getElementById('sms-confirm');
+    const goBtn = document.getElementById('sms-confirm-go');
+    const TOKENS = (() => { try { return JSON.parse(device.dataset.tokens || '[]'); } catch { return []; } })();
+    function confirmProblems(phone, body) {
+        const problems = [];
+        const left = TOKENS.filter(t => body.includes(t));
+        if (!body) problems.push('문자 내용이 비어 있습니다.');
+        if (!/^01[016789]\d{7,8}$/.test(phone.replace(/\D/g, ''))) problems.push('휴대폰 번호 형식이 아닙니다.');
+        if (left.length) problems.push('채워지지 않은 토큰 ' + left.join(' ') + ' — 수신자를 고르거나 직접 고쳐 주세요.');
+        if (bodyBytes(body) > LMS_MAX) problems.push('장문(LMS) 한도를 넘습니다.');
+        return problems;
+    }
+    function openConfirm() {
+        const phone = phoneEl.value.trim(), body = bodyEl.value.trim();
+        const problems = confirmProblems(phone, body);
+        dlg.querySelector('.sms-confirm-to').textContent = `${nameEl.value.trim() || '받는 분'} · ${phone || '번호 없음'}`;
+        dlg.querySelector('.sms-confirm-kind').textContent = countEl.textContent;
+        const block = dlg.querySelector('.sms-confirm-block');
+        block.hidden = !problems.length; block.textContent = problems.join(' / ');
+        goBtn.disabled = problems.length > 0;
+        const pv = document.getElementById('sms-confirm-preview');
+        const copy = device.cloneNode(true); copy.removeAttribute('id');
+        pv.replaceChildren(copy);
+        const handoff = dlg.querySelector('.sms-confirm-handoff');
+        handoff.hidden = true; handoff.replaceChildren();
+        goBtn.textContent = device.dataset.mode === 'manual' ? '휴대폰으로 넘기기' : '보내기';
+        dlg.showModal();
+    }
+    async function doSend(mode) {
         const phone = phoneEl.value.trim();
         const body = bodyEl.value.trim();
-        if (!phone) { msgEl.className = 'sms-msg err'; msgEl.textContent = '수신 번호를 입력하세요.'; return; }
-        if (!body) { msgEl.className = 'sms-msg err'; msgEl.textContent = '문자 내용을 입력하세요.'; return; }
-        if (bodyBytes(body) > LMS_MAX) { msgEl.className = 'sms-msg err'; msgEl.textContent = '본문이 장문(LMS) 한도를 넘습니다. 내용을 줄이세요.'; return; }
+        if (confirmProblems(phone, body).length) return;   // 창이 열린 뒤 내용이 바뀌었을 때
         const payload = {
             to_phone: phone, body: body, to_name: nameEl.value.trim(),
             consultation_id: current ? current.consultation_id : null,
             patient_id: current ? current.patient_id : null,
+            mode: mode || null,
         };
+        goBtn.disabled = true;
         msgEl.className = 'sms-msg muted'; msgEl.textContent = '전송 처리 중...';
         try {
             const res = await api.post('/api/sms/send', payload);
+            dlg.close();
             if (res.status === 'sent') {
                 msgEl.className = 'sms-msg ok'; msgEl.textContent = '문자를 발송했습니다. (' + (res.msg_type || '') + ')';
                 setTimeout(() => location.reload(), 900);
@@ -215,8 +246,15 @@
             }
         } catch (e) {
             msgEl.className = 'sms-msg err'; msgEl.textContent = '실패: ' + e.message;
+            const block = dlg.querySelector('.sms-confirm-block');
+            block.hidden = false; block.textContent = '실패: ' + e.message;
+        } finally {
+            goBtn.disabled = false;
         }
-    });
+    }
+    document.getElementById('sms-send').addEventListener('click', openConfirm);
+    document.getElementById('sms-confirm-cancel').addEventListener('click', () => dlg.close());
+    goBtn.addEventListener('click', () => doSend());
 
     if (current) setRecipient(current);
     updateCount();

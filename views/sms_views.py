@@ -184,6 +184,13 @@ def api_sms_send():
     if not to_phone or not body:
         return jsonify({"error": "수신 번호와 본문이 필요합니다."}), 400
 
+    # 회수가 안 되니 서버에서도 막는다 — 화면 확인 창을 거치지 않은 호출까지(2026-09-28).
+    left = sms_gateway.unresolved_tokens(body)
+    if left:
+        return jsonify({"error": "채워지지 않은 토큰이 있습니다: " + " ".join(left)}), 400
+    if not sms_gateway.valid_mobile(to_phone):
+        return jsonify({"error": f"휴대폰 번호 형식이 아닙니다: {to_phone}"}), 400
+
     msg_type, nbytes = sms_gateway.message_type(body)
     if msg_type == "TOO_LONG":
         return jsonify({"error": f"본문이 {nbytes}바이트 — 장문(LMS) 한도 "
@@ -206,6 +213,7 @@ def api_sms_send():
         sent_by=g.user.get("display_name"),
         msg_type=msg_type, provider=provider, provider_msg_id=provider_msg_id,
         sent_to=sent_to, error=error,
+        reminder_key=(payload.get("reminder_key") or "").strip() or None,
     )
     models.log_audit(
         user_id=g.user["id"], username=g.user["username"],

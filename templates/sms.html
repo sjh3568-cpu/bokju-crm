@@ -67,7 +67,7 @@
                       title="발송사 기준 바이트 — 한글 2, 영숫자 1. {{ sms_max_bytes }}바이트까지 단문(SMS), 그 이상은 장문(LMS)">0자</span>
                 <div style="display:flex; gap:8px">
                     <button type="button" class="btn btn-secondary btn-sm" id="sms-copy">복사</button>
-                    <button type="button" class="btn btn-primary" id="sms-send">전송</button>
+                    <button type="button" class="btn btn-primary" id="sms-send">확인하고 보내기</button>
                 </div>
             </div>
             <p class="muted sms-ph-help">치환 토큰:
@@ -97,6 +97,24 @@
         </div>
     </div>
 </div>
+
+{# 확인 창 — 받는 사람·미리보기·단문/장문을 한 번 더 보고 보낸다. 문제가 있으면 보내기 버튼이 꺼진다. #}
+<dialog id="sms-confirm" class="sms-confirm" aria-labelledby="sms-confirm-title">
+    <h3 id="sms-confirm-title">보내기 전에 확인하세요</h3>
+    <div class="sms-confirm-grid">
+        <div class="sms-confirm-info">
+            <p class="sms-confirm-to"></p>
+            <p class="sms-confirm-kind muted"></p>
+            <p class="sms-confirm-block" hidden></p>
+            <div class="sms-confirm-handoff" hidden></div>
+        </div>
+        <div id="sms-confirm-preview"></div>
+    </div>
+    <div class="sms-confirm-actions">
+        <button type="button" class="btn btn-secondary" id="sms-confirm-cancel">돌아가서 고치기</button>
+        <button type="button" class="btn btn-primary" id="sms-confirm-go">보내기</button>
+    </div>
+</dialog>
 
 <div class="card sms-history" style="margin-top:12px">
     <div class="sms-history-head"><h3>발송 이력 ({{ log|length }})</h3>
@@ -205,6 +223,18 @@
 .sms-device-note { font-size:.74em; color:var(--text-light); margin-top:8px; line-height:1.45; }
 .sms-device-note .warn { color:#b45309; font-weight:600; }
 @media (max-width:760px) { .sms-compose { flex-direction:column; } .sms-device { align-self:center; } }
+/* 확인 창 */
+.sms-confirm { border:0; border-radius:12px; padding:18px 20px; max-width:640px; width:calc(100% - 32px); }
+.sms-confirm::backdrop { background:rgba(15,23,42,.45); }
+.sms-confirm h3 { margin:0 0 12px; }
+.sms-confirm-grid { display:flex; gap:16px; align-items:flex-start; }
+.sms-confirm-info { flex:1; min-width:0; }
+.sms-confirm-to { font-size:1.05em; font-weight:700; margin:0 0 4px; }
+.sms-confirm-kind { margin:0 0 8px; font-size:.86em; }
+.sms-confirm-block { color:var(--danger); font-weight:600; margin:0 0 8px; }
+.sms-confirm-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:14px; }
+.sms-confirm-actions .btn { white-space:nowrap; }
+@media (max-width:640px) { .sms-confirm-grid { flex-direction:column; } }
 .sms-history-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; flex-wrap:wrap; }.sms-history-head h3{margin:0}
 </style>
 
