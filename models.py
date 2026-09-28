@@ -3030,6 +3030,36 @@ def data_quality_report():
     result.append({"title": "외진 복귀 — 명부 회차 없음",
                    "description": "복귀 처리했지만 원무 명부에 복귀일 입원 회차가 아직 없습니다. 입원 이력·이번주 입원에는 복귀 기록으로 세고 있으니, 명부를 적재하면 자동으로 회차 행으로 바뀝니다.",
                    "count": len(no_roster), "rows": no_roster})
+    # 원무 명부에 없는 재원 — CRM 재원 수가 원무보다 많을 때 그 차이가 누구인지 바로 보여 준다.
+    # 재원 = 명부 열린 회차 + 명부 기준일 이후 CRM 입원완료. 뒤쪽이 이 목록이다(2026-09-28 요청:
+    # "어디서 1명이 포함되어 있는지 자체적으로 알 수 없나"). 대개 둘 중 하나다 —
+    # ① 명부가 아직 그날치를 안 담았다(곧 맞춰진다) ② 실제로는 입원하지 않았는데 완료로 눌렸다.
+    census = current_admission_census()
+    roster_asof = census.get("roster_asof")
+    crm_only = []
+    if census["patients"]:
+        ph = ",".join("?" * len(census["patients"]))
+        crm_only = [dict(r) for r in conn.execute(f"""
+            SELECT c.id, c.patient_id, p.name AS patient_name, c.consult_date,
+                   c.admission_status, c.actual_admission_date, c.admission_date,
+                   c.discharge_date, c.discharge_due_date, c.room_number,
+                   p.guardian_phone, c.attending_doctor, p.chart_no
+              FROM consultations c JOIN patients p ON p.id = c.patient_id
+             WHERE c.patient_id IN ({ph})
+               AND c.admission_status = '입원완료' AND COALESCE(c.discharge_date, '') = ''
+               AND NOT EXISTS (SELECT 1 FROM admission_episodes e
+                                WHERE e.patient_id = c.patient_id AND e.roster_key IS NOT NULL
+                                  AND COALESCE(e.discharged_at, '') = '')
+             GROUP BY c.patient_id
+             ORDER BY COALESCE(c.actual_admission_date, c.admission_date) DESC LIMIT 100""",
+            list(census["patients"]))]
+    result.append({
+        "title": "원무 명부에 없는 재원",
+        "description": ("원무 명부에는 없는데 CRM이 재원으로 세는 사람입니다 — 재원 수가 원무와 다르면 그 차이가 여기입니다"
+                        + (f" (적재된 명부는 {roster_asof}까지)" if roster_asof else "")
+                        + ". 명부가 아직 그날치를 안 담았으면 적재하면 사라지고, 실제로 입원하지 않았다면"
+                          " 상담 상세에서 입원 진행을 되돌려 주세요. 차트번호가 비어 있으면 명부를 올려도 이어지지 않습니다."),
+        "count": len(crm_only), "rows": crm_only})
     conn.close()
     return {"total": sum(x["count"] for x in result), "checks": result,
             "episode_count": len(list_admission_episodes())}

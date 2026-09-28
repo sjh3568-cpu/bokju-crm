@@ -7,7 +7,13 @@
 
 
 <div class="page-header wd-head">
-    <h1>재원 관리 <span class="muted" style="font-size:0.62em">{{ kpis.admitted }}명 재원</span></h1>
+    {# 재원 수가 원무와 다를 때 그 차이가 누구인지 바로 찾아가게 — 명부에 없는 재원만 따로 센다(2026-09-28 요청).
+       0명이면 아무것도 표시하지 않는다. 관리자만 점검 탭에 들어갈 수 있어 링크도 그때만 건다. #}
+    <h1>재원 관리 <span class="muted" style="font-size:0.62em">{{ kpis.admitted }}명 재원</span>{% if kpis.crm_n %}
+        {% if current_user.role == 'admin' %}<a class="wd-roster-gap" href="/ward?tab=quality"
+           title="원무 명부에는 없는데 CRM이 재원으로 세는 사람입니다. 명부를 적재하면 사라지고, 실제 입원이 아니면 상담 상세에서 입원 진행을 되돌리세요. 눌러서 명단 보기">명부 밖 {{ kpis.crm_n }}명</a>
+        {% else %}<span class="wd-roster-gap" title="원무 명부에는 없는데 CRM이 재원으로 세는 사람입니다">명부 밖 {{ kpis.crm_n }}명</span>{% endif %}
+    {% endif %}</h1>
     <div class="wd-head-act">
         <a class="btn btn-primary btn-sm primary-new-consult" href="/consult/new"><span>＋</span> 새 상담일지</a>
     </div>
@@ -580,6 +586,9 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
 .wd-iso:hover { border-color:#b91c1c; color:#b91c1c; }
 .rm-bed .wd-iso { font-size:.66em; }
 /* 재입원 — 이전 입원·퇴원일은 툴팁, 전체 이력은 상담 상세의 '입원 회차 이력' */
+.wd-roster-gap { display:inline-block; margin-left:6px; padding:1px 7px; border-radius:6px; background:#fef3c7; color:#92400e;
+    font-size:.6em; font-weight:800; vertical-align:middle; text-decoration:none; cursor:pointer; }
+.wd-roster-gap:hover { background:#fde68a; }
 .wd-readmit { display:inline-block; background:#fef3c7; color:#92400e; border-radius:5px; padding:0 4px; font-size:.68em; font-weight:800; vertical-align:middle; cursor:help; }
 .wd-readmit-away { background:#e0f2fe; color:#075985; } /* 외진 복귀 — 진짜 재입원(노랑)과 색으로도 가른다(2026-09-21) */
 .wd-roster-only { display:inline-block; background:#fef3c7; color:#92400e; border-radius:5px;
