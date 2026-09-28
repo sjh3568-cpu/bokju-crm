@@ -3355,7 +3355,8 @@ def list_consultations(*, date_from=None, date_to=None,
     # 발병일 — consultations.disease_onset는 폼 입력분이라 사실상 비어 있다(8천여 건 중 0).
     # 실제 발병일은 원무 명부 backfill로 admission_episodes.onset_date에 들어 있으므로,
     # 재원 census와 같은 회차↔상담 매칭 규칙(_link_episodes)으로 이 페이지 상담에 얹는다.
-    # 표시 전용 필드(onset_display)로만 넘겨 회복기 자동판정(disease_onset 사용)은 건드리지 않는다.
+    # onset_display로 넘긴다. 2026-09-28부터는 회복기 자동판정(_recovery_status)도 상담 발병일이 없으면
+    # 이 값을 쓴다 — 재원 대부분의 발병일이 명부에만 있어서다. 저장값(disease_onset)은 그대로 둔다.
     onset_by_consult, discharge_by_consult = {}, {}
     if patient_ids:
         pid_ph = ",".join("?" * len(patient_ids))
@@ -4329,6 +4330,31 @@ def _weekly_headline(report):
     return head + (" " + ", ".join(tail) + "." if tail else "")
 
 
+def _fill_roster_onset(rows):
+    """상담 발병일이 빈 행에 원무 명부 회차의 발병일을 넣는다(가장 최근 회차 값). 저장값은 안 건드린다."""
+    need = [r for r in rows if not (r.get("disease_onset") or "").strip() and r.get("patient_id")]
+    if not need:
+        return
+    pids = list({r["patient_id"] for r in need})
+    onset = {}
+    conn = get_db()
+    try:
+        for k in range(0, len(pids), 900):
+            chunk = pids[k:k + 900]
+            for row in conn.execute(
+                    f"""SELECT patient_id, onset_date FROM admission_episodes
+                         WHERE patient_id IN ({",".join("?" * len(chunk))}) AND roster_key IS NOT NULL
+                           AND COALESCE(onset_date, '') <> ''
+                         ORDER BY patient_id, admitted_at""", chunk):
+                onset[row["patient_id"]] = row["onset_date"]
+    finally:
+        conn.close()
+    for r in need:
+        if onset.get(r["patient_id"]):
+            r["disease_onset"] = onset[r["patient_id"]]
+            r["onset_from_roster"] = True
+
+
 def dashboard_summary(admission_lookup_from: str | None = None,
                       admission_lookup_to: str | None = None,
                       admission_lookup_scope: str = "all"):
@@ -5031,6 +5057,10 @@ def dashboard_summary(admission_lookup_from: str | None = None,
         }
         for name, rows in admission_by_status.items()
     }
+    # 발병일이 상담일지에 없는 행은 원무 명부 회차의 발병일로 채운다 — 재원 대부분의 발병일이 명부에만
+    # 있어 대시보드 입·퇴원 현황의 발병일 칸이 '-'로 비어 보였다(2026-09-28 원장 지적). 재원관리·KPI가
+    # 쓰는 행 빌더(views.ward.apply_episode_to_row)와 같은 규칙. 표시·회복기 판정 둘 다 이 값을 본다.
+    _fill_roster_onset(admission_schedule + discharge_schedule + discharge_planned_schedule)
     # 조회 기간의 입원 + 퇴원을 한 표에. 구분(scope)은 이 표만 거른다 —
     # KPI·업무 큐가 쓰는 admission_window_schedule에는 퇴원 행을 섞지 않아 '오늘 입원' 수가 부풀지 않는다.
     selected_in_range = [

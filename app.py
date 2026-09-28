@@ -993,9 +993,11 @@ def _recovery_status(consultation):
            or consultation.get("admission_date")
            or consultation.get("planned_admission_date")
            or consultation.get("consult_date"))
-    detail = compute_recovery_detail(
-        ref, consultation.get("disease_onset"), consultation.get("diseases"),
-    )
+    # 발병일은 상담일지 값이 먼저, 없으면 원무 명부 값(onset_display·onset_date) — 전에는 명부 값을
+    # 표시 전용으로만 두고 판정에서 뺐는데, 재원 대부분의 발병일이 명부에만 있어 판정 근거가 비어 있었다(2026-09-28).
+    onset = (consultation.get("disease_onset") or consultation.get("onset_display")
+             or consultation.get("onset_date") or None)
+    detail = compute_recovery_detail(ref, onset, consultation.get("diseases"))
     days_left = detail["days_left"] if detail else None
     if manual_label:
         return {"label": manual_label, "source": "manual", "days_left": days_left}

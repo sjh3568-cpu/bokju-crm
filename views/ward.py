@@ -1234,6 +1234,12 @@ def apply_episode_to_row(c, ep):
     c["rehab_end_imported"] = ep.get("rehab_end_imported")
     c["onset_date"] = ep.get("onset_date")
     c["roster_diagnosis"] = ep.get("diagnosis_name")
+    # 상담일지에 발병일이 없으면 명부 발병일을 그 자리에 쓴다 — 표시도 회복기 판정도 이 값을 본다.
+    # 재원 267명 중 207명은 발병일이 명부에만 있어, 표시 전용으로만 두면 대시보드에 '-'가 뜨고
+    # 판정도 못 쓴다(2026-09-28 원장: "재원 환자 발병일 다 반영된 거야?"). 저장값은 안 건드린다.
+    if not (c.get("disease_onset") or "").strip() and ep.get("onset_date"):
+        c["disease_onset"] = ep["onset_date"]
+        c["onset_from_roster"] = True
     return c
 
 
@@ -1293,6 +1299,8 @@ def _ward_row_from_episode(ep):
         "insurance_type": ep.get("insurance_type"),
         "primary_diagnosis": ep.get("diagnosis_name"),
         "diagnosis_code": ep.get("diagnosis_code"),
+        # 상담 없는 회차도 명부 발병일은 있다 — 표시·판정에 쓴다(2026-09-28, apply_episode_to_row와 같은 규칙)
+        "disease_onset": ep.get("onset_date") or None, "onset_from_roster": bool(ep.get("onset_date")),
         "disease_detail": None, "diseases": [], "secondary_diagnosis": None,
         "patient_age": None, "episode_id": ep["id"],
         "roster_care_phase": _roster_care_phase(ep.get("care_type")),
