@@ -555,7 +555,12 @@ def admin_consult_sheet():
         if not consult_sheet_sync.configured():
             flash(".env에 CONSULT_SHEET_URL / CONSULT_SHEET_TOKEN이 없습니다(관리자).", "error")
             return redirect(url_for("admin.admin_import") + "#sheet-sync")
-        rep = consult_sheet_sync.run(apply=(action == "apply"), trigger=g.user["username"])
+        try:
+            names = consult_sheet_sync.full_sheet_names(refresh=True)   # 정기 동기화와 같은 범위(최근 N개월 탭)
+        except consult_sheet_sync.SyncError as exc:
+            flash(f"동기화 실패: {exc}", "error")
+            return redirect(url_for("admin.admin_import") + "#sheet-sync")
+        rep = consult_sheet_sync.run(apply=(action == "apply"), trigger=g.user["username"], names=names, full=True)
         t = rep.get("totals") or {}
         if rep.get("ok"):
             flash(f"{'반영' if action == 'apply' else '미리보기'} 완료 — 새 상담 {t.get('new', 0)} · 고친 행 {t.get('updated', 0)} · "

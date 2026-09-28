@@ -17,7 +17,8 @@
 .env
   CONSULT_SHEET_URL      Apps Script 웹앱 URL (없으면 연동 꺼짐)
   CONSULT_SHEET_TOKEN    스크립트와 맞춘 비밀 토큰
-  CONSULT_SHEET_MINUTES  전체 동기화 주기(분, 기본 10, 최소 5) — 39탭 전부
+  CONSULT_SHEET_MINUTES  정기 동기화 주기(분, 기본 10, 최소 5)
+  CONSULT_SHEET_FULL_MONTHS  정기 동기화가 보는 달 수(기본 6, 0이면 모든 탭) — 2026-09-28 사용자: 전체 탭은 필요 없다
   CONSULT_SHEET_FAST_MINUTES  빠른 동기화 주기(분, 기본 1, 0이면 끔) — 최근 두 달 탭만 받아 1분 안에 반영(2026-09-28 B안)
 자동 반영 켜기/끄기는 관리 → 엑셀 적재 화면의 버튼(상태 파일 auto)으로 — 재시작 없이 바뀐다.
 """
@@ -116,6 +117,8 @@ def panel_info() -> dict:
     st = status()
     return {"configured": configured(), "auto": st.get("auto") is True, "minutes": sync_minutes(),
             "fast_minutes": fast_minutes(), "recent": recent_sheet_names(st.get("sheet_names") or []),
+            "full_months": full_months(),
+            "full_tabs": recent_sheet_names(st.get("sheet_names") or [], count=full_months()) if full_months() else None,
             "last": st.get("last"), "last_full": st.get("last_full"), "last_report_text": st.get("last_report_text"),
             "link": (os.getenv("CONSULT_SHEET_LINK") or "").strip() or st.get("sheet_link") or ""}
 
@@ -223,11 +226,47 @@ def fetch_sheets(names=None) -> list[dict]:
     sheets = res.get("sheets") or []
     extra = {"sheet_link": res["url"]} if res.get("url") else {}
     if not names:
-        # 전체를 받았을 때만 탭 목록을 기억한다 — 빠른 동기화가 '최근 달 탭'을 여기서 고른다
         extra["sheet_names"] = [s["name"] for s in sheets]
     if extra:
         _write_status(**extra)
     return sheets
+
+
+def fetch_tabs() -> list[str]:
+    """탭 이름 목록만 받는다(ping — 값은 안 보내므로 1초 안). 상태 파일 sheet_names에 기억해 범위 계산에 쓴다."""
+    body = json.dumps({"token": sheet_token(), "action": "ping"}).encode("utf-8")
+    req = Request(sheet_url(), data=body, headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urlopen(req, timeout=60) as resp:
+            res = json.loads(resp.read().decode("utf-8", "replace"))
+    except (HTTPError, URLError, TimeoutError, OSError, ValueError) as e:
+        raise SyncError(f"탭 목록 받기 실패: {e}") from e
+    if not isinstance(res, dict) or not res.get("ok"):
+        raise SyncError(str((res or {}).get("error") if isinstance(res, dict) else res) or "알 수 없는 오류")
+    tabs = [str(t) for t in (res.get("tabs") or [])]
+    extra = {"sheet_names": tabs}
+    if res.get("url"):
+        extra["sheet_link"] = res["url"]
+    _write_status(**extra)
+    return tabs
+
+
+def full_months() -> int:
+    """정기(10분) 동기화가 보는 달 수 — 기본 6(2026-09-28 사용자: 전체 탭은 필요 없다). 0이면 모든 탭."""
+    try:
+        return max(0, int(os.getenv("CONSULT_SHEET_FULL_MONTHS") or 6))
+    except ValueError:
+        return 6
+
+
+def full_sheet_names(refresh=True):
+    """정기 동기화 범위 — 최근 full_months()개 월 탭. 0이면 None(=모든 탭). refresh면 탭 목록을 새로 받아
+    새 달 탭이 생긴 것을 다음 정기 동기화부터 바로 포함한다."""
+    n = full_months()
+    if n == 0:
+        return None
+    tabs = fetch_tabs() if refresh else (status().get("sheet_names") or [])
+    return recent_sheet_names(tabs, count=n)
 
 
 _MONTH_TAB = re.compile(r"^(\d{2})\s*[년.]\s*(\d{1,2})\s*월")     # '26.9월' '24.01월' '23년9월 상담' '23.11월상담'
@@ -293,12 +332,15 @@ def _row_key(parsed: dict) -> str:
 _run_lock = threading.Lock()
 
 
-def run(apply: bool = False, trigger: str = "manual", book=None, names=None) -> dict:
+def run(apply: bool = False, trigger: str = "manual", book=None, names=None, full=None) -> dict:
     """시트를 읽어 CRM과 맞춘다. apply=False면 무엇을 할지만 세고 DB는 그대로(트랜잭션 롤백).
 
-    names를 주면 그 탭만(빠른 동기화) — 다른 탭의 연결은 건드리지 않는다. book을 주면(테스트) 시트를 받지
-    않고 그것을 쓴다. 보고서(dict)를 돌려주고 상태 파일에도 남긴다(전체 실행은 last_full에도).
+    names를 주면 그 탭만 — 다른 탭의 연결은 건드리지 않는다(None이면 모든 탭). full=True면 '정기 동기화'로
+    기록(last_full) — 기본은 names가 없을 때. book을 주면(테스트) 시트를 받지 않고 그것을 쓴다.
+    보고서(dict)를 돌려주고 상태 파일에도 남긴다.
     """
+    if full is None:
+        full = not names
     if not _run_lock.acquire(blocking=False):
         return {"ok": False, "error": "이미 동기화가 진행 중입니다"}
     try:
@@ -326,7 +368,7 @@ def run(apply: bool = False, trigger: str = "manual", book=None, names=None) -> 
         summary = {k: report[k] for k in ("ok", "apply", "trigger", "started", "finished", "seconds", "totals", "scope")
                    } | ({"error": report["error"]} if not report["ok"] else {})
         fields = {"last": summary, "last_report_text": text[:30000]}
-        if not names:
+        if full:
             fields["last_full"] = summary
         _write_status(**fields)
         if apply and report["ok"] and (report["totals"]["new"] or report["totals"]["updated"]):
@@ -662,8 +704,11 @@ def _loop():
         if not what:
             continue
         try:
-            names = None if what == "full" else recent_sheet_names()
-            rep = run(apply=True, trigger="scheduler" if what == "full" else "scheduler-fast", names=names)
+            if what == "full":
+                names = full_sheet_names(refresh=True)      # 탭 목록도 이때 새로 받는다(새 달 탭 포함)
+                rep = run(apply=True, trigger="scheduler", names=names, full=True)
+            else:
+                rep = run(apply=True, trigger="scheduler-fast", names=recent_sheet_names())
             if what == "full" and rep.get("ok"):
                 last_full = datetime.now()
             t = rep.get("totals") or {}

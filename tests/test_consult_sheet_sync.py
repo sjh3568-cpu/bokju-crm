@@ -201,6 +201,15 @@ class ConsultSheetSyncTests(unittest.TestCase):
             self.assertEqual(sync._tick(now, now - timedelta(minutes=10)), "full")
         with patch.dict(os.environ, {"CONSULT_SHEET_MINUTES": "10", "CONSULT_SHEET_FAST_MINUTES": "0"}):
             self.assertIsNone(sync._tick(now, now - timedelta(minutes=3)))
+        # 정기 동기화 범위 — 최근 6개월 탭(기본), 0이면 모든 탭(None). 탭 목록은 ping으로 새로 받는다
+        many = ["25.12월", "26.1월", "26.2월", "26.3월", "26.4월", "26.5월", "26.6월", "26.7월", "26.8월", "26.9월", "메모"]
+        with patch.object(sync, "fetch_tabs", return_value=many):
+            self.assertEqual(sync.full_sheet_names(), ["26.4월", "26.5월", "26.6월", "26.7월", "26.8월", "26.9월"])
+            with patch.dict(os.environ, {"CONSULT_SHEET_FULL_MONTHS": "0"}):
+                self.assertIsNone(sync.full_sheet_names())
+        # 정기 실행(full=True)은 names가 있어도 last_full에 남는다
+        rep = sync.run(apply=False, book=two, names=["26.9월"], full=True)
+        self.assertEqual(sync.status()["last_full"]["scope"], ["26.9월"])
 
     def test_status_file_and_auto_toggle(self):
         self.assertFalse(sync.auto_enabled())
@@ -227,6 +236,7 @@ class ConsultSheetSyncTests(unittest.TestCase):
         self.assertIn("구글 시트 자동 반영", html)
         self.assertIn("아직 연결되지 않았습니다", html)               # .env 없음
         with patch.dict(os.environ, {"CONSULT_SHEET_URL": "https://x/exec", "CONSULT_SHEET_TOKEN": "t"}), \
+             patch.object(sync, "fetch_tabs", return_value=["26.9월"]), \
              patch.object(sync, "fetch_sheets", return_value=[{"name": "26.9월", "rows": [[""] * len(HEADERS), HEADERS,
                                                                                          row("김새롬", "2026-09-10")]}]):
             html = client.get("/admin/import").get_data(as_text=True)
