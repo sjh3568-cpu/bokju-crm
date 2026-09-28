@@ -328,7 +328,7 @@
    같은 날 요청으로 성별/나이·보험·회복기를 이름·병실 아래 줄에서 제 열로 풀고, 중증도 열을 더했다. 여기가 한계다 —
    1400px 이하에서는 발병일 열을 접어야 주병명이 140px을 지킨다. 그 이상은 툴팁·배지·상세 화면으로. */
 .page-dashboard .dash-adm-tbl { width: 100%; table-layout: fixed; }
-.page-dashboard .dash-adm-tbl col.c-when { width: 78px; }   /* '09-14(월)' / '10:30' */
+.page-dashboard .dash-adm-tbl col.c-when { width: 90px; }   /* '09-23(수)' — 글꼴이 넓어도 한 줄 (2026-09-28) */
 .page-dashboard .dash-adm-tbl col.c-state { width: 82px; }  /* '입원완료'·'퇴원예정' 배지 + 아래 '재원 123일' */
 .page-dashboard .dash-adm-tbl col.c-who { width: 96px; }   /* '김영희' + 블랙·재입원 배지 */
 .page-dashboard .dash-adm-tbl col.c-sex { width: 66px; }    /* '여/78' — 머리글 '성별/나이'가 한 줄에 들어가는 폭 */
@@ -347,10 +347,11 @@
    style.css 의 `td{word-break:keep-all}` 이 같이 걸려 어절 단위로만 꺾인다. */
 .page-dashboard .dash-adm-tbl th, .page-dashboard .dash-adm-tbl td { padding: 6px 5px; font-size: .88rem; line-height: 1.25;
     white-space: normal; overflow: hidden; text-overflow: clip; vertical-align: middle; }
-/* 일시·성별/나이·발병일·병실은 한 줄 고정 — '2026-07-02'는 하이픈에서, '여/79'는 슬래시에서 꺾여
-   keep-all 로도 못 막는다(상담목록에서 '2026-08…'로 잘렸던 것과 같은 자리, 2026-09-21). */
+/* 일시·성별/나이·발병일·병실 — 한 줄로 보이는 게 보기 좋아 폭을 넉넉히 잡되(아래 col),
+   nowrap 으로 못 박지는 않는다. 못 박으면 글꼴이 더 넓은 PC에서 그대로 잘려 값이 사라진다
+   (2026-09-23 '09-23(수)' 제보, 자간 +6% 재현). 모자라면 둘째 줄로 내려가는 편이 낫다. */
 .page-dashboard .dash-adm-tbl td:nth-child(1), .page-dashboard .dash-adm-tbl td:nth-child(4),
-.page-dashboard .dash-adm-tbl td:nth-child(9), .page-dashboard .dash-adm-tbl td:nth-child(10) { white-space: nowrap; }
+.page-dashboard .dash-adm-tbl td:nth-child(9), .page-dashboard .dash-adm-tbl td:nth-child(10) { word-break: keep-all; }
 .page-dashboard .dash-adm-tbl th { font-size: .78rem; white-space: normal; line-height: 1.15; word-break: keep-all; }
 .page-dashboard .dash-adm-tbl td:first-child, .page-dashboard .dash-adm-tbl th:first-child { padding-left: 8px; }
 .page-dashboard .dash-adm-tbl td:last-child, .page-dashboard .dash-adm-tbl th:last-child { padding-right: 6px; }
@@ -406,7 +407,7 @@
 @media (max-width: 1700px) {
     /* 1600px 화면(표 ≈1,280px) — 전체 폭이라 열을 접지 않고 폭·글자만 한 단계 줄인다.
        경계가 1500이던 때는 1600px 화면이 기본(1920용) 폭을 써서 주병명이 88px까지 눌렸다(2026-09-22). */
-    .page-dashboard .dash-adm-tbl col.c-when { width: 74px; }   /* '09-21(월)'이 잘리지 않는 폭 (2026-09-21) */
+    .page-dashboard .dash-adm-tbl col.c-when { width: 84px; }   /* '09-23(수)' + 여유 (2026-09-28) */
     .page-dashboard .dash-adm-tbl col.c-state { width: 74px; }
     .page-dashboard .dash-adm-tbl col.c-who { width: 86px; }
     .page-dashboard .dash-adm-tbl col.c-sex { width: 54px; }
@@ -427,7 +428,7 @@
     /* 1440px 화면(표 ≈1,120px)·1366px 노트북(표 ≈1,045px) — 어떤 열도 접지 않는다. 발병일이 안 보이면 안 된다는 요청(2026-09-22)에 따라
        접기(폭 0) 대신 고정 열 전부를 한 단계씩 줄이고 가로 여백을 2px로 좁혀 발병일 76px을 만들어 냈다.
        남는 폭은 주병명·유입경로가 반씩(≈95px씩) 갖는다 — 둘 다 줄바꿈되고 전체 문구는 툴팁에 있다. */
-    .page-dashboard .dash-adm-tbl col.c-when { width: 66px; }
+    .page-dashboard .dash-adm-tbl col.c-when { width: 78px; }
     .page-dashboard .dash-adm-tbl col.c-state { width: 66px; }
     .page-dashboard .dash-adm-tbl col.c-who { width: 76px; }
     .page-dashboard .dash-adm-tbl col.c-sex { width: 46px; }    /* 머리글 '성별/나이'는 두 줄로 */
@@ -496,17 +497,18 @@
 /* 고정 레이아웃이라 이 표는 넘치지 않는다 — 마지막 행의 '…' 더보기 메뉴가 .tbl-wrap(overflow:auto)에 잘리지 않게 */
 .page-dashboard .tbl-wrap:has(> .aq-table) { overflow: visible; }
 .page-dashboard .aq-table col.c-act { width: 106px; }
-.page-dashboard .aq-table th, .page-dashboard .aq-table td { overflow: hidden; text-overflow: ellipsis; padding-left: 6px; padding-right: 6px; }
+/* 말줄임 금지 — 입·퇴원 현황과 같은 규칙(2026-09-23 요청). 모자라면 숨기지 말고 둘째 줄로. */
+.page-dashboard .aq-table th, .page-dashboard .aq-table td { white-space: normal; word-break: keep-all; overflow-wrap: break-word; padding-left: 6px; padding-right: 6px; }
 .page-dashboard .aq-table td.dash-action-cell { overflow: visible; white-space: nowrap; padding-left: 4px; padding-right: 4px; }
 .page-dashboard .aq-table .dash-action-cell .btn-xs { padding: 2px 6px; margin: 1px; }
 /* 환자·주상병이 잘리던 것(2026-09-22 요청) — '김차임…'에 성별/나이는 아예 안 보이고 '근골…'로 끊겼다.
    폭은 '내용'에서 덜어 왔다(어차피 대부분 …으로 잘려 정보가 없고 툴팁에 전문이 있다).
    환자는 이름 한 줄 + 성별/나이 아랫줄로 쪼개고, 주상병은 두 줄까지 흐르게 둔다. */
 .page-dashboard .aq-table td.aq-who { white-space: normal; line-height: 1.25; }
-.page-dashboard .aq-table td.aq-who > a { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.page-dashboard .aq-table td.aq-who > a { display: block; white-space: normal; word-break: keep-all; }
 .page-dashboard .aq-table td.aq-who .dash-who { display: block; font-size: .82em; color: var(--dmuted); }
 .page-dashboard .aq-table .dash-dx { max-width: none; white-space: normal; line-height: 1.25; word-break: keep-all; }
-.page-dashboard .aq-detail { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dmuted); }
+.page-dashboard .aq-detail { white-space: normal; word-break: keep-all; color: var(--dmuted); }
 .page-dashboard .aq-meta { font-size: .78rem; color: var(--dmuted); }
 .page-dashboard .aq-meta.danger { color: var(--dcrit); font-weight: 800; }
 .page-dashboard .aq-row.stale td { color: var(--dmuted); }

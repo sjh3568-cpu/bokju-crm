@@ -501,7 +501,7 @@ body .container { max-width: none; padding-left: 12px; padding-right: 12px; }   
 /* 열 폭 — 화면(1440px 기준)에 가로 스크롤 없이 다 들어가도록 고정폭 열은 최소로 잡고,
    남는 폭은 연락처(8)·모병원(9)·유입경로(11)가 나눠 갖는다. 더 넓게 보고 싶으면
    '열 보기'에서 안 쓰는 열을 숨기면 그만큼 다른 열이 넓어진다. */
-.tbl-compact th:nth-child(2),  .tbl-compact td:nth-child(2)  { width:96px; }  /* 상담일 '2026-09-19(토)' */
+.tbl-compact th:nth-child(2),  .tbl-compact td:nth-child(2)  { width:104px; } /* 상담일 '2026-09-19(토)' — 실측 97 + 여유 (2026-09-28) */
 .tbl-compact th:nth-child(3),  .tbl-compact td:nth-child(3)  { width:84px; }  /* 환자 */
 .tbl-compact th:nth-child(4),  .tbl-compact td:nth-child(4),
 .tbl-compact th:nth-child(5),  .tbl-compact td:nth-child(5)  { width:30px; }  /* 성별·나이 */
@@ -512,10 +512,10 @@ body .container { max-width: none; padding-left: 12px; padding-right: 12px; }   
 .tbl-compact th:nth-child(13), .tbl-compact td:nth-child(13) { width:72px; }  /* 회복기대상 */
 .tbl-compact th:nth-child(14), .tbl-compact td:nth-child(14) { width:80px; }  /* 상담결과 */
 .tbl-compact th:nth-child(15), .tbl-compact td:nth-child(15) { width:96px; }  /* 입원진행 (퇴원 임박 액션은 hover 팝오버) */
-.tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:74px; }  /* 발병일 '2026-08-31' */
-.tbl-compact th:nth-child(17), .tbl-compact td:nth-child(17) { width:78px; }  /* 입원완료일 */
+.tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:80px; }  /* 발병일 '2026-08-31' — 실측 71 + 여유 */
+.tbl-compact th:nth-child(17), .tbl-compact td:nth-child(17) { width:84px; }  /* 입원완료일 */
 .tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:118px; } /* 입원기간 만료일 — 가장 가까운 기한 1개 */
-.tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:78px; }  /* 퇴원완료일 */
+.tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:84px; }  /* 퇴원완료일 */
 .tbl-compact th:nth-child(20), .tbl-compact td:nth-child(20) { width:50px; }  /* 상담자 */
 .guardian-cell .phone { margin-left:2px; font-feature-settings:"tnum"; }
 .guardian-cell .rel { display:inline-block; padding:0 3px; margin-right:1px; border-radius:6px; background:#f1f5f9; color:var(--text-light); font-size:0.78em; line-height:1.5; vertical-align:middle; }
@@ -528,7 +528,7 @@ body .container { max-width: none; padding-left: 12px; padding-right: 12px; }   
 @media (max-width: 1500px) {
     .tbl-compact th, .tbl-compact td { padding:3px 1px; font-size:0.76em; }
     .tbl-compact th.check-col, .tbl-compact td.check-col { width:20px; }   /* 체크박스 13 + 패딩 4 = 17 */
-    .tbl-compact th:nth-child(2),  .tbl-compact td:nth-child(2)  { width:92px; }  /* '2026-09-19(토)' 실측 88+패딩 2 */
+    .tbl-compact th:nth-child(2),  .tbl-compact td:nth-child(2)  { width:98px; }  /* '2026-09-19(토)' — 패딩 2px로는 글꼴이 다르면 잘린다 */
     .tbl-compact th:nth-child(3),  .tbl-compact td:nth-child(3)  { width:74px; }  /* 이름 3자+⚠ 47, ⚠+↻N 둘 다 붙은 2행만 77 */
     .tbl-compact th:nth-child(4),  .tbl-compact td:nth-child(4),
     .tbl-compact th:nth-child(5),  .tbl-compact td:nth-child(5)  { width:28px; }  /* 머리글 '성별' 24.3+패딩 2 — "성…" 안 됨(실측) */
@@ -542,10 +542,10 @@ body .container { max-width: none; padding-left: 12px; padding-right: 12px; }   
     .tbl-compact th:nth-child(13), .tbl-compact td:nth-child(13) { width:64px; }  /* 머리글 '회복기대상' 61+패딩 2 */
     .tbl-compact th:nth-child(14), .tbl-compact td:nth-child(14) { width:68px; }  /* '상담완료' 배지 62. select는 max-width:100% */
     .tbl-compact th:nth-child(15), .tbl-compact td:nth-child(15) { width:76px; }  /* '입원완료' 배지 73 */
-    .tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:73px; }  /* '2026-08-31' 실측 69+패딩 2 */
-    .tbl-compact th:nth-child(17), .tbl-compact td:nth-child(17) { width:73px; }
+    .tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:79px; }  /* '2026-08-31' — 여유 6px */
+    .tbl-compact th:nth-child(17), .tbl-compact td:nth-child(17) { width:79px; }
     .tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:88px; }  /* [만료 25일초과] 1줄 ≈ 84 / [2027-03-19] 2줄 ≈ 62 */
-    .tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:73px; }
+    .tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:79px; }
     .tbl-compact th:nth-child(20), .tbl-compact td:nth-child(20) { width:40px; }  /* 머리글 '상담자' 39, 이름 3자 34. 'admin(비상)'(65)만 잘린다 */
     .admexp-row { gap:1px 2px; }
     .admexp-kind { padding:1px 2px; }
@@ -559,7 +559,7 @@ body .container { max-width: none; padding-left: 12px; padding-right: 12px; }   
 @media (min-width: 1800px) {
     .tbl-compact th, .tbl-compact td { padding:4px 3px; font-size:0.94em; line-height:1.35; }
     .tbl-compact th { padding-top:7px; padding-bottom:7px; }
-    .tbl-compact th:nth-child(2),  .tbl-compact td:nth-child(2)  { width:108px; } /* 상담일 '2026-09-19(토)' */
+    .tbl-compact th:nth-child(2),  .tbl-compact td:nth-child(2)  { width:114px; } /* 상담일 '2026-09-19(토)' */
     .tbl-compact th:nth-child(3),  .tbl-compact td:nth-child(3)  { width:92px; }  /* 환자 */
     .tbl-compact th:nth-child(4),  .tbl-compact td:nth-child(4),
     .tbl-compact th:nth-child(5),  .tbl-compact td:nth-child(5)  { width:34px; }  /* 성별·나이 */
@@ -568,15 +568,15 @@ body .container { max-width: none; padding-left: 12px; padding-right: 12px; }   
     .tbl-compact th:nth-child(8),  .tbl-compact td:nth-child(8)  { width:146px; } /* 관계자·연락처 */
     .tbl-compact th:nth-child(9),  .tbl-compact td:nth-child(9)  { width:140px; } /* 모병원 */
     .tbl-compact th:nth-child(10), .tbl-compact td:nth-child(10) { width:100px; } /* 병명 칩 */
-    .tbl-compact th:nth-child(11), .tbl-compact td:nth-child(11) { width:140px; } /* 유입경로 */
+    .tbl-compact th:nth-child(11), .tbl-compact td:nth-child(11) { width:116px; } /* 유입경로 — 날짜 열에 24px 넘김(여유 145px였다) */
     .tbl-compact th:nth-child(12), .tbl-compact td:nth-child(12) { width:46px; }  /* 상담방법 */
     .tbl-compact th:nth-child(13), .tbl-compact td:nth-child(13) { width:80px; }  /* 회복기대상 */
     .tbl-compact th:nth-child(14), .tbl-compact td:nth-child(14) { width:88px; }  /* 상담결과 */
     .tbl-compact th:nth-child(15), .tbl-compact td:nth-child(15) { width:104px; } /* 입원진행 */
-    .tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:82px; }  /* 발병일 '2026-08-31' */
-    .tbl-compact th:nth-child(17), .tbl-compact td:nth-child(17) { width:86px; }  /* 입원완료일 */
+    .tbl-compact th:nth-child(16), .tbl-compact td:nth-child(16) { width:88px; }  /* 발병일 '2026-08-31' */
+    .tbl-compact th:nth-child(17), .tbl-compact td:nth-child(17) { width:92px; }  /* 입원완료일 */
     .tbl-compact th:nth-child(18), .tbl-compact td:nth-child(18) { width:128px; } /* 입원기간 만료일 */
-    .tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:86px; }  /* 퇴원완료일 */
+    .tbl-compact th:nth-child(19), .tbl-compact td:nth-child(19) { width:92px; }  /* 퇴원완료일 */
     .tbl-compact th:nth-child(20), .tbl-compact td:nth-child(20) { width:56px; }  /* 상담자 */
     .cf-in { font-size:0.9em; }
     .cf-sm { font-size:0.84em; }
@@ -889,19 +889,25 @@ body .container { max-width: none; padding-left: 12px; padding-right: 12px; }   
 .admexp-row .admexp-kind { order:0; }
 .admexp-row .admexp-est, .admexp-row .admexp-dday { order:1; }
 .admexp-row .admexp-date { order:2; flex-basis:100%; }
-.tbl-compact td.onset-date-cell { white-space:nowrap; }   /* 날짜는 한 줄 — '2026-08-31'이 하이픈에서 꺾이던 것(2026-09-21). 전체 값은 title */
+/* 날짜 열(상담일·발병일·입원완료일·퇴원완료일)은 표 전체의 nowrap+말줄임에서 빼 준다 —
+   폭은 한 줄로 들어가게 잡아 두되, 글꼴이 더 넓은 PC에서는 값을 감추는 대신 둘째 줄로 내린다(2026-09-28). */
+.tbl-compact td:nth-child(2), .tbl-compact td:nth-child(16),
+.tbl-compact td:nth-child(17), .tbl-compact td:nth-child(19) {
+    white-space:normal; overflow:visible; text-overflow:clip; word-break:keep-all; line-height:1.2; }
+.tbl-compact td.onset-date-cell { word-break:keep-all; }   /* 폭을 넉넉히 잡아 한 줄로 보이게 하되 nowrap 으로 못 박지 않는다 — 못 박으면 잘린다(2026-09-28) */
 /* 원무 명부에서 채운 발병일 — 폼 입력값과 구분되게 옅게 표시(마우스오버 시 출처 안내) */
 .tbl-compact td.onset-date-cell.onset-roster { color: var(--text-light); }
 .tbl-compact td.admission-date-cell, .tbl-compact td.admexp-cell { white-space:normal; }
-.admission-date-main { display:block; white-space:nowrap; }
+.admission-date-main { display:block; }
 /* 퇴원완료일 — 상담에 없으면 원무 명부 회차 값을 '명부' 꼬리표와 함께 보여준다(2026-09-19) */
 .tbl-compact td.discharge-date-cell { white-space:normal; }
-.discharge-date-main { display:block; white-space:nowrap; color:var(--text); }
+.discharge-date-main { display:block; color:var(--text); }
 /* 퇴원완료 건의 퇴원일은 누르는 버튼 — 날짜 수정 팝오버(입원진행 칸의 [날짜 수정]이 발병일을 가려서 옮김, 2026-09-21) */
 .tbl-compact td.discharge-date-cell { overflow:visible; position:relative; }
 /* 칸(78px)에 '2026-09-18'이 꽉 차므로 테두리·패딩 없이 점선 밑줄만 — 테두리를 주면 6px 넘쳐 '상담자' 칸을 침범한다 */
-.dc-date-edit { display:block; width:100%; padding:0; border:0; background:none; color:var(--text); font:inherit; white-space:nowrap;
-    overflow:hidden; text-overflow:ellipsis; cursor:pointer; text-decoration:underline dotted #94a3b8; text-underline-offset:2px; }
+/* 버튼이 스스로 자르지 않게 — 칸을 넓혀도 여기서 잘리면 소용없다(2026-09-28) */
+.dc-date-edit { display:block; width:100%; padding:0; border:0; background:none; color:var(--text); font:inherit;
+    cursor:pointer; text-decoration:underline dotted #94a3b8; text-underline-offset:2px; }
 .dc-date-edit:hover { color:#b91c1c; text-decoration-color:#b91c1c; }
 .dc-date-edit.dc-date-empty { color:#b91c1c; font-weight:700; }
 .dc-date-pop { display:none; position:absolute; top:calc(100% - 2px); right:0; z-index:8; padding:8px 10px; width:220px;
