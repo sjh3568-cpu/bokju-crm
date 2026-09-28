@@ -855,7 +855,8 @@ body:not(.cw-ward) .wd-ad-save,
 body:not(.cc-sms) a[href^="/sms"],
 body:not(.cc-sms) .ib-callback-done,
 body:not(.cc-sms) .ib-done,
-body:not(.cc-sms) .ib-del { display: none !important; }
+body:not(.cc-sms) .ib-del,
+body:not(.cc-sms) .sms-rm-close { display: none !important; }
 
 /* Role chip (header) */
 .role-chip { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 8px;

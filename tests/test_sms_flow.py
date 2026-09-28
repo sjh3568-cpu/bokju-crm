@@ -352,5 +352,86 @@ class HandoffTests(Base):
         self.assertIn(">수동(확인 안 됨)<", html)
 
 
+
+class FinalReviewFixTests(Base):
+    """최종 검토에서 나온 문제의 재현 테스트 (2026-09-29)."""
+
+    def roster_episode(self, pid, admitted, discharged=None, key=None):
+        with models.get_db() as conn:
+            no = conn.execute("SELECT COALESCE(MAX(episode_no), 0) + 1 FROM admission_episodes WHERE patient_id=?",
+                              (pid,)).fetchone()[0]
+            conn.execute("""INSERT INTO admission_episodes (patient_id, episode_no, status, admitted_at, discharged_at, roster_key)
+                            VALUES (?, ?, ?, ?, ?, ?)""",
+                         (pid, no, "discharged" if discharged else "admitted", admitted, discharged, key or f"k{pid}|{admitted}"))
+
+    def away(self, cid, out_day, returned=None):
+        with models.get_db() as conn:
+            conn.execute("""INSERT INTO admission_events (consultation_id, event_type, event_date, hospital, returned_at)
+                            VALUES (?, '응급전원', ?, '안동병원', ?)""", (cid, out_day, returned))
+
+    def test_i1_departure_yesterday_roster_discharge_today_is_not_discharge_reminder(self):
+        # 앱은 어제 응급전원 외진, 명부는 오늘 퇴원으로 적음 → '퇴원 당일' 안내 대상이 아니다
+        models.create_sms_template(name="퇴원", body="x", timing="퇴원 당일")
+        pid = self.patient()
+        cid = self.consult(pid, consult_date=d(-60), admission_status="입원완료", actual_admission_date=d(-50))
+        self.roster_episode(pid, d(-50), TODAY)
+        self.away(cid, d(-1))
+        self.assertFalse([r for r in models.sms_reminders(TODAY) if r["timing"] == "퇴원 당일"])
+
+    def test_i1_return_yesterday_roster_opens_today_is_not_admission_reminder(self):
+        # 어제 외진 복귀, 명부는 오늘 새 회차 → '입원 당일'(입원 안내) 대상이 아니다
+        models.create_sms_template(name="입원", body="x", timing="입원 당일")
+        pid = self.patient()
+        cid = self.consult(pid, consult_date=d(-60), admission_status="입원완료", actual_admission_date=d(-50))
+        self.roster_episode(pid, d(-50), d(-5), key="a")
+        self.away(cid, d(-5), returned=d(-1))
+        self.roster_episode(pid, TODAY, key="b")
+        self.assertFalse([r for r in models.sms_reminders(TODAY) if r["timing"] == "입원 당일"])
+
+    def test_i1_plain_roster_discharge_still_reminds(self):
+        models.create_sms_template(name="퇴원", body="x", timing="퇴원 당일")
+        pid = self.patient()
+        self.consult(pid, consult_date=d(-60), admission_status="입원완료", actual_admission_date=d(-50))
+        self.roster_episode(pid, d(-50), TODAY)
+        self.assertEqual([r["timing"] for r in models.sms_reminders(TODAY) if r["patient_id"] == pid], ["퇴원 당일"])
+
+    def test_m1_hold_or_cancelled_not_admission_tomorrow(self):
+        hold = self.patient(name="보류"); self.consult(hold, consult_date=d(-9), planned_admission_date=d(1),
+                                                      admission_status="입원보류", admission_status_reason="병상")
+        canc = self.patient(name="취소"); self.consult(canc, consult_date=d(-9), planned_admission_date=d(1),
+                                                      consult_result="상담취소", consult_result_reason="타병원")
+        keys = {r["key"] for r in models.sms_reminders(TODAY)}
+        self.assertNotIn(f"입원 전날:p{hold}:{d(1)}", keys)
+        self.assertNotIn(f"입원 전날:p{canc}:{d(1)}", keys)
+
+    def test_m7_admission_tomorrow_links_the_planned_consult(self):
+        pid = self.patient()
+        planned = self.consult(pid, consult_date=d(-9), planned_admission_date=d(1))
+        self.consult(pid, consult_date=d(-8))   # 더 최근 상담 — 입원예정일 없음
+        item = [r for r in models.sms_reminders(TODAY) if r["timing"] == "입원 전날"][0]
+        q = main._dashboard_action_queue({}, [], [], [], [], sms_reminders=[item])
+        href = [x["href"] for x in q["items_all"] if x["kind"] == "안내 문자"][0]
+        self.assertIn(f"cid={planned}", href)
+
+    def test_m5_bad_anchor_date_does_not_break_queue(self):
+        item = {"key": "상담 직후:c1", "timing": "상담 직후", "patient_id": 1, "consultation_id": 1,
+                "patient_name": "갑", "guardian_phone": "01011112222", "anchor_date": "2026-9-3 오전", "has_phone": True}
+        q = main._dashboard_action_queue({}, [], [], [], [], sms_reminders=[item])
+        self.assertEqual(len([x for x in q["items_all"] + q["stale_items"] if x["kind"] == "안내 문자"]), 1)
+
+    def test_i2_no_reminders_without_sms_create_permission(self):
+        import partnerships, support_requests, transport, auth
+        partnerships.init_schema(); support_requests.init_schema(); transport.init_schema()
+        pid = self.patient(); self.consult(pid)
+        real = auth.menu_level
+        with patch.object(auth, "menu_level", lambda user, key: 1 if key == "sms" else real(user, key)):
+            html = self.client.get("/").get_data(as_text=True)
+        self.assertNotIn('sms-rm-close" data-key', html)
+
+    def test_i2_close_button_hidden_without_sms_permission(self):
+        css = open(os.path.join(os.path.dirname(__file__), "..", "static", "css", "style.css"), encoding="utf-8").read()
+        self.assertIn("body:not(.cc-sms) .sms-rm-close", css)
+
+
 if __name__ == "__main__":
     unittest.main()

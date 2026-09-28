@@ -7279,20 +7279,26 @@ def sms_reminders(today=None) -> list[dict]:
                     """SELECT c.id, c.patient_id, p.name, p.guardian_phone
                          FROM consultations c JOIN patients p ON p.id = c.patient_id
                         WHERE c.planned_admission_date = ?
-                          AND COALESCE(c.admission_status, '') NOT IN ('입원완료', '입원취소', '퇴원완료')""",
+                          AND COALESCE(c.consult_result, '') != '상담취소'
+                          AND COALESCE(c.admission_status, '') NOT IN ('입원완료', '입원보류', '입원취소', '퇴원완료')""",
                     (tomorrow,)):
                 add(f"입원 전날:p{r['patient_id']}:{tomorrow}", "입원 전날", r["patient_id"], r["id"],
                     r["name"], r["guardian_phone"], tomorrow)
         after = (t0 - timedelta(days=SMS_AFTER_DISCHARGE_DAYS)).isoformat()
         flows = []
-        if on & {"입원 당일", "퇴원 당일"}:
-            flows += admission_flow_events(today, today)
-        if "퇴원 후" in on:
-            flows += admission_flow_events(after, after)
+        # 하루만 조회하면 명부 퇴원과 며칠 어긋난 외진(AWAY_DISCHARGE_MERGE_DAYS)이 합쳐지지 않고, 어제 외진 복귀 뒤
+        # 오늘 열린 명부 회차도 새 입원처럼 보인다(최종 검토 I-1). 앞 며칠까지 받아서 외진이 걸린 환자는 빼고 그날 줄만 쓴다.
+        for day, wanted in ((today, {"입원 당일", "퇴원 당일"}), (after, {"퇴원 후"})):
+            if not on & wanted:
+                continue
+            lo = (datetime.strptime(day, "%Y-%m-%d").date() - timedelta(days=AWAY_DISCHARGE_MERGE_DAYS)).isoformat()
+            rows = admission_flow_events(lo, day)
+            away = {e.get("patient_id") for e in rows if e.get("is_return") or "외진" in (e.get("sources") or [])}
+            flows += [e for e in rows if e.get("date") == day and e.get("patient_id") not in away]
         phones = {}
         for e in flows:
             pid, day = e.get("patient_id"), e.get("date")
-            if not pid or e.get("is_return") or "외진" in (e.get("sources") or []):
+            if not pid:
                 continue
             if e["kind"] == ADMISSION_EVENT_IN and day == today and "입원 당일" in on:
                 timing = "입원 당일"

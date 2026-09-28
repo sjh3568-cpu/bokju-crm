@@ -1690,9 +1690,13 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
     # 안내 문자 — 상담 후·입원 전날·입원/퇴원 당일·퇴원 후 (2026-09-28 "보내는 걸 깜빡하지 않도록").
     # 보내거나 '안 보냄'으로 닫으면 models.sms_reminders에서 빠진다. 입·퇴원 당일·전날은 그날 놓치면 의미가 없어 warn.
     for r in sms_reminders or []:
-        days = max(0, (datetime.strptime(today, "%Y-%m-%d") - datetime.strptime(r["anchor_date"], "%Y-%m-%d")).days)
-        who = (f"cid={r['consultation_id']}" if r["timing"] == "상담 직후" and r.get("consultation_id")
-               else f"pid={r['patient_id']}")
+        try:   # 적재된 상담일이 'YYYY-MM-DD'가 아니어도 대시보드 전체가 멈추지 않게(최종 검토 M-5)
+            days = max(0, (datetime.strptime(today, "%Y-%m-%d")
+                           - datetime.strptime(str(r["anchor_date"])[:10], "%Y-%m-%d")).days)
+        except ValueError:
+            days = 0
+        # 상담이 붙어 있으면 그 상담으로 연다 — 환자의 최근 상담이 입원예정일을 가진 상담이 아닐 수 있다(M-7)
+        who = f"cid={r['consultation_id']}" if r.get("consultation_id") else f"pid={r['patient_id']}"
         href = f"/sms?reminder={r['key']}&{who}"
         add(
             "안내 문자",

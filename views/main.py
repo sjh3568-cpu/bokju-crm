@@ -512,7 +512,9 @@ def dashboard():
         "disease": _dashboard_groups(callbacks, _dashboard_disease_labels),
     }
     try:
-        sms_reminders = models.sms_reminders()
+        # 문자 발송 권한(등록)이 없는 계정에는 안내 문자 알림을 싣지 않는다 — 누를 수 없는 줄만 늘어난다(최종 검토 I-2)
+        from auth import menu_level
+        sms_reminders = models.sms_reminders() if menu_level(g.user, "sms") >= PERM_CREATE else []
     except Exception:   # 알림 계산이 대시보드 전체를 막지 않게
         app.logger.exception("안내 문자 알림 계산 실패")
         sms_reminders = []
