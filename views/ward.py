@@ -594,22 +594,7 @@ def ward_view():
         ep = census["by_consultation"].get(c["id"])
         if not ep:
             continue
-        c["episode_id"] = ep["id"]
-        c["census_source"] = ep.get("source") or "roster"
-        c["actual_admission_date"] = ep["admitted_at"]
-        c["discharge_date"] = None
-        if ep.get("room_number"):
-            c["room_number"] = ep["room_number"]
-        c["roster_ward"] = ep.get("ward")
-        # 주치의는 상담 시점에 정해지지 않는 일이 많아 상담일지에는 대개 비어 있다.
-        # 명부는 입원 건마다 실제 담당 의사를 들고 있으므로 그쪽을 쓴다.
-        if (ep.get("attending_doctor") or "").strip():
-            c["attending_doctor"] = ep["attending_doctor"].strip()
-        c["roster_care_phase"] = _roster_care_phase(ep.get("care_type"))
-        c["rehab_end_date"] = ep.get("rehab_end_date")
-        c["rehab_end_imported"] = ep.get("rehab_end_imported")
-        c["onset_date"] = ep.get("onset_date")
-        c["roster_diagnosis"] = ep.get("diagnosis_name")
+        apply_episode_to_row(c, ep)
         # 보험유형도 명부(원무 환자유형)가 실제값 — 상담 시점 값은 보조.
         if (ep.get("insurance_type") or "").strip():
             c["insurance_type"] = ep["insurance_type"].strip()
@@ -1100,14 +1085,8 @@ def _ward_admitted_roster(q, doctor):
     if census["has_roster"]:
         for c in rows:
             ep = census["by_consultation"][c["id"]]
-            c.update(actual_admission_date=ep["admitted_at"], discharge_date=None,
-                     admission_status="입원완료", episode_id=ep["id"],
-                     roster_care_phase=_roster_care_phase(ep.get("care_type")),
-                     rehab_end_date=ep.get("rehab_end_date"),
-                     rehab_end_imported=ep.get("rehab_end_imported"))
-            for field in ("room_number", "attending_doctor"):
-                if ep.get(field):
-                    c[field] = ep[field]
+            apply_episode_to_row(c, ep)          # 재원관리 화면·대시보드 KPI와 같은 행 빌더
+            c["admission_status"] = "입원완료"
         rows += [_ward_row_from_episode(ep) for ep in census["orphans"]
                  if _orphan_matches(ep, q)]
     else:
@@ -1273,6 +1252,32 @@ def _days_since(datestr):
     return (date.today() - d).days
 
 _ORGANISMS = ("CRE", "VRE", "CPE", "MRSA", "MRAB", "MRPA")
+
+def apply_episode_to_row(c, ep):
+    """상담 행에 명부 회차의 사실을 덮어쓴다 — 재원관리·대시보드 KPI가 같은 행으로 판정하게.
+
+    상담에 적힌 입원일·병실은 상담 시점의 예정값이라 실제와 어긋난다. 명부 값을 덮지 않으면
+    _care_phase의 수가 기간 계산이 화면마다 갈린다 — 대시보드 KPI가 재원관리 카드와 1명 다르던
+    원인(한영도 님, 2026-09-28). 여기 한 곳만 고치면 세 화면(카드·추이·대시보드)이 같이 움직인다.
+    """
+    c["episode_id"] = ep["id"]
+    c["census_source"] = ep.get("source") or "roster"
+    c["actual_admission_date"] = ep["admitted_at"]
+    c["discharge_date"] = None
+    if ep.get("room_number"):
+        c["room_number"] = ep["room_number"]
+    c["roster_ward"] = ep.get("ward")
+    # 주치의는 상담 시점에 정해지지 않는 일이 많아 상담일지에는 대개 비어 있다.
+    # 명부는 입원 건마다 실제 담당 의사를 들고 있으므로 그쪽을 쓴다.
+    if (ep.get("attending_doctor") or "").strip():
+        c["attending_doctor"] = ep["attending_doctor"].strip()
+    c["roster_care_phase"] = _roster_care_phase(ep.get("care_type"))
+    c["rehab_end_date"] = ep.get("rehab_end_date")
+    c["rehab_end_imported"] = ep.get("rehab_end_imported")
+    c["onset_date"] = ep.get("onset_date")
+    c["roster_diagnosis"] = ep.get("diagnosis_name")
+    return c
+
 
 def _roster_care_phase(value):
     """명부의 수가 구분 값 → 화면의 수가 구간.

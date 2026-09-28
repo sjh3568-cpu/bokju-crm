@@ -92,7 +92,7 @@ from app import (  # noqa: E402 — app.py 공용 헬퍼·상수 (app.py 맨 아
     _valid_date,
     app,
 )
-from views.ward import _recovery_ratio_spark, _roster_care_phase, _ward_row_from_episode
+from views.ward import _recovery_ratio_spark, _roster_care_phase, _ward_row_from_episode, apply_episode_to_row
 
 logger = logging.getLogger(__name__)
 bp = Blueprint("main", __name__)
@@ -249,19 +249,17 @@ def _ward_status_strip(census=None):
     }
     if not census.get("has_roster"):
         return strip
-    # 재원자 각각을 /ward와 같은 방식으로 회복기 판정한다. 상담이 붙은 회차는 그
-    # 상담에 명부 값(수가구분·재활종료일)을 얹어서, 상담 없이 입원한 회차(orphans)는
-    # 명부 값만으로 행을 만들어서 — 둘 다 _care_phase를 거친다.
+    # 재원자 각각을 /ward와 같은 방식으로 회복기 판정한다. 상담이 붙은 회차는 재원관리와
+    # 같은 행 빌더(apply_episode_to_row)로 명부 입원일·병실·수가구분·재활종료일·발병일을 덮어쓴다 —
+    # 수가구분·재활종료일만 얹던 때는 상담의 옛 입원일(예정값)로 기간을 세어 재원관리 카드와
+    # 1명 어긋났다(한영도 님, 2026-09-28). 상담 없이 입원한 회차(orphans)는 명부 값만으로.
     trend_rows = {c["id"]: c for c in models.list_consultations(ids=list(census["by_consultation"]), limit=10000)}
     recovery_n = total_n = 0
     for cid, ep in census["by_consultation"].items():
         base = trend_rows.get(cid)
         if not base:
             continue
-        c = dict(base)
-        c["roster_care_phase"] = _roster_care_phase(ep.get("care_type"))
-        c["rehab_end_date"] = ep.get("rehab_end_date")
-        c["rehab_end_imported"] = ep.get("rehab_end_imported")
+        c = apply_episode_to_row(dict(base), ep)
         total_n += 1
         if _care_phase(c).get("care_phase") == "회복기":
             recovery_n += 1
@@ -361,15 +359,7 @@ def _dashboard_residents():
             ep = census["by_consultation"].get(c["id"])
             if not ep:
                 continue
-            c = dict(c)
-            c["actual_admission_date"] = ep["admitted_at"]
-            c["discharge_date"] = None
-            c["roster_care_phase"] = _roster_care_phase(ep.get("care_type"))
-            c["rehab_end_date"] = ep.get("rehab_end_date")
-            c["rehab_end_imported"] = ep.get("rehab_end_imported")
-            c["onset_date"] = ep.get("onset_date")
-            c["roster_diagnosis"] = ep.get("diagnosis_name")
-            residents.append(c)
+            residents.append(apply_episode_to_row(dict(c), ep))   # 재원관리·KPI와 같은 행 빌더(2026-09-28)
         admitted = residents
     return census, admitted
 
