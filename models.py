@@ -7194,12 +7194,13 @@ def sms_recipient(*, patient_id=None, consultation_id=None):
                 "patient_name": c.get("patient_name") or "", "guardian_name": c.get("guardian_name") or "",
                 "guardian_phone": c.get("guardian_phone") or "",
                 "planned": c.get("planned_admission_date") or "", "doctor": c.get("attending_doctor") or "",
+                "counselor": c.get("counselor") or "",   # 본문 {담당상담사} — 그 상담을 한 사람
                 "disease_groups": consult_disease_groups(c)}
     p = get_patient(patient_id) if patient_id else None
     if p:
         return {"patient_id": p["id"], "consultation_id": None, "patient_name": p.get("name") or "",
                 "guardian_name": p.get("guardian_name") or "", "guardian_phone": p.get("guardian_phone") or "",
-                "planned": "", "doctor": "", "disease_groups": []}
+                "planned": "", "doctor": "", "counselor": "", "disease_groups": []}
     return None
 
 

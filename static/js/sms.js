@@ -13,15 +13,18 @@
 
     let rawTemplate = '';  // 마지막 선택한 템플릿 원본(토큰 미치환)
 
+    // 수신자와 무관하게 늘 같은 값 — 서버 config.SMS_FIXED_TOKENS가 단일 출처(번호는 여기서 안 바꾼다).
+    const FIXED = Object.assign({ '{병원명}': '복주회복병원' }, window.SMS_FIXED || {});
+
     function fillTokens(text) {
         const c = current;
-        const map = {
+        const map = Object.assign({
             '{환자명}': c ? c.patient_name : '',
             '{보호자명}': c ? c.guardian_name : '',
-            '{병원명}': '복주회복병원',
             '{입원예정일}': c ? c.planned : '',
             '{주치의}': c ? c.doctor : '',
-        };
+            '{담당상담사}': c ? c.counselor : '',   // 그 상담을 한 상담사 — 개인번호 대신 이름만
+        }, FIXED);
         let out = text;
         for (const [k, v] of Object.entries(map)) {
             out = out.split(k).join(v || k);  // 값 없으면 토큰 그대로 둠

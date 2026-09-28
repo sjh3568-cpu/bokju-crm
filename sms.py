@@ -9,7 +9,9 @@
   SMS_PROVIDER   발송사 키 (`ppurio` | `aligo`). 비우면 manual 모드.
   SMS_API_KEY    발송사 API 키 (뿌리오: 연동관리의 '연동 개발 인증키')
   SMS_API_USER   발송사 계정 ID (뿌리오 계정, 알리고 user_id)
-  SMS_SENDER     사전 등록된 발신번호 (병원 대표번호 등)
+  SMS_SENDER     사전 등록된 발신번호. 비우면 config.CONSULT_ROOM_PHONE(상담실 번호)를 쓴다 —
+                 보호자가 문자 온 번호로 그대로 되걸 수 있게, 발신번호와 본문 {상담실번호}를
+                 같은 번호로 맞춘다(2026-09-29 사용자 결정). 다른 번호로 보낼 때만 채운다.
   SMS_API_BASE   발송사 API 호스트 재정의 (선택. 뿌리오 기본 https://message.ppurio.com)
   SMS_TEST_TO    테스트 전환 번호 — 채워져 있으면 **모든 문자가 이 번호로만** 간다.
                  실제 보호자에게 나가지 않으니 연동 검증 중에는 반드시 채울 것.
@@ -80,10 +82,20 @@ def test_to() -> str:
     return normalize_phone(os.getenv("SMS_TEST_TO") or "")
 
 
+def sender() -> str:
+    """발신번호 — .env의 SMS_SENDER, 비어 있으면 상담실 번호(config.CONSULT_ROOM_PHONE).
+
+    본문 {상담실번호}와 같은 번호라야 보호자가 문자 온 번호로 그대로 되걸 수 있다.
+    번호를 여기저기 적지 않도록 발신·본문 양쪽이 이 한 곳을 본다(2026-09-29).
+    """
+    from config import CONSULT_ROOM_PHONE
+    return (os.getenv("SMS_SENDER") or "").strip() or CONSULT_ROOM_PHONE
+
+
 def gateway_configured() -> bool:
     """발송사 자격증명이 .env에 갖춰졌는지. 아니면 manual 모드."""
     return bool(provider_name() in _PROVIDERS
-                and os.getenv("SMS_API_KEY") and os.getenv("SMS_SENDER"))
+                and os.getenv("SMS_API_KEY") and sender())
 
 
 def gateway_info() -> dict:
@@ -91,7 +103,7 @@ def gateway_info() -> dict:
     return {
         "ready": gateway_configured(),
         "provider": provider_name(),
-        "sender": (os.getenv("SMS_SENDER") or "").strip(),
+        "sender": sender(),
         "test_to": test_to(),
         "lms_title": DEFAULT_LMS_TITLE,
     }
@@ -110,7 +122,7 @@ def send_sms(to_phone: str, body: str, *, title: str | None = None) -> dict:
             "provider_msg_id": None, "sent_to": normalize_phone(to_phone)}
     if not gateway_configured():
         return {**base, "status": "not_configured",
-                "error": "문자 발송사 미설정 — .env의 SMS_PROVIDER/SMS_API_KEY/SMS_SENDER"}
+                "error": "문자 발송사 미설정 — .env의 SMS_PROVIDER/SMS_API_KEY"}
     if msg_type == "TOO_LONG":
         return {**base, "status": "failed",
                 "error": f"본문이 {n}바이트 — LMS 한도 {LMS_MAX_BYTES}바이트 초과"}
@@ -152,7 +164,7 @@ def _send_aligo(receiver: str, body: str, msg_type: str, title: str | None) -> d
     data = {
         "key": os.getenv("SMS_API_KEY"),
         "user_id": os.getenv("SMS_API_USER") or "",
-        "sender": normalize_phone(os.getenv("SMS_SENDER")),
+        "sender": normalize_phone(sender()),
         "receiver": receiver,
         "msg": body,
         "msg_type": msg_type,
@@ -192,7 +204,7 @@ def _send_ppurio(receiver: str, body: str, msg_type: str, title: str | None) -> 
         "account": account,
         "messageType": msg_type,
         "content": body,
-        "from": normalize_phone(os.getenv("SMS_SENDER")),
+        "from": normalize_phone(sender()),
         "duplicateFlag": "N",
         "targetCount": 1,
         "targets": [{"to": receiver}],

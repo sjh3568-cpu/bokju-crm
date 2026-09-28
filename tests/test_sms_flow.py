@@ -82,11 +82,13 @@ class RecipientTests(Base):
         pid = self.patient()
         self.consult(pid, consult_date=d(-3), diseases=["당뇨"])
         cid = self.consult(pid, consult_date=d(-1), diseases=["뇌경색"], planned_admission_date=d(2),
-                           attending_doctor="김의사")
+                           attending_doctor="김의사", counselor="박상담")
         r = self.client.get(f"/api/sms/recipient?pid={pid}").get_json()
         self.assertEqual((r["consultation_id"], r["guardian_phone"], r["planned"], r["doctor"]),
                          (cid, "010-1111-2222", d(2), "김의사"))
         self.assertEqual(r["disease_groups"], ["중추신경계"])
+        # {담당상담사} 치환값 — 본문에 개인 휴대폰을 넣지 않기 위해 이름만 내려준다(2026-09-29)
+        self.assertEqual(r["counselor"], "박상담")
 
     def test_recipient_by_consult_id_and_404(self):
         pid = self.patient(); cid = self.consult(pid)
@@ -109,6 +111,30 @@ class GuardTests(Base):
     def test_unresolved_tokens(self):
         self.assertEqual(sms.unresolved_tokens("{환자명}님 {주치의} 안내"), ["{환자명}", "{주치의}"])
         self.assertEqual(sms.unresolved_tokens("홍길동님 안내"), [])
+
+    def test_consult_room_phone_is_single_source(self):
+        """상담실 번호는 config 한 곳에만 — 템플릿 본문·JS에 박아 두면 바꿀 때 재심사가 걸린다(2026-09-29)."""
+        from config import CONSULT_ROOM_PHONE, SMS_FIXED_TOKENS, SMS_PLACEHOLDERS
+        self.assertEqual(CONSULT_ROOM_PHONE, "054-851-5070")
+        self.assertEqual(SMS_FIXED_TOKENS["{상담실번호}"], CONSULT_ROOM_PHONE)
+        self.assertEqual(SMS_PLACEHOLDERS["{상담실번호}"], CONSULT_ROOM_PHONE)
+        self.assertIn("{담당상담사}", SMS_PLACEHOLDERS)
+        # 치환되지 않은 채 나가면 글자 그대로 보호자에게 가므로 발송 가드가 잡아야 한다
+        self.assertEqual(sms.unresolved_tokens("문의 {담당상담사} {상담실번호}"),
+                         ["{담당상담사}", "{상담실번호}"])
+
+    def test_sender_defaults_to_consult_room_phone(self):
+        """발신번호와 본문 {상담실번호}는 같은 번호 — 보호자가 문자 온 번호로 되걸 수 있어야 한다."""
+        from config import CONSULT_ROOM_PHONE
+        with patch.dict(os.environ, {"SMS_SENDER": ""}):
+            self.assertEqual(sms.sender(), CONSULT_ROOM_PHONE)
+        with patch.dict(os.environ, {"SMS_SENDER": "054-550-1700"}):
+            self.assertEqual(sms.sender(), "054-550-1700")   # .env가 있으면 그쪽이 이긴다
+
+    def test_page_ships_fixed_tokens_to_js(self):
+        html = self.client.get("/sms").get_data(as_text=True)
+        self.assertIn("window.SMS_FIXED", html)
+        self.assertIn("054-851-5070", html)
 
     def test_send_rejects_unresolved_token(self):
         with patch.object(sms, "send_sms") as send:

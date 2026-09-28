@@ -263,6 +263,8 @@
 <script>
 window.SMS_PRESELECT = {{ preselect|tojson }};
 window.SMS_REMINDER = {{ reminder|tojson }};
+// 수신자와 무관한 고정 토큰(병원명·상담실번호) — 값의 단일 출처는 config.SMS_FIXED_TOKENS.
+window.SMS_FIXED = {{ sms_fixed|tojson }};
 </script>
 <script src="/static/js/common.js"></script>
 <script src="/static/js/sms.js"></script>

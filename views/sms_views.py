@@ -60,7 +60,7 @@ from config import (
     STAFF_REFERRAL_ORGS, STAFF_REFERRAL_DEPTS,
     LIFECYCLE_STAGES, LIFECYCLE_EVENT_TYPES, LEGACY_STAGE_MAP, CARE_PHASES,
     SIDO_LIST, SIGUNGU_INDEX, SIGUNGU_LIST,
-    SMS_TEMPLATE_GROUPS, SMS_TIMINGS, SMS_TIMING_DEFAULT, SMS_PLACEHOLDERS,
+    SMS_TEMPLATE_GROUPS, SMS_TIMINGS, SMS_TIMING_DEFAULT, SMS_PLACEHOLDERS, SMS_FIXED_TOKENS,
     SPECIAL_CARE_OPTIONS, SPECIAL_CARE_NOTE_FIELDS,
     THERAPY_OPTIONS, TRANSPORT_OPTIONS, WOUND_CARE_OPTIONS, WOUND_CARE_NOTE_FIELDS,
 )
@@ -110,7 +110,7 @@ def sms_compose():
         "sms.html", templates=models.list_sms_templates(),
         preselect=preselect, log=models.list_sms_log(200, date_from=date_from, date_to=date_to),
         date_from=date_from, date_to=date_to,
-        placeholders=SMS_PLACEHOLDERS,
+        placeholders=SMS_PLACEHOLDERS, sms_fixed=SMS_FIXED_TOKENS,
         gateway=sms_gateway.gateway_info(),
         gateway_ready=sms_gateway.gateway_configured(),
         sms_max_bytes=sms_gateway.SMS_MAX_BYTES, lms_max_bytes=sms_gateway.LMS_MAX_BYTES,
@@ -169,6 +169,7 @@ def sms_templates_view():
     return render_template(
         "sms_templates.html",
         templates=models.list_sms_templates(active_only=False),
+        placeholders=SMS_PLACEHOLDERS,
     )
 
 @bp.route("/api/sms/template", methods=["POST"])

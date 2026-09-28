@@ -18,7 +18,7 @@
                 {% for s in SMS_TIMINGS %}<option value="{{ s }}" {% if s == '수시' %}selected{% endif %}>{{ s }}</option>{% endfor %}
             </select></label>
         </div>
-        <textarea class="t-body" rows="3" placeholder="문자 본문 — {환자명} {보호자명} {병원명} {입원예정일} {주치의} 토큰 사용 가능"></textarea>
+        <textarea class="t-body" rows="3" placeholder="문자 본문 — {{ placeholders|list|join(' ') }} 토큰 사용 가능"></textarea>
         <div class="tpl-actions">
             <button type="button" class="btn btn-primary btn-sm" id="tpl-add">추가</button>
             <span class="tpl-msg muted"></span>
