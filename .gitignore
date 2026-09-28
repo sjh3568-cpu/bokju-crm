@@ -5,6 +5,8 @@
 *.db-shm
 backups/
 uploads/
+# 팩스 자료함 사본(환자 서류) — 운영 NAS에서만 생긴다
+fax_crm/
 __pycache__/
 *.pyc
 .venv/

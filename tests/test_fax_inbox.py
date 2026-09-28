@@ -342,5 +342,145 @@ class FaxInboxTests(unittest.TestCase):
         self.assertIn("앞 5쪽만 판독", self.client.get(f"/documents/{d['id']}").get_data(as_text=True))
 
 
+CONSULT = {"consult_related": True, "category": "진료의뢰서", "sender": "안동병원", "reason": "전원 의뢰"}
+OTHER = {"consult_related": False, "category": "거래명세서", "sender": "OO약품", "reason": "약품 거래명세서"}
+
+
+class FaxCopyModeTests(unittest.TestCase):
+    """EasyFax 공존(FAX_SOURCE_MODE=copy, 2026-09-28) — 원본(mfp1)은 읽기만, 사본을 CRM 폴더로.
+    대표 팩스라 다른 부서 팩스가 섞이므로 앞 2쪽 분류로 '상담 외'를 가른다."""
+
+    _drop = FaxInboxTests._drop
+
+    def setUp(self):
+        FaxInboxTests.setUp(self)
+        self.archive = Path(self.tmp.name) / "crm_fax"
+        self.inbox = Path(self.tmp.name) / "fax" / "mfp1"
+        self.inbox.mkdir(parents=True)
+        self.env2 = patch.dict(os.environ, {"FAX_INBOX_DIR": str(self.inbox), "FAX_ARCHIVE_DIR": str(self.archive),
+                                            "FAX_SOURCE_MODE": "copy", "FAX_SINCE": ""}); self.env2.start()
+
+    def tearDown(self):
+        self.env2.stop()
+        FaxInboxTests.tearDown(self)
+
+    def _scan(self, triage=CONSULT, ai=FAKE_AI):
+        with patch.object(fax_inbox, "classify_file", return_value=dict(triage)) as c, \
+             patch.object(fax_inbox, "analyze_file", return_value=dict(ai)) as a:
+            n = fax_inbox.scan_once()
+        return n, c, a
+
+    def test_copy_leaves_source_untouched_and_renames_copy(self):
+        src = self._drop("mfp1_202609281015.pdf")
+        n, c, a = self._scan()
+        self.assertEqual(n, 1)
+        c.assert_called_once(); a.assert_called_once()
+        self.assertTrue(src.is_file(), "EasyFax 원본은 그대로")
+        self.assertEqual(src.read_bytes(), MINI_PDF)
+        d = models.list_documents()[0]
+        self.assertEqual(d["status"], "analyzed")
+        self.assertEqual(d["triage"], "consult")
+        self.assertEqual(d["source_path"], str(src))
+        self.assertEqual(d["original_name"], "mfp1_202609281015.pdf")
+        self.assertEqual(Path(d["stored_path"]), self.archive / "2026-09-16_홍길동_뇌경색.pdf")
+        self.assertTrue(Path(d["stored_path"]).is_file())
+        comm = models.get_communication(d["comm_id"])
+        self.assertEqual(comm["status"], "open")
+        self.assertEqual(comm["occurred_at"][:16], "2026-09-28 10:15", "카드 시각 = 파일명의 수신 시각")
+
+    def test_rotated_source_is_not_imported_again(self):
+        src = self._drop("mfp1_202609281015.pdf")
+        self._scan()
+        src.write_bytes(MINI_PDF + b"%rotated\n")          # EasyFax '돌린 대로 저장' — 내용·해시가 바뀐다
+        n, c, _ = self._scan()
+        self.assertEqual(n, 0)
+        c.assert_not_called()
+        self.assertEqual(len(models.list_documents()), 1)
+
+    def test_other_department_fax_is_set_aside_without_card_or_full_read(self):
+        src = self._drop("mfp1_202609281100.pdf")
+        n, c, a = self._scan(triage=OTHER)
+        self.assertEqual(n, 1)
+        a.assert_not_called()                               # 전체 판독은 안 보낸다
+        self.assertEqual(models.list_documents(), [], "기본 목록엔 상담 외가 안 보인다")
+        d = models.list_documents(status="other")[0]
+        self.assertEqual(d["triage"], "other")
+        self.assertIsNone(d["comm_id"])
+        self.assertEqual(d["sender_ai"], "OO약품")
+        self.assertIn("거래명세서", d["triage_reason"])
+        self.assertEqual(models.open_inbound_count(), 0, "대시보드 카드 없음")
+        self.assertTrue(src.is_file())
+        html = self.client.get("/documents?status=other").get_data(as_text=True)
+        self.assertIn("상담 외", html)
+        detail = self.client.get(f"/documents/{d['id']}").get_data(as_text=True)
+        self.assertIn("상담 자료로 판독", detail)
+        self.assertIn("약품 거래명세서", detail)
+        # 직원이 뒤집으면 전체 판독 + 카드
+        with patch.object(fax_inbox, "classify_file") as c2, \
+             patch.object(fax_inbox, "analyze_file", return_value=dict(FAKE_AI)):
+            r = self.client.post(f"/api/documents/{d['id']}/analyze")
+            self.assertEqual(r.status_code, 200)
+            c2.assert_not_called()
+        d = models.get_document(d["id"])
+        self.assertEqual(d["status"], "analyzed")
+        self.assertEqual(d["triage"], "consult")
+        self.assertEqual(models.open_inbound_count(), 1)
+
+    def test_classify_failure_retries_then_shows_card(self):
+        self._drop("mfp1_202609281200.pdf")
+        with patch.object(fax_inbox, "classify_file", side_effect=RuntimeError("timeout")), \
+             patch.object(fax_inbox, "analyze_file", return_value=dict(FAKE_AI)):
+            fax_inbox.scan_once()
+            self.assertEqual(models.open_inbound_count(), 0, "재시도 중엔 카드 보류")
+            fax_inbox.scan_once(); fax_inbox.scan_once()
+        self.assertEqual(models.open_inbound_count(), 1, "끝내 못 읽으면 사람이 보게")
+
+    def test_since_skips_older_faxes_and_internal_folders(self):
+        self._drop("mfp1_202609271500.pdf", MINI_PDF + b"%old\n")
+        self._drop("mfp1_202609281600.pdf", MINI_PDF + b"%new\n")
+        (self.inbox / "_relay").mkdir()
+        (self.inbox / "_relay" / "mfp1_202609281700.pdf").write_bytes(MINI_PDF + b"%relay\n")
+        (self.inbox / "#recycle").mkdir()
+        (self.inbox / "#recycle" / "mfp1_202609281701.pdf").write_bytes(MINI_PDF + b"%trash\n")
+        with patch.dict(os.environ, {"FAX_SINCE": "2026-09-28 15:00"}):
+            n, _, _ = self._scan()
+        self.assertEqual(n, 1)
+        self.assertEqual(models.list_documents()[0]["original_name"], "mfp1_202609281600.pdf")
+
+    def test_sender_number_from_epm_folder(self):
+        sub = self.inbox / "0548531234"
+        sub.mkdir()
+        (sub / "fax.pdf").write_bytes(MINI_PDF)
+        with patch.object(fax_inbox, "classify_file", side_effect=RuntimeError("x")), \
+             patch.object(fax_inbox, "analyze_file"):
+            for _ in range(3):
+                fax_inbox.scan_once()
+        d = models.list_documents()[0]
+        self.assertEqual(models.get_communication(d["comm_id"])["contact"], "0548531234")
+
+    def test_purge_never_touches_source(self):
+        from datetime import date
+        src = self._drop("mfp1_202609281015.pdf")
+        self._scan()
+        d = models.list_documents()[0]
+        models.update_document(d["id"], stored_path=str(src))   # 혹시 경로가 원본을 가리켜도
+        with patch.dict(os.environ, {"FAX_KEEP_DAYS": "1"}):
+            fax_inbox.purge_expired(date(2026, 12, 1))
+        self.assertTrue(src.is_file(), "copy 모드에선 수신 폴더(원본)를 절대 지우지 않는다")
+
+    def test_copy_mode_requires_archive_dir(self):
+        with patch.dict(os.environ, {"FAX_ARCHIVE_DIR": ""}):
+            self.assertFalse(fax_inbox.enabled())
+        self.assertTrue(fax_inbox.enabled())
+
+    def test_upload_goes_to_archive_not_source(self):
+        with patch.object(fax_inbox, "classify_file", return_value=dict(CONSULT)), \
+             patch.object(fax_inbox, "analyze_file", return_value=dict(FAKE_AI)):
+            doc_id = fax_inbox.save_upload("scan.pdf", MINI_PDF + b"%up\n", created_by="fax-test")
+        d = models.get_document(doc_id)
+        self.assertTrue(Path(d["stored_path"]).is_relative_to(self.archive))
+        self.assertEqual(list(self.inbox.iterdir()), [])
+
+
 if __name__ == "__main__":
     unittest.main()

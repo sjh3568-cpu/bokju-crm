@@ -8,6 +8,10 @@
 
 원칙:
 - 파일은 삭제하지 않는다. 이동(정리)만 하고, 이동이 안 되면(권한·다른 볼륨) 원래 자리에 둔다.
+- FAX_SOURCE_MODE=copy(EasyFax 공존, 2026-09-28): 수신 폴더는 EasyFax가 경로를 기록해 쓰는 원본이라
+  읽기만 하고 FAX_ARCHIVE_DIR로 **복사**해 온다. 이름 정리·보관기간 삭제는 사본에만. 한 번 가져온 원본은
+  경로로 기억해 EasyFax가 회전 저장(내용 변경)해도 다시 안 가져온다. FAX_SINCE 이전 파일은 건너뛴다.
+  대표 팩스라 다른 부서 팩스가 섞이므로, AI가 앞 2쪽으로 먼저 분류해 상담 외(other)는 카드 없이 따로 둔다.
 - AI가 못 읽어도 등록은 된다(status='pending', 파일명은 '날짜_미확인_원본명'). 3회까지 다음 주기에 재시도.
 - 환자 연결·상담 등록은 직원 확인 후(AI 결과는 초안).
 - DB는 NAS 로컬 볼륨이어야 하지만(WAL), 팩스 PDF는 SMB 공유폴더에서 읽기만 하므로 문제없다.
@@ -53,8 +57,34 @@ def archive_dir() -> Path | None:
     return (base / "정리") if base else None
 
 
+def copy_mode() -> bool:
+    """EasyFax 공존 — 원본은 건드리지 않고 사본을 가져온다."""
+    return (os.getenv("FAX_SOURCE_MODE") or "move").strip().lower() == "copy"
+
+
 def enabled() -> bool:
-    return os.getenv("FAX_ENABLED", "1") == "1" and inbox_dir() is not None
+    if os.getenv("FAX_ENABLED", "1") != "1" or inbox_dir() is None:
+        return False
+    if copy_mode() and not (os.getenv("FAX_ARCHIVE_DIR") or "").strip():
+        return False          # 사본 둘 곳이 원본 폴더 안(기본값 <수신>/정리)이면 공존이 아니다
+    return True
+
+
+def classify_enabled() -> bool:
+    """먼저 상담 관련인지 분류할지 — copy 모드(대표 팩스)면 기본으로 켠다."""
+    v = (os.getenv("FAX_CLASSIFY") or "").strip()
+    return v == "1" if v else copy_mode()
+
+
+def since() -> datetime | None:
+    """이 시각 이전에 수신된(수정된) 파일은 가져오지 않는다 — 연결 전 쌓인 팩스 제외."""
+    v = (os.getenv("FAX_SINCE") or "").strip()
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(v, fmt)
+        except ValueError:
+            continue
+    return None
 
 
 def poll_seconds() -> int:
@@ -86,6 +116,9 @@ def status() -> dict:
     store = models.documents_storage()
     return {
         "enabled": enabled(),
+        "copy_mode": copy_mode(),
+        "classify": classify_enabled(),
+        "since": since().strftime("%Y-%m-%d %H:%M") if since() else "",
         "inbox_dir": str(d) if d else "",
         "inbox_exists": bool(d and d.is_dir()),
         "archive_dir": str(a) if a else "",
@@ -153,6 +186,39 @@ def analyze_file(path: str, hint: str = "") -> dict:
     return llm.analyze_document(path, hint=hint)
 
 
+def classify_file(path: str) -> dict:
+    """상담 관련 여부 분류(앞 2쪽) — 테스트에서 patch 지점. 반환은 llm.FAX_CLASSIFY_SCHEMA dict."""
+    import llm
+    return llm.classify_document(path)
+
+
+def _triage_text(t: dict) -> str:
+    head = " · ".join(x for x in ((t.get("category") or "").strip(), (t.get("sender") or "").strip()) if x)
+    reason = (t.get("reason") or "").strip()
+    return (f"{head} — {reason}" if head and reason else head or reason)[:300]
+
+
+_RECEIVED_RE = re.compile(r"(20\d{2})(\d{2})(\d{2})(\d{2})(\d{2})")
+
+
+def received_at(path: Path) -> datetime:
+    """수신 시각 — EasyFax 파일명 'mfp1_YYYYMMDDHHMM.pdf'에서, 없으면 수정 시각.
+    EasyFax가 회전 저장하면 mtime이 바뀌므로 파일명이 더 믿을 만하다."""
+    m = _RECEIVED_RE.search(path.stem)
+    if m:
+        try:
+            return datetime(*map(int, m.groups()))
+        except ValueError:
+            pass
+    return datetime.fromtimestamp(path.stat().st_mtime)
+
+
+def _folder_sender(doc: dict) -> str | None:
+    """삼성 EPM '/송신자 팩스 번호/파일' 규칙 — 상위 폴더 이름이 숫자(와 '-')뿐이고 7자리 이상이면 발신번호."""
+    name = Path(doc.get("source_path") or doc.get("stored_path") or "").parent.name
+    return name if re.fullmatch(r"[\d-]+", name or "") and len(re.sub(r"\D", "", name)) >= 7 else None
+
+
 def _summary_text(ai: dict) -> str:
     """카드·타임라인용 본문(평문). 화면은 ai_json으로 구조화해 그린다."""
     lines = []
@@ -210,6 +276,7 @@ def _apply_analysis(doc_id: int, ai: dict, *, rename: bool = True) -> dict:
             move_to_archive(doc_id)
         except Exception:
             logger.exception("팩스 파일 정리(이동) 실패 — 원래 자리에 둡니다 (doc #%s)", doc_id)
+    _ensure_comm(doc_id)
     doc = models.get_document(doc_id)
     if doc.get("comm_id"):
         models.update_communication(doc["comm_id"], summary=_comm_summary(ai, doc),
@@ -237,32 +304,67 @@ def move_to_archive(doc_id: int) -> str | None:
     return str(target)
 
 
+def _ensure_comm(doc_id: int):
+    """인박스 카드(communications)가 없으면 만든다. 분류 모드에서는 '상담 관련'으로 판정됐거나
+    AI가 끝내 못 읽었을 때(사람이 봐야 하니) 만든다 — 원무·거래처 팩스로 대시보드가 차지 않게."""
+    doc = models.get_document(doc_id)
+    if not doc or doc.get("comm_id"):
+        return
+    ai = None
+    if doc.get("ai_json"):
+        try:
+            ai = json.loads(doc["ai_json"])
+        except ValueError:
+            ai = None
+    try:
+        occurred = datetime.fromtimestamp(Path(doc.get("stored_path") or "").stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+    except OSError:
+        occurred = doc.get("created_at") or None
+    comm_id = models.create_communication(
+        channel=CHANNEL, direction="in",
+        summary=_comm_summary(ai, doc) if doc.get("analyzed_at") else f"팩스 · {doc.get('original_name') or doc.get('filename')}",
+        body=doc.get("ai_summary") or "판독 대기 중 — 자료함에서 원본을 확인하세요.",
+        contact=(ai or {}).get("sender_contact") or _folder_sender(doc) or None,
+        occurred_at=occurred, created_by=doc.get("created_by") or "팩스 자동")
+    models.update_document(doc_id, comm_id=comm_id)
+
+
 # ───────────────────── 등록 ─────────────────────
 
-def register_file(path: Path, *, created_by: str = "팩스 자동", analyze: bool = True) -> int | None:
-    """새 파일 1개 → 문서 행 + 인박스 카드(+AI 판독). 이미 등록된 파일(해시 동일)이면 None."""
+def register_file(path: Path, *, created_by: str = "팩스 자동", analyze: bool = True,
+                  copy: bool | None = None) -> int | None:
+    """새 파일 1개 → 문서 행 + 인박스 카드(+AI 판독). 이미 등록된 파일(해시 동일)이면 None.
+    copy=True(기본: copy 모드일 때)면 원본은 두고 FAX_ARCHIVE_DIR에 사본을 만들어 그걸 관리한다."""
+    import llm
     path = Path(path)
     ext = path.suffix.lower()
     if ext not in SUPPORTED_EXT or not path.is_file():
         return None
+    if copy is None:
+        copy = copy_mode()
     sha = _sha256(path)
     if models.document_by_sha(sha):
         logger.info("팩스 중복 건너뜀: %s", path.name)
         return None
-    st = path.stat()
-    doc_date = datetime.fromtimestamp(st.st_mtime).date().isoformat()
+    received = received_at(path) if copy else datetime.fromtimestamp(path.stat().st_mtime)
+    stored, source_path = path, None
+    if copy:
+        folder = archive_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        stored = _unique_path(folder, path.name)
+        shutil.copy2(str(path), str(stored))          # 원본(EasyFax 경로)은 그대로 둔다
+        source_path = str(path)
+        ts = received.timestamp()
+        os.utime(stored, (ts, ts))                    # 사본 mtime = 수신 시각(카드 시각)
     doc_id = models.create_document(
-        filename=path.name, stored_path=str(path), mime=MIME.get(ext), source=SOURCE,
+        filename=stored.name, stored_path=str(stored), mime=MIME.get(ext), source=SOURCE,
         status="pending", created_by=created_by)
-    models.update_document(doc_id, sha256=sha, original_name=path.name, doc_date=doc_date,
-                           size_bytes=st.st_size)
-    comm_id = models.create_communication(
-        channel=CHANNEL, direction="in", summary=f"팩스 · {path.name}",
-        body="판독 대기 중 — 자료함에서 원본을 확인하세요.",
-        occurred_at=datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
-        created_by=created_by)
-    models.update_document(doc_id, comm_id=comm_id)
-    logger.info("팩스 등록 #%s: %s", doc_id, path.name)
+    models.update_document(doc_id, sha256=sha, original_name=path.name, doc_date=received.date().isoformat(),
+                           size_bytes=stored.stat().st_size, source_path=source_path)
+    # 분류 모드면 카드는 '상담 관련' 판정 뒤에 만든다(원무·거래처 팩스는 카드 없이 '상담 외'로)
+    if not (analyze and classify_enabled() and llm.fax_ai_enabled() and ext in AI_EXT):
+        _ensure_comm(doc_id)
+    logger.info("팩스 등록 #%s: %s%s", doc_id, path.name, " (사본)" if copy else "")
     if analyze:
         analyze_document(doc_id)
     else:
@@ -290,20 +392,42 @@ def analyze_document(doc_id: int, *, force: bool = False) -> bool:
         models.update_document(doc_id, ai_error=f"{path.suffix} 형식은 자동 판독 불가 — PDF로 저장되게 설정하세요",
                                ai_attempts=MAX_AI_ATTEMPTS)
         _ensure_archived(doc_id)
+        _ensure_comm(doc_id)
         return False
     if not force and (doc.get("ai_attempts") or 0) >= MAX_AI_ATTEMPTS:
         return False
     models.update_document(doc_id, ai_attempts=(doc.get("ai_attempts") or 0) + 1)
     try:
+        # 대표 팩스: 앞 2쪽으로 상담 관련인지 먼저 본다. 직원이 [판독]을 누른 경우(force)는 건너뛴다.
+        if classify_enabled() and not force and not doc.get("triage"):
+            t = classify_file(str(path))
+            if not t.get("consult_related"):
+                _mark_other(doc_id, t)
+                return True
+            models.update_document(doc_id, triage="consult", triage_reason=_triage_text(t))
         ai = analyze_file(str(path), hint=doc.get("original_name") or "")
     except Exception as e:
         logger.warning("팩스 AI 판독 실패 (doc #%s, %s): %s", doc_id, path.name, e)
         models.update_document(doc_id, ai_error=str(e)[:300])
         if (doc.get("ai_attempts") or 0) + 1 >= MAX_AI_ATTEMPTS:
             _ensure_archived(doc_id)
+            _ensure_comm(doc_id)                  # 끝내 못 읽었으면 사람이 보게 카드를 띄운다
         return False
+    if doc.get("triage") == "other":              # '상담 외'를 직원이 [상담 자료로 판독] — 분류를 뒤집는다
+        models.update_document(doc_id, triage="consult")
     _apply_analysis(doc_id, ai)
     return True
+
+
+def _mark_other(doc_id: int, t: dict):
+    """상담 외 팩스 — 전체 판독 없이 '상담 외'로 두고 카드는 만들지 않는다(이미 있으면 완료 처리)."""
+    models.update_document(doc_id, triage="other", triage_reason=_triage_text(t), status="other",
+                           sender_ai=(t.get("sender") or "").strip()[:80] or None, ai_error=None)
+    _ensure_archived(doc_id)
+    doc = models.get_document(doc_id)
+    if doc.get("comm_id"):
+        models.update_communication(doc["comm_id"], status="done")
+    logger.info("팩스 #%s 상담 외: %s", doc_id, _triage_text(t))
 
 
 def _ensure_archived(doc_id: int):
@@ -315,8 +439,9 @@ def _ensure_archived(doc_id: int):
 
 
 def save_upload(filename: str, data: bytes, *, created_by: str) -> int | None:
-    """화면에서 직접 올린 파일 — 수신 폴더(없으면 아카이브 폴더)에 저장 후 같은 흐름으로 등록."""
-    folder = inbox_dir() or archive_dir()
+    """화면에서 직접 올린 파일 — 수신 폴더(없으면 아카이브 폴더)에 저장 후 같은 흐름으로 등록.
+    copy 모드에선 수신 폴더가 EasyFax 원본(읽기 전용)이라 정리 폴더에 바로 둔다."""
+    folder = archive_dir() if copy_mode() else (inbox_dir() or archive_dir())
     if folder is None:
         raise RuntimeError("FAX_INBOX_DIR이 설정되지 않아 저장할 곳이 없습니다.")
     folder.mkdir(parents=True, exist_ok=True)
@@ -326,7 +451,7 @@ def save_upload(filename: str, data: bytes, *, created_by: str) -> int | None:
         raise RuntimeError("PDF·JPG·PNG·TIF 파일만 올릴 수 있습니다.")
     target = _unique_path(folder, f"{safe}{ext}")
     target.write_bytes(data)
-    return register_file(target, created_by=created_by)
+    return register_file(target, created_by=created_by, copy=False)
 
 
 # ───────────────────── 보관기간 — 원본 자동 삭제 ─────────────────────
@@ -336,8 +461,10 @@ def save_upload(filename: str, data: bytes, *, created_by: str) -> int | None:
 # 정식 보존은 원본을 보낸 모병원과 우리 병원 EMR/의무기록실 몫이다 — 자료함이 유일한 사본이 되면 안 된다.
 
 def _managed(path: Path) -> bool:
-    """수신·정리 폴더 안의 파일만 지운다 — 다른 곳을 가리키는 경로는 절대 건드리지 않는다."""
-    for base in (inbox_dir(), archive_dir()):
+    """수신·정리 폴더 안의 파일만 지운다 — 다른 곳을 가리키는 경로는 절대 건드리지 않는다.
+    copy 모드에선 수신 폴더가 EasyFax 원본이라 정리 폴더(사본)만."""
+    bases = (archive_dir(),) if copy_mode() else (inbox_dir(), archive_dir())
+    for base in bases:
         if base and (base == path.parent or base in path.parents):
             return True
     return False
@@ -388,9 +515,13 @@ def _maybe_purge():
 
 # ───────────────────── 폴더 감시 ─────────────────────
 
-def _candidates(folder: Path):
-    """수신 폴더의 새 파일 후보 — 정리 폴더·숨김·쓰는 중인 파일 제외."""
+def _candidates(folder: Path, known: set[str] | None = None):
+    """수신 폴더의 새 파일 후보 — 정리 폴더·숨김·휴지통·쓰는 중인 파일 제외.
+    copy 모드: '_'로 시작하는 폴더(EasyFax 내부용)·이미 가져온 경로·FAX_SINCE 이전 수신분도 제외."""
     arch = archive_dir()
+    copying = copy_mode()
+    cutoff = since() if copying else None
+    skip_prefix = (".", "#", "@", "_") if copying else (".", "#", "@")
     now = time.time()
     for p in sorted(folder.rglob("*")):
         if not p.is_file() or p.name.startswith((".", "~$")):
@@ -399,6 +530,16 @@ def _candidates(folder: Path):
             continue
         if arch and (arch == p.parent or arch in p.parents):
             continue
+        if any(part.startswith(skip_prefix) for part in p.relative_to(folder).parts[:-1]):
+            continue                          # #recycle · @eaDir · EasyFax _relay 등
+        if known is not None and str(p) in known:
+            continue
+        if cutoff:
+            try:
+                if received_at(p) < cutoff:
+                    continue
+            except OSError:
+                continue
         try:
             if now - p.stat().st_mtime < SETTLE_SECONDS:
                 continue                      # 아직 복사 중일 수 있음
@@ -420,7 +561,8 @@ def scan_once() -> int:
             return 0
         count = 0
         fresh: set[int] = set()                   # 이번 주기에 막 등록한 건 — 같은 주기에 재시도하지 않는다
-        for p in list(_candidates(folder)):
+        known = models.document_source_paths() if copy_mode() else None
+        for p in list(_candidates(folder, known)):
             try:
                 did = register_file(p)
                 if did is not None:
@@ -454,10 +596,13 @@ def _loop():
 
 def start_worker():
     if not enabled():
-        logger.info("팩스 자료함 비활성 — FAX_INBOX_DIR 미설정")
+        logger.info("팩스 자료함 비활성 — FAX_INBOX_DIR 미설정%s",
+                    " 또는 copy 모드인데 FAX_ARCHIVE_DIR 미설정" if copy_mode() else "")
         return
-    logger.info("팩스 자료함 시작 — %s 를 %d초마다 확인, 원본 보관 %d일(0=무제한), AI 판독 앞 %d쪽",
-                inbox_dir(), poll_seconds(), keep_days(), __import__("llm").fax_max_pages())
+    logger.info("팩스 자료함 시작 — %s 를 %d초마다 확인%s, 원본 보관 %d일(0=무제한), AI 판독 앞 %d쪽%s",
+                inbox_dir(), poll_seconds(),
+                f" (EasyFax 공존: 사본 → {archive_dir()}, {since() or '처음'} 이후 수신분)" if copy_mode() else "",
+                keep_days(), __import__("llm").fax_max_pages(), ", 상담 관련 분류 켜짐" if classify_enabled() else "")
     threading.Thread(target=_bootstrap, name="fax-inbox", daemon=True).start()
 
 

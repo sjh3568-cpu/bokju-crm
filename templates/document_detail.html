@@ -23,7 +23,8 @@
  <aside class="doc-side">
   <section class="card doc-ai">
    <div class="doc-ai-head"><h2>AI 핵심 요약</h2>{% if doc.analyzed_at %}<small>{{ doc.analyzed_at[:16] }} · {% if ai.confidence=='low' %}<b class="bad">신뢰도 낮음</b>{% elif ai.confidence=='medium' %}신뢰도 보통{% else %}신뢰도 높음{% endif %}</small>{% endif %}
-    {% if can_edit %}<button class="btn btn-secondary btn-xs" id="doc-analyze" {% if not fax.ai or not file_exists %}disabled title="{% if not file_exists %}원본 없음{% else %}AI 판독 꺼짐{% endif %}"{% endif %}>{% if doc.analyzed_at %}다시 판독{% else %}지금 판독{% endif %}</button>{% endif %}</div>
+    {% if can_edit %}<button class="btn btn-secondary btn-xs" id="doc-analyze" {% if not fax.ai or not file_exists %}disabled title="{% if not file_exists %}원본 없음{% else %}AI 판독 꺼짐{% endif %}"{% endif %}>{% if doc.status == 'other' %}상담 자료로 판독{% elif doc.analyzed_at %}다시 판독{% else %}지금 판독{% endif %}</button>{% endif %}</div>
+   {% if doc.status == 'other' %}<div class="doc-other">AI가 <b>상담 외</b> 팩스로 분류했습니다{% if doc.triage_reason %} — {{ doc.triage_reason }}{% endif %}.<br><small>앞 2쪽만 보고 가렸습니다. 입원 상담 자료가 맞으면 [상담 자료로 판독]을 누르세요.</small></div>{% endif %}
    {% if ai %}
     <dl class="doc-facts">
      {% if ai.document_type %}<dt>서류</dt><dd>{{ ai.document_type }}</dd>{% endif %}
@@ -82,7 +83,8 @@
 .doc-form{display:grid;grid-template-columns:1fr 1fr;gap:8px}.doc-form label{display:grid;gap:3px;font-size:.74rem;font-weight:750;color:#64748b}.doc-form input{padding:7px;border:1px solid #d5dfd9;border-radius:7px;font-size:.84rem}.doc-form-actions{grid-column:1/-1;display:flex;align-items:center;gap:8px;flex-wrap:wrap}.doc-form-actions small{color:#64748b;word-break:break-all}
 .doc-cands{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:.8rem}.doc-cands li{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 9px;background:#f8fafc;border-radius:7px}
 .doc-link-actions{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}.doc-danger{color:#b91c1c}.bad{color:#b91c1c}
-.doc-badge-pending{background:#fef3c7;color:#92400e}.doc-badge-analyzed{background:#dbeafe;color:#1d4ed8}.doc-badge-done{background:#dcfce7;color:#166534}
+.doc-badge-pending{background:#fef3c7;color:#92400e}.doc-badge-analyzed{background:#dbeafe;color:#1d4ed8}.doc-badge-done{background:#dcfce7;color:#166534}.doc-badge-other{background:#f1f5f9;color:#475569}
+.doc-other{margin:8px 0;padding:8px 10px;border-radius:8px;background:#f8fafc;border:1px solid #e2e8f0;font-size:.82rem;color:#334155}
 @media(max-width:1100px){.doc-layout{grid-template-columns:1fr}.doc-viewer iframe{height:70vh}}
 </style>
 {% endblock %}

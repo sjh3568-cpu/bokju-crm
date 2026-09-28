@@ -545,3 +545,67 @@ def analyze_document(path: str, *, hint: str = "") -> dict:
     result["_pages_total"] = pages_total
     result["_pages_sent"] = pages_sent
     return result
+
+
+# 병원 대표 팩스(EasyFax mfp1)에는 원무·약제·거래처 팩스가 섞여 온다. 상담 자료함에는 입원 상담 관련만 올리고,
+# 나머지는 앞 몇 쪽만 보고 '상담 외'로 돌린다 — 관계없는 문서를 통째로 외부 API에 보내지 않기 위해서다.
+FAX_CLASSIFY_PAGES = 2
+FAX_CLASSIFY_PROMPT = """당신은 복주회복병원(입원 전용 재활병원) 대표 팩스로 들어온 문서를 부서별로 나누는 분류 AI입니다.
+이 팩스가 **상담실(입원 상담)** 이 봐야 할 문서인지만 판정합니다.
+
+상담실 문서(consult_related=true):
+- 다른 병원·요양병원·보건소 등이 환자 입원·전원을 의뢰하거나 문의하는 서류: 진료의뢰서, 전원 요청서, 소견서, 진단서,
+  간호정보조사지·간호요약지, 검사결과·영상판독지, 투약기록, 입원 문의 메모 등 **입원 전 환자에 관한 의료 서류**
+- 보호자·기관이 보낸 입원 상담 요청
+
+상담실 문서가 아님(consult_related=false):
+- 거래명세서·견적서·청구서·세금계산서, 약품·물품 주문, 공문·협조 요청, 교육·행사 안내, 광고
+- 보험사·공단 서류, 이미 입원 중인 환자의 원무·보험 처리 서류, 직원 인사·급여 서류
+
+애매하면 true(상담실이 한 번 보는 편이 놓치는 것보다 낫다). 앞 몇 쪽만 보고 판정합니다."""
+FAX_CLASSIFY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "consult_related": {"type": "boolean", "description": "상담실이 봐야 할 문서인가"},
+        "category": {"type": "string", "description": "문서 종류 한두 단어: 진료의뢰서 / 소견서 / 거래명세서 / 공문 / 광고 / 기타 등"},
+        "sender": {"type": "string", "description": "보낸 기관 이름. 없으면 빈 문자열"},
+        "reason": {"type": "string", "description": "판정 이유 한 문장"},
+    },
+    "required": ["consult_related", "category", "sender", "reason"],
+    "additionalProperties": False,
+}
+
+
+def classify_document(path: str) -> dict:
+    """팩스 앞 FAX_CLASSIFY_PAGES쪽 → FAX_CLASSIFY_SCHEMA dict. 실패 시 RuntimeError."""
+    import base64
+    from pathlib import Path
+
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise RuntimeError("ANTHROPIC_API_KEY 미설정")
+    p = Path(path)
+    kind = FAX_MEDIA_TYPES.get(p.suffix.lower())
+    if not kind:
+        raise RuntimeError(f"판독 불가 형식: {p.suffix}")
+    block_type, media_type = kind
+    raw = p.read_bytes()
+    if block_type == "document":
+        raw, _, _ = _pdf_head(raw, FAX_CLASSIFY_PAGES)
+    if len(raw) > FAX_MAX_BYTES:
+        raise RuntimeError(f"보낼 분량이 너무 큽니다 ({len(raw) // (1024 * 1024)}MB)")
+    data = base64.standard_b64encode(raw).decode("ascii")
+    payload = {
+        "model": os.getenv("CLAUDE_MODEL_FAX", FAX_MODEL),
+        "max_tokens": 1000,
+        "system": FAX_CLASSIFY_PROMPT,
+        "messages": [{"role": "user", "content": [
+            {"type": block_type, "source": {"type": "base64", "media_type": media_type, "data": data}},
+            {"type": "text", "text": f"파일명: {p.name}\n이 팩스를 분류하세요."},
+        ]}],
+        "output_config": {"effort": "low", "format": {"type": "json_schema", "schema": FAX_CLASSIFY_SCHEMA}},
+        "fallbacks": "default",
+    }
+    return _post_json(payload, api_key,
+                      extra_headers={"anthropic-beta": "server-side-fallback-2026-07-01"},
+                      read_timeout=120)

@@ -595,8 +595,13 @@ def init_db():
         "size_bytes": "INTEGER",
         "pages": "INTEGER",            # PDF 총 쪽수(판독 시 확인)
         "file_deleted_at": "DATETIME", # 보관기간 경과로 원본 삭제(요약·판독값은 남김)
+        # EasyFax 공존(copy) 모드 — 원본은 EasyFax 폴더에 그대로 두고 사본만 가져온다 (2026-09-28)
+        "source_path": "TEXT",         # 가져온 원본 경로 — EasyFax가 회전 저장해 내용이 바뀌어도 다시 안 가져온다
+        "triage": "TEXT",              # AI 분류: consult(상담 관련) / other(상담 외) / NULL(미분류)
+        "triage_reason": "TEXT",       # 분류 이유(종류·보낸 곳·사유)
     })
     conn.execute("CREATE INDEX IF NOT EXISTS idx_doc_sha ON patient_documents(sha256)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_doc_source_path ON patient_documents(source_path)")
     _ensure_columns(conn, "patients", {
         "address_full": "TEXT",
         "family_info": "TEXT",
@@ -9070,10 +9075,13 @@ def get_document(doc_id):
 
 
 def list_documents(limit: int = 200, *, status=None, q=None, source=None):
-    """자료함 목록 — status('pending'|'analyzed'|'done'), q(환자명·병명·보낸 곳·파일명), source('팩스' 등)."""
+    """자료함 목록 — status('pending'|'analyzed'|'done'|'other'), q(환자명·병명·보낸 곳·파일명), source('팩스' 등).
+    status를 안 주면 '상담 외'(other)는 뺀다 — 원무·거래처 팩스가 상담 자료함을 덮지 않게."""
     where, vals = [], []
     if status:
         where.append("d.status = ?"); vals.append(status)
+    else:
+        where.append("COALESCE(d.status, '') != 'other'")
     if source:
         where.append("d.source = ?"); vals.append(source)
     if q:
@@ -9099,6 +9107,14 @@ def document_by_sha(sha256: str):
     row = conn.execute("SELECT * FROM patient_documents WHERE sha256 = ? LIMIT 1", (sha256,)).fetchone()
     conn.close()
     return dict(row) if row else None
+
+
+def document_source_paths() -> set[str]:
+    """copy 모드에서 이미 가져온 원본 경로 — 폴더 감시가 다시 가져오지 않게."""
+    conn = get_db()
+    rows = conn.execute("SELECT source_path FROM patient_documents WHERE source_path IS NOT NULL").fetchall()
+    conn.close()
+    return {r["source_path"] for r in rows}
 
 
 def document_by_comm(comm_id: int):
@@ -9152,7 +9168,8 @@ def update_document(doc_id, **fields):
                       "status", "source", "filename", "stored_path", "mime",
                       "sha256", "original_name", "doc_date", "patient_name_ai",
                       "diagnosis_ai", "sender_ai", "ai_json", "ai_attempts",
-                      "ai_error", "analyzed_at", "comm_id", "size_bytes", "pages", "file_deleted_at")}
+                      "ai_error", "analyzed_at", "comm_id", "size_bytes", "pages", "file_deleted_at",
+                      "source_path", "triage", "triage_reason")}
     if not valid:
         return
     sets = [f"{k} = ?" for k in valid]
@@ -9176,7 +9193,7 @@ def inbox_documents():
     rows = conn.execute(
         "SELECT d.*, p.name AS patient_name FROM patient_documents d "
         "LEFT JOIN patients p ON p.id = d.patient_id "
-        "WHERE d.status = 'pending' OR d.patient_id IS NULL "
+        "WHERE (d.status = 'pending' OR d.patient_id IS NULL) AND COALESCE(d.status, '') != 'other' "
         "ORDER BY d.created_at DESC LIMIT 50").fetchall()
     conn.close()
     return [dict(r) for r in rows]

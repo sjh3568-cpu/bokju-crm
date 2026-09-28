@@ -6,15 +6,15 @@
 </div>
 
 <div class="doc-status card">
- <div><b>수신 폴더</b><span>{% if fax.enabled %}{{ fax.inbox_dir }} {% if fax.inbox_exists %}<em class="ok">연결됨</em>{% else %}<em class="bad">폴더 없음</em>{% endif %}{% else %}<em class="bad">미설정</em> — .env에 FAX_INBOX_DIR을 넣으면 {{ fax.poll_seconds }}초마다 확인합니다{% endif %}</span></div>
+ <div><b>수신 폴더</b><span>{% if fax.enabled %}{{ fax.inbox_dir }} {% if fax.inbox_exists %}<em class="ok">연결됨</em>{% else %}<em class="bad">폴더 없음</em>{% endif %}{% if fax.copy_mode %}<br><small>EasyFax 공존 — 원본은 그대로 두고 사본만 가져옴{% if fax.since %} · {{ fax.since }} 이후 수신분{% endif %}</small>{% endif %}{% else %}<em class="bad">미설정</em> — .env에 FAX_INBOX_DIR을 넣으면 {{ fax.poll_seconds }}초마다 확인합니다{% endif %}</span></div>
  <div><b>정리 폴더</b><span>{{ fax.archive_dir or '-' }}</span></div>
- <div><b>AI 판독</b><span>{% if fax.ai %}<em class="ok">켜짐</em> · {{ fax.model }} · 앞 {{ fax.max_pages }}쪽까지{% else %}<em class="bad">꺼짐</em> — 파일명은 날짜_미확인_원본명으로만 정리{% endif %}</span></div>
+ <div><b>AI 판독</b><span>{% if fax.ai %}<em class="ok">켜짐</em> · {{ fax.model }} · 앞 {{ fax.max_pages }}쪽까지{% if fax.classify %}<br><small>앞 2쪽으로 상담 관련인지 먼저 가려 나머지는 '상담 외'로</small>{% endif %}{% else %}<em class="bad">꺼짐</em> — 파일명은 날짜_미확인_원본명으로만 정리{% endif %}</span></div>
  <div><b>원본 보관</b><span>{% if fax.keep_days %}{{ fax.keep_days }}일 지나면 파일만 삭제(요약·판독값은 유지){% else %}자동 삭제 없음{% endif %} · 현재 {{ fax.files }}개 · {{ fax.mb }}MB</span></div>
 </div>
 
 <form class="doc-filter" method="get">
  <div class="doc-tabs">
-  <a href="/documents{% if q %}?q={{ q }}{% endif %}" class="{% if not status %}active{% endif %}">전체 <b>{{ (counts.values()|sum) }}</b></a>
+  <a href="/documents{% if q %}?q={{ q }}{% endif %}" class="{% if not status %}active{% endif %}">전체 <b>{{ (counts.values()|sum) - counts.get('other', 0) }}</b></a>
   {% for key, label in STATUS_LABELS.items() %}<a href="/documents?status={{ key }}{% if q %}&q={{ q }}{% endif %}" class="{% if status==key %}active{% endif %} st-{{ key }}">{{ label }} <b>{{ counts.get(key, 0) }}</b></a>{% endfor %}
  </div>
  <input type="hidden" name="status" value="{{ status }}"><input name="q" value="{{ q }}" placeholder="환자 이름·병명·보낸 곳·파일명"><button class="btn btn-secondary">검색</button>
@@ -47,7 +47,7 @@
 .doc-filter{display:flex;gap:8px;align-items:center;margin-bottom:12px}.doc-filter input[name=q]{flex:1;max-width:360px;padding:8px;border:1px solid #d5dfd9;border-radius:8px;background:#fff}
 .doc-tabs{display:flex;gap:6px}.doc-tabs a{padding:6px 12px;border:1px solid #dbe5df;border-radius:20px;background:#fff;color:#334155;text-decoration:none;font-size:.78rem;font-weight:750}.doc-tabs a.active{background:#14532d;border-color:#14532d;color:#fff}.doc-tabs a b{margin-left:4px}
 .doc-board{padding:0;overflow:auto}.doc-tbl{width:100%}.doc-tbl td,.doc-tbl th{padding:10px 12px;vertical-align:top;border-bottom:1px solid #edf1ef}.doc-tbl small{display:block;color:#64748b;font-size:.7rem}.doc-sum{max-width:420px;font-size:.82rem}.doc-warn{margin-top:3px;color:#b45309;font-size:.74rem;font-weight:750}
-.doc-badge-pending{background:#fef3c7;color:#92400e}.doc-badge-analyzed{background:#dbeafe;color:#1d4ed8}.doc-badge-done{background:#dcfce7;color:#166534}.badge-low{background:#fee2e2;color:#b91c1c;margin-left:4px}
+.doc-badge-pending{background:#fef3c7;color:#92400e}.doc-badge-analyzed{background:#dbeafe;color:#1d4ed8}.doc-badge-done{background:#dcfce7;color:#166534}.doc-badge-other{background:#f1f5f9;color:#475569}.badge-low{background:#fee2e2;color:#b91c1c;margin-left:4px}
 tr.st-done td{color:#64748b}
 @media(max-width:900px){.doc-status{grid-template-columns:1fr}.doc-filter{flex-wrap:wrap}}
 </style>
