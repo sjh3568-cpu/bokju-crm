@@ -511,9 +511,14 @@ def dashboard():
         ),
         "disease": _dashboard_groups(callbacks, _dashboard_disease_labels),
     }
+    try:
+        sms_reminders = models.sms_reminders()
+    except Exception:   # 알림 계산이 대시보드 전체를 막지 않게
+        app.logger.exception("안내 문자 알림 계산 실패")
+        sms_reminders = []
     action_queue = _dashboard_action_queue(
         data, open_comms, callbacks, recovery_transition_due, discharge_all,
-        planned_missing_date=planned_missing_date,
+        planned_missing_date=planned_missing_date, sms_reminders=sms_reminders,
     )
 
     data["open_comms"] = open_comms

@@ -264,5 +264,32 @@ class ReminderTests(Base):
         self.assertEqual(models.list_sms_log(1)[0]["reminder_key"], key)
 
 
+
+class DashboardReminderTests(Base):
+    def setUp(self):
+        super().setUp()
+        import partnerships, support_requests, transport
+        partnerships.init_schema(); support_requests.init_schema(); transport.init_schema()
+
+    def test_queue_has_reminder_row(self):
+        pid = self.patient(name="알림환자"); cid = self.consult(pid)
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertIn(">안내 문자<", html)
+        self.assertIn(f'href="/sms?reminder=상담 직후:c{cid}&amp;cid={cid}"', html)
+        self.assertIn('sms-rm-close" data-key="상담 직후:c', html)
+
+    def test_no_phone_row_links_patient(self):
+        pid = self.patient(name="번호없음", phone=""); self.consult(pid)
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertIn(f'href="/patients/{pid}" title="보호자 번호를 먼저 입력하세요">번호 없음<', html)
+
+    def test_queue_builder_counts_reminders(self):
+        items = [{"key": "상담 직후:c1", "timing": "상담 직후", "patient_id": 1, "consultation_id": 1,
+                  "patient_name": "갑", "guardian_phone": "01011112222", "anchor_date": TODAY, "has_phone": True}]
+        q = main._dashboard_action_queue({}, [], [], [], [], sms_reminders=items)
+        self.assertEqual([x["kind"] for x in q["items_all"] if x["kind"] == "안내 문자"], ["안내 문자"])
+        self.assertIn("안내 문자", [g["label"] for g in q["groups"]])
+
+
 if __name__ == "__main__":
     unittest.main()

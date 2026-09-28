@@ -337,7 +337,7 @@
 {% endmacro %}
 {% macro action_tr(item, stale=False) %}
 <tr class="aq-row {{ item.tone }}{% if stale %} stale{% endif %}">
-    {% set kslug = {'퇴원지연':'discharge','퇴원예정':'discharge','재연락':'callback','문의':'inquiry','입원준비':'prep','담당자':'staff','운행':'transport','입원예정일':'planned'}.get(item.group, 'hold-adm' if item.kind == '입원보류' else 'hold') %}
+    {% set kslug = {'퇴원지연':'discharge','퇴원예정':'discharge','재연락':'callback','문의':'inquiry','입원준비':'prep','담당자':'staff','운행':'transport','입원예정일':'planned','안내 문자':'sms'}.get(item.group, 'hold-adm' if item.kind == '입원보류' else 'hold') %}
     <td class="nowrap"><span class="aq-kind k-{{ kslug }}">{{ item.kind }}</span></td>
     <td class="aq-who" title="{{ item.title }}{% if item.who %} · {{ item.who }}{% endif %}"><a href="{{ item.href or '#' }}">{{ item.title }}</a>{% if item.who %}<span class="dash-who">{{ item.who }}</span>{% endif %}</td>
     <td class="dash-dx{% if item.dx|dx_group %} dxg-{{ item.dx|dx_group }}{% endif %}" title="{{ item.dx }}">{{ item.dx or '-' }}</td>
@@ -354,6 +354,12 @@
             {% if is_hp or is_fax %}<a class="btn btn-secondary btn-xs" href="/consult/new?comm_id={{ item.action.id }}">상담 등록</a>{% endif %}
             <button type="button" class="btn btn-secondary btn-xs ib-missed" data-comm="{{ item.action.id }}" title="전화했는데 안 받음 — 재연락 시각을 잡아 두면 그때 다시 알림">부재중</button>
             <button type="button" class="btn btn-secondary btn-xs ib-done" data-comm="{{ item.action.id }}" title="후속 처리완료로 표시">처리완료</button>
+        </div></details>
+        {% elif item.action and item.action.type == 'sms_reminder' %}
+        {% if item.action.has_phone %}<a class="btn btn-primary btn-xs" href="{{ item.action.href }}">문자</a>{% else %}<a class="btn btn-secondary btn-xs" href="/patients/{{ item.action.patient_id }}" title="보호자 번호를 먼저 입력하세요">번호 없음</a>{% endif %}
+        {#- '안 보냄'은 더보기 안에 — 버튼 둘을 나란히 두면 '번호 없음' 행이 106px 칸을 넘었다(1440 실측, 2026-09-28) -#}
+        <details class="aq-more"><summary class="btn btn-secondary btn-xs" title="안 보냄">…</summary><div class="aq-more-menu">
+            <button type="button" class="btn btn-secondary btn-xs sms-rm-close" data-key="{{ item.action.key }}" data-pid="{{ item.action.patient_id }}" data-cid="{{ item.action.consultation_id or '' }}" title="전화로 안내했거나 보낼 필요가 없을 때 — 사유를 남기고 닫습니다">안 보냄</button>
         </div></details>
         {% elif item.action and item.action.type == 'callback' %}
         <a class="btn btn-secondary btn-xs" href="/sms?cid={{ item.action.id }}">문자</a>
@@ -1048,6 +1054,27 @@ document.querySelectorAll('.ib-missed').forEach(btn => {
         });
         pop.append(sel, input, save, cancel);
         cell.append(pop);
+    });
+});
+// 안내 문자 '안 보냄' — 사유를 남기고 알림을 닫는다 (2026-09-28)
+document.querySelectorAll('.sms-rm-close').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        const reason = prompt('안 보내는 사유를 적어 주세요 (예: 전화로 안내함)');
+        if (!reason || !reason.trim()) return;
+        btn.disabled = true;
+        try {
+            const r = await fetch('/api/sms/reminder/close', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key: btn.dataset.key, reason: reason.trim(),
+                    patient_id: Number(btn.dataset.pid) || null, consultation_id: Number(btn.dataset.cid) || null }),
+            });
+            if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+            const tr = btn.closest('tr, .dash-action-row'); if (tr) tr.remove();
+        } catch (e) {
+            alert('처리 실패: ' + e.message);
+            btn.disabled = false;
+        }
     });
 });
 // 재연락 완료 1-click — 상담 결과를 '상담완료'로 즉시 변경

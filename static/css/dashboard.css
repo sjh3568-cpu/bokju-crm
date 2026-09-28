@@ -483,6 +483,7 @@
 .page-dashboard .aq-kind.k-hold      { background: #fdf3c9; color: #8a6400; }   /* 상담보류·보류 — 노랑 */
 .page-dashboard .aq-kind.k-callback  { background: #efe6fb; color: #6b3fbf; }   /* 재연락 — 보라 */
 .page-dashboard .aq-kind.k-inquiry   { background: #e6eefc; color: #2f5fc4; }   /* 문의(홈페이지·카카오) — 파랑 */
+.page-dashboard .aq-kind.k-sms       { background: #fce7f3; color: #be185d; }   /* 안내 문자 — 분홍 */
 .page-dashboard .aq-kind.k-prep      { background: #e3f3f0; color: #0b6b5f; }   /* 입원준비 — 청록 */
 .page-dashboard .aq-kind.k-transport { background: #e4f5ea; color: #1a7a42; }   /* 운행 — 초록 */
 .page-dashboard .aq-kind.k-staff     { background: #eceff3; color: #4b5563; }   /* 담당자 — 회색 */

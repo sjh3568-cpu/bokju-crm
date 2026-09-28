@@ -1475,10 +1475,11 @@ _ACTION_GROUP_MAP = {
     "보류": "보류",
     "입원예정": "입원예정일",
     "운행": "운행",
+    "안내 문자": "안내 문자",
 }
 # 순서·묶음은 아래 KPI 카드 줄과 맞춘다 — 오늘(파랑) → 기한(주황) → 대기(회색).
 _ACTION_GROUP_ORDER = ("입원준비", "운행", "담당자", "퇴원지연",
-                       "문의", "재연락", "보류", "입원예정일")
+                       "문의", "재연락", "안내 문자", "보류", "입원예정일")
 _ACTION_GROUP_BAND = {
     "입원준비": "today", "담당자": "today",
     "전환체크": "due", "퇴원예정": "due",
@@ -1490,7 +1491,7 @@ def _dashboard_action_group(kind):
 
 
 def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge_due,
-                            planned_missing_date=None):
+                            planned_missing_date=None, sms_reminders=None):
     """대시보드 액션큐 — 처리 필요 카드 목록.
     age_days 기준으로 ① '오늘 처리 필요'(0~7일)와 ② '오래 방치'(8일+)로 분리한다.
     "오늘 처리 필요" 섹션 라벨과 묵은 카드(20일+ 등)의 모순을 해소.
@@ -1683,6 +1684,27 @@ def _dashboard_action_queue(data, open_comms, callbacks, recovery_due, discharge
             f"/consult/{r.get('id')}/edit" if r.get("id") else None,
             12 if days >= 3 else 32,
             age_days=days,
+        )
+
+    # 안내 문자 — 상담 후·입원 전날·입원/퇴원 당일·퇴원 후 (2026-09-28 "보내는 걸 깜빡하지 않도록").
+    # 보내거나 '안 보냄'으로 닫으면 models.sms_reminders에서 빠진다. 입·퇴원 당일·전날은 그날 놓치면 의미가 없어 warn.
+    for r in sms_reminders or []:
+        days = max(0, (datetime.strptime(today, "%Y-%m-%d") - datetime.strptime(r["anchor_date"], "%Y-%m-%d")).days)
+        who = (f"cid={r['consultation_id']}" if r["timing"] == "상담 직후" and r.get("consultation_id")
+               else f"pid={r['patient_id']}")
+        href = f"/sms?reminder={r['key']}&{who}"
+        add(
+            "안내 문자",
+            "warn" if r["timing"] in ("입원 당일", "퇴원 당일", "입원 전날") else "info",
+            r.get("patient_name") or "환자 미지정",
+            r["timing"] + ("" if r["has_phone"] else " — 보호자 번호 없음"),
+            r["timing"] if days == 0 else f"{days}일 경과",
+            href,
+            30,
+            age_days=days,
+            action={"type": "sms_reminder", "key": r["key"], "href": href,
+                    "patient_id": r["patient_id"], "consultation_id": r.get("consultation_id"),
+                    "has_phone": r["has_phone"]},
         )
 
     tone_rank = {"danger": 0, "warn": 1, "info": 2}
