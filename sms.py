@@ -28,6 +28,8 @@ import requests
 # 국내 발송사는 EUC-KR 바이트로 요금 단위를 나눈다 — 한글 2바이트, 영숫자 1바이트.
 SMS_MAX_BYTES = 90
 LMS_MAX_BYTES = 2000
+# 장문(LMS) 제목 — 수신자 휴대폰에서 본문 위에 굵게 보인다. 발송과 화면 미리보기가 같이 쓴다.
+DEFAULT_LMS_TITLE = "복주회복병원 안내"
 _TIMEOUT = 10
 
 
@@ -80,6 +82,7 @@ def gateway_info() -> dict:
         "provider": provider_name(),
         "sender": (os.getenv("SMS_SENDER") or "").strip(),
         "test_to": test_to(),
+        "lms_title": DEFAULT_LMS_TITLE,
     }
 
 
@@ -144,7 +147,7 @@ def _send_aligo(receiver: str, body: str, msg_type: str, title: str | None) -> d
         "msg_type": msg_type,
     }
     if msg_type == "LMS":
-        data["title"] = (title or "복주회복병원 안내")[:44]
+        data["title"] = (title or DEFAULT_LMS_TITLE)[:44]
     r = requests.post("https://apis.aligo.in/send/", data=data, timeout=_TIMEOUT)
     r.raise_for_status()
     res = r.json()
@@ -185,7 +188,7 @@ def _send_ppurio(receiver: str, body: str, msg_type: str, title: str | None) -> 
         "refKey": f"bokju-{os.urandom(6).hex()}",
     }
     if msg_type == "LMS":
-        payload["subject"] = (title or "복주회복병원 안내")[:30]
+        payload["subject"] = (title or DEFAULT_LMS_TITLE)[:30]
     r = requests.post(f"{base}/v1/message", json=payload,
                       headers={"Authorization": f"Bearer {token}"}, timeout=_TIMEOUT)
     # 4xx도 본문에 code/description이 실려 오므로 raise 대신 파싱한다.

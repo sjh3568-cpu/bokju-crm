@@ -198,5 +198,26 @@ class SendApiTests(unittest.TestCase):
                          ("aligo", "abc", "01099990000", "LMS"))
 
 
+    # 받는 사람 휴대폰 미리보기(2026-09-28 사용자 요청) — 발송 방식에 따라 머리말이 달라지므로
+    # 화면이 서버와 같은 모드·제목을 받는지 확인한다.
+    def _device(self, env):
+        import html, json, re
+        with patch.dict(os.environ, env, clear=True):
+            page = self.client.get('/sms').get_data(as_text=True)
+        tag = re.search(r'<figure class="sms-device"[^>]*>', page).group(0)
+        attrs = {k: html.unescape(v) for k, v in re.findall(r'data-([a-z-]+)="([^"]*)"', tag)}
+        attrs['tokens'] = json.loads(attrs['tokens'])
+        return attrs
+
+    def test_preview_modes(self):
+        live = {"SMS_PROVIDER": "aligo", "SMS_API_KEY": "k", "SMS_SENDER": "054-550-1700"}
+        self.assertEqual(self._device({})['mode'], 'manual')
+        d = self._device(live)
+        self.assertEqual((d['mode'], d['sender'], d['title']), ('live', '054-550-1700', sms.DEFAULT_LMS_TITLE))
+        self.assertIn('{환자명}', d['tokens'])
+        t = self._device({**live, "SMS_TEST_TO": "010-9999-0000"})
+        self.assertEqual((t['mode'], t['test-to']), ('test', '01099990000'))
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -60,6 +60,8 @@
     <div class="sms-main">
         <div class="card">
             <h3>3. 문자 내용</h3>
+            <div class="sms-compose">
+            <div class="sms-compose-edit">
             <textarea id="sms-body" rows="9" placeholder="템플릿을 선택하거나 직접 입력하세요."></textarea>
             <div class="sms-foot">
                 <span class="muted" id="sms-count" data-sms-max="{{ sms_max_bytes }}" data-lms-max="{{ lms_max_bytes }}"
@@ -72,6 +74,27 @@
             <p class="muted sms-ph-help">치환 토큰:
                 {% for k in placeholders %}<code>{{ k }}</code> {% endfor %}— 수신자 선택 시 자동 치환됩니다.</p>
             <span class="sms-msg muted"></span>
+            </div>
+            {# 받는 사람 휴대폰에 보이는 모습 — 발송 방식(발송사/테스트/직원 휴대폰)에 따라 머리말·제목이 달라진다.
+               [Web발신]은 발송사를 거친 문자에 통신사가 붙이고, 장문(LMS)은 제목이 본문 위에 굵게 뜬다. #}
+            <figure class="sms-device" id="sms-device" aria-label="받는 사람 휴대폰 미리보기"
+                    data-mode="{{ 'test' if gateway_ready and gateway.test_to else ('live' if gateway_ready else 'manual') }}"
+                    data-sender="{{ gateway.sender }}" data-test-to="{{ gateway.test_to }}"
+                    data-title="{{ gateway.lms_title }}" data-tokens="{{ placeholders|list|tojson|forceescape }}">
+                <div class="sms-device-screen">
+                    <div class="sms-device-head">
+                        <span class="sms-device-avatar" aria-hidden="true">복</span>
+                        <b class="sms-device-from"></b>
+                    </div>
+                    <div class="sms-device-thread">
+                        <div class="sms-device-time"></div>
+                        <div class="sms-device-bubble"></div>
+                        <div class="sms-device-kind"></div>
+                    </div>
+                </div>
+                <figcaption class="sms-device-note"></figcaption>
+            </figure>
+            </div>
         </div>
     </div>
 </div>
@@ -119,8 +142,8 @@
 #sms-count.is-over { color:var(--danger); font-weight:700; }
 .sms-log-err { font-size:0.74em; color:var(--danger); max-width:220px; white-space:normal; }
 .sms-layout { display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap; }
-.sms-side { flex:1 1 320px; display:flex; flex-direction:column; gap:12px; }
-.sms-main { flex:2 1 380px; }
+.sms-side { flex:0 1 360px; display:flex; flex-direction:column; gap:12px; }
+.sms-main { flex:1 1 560px; min-width:0; }
 .sms-layout .card { margin:0; }
 #sms-consult { width:100%; padding:6px 9px; border:1px solid var(--border);
     border-radius:6px; font-family:inherit; font-size:0.88em; }
@@ -140,7 +163,8 @@
 #sms-body { width:100%; padding:9px; border:1px solid var(--border); border-radius:8px;
     font-family:inherit; font-size:0.95em; box-sizing:border-box; resize:vertical;
     line-height:1.55; }
-.sms-foot { display:flex; justify-content:space-between; align-items:center; margin-top:8px; }
+.sms-foot { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:8px; }
+.sms-foot .btn { white-space:nowrap; }
 .sms-ph-help { font-size:0.78em; margin:8px 0 0; }
 .sms-ph-help code { background:#f1f5f9; padding:0 4px; border-radius:4px; }
 .sms-msg { display:block; margin-top:6px; }
@@ -148,6 +172,31 @@
 .sms-msg.err { color:var(--danger); }
 .sms-log-body { max-width:280px; overflow:hidden; text-overflow:ellipsis;
     white-space:nowrap; font-size:0.84em; }
+/* 3. 문자 내용 — 왼쪽 입력, 오른쪽 받는 사람 휴대폰 미리보기 */
+.sms-compose { display:flex; gap:16px; align-items:flex-start; }
+.sms-compose-edit { flex:1 1 auto; min-width:0; }
+.sms-device { flex:0 0 260px; margin:0; }
+.sms-device-screen { height:440px; display:flex; flex-direction:column; overflow:hidden;
+    border:9px solid #1f2937; border-radius:32px; background:#fff;
+    box-shadow:0 6px 18px rgba(15,23,42,.14); }
+.sms-device-head { display:flex; flex-direction:column; align-items:center; gap:3px;
+    padding:14px 10px 9px; border-bottom:1px solid #e5e7eb; background:#f9fafb; }
+.sms-device-avatar { width:34px; height:34px; border-radius:50%; background:#cbd5e1; color:#fff;
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:.9em; }
+.sms-device-from { font-size:.84em; color:#111827; }
+.sms-device-thread { flex:1; overflow-y:auto; padding:10px 12px 14px; background:#fff; }
+.sms-device-time { text-align:center; font-size:.7em; color:#9ca3af; margin:2px 0 8px; }
+.sms-device-bubble { max-width:88%; padding:8px 11px; border-radius:16px 16px 16px 4px;
+    background:#e9e9eb; color:#111; font-size:.84em; line-height:1.5;
+    white-space:pre-wrap; overflow-wrap:anywhere; word-break:keep-all; }
+.sms-device-bubble .sms-device-title { display:block; font-weight:700; margin-bottom:4px; }
+.sms-device-bubble .sms-device-web { color:#374151; }
+.sms-device-bubble .sms-device-token { background:#fde68a; color:#92400e; border-radius:3px; padding:0 2px; }
+.sms-device-bubble.is-empty { color:#9ca3af; font-style:italic; }
+.sms-device-kind { font-size:.7em; color:#9ca3af; margin:4px 0 0 4px; }
+.sms-device-note { font-size:.74em; color:var(--text-light); margin-top:8px; line-height:1.45; }
+.sms-device-note .warn { color:#b45309; font-weight:600; }
+@media (max-width:760px) { .sms-compose { flex-direction:column; } .sms-device { align-self:center; } }
 .sms-history-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; flex-wrap:wrap; }.sms-history-head h3{margin:0}
 </style>
 

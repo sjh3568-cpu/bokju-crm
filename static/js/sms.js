@@ -46,8 +46,81 @@
         else { kind = '한도 초과 — ' + LMS_MAX + '바이트까지'; cls = 'is-over'; }
         countEl.textContent = text.length + '자 · ' + b + '/' + (b <= SMS_MAX ? SMS_MAX : LMS_MAX) + '바이트 · ' + kind;
         countEl.className = 'muted ' + cls;
+        renderPreview();
         return b;
     }
+    // ─── 받는 사람 휴대폰 미리보기 ───
+    // 서버(sms.send_sms)가 실제로 보내는 모양을 그대로 흉내 낸다:
+    //  발송사 연동(live)  → [Web발신] + 본문, 장문이면 제목(DEFAULT_LMS_TITLE)이 위에 굵게
+    //  테스트(test)       → 위와 같되 본문 머리에 [테스트 → 원래 번호], 실제로는 테스트 번호로 감
+    //  미설정(manual)     → 직원 휴대폰 문자앱으로 나가므로 머리말·제목 없이 본문만
+    const device = document.getElementById('sms-device');
+    const fmtPhone = v => {
+        const d = String(v || '').replace(/\D/g, '');
+        if (/^02\d{7,8}$/.test(d)) return d.replace(/^(02)(\d{3,4})(\d{4})$/, '$1-$2-$3');
+        if (/^\d{8}$/.test(d)) return d.replace(/^(\d{4})(\d{4})$/, '$1-$2');
+        if (/^\d{10,11}$/.test(d)) return d.replace(/^(\d{3})(\d{3,4})(\d{4})$/, '$1-$2-$3');
+        return d;
+    };
+    function renderPreview() {
+        if (!device) return;
+        const mode = device.dataset.mode;
+        let tokens = [];
+        try { tokens = JSON.parse(device.dataset.tokens || '[]'); } catch { tokens = []; }
+        const bubble = device.querySelector('.sms-device-bubble');
+        const note = device.querySelector('.sms-device-note');
+        const receiver = phoneEl.value.replace(/\D/g, '');
+        let body = bodyEl.value;
+        if (mode === 'test' && body && receiver && receiver !== device.dataset.testTo) body = '[테스트 → ' + receiver + ']\n' + body;
+        const bytes = bodyBytes(body);
+        const isLms = bytes > SMS_MAX;
+
+        device.querySelector('.sms-device-from').textContent =
+            mode === 'manual' ? '상담사 휴대폰 번호' : (fmtPhone(device.dataset.sender) || '발신번호');
+        const now = new Date(), h = now.getHours();
+        device.querySelector('.sms-device-time').textContent =
+            '오늘 ' + (h < 12 ? '오전 ' : '오후 ') + ((h % 12) || 12) + ':' + String(now.getMinutes()).padStart(2, '0');
+
+        bubble.replaceChildren();
+        bubble.classList.toggle('is-empty', !body.trim());
+        if (!body.trim()) {
+            bubble.textContent = '입력한 내용이 여기에 받는 사람 화면처럼 보입니다.';
+        } else {
+            if (mode !== 'manual' && isLms) {
+                const t = document.createElement('span'); t.className = 'sms-device-title';
+                t.textContent = device.dataset.title || ''; bubble.append(t);
+            }
+            if (mode !== 'manual') {
+                const w = document.createElement('span'); w.className = 'sms-device-web';
+                w.textContent = '[Web발신]\n'; bubble.append(w);
+            }
+            // 치환 안 된 토큰은 글자 그대로 보호자에게 간다 — 노랗게 표시
+            const pattern = tokens.length ? new RegExp('(' + tokens.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')') : null;
+            (pattern ? body.split(pattern) : [body]).forEach(part => {
+                if (!part) return;
+                if (pattern && tokens.includes(part)) {
+                    const m = document.createElement('mark'); m.className = 'sms-device-token'; m.textContent = part; bubble.append(m);
+                } else bubble.append(document.createTextNode(part));
+            });
+        }
+        device.querySelector('.sms-device-kind').textContent =
+            !body.trim() ? '' : (bytes > LMS_MAX ? '한도 초과 — 발송 안 됨' : (isLms ? '장문(LMS)' : '단문(SMS)'));
+
+        const left = tokens.filter(t => body.includes(t));
+        note.replaceChildren();
+        if (left.length) {
+            const w = document.createElement('div'); w.className = 'warn';
+            w.textContent = '⚠ 채워지지 않은 토큰 ' + left.join(' ') + ' — 이대로 보내면 글자 그대로 갑니다.'; note.append(w);
+        }
+        const tip = document.createElement('div');
+        tip.textContent = mode === 'manual'
+            ? '발송사 미설정 — 상담사 휴대폰 문자앱에서 보내므로 [Web발신] 없이 이 내용만 갑니다.'
+            : mode === 'test'
+                ? '테스트 모드 — 실제로는 ' + fmtPhone(device.dataset.testTo) + '로만 갑니다.'
+                : '[Web발신]은 통신사가 붙입니다. 줄바꿈 위치는 휴대폰 기종마다 조금 다를 수 있습니다.';
+        note.append(tip);
+    }
+
     function applyConsult() {
         const c = currentConsult();
         if (c) {
@@ -59,6 +132,7 @@
     }
 
     consultSel.addEventListener('change', applyConsult);
+    phoneEl.addEventListener('input', renderPreview);  // 테스트 모드 머리말에 수신 번호가 들어간다
     bodyEl.addEventListener('input', () => { rawTemplate = ''; updateCount(); });
 
     document.querySelectorAll('.sms-tpl').forEach(btn => {
