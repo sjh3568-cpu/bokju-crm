@@ -115,7 +115,10 @@
             panel.hidden = true; input.setAttribute('aria-expanded','false');
         };
         const addMonths = n => { const d = new Date(year, month+n, 1, 12); d.setDate(Math.min(today.getDate(),new Date(year,month+n+1,0).getDate())); return iso(d); };
-        const shortcuts = [['오늘',iso(today)],['어제',iso(day(today,-1))],['내일',iso(day(today,1))],['1주 후',iso(day(today,7))],['2주 후',iso(day(today,14))],['1개월 후',addMonths(1)],['3개월 후',addMonths(3)]];
+        // 지난 날짜도 빠른 버튼으로 — 외진·복귀를 늦게 입력할 때 '어제'밖에 없어 1주일 안만 되는 줄 알았다(2026-09-28).
+        // 칸의 min/max 밖 버튼은 아래에서 꺼진다(외진일처럼 미래가 안 되는 칸은 '후' 버튼이 흐려짐).
+        const shortcuts = [['1개월 전',addMonths(-1)],['2주 전',iso(day(today,-14))],['1주 전',iso(day(today,-7))],['어제',iso(day(today,-1))],
+            ['오늘',iso(today)],['내일',iso(day(today,1))],['1주 후',iso(day(today,7))],['2주 후',iso(day(today,14))],['1개월 후',addMonths(1)],['3개월 후',addMonths(3)]];
         shortcuts.forEach(([label,value]) => {
             const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
             button.disabled = Boolean((input.min && value < input.min) || (input.max && value > input.max));

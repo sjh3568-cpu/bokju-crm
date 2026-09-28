@@ -298,7 +298,7 @@
             <option value="응급전원">응급전원</option>
             <option value="모병원 외래치료">모병원 외래치료</option>
         </select>
-        <input type="date" class="wd-af-date" value="{{ today_str }}">
+        <input type="date" class="wd-af-date" max="{{ today_str }}" title="외진 나간 날을 골라 주세요 — 늦게 알고 등록할 때 오늘로 잘못 저장되지 않도록 비워 두었습니다">
         <input type="time" class="wd-af-time">
         <input type="date" class="wd-af-return" title="복귀 예정일 (선택) — 대시보드 오늘 입원 예정에 반영. 이미 돌아왔으면 지난 날짜도 입력할 수 있습니다">
         <input type="text" class="wd-af-hosp" placeholder="이송 기관">
@@ -1116,6 +1116,10 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
 
     const validateAway = form => {
         const hospital=form.querySelector('.wd-af-hosp').value.trim(), reason=form.querySelector('.wd-af-reason').value.trim();
+        // 외진일은 기본값 없이 비워 둔다 — '오늘'이 채워져 있으면 늦게 알고 등록한 외진이 등록일로 남았다(2026-09-28)
+        const outDate=form.querySelector('.wd-af-date');
+        if (!outDate.value) { alert('외진 나간 날을 고르세요.'); outDate.focus(); return null; }
+        if (outDate.max && outDate.value > outDate.max) { alert('외진 나간 날은 오늘 이후일 수 없습니다.'); outDate.focus(); return null; }
         if (!hospital || !reason) { alert('이송기관과 사유를 모두 입력하세요.'); return null; }
         return {event_type:form.querySelector('.wd-af-type').value,event_date:form.querySelector('.wd-af-date').value,
             event_time:form.querySelector('.wd-af-time').value,
