@@ -482,5 +482,34 @@ class FaxCopyModeTests(unittest.TestCase):
         self.assertEqual(list(self.inbox.iterdir()), [])
 
 
+
+class FaxModelTests(unittest.TestCase):
+    """팩스 판독 모델 선택(2026-09-28 운영은 Sonnet) — 서버측 폴백은 Opus·Fable 계열에만 붙인다."""
+
+    def _payloads(self, model):
+        import llm
+        calls = []
+        def fake(payload, api_key, extra_headers=None, read_timeout=90):
+            calls.append((payload, extra_headers))
+            return {"consult_related": True, "category": "", "sender": "", "reason": ""}
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "a.pdf"; p.write_bytes(MINI_PDF)
+            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "k", "CLAUDE_MODEL_FAX": model}),                  patch.object(llm, "_post_json", side_effect=fake):
+                llm.classify_document(str(p))
+                llm.analyze_document(str(p))
+        return calls
+
+    def test_sonnet_has_no_fallbacks(self):
+        for payload, headers in self._payloads("claude-sonnet-5"):
+            self.assertEqual(payload["model"], "claude-sonnet-5")
+            self.assertNotIn("fallbacks", payload)
+            self.assertFalse(headers)
+
+    def test_opus_keeps_default_fallbacks(self):
+        for payload, headers in self._payloads("claude-opus-5"):
+            self.assertEqual(payload["fallbacks"], "default")
+            self.assertEqual(headers["anthropic-beta"], "server-side-fallback-2026-07-01")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -126,3 +126,8 @@ FAX_SINCE=<연결 시각 YYYY-MM-DD HH:MM>
 ```
 EasyFax와 CRM은 서로 모른다(상태 공유 없음). EasyFax에서 부서 배정·처리해도 CRM 카드는 그대로이고, 반대도 같다.
 상담실 배정분만 받는 게 필요해지면 EasyQR처럼 기획실에 읽기전용 API를 요청하는 방향(easyqr_inbox.py 참고).
+
+### 2026-09-28 추가 결정 (v1.9.37)
+- 판독·분류 모델을 **Sonnet 5**로(`CLAUDE_MODEL_FAX=claude-sonnet-5`). 서버측 폴백(`fallbacks: "default"`)은 Sonnet 지원이 확인되지 않아
+  Opus·Fable 계열일 때만 붙인다(`llm._fax_request`).
+- **원본 자동 삭제 안 함**(`FAX_KEEP_DAYS=0`) — 담당자 판단: 용량이 크지 않다. 코드 기본값(10일)은 그대로, 운영 `.env`로 끈다.

@@ -464,6 +464,22 @@ FAX_SCHEMA = {
 }
 
 
+def fax_model() -> str:
+    """팩스 판독·분류 모델. 2026-09-28 사용자 결정으로 운영은 CLAUDE_MODEL_FAX=claude-sonnet-5."""
+    return (os.getenv("CLAUDE_MODEL_FAX") or FAX_MODEL).strip()
+
+
+def _fax_request(payload: dict, api_key: str, *, read_timeout: int) -> dict:
+    """서버측 폴백(거절 시 대체 모델로 이어 받기)은 Opus·Fable 계열에만 붙인다 —
+    다른 모델(Sonnet 등)에서 지원이 확인되지 않아, 붙였다가 400이 나면 판독 전체가 멈춘다."""
+    model = payload["model"]
+    if model.startswith(("claude-opus", "claude-fable")):
+        return _post_json(dict(payload, fallbacks="default"), api_key,
+                          extra_headers={"anthropic-beta": "server-side-fallback-2026-07-01"},
+                          read_timeout=read_timeout)
+    return _post_json(payload, api_key, read_timeout=read_timeout)
+
+
 def fax_ai_enabled() -> bool:
     return bool(os.getenv("ANTHROPIC_API_KEY")) and os.getenv("FAX_AI_ENABLED", "1") == "1"
 
@@ -528,7 +544,7 @@ def analyze_document(path: str, *, hint: str = "") -> dict:
                  f"파일명: {p.name}\n" + (f"참고: {hint}\n" if hint else "") + page_note +
                  "위 문서를 읽고 스키마대로 정리하세요.")
     payload = {
-        "model": os.getenv("CLAUDE_MODEL_FAX", FAX_MODEL),
+        "model": fax_model(),
         "max_tokens": 8000,
         "system": FAX_SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": [
@@ -536,12 +552,8 @@ def analyze_document(path: str, *, hint: str = "") -> dict:
             {"type": "text", "text": user_text},
         ]}],
         "output_config": {"effort": "medium", "format": {"type": "json_schema", "schema": FAX_SCHEMA}},
-        # 안전 분류기가 거절하면 같은 요청을 대체 모델로 이어 받는다(서버측 폴백).
-        "fallbacks": "default",
     }
-    result = _post_json(payload, api_key,
-                        extra_headers={"anthropic-beta": "server-side-fallback-2026-07-01"},
-                        read_timeout=180)
+    result = _fax_request(payload, api_key, read_timeout=180)
     result["_pages_total"] = pages_total
     result["_pages_sent"] = pages_sent
     return result
@@ -596,7 +608,7 @@ def classify_document(path: str) -> dict:
         raise RuntimeError(f"보낼 분량이 너무 큽니다 ({len(raw) // (1024 * 1024)}MB)")
     data = base64.standard_b64encode(raw).decode("ascii")
     payload = {
-        "model": os.getenv("CLAUDE_MODEL_FAX", FAX_MODEL),
+        "model": fax_model(),
         "max_tokens": 1000,
         "system": FAX_CLASSIFY_PROMPT,
         "messages": [{"role": "user", "content": [
@@ -604,8 +616,5 @@ def classify_document(path: str) -> dict:
             {"type": "text", "text": f"파일명: {p.name}\n이 팩스를 분류하세요."},
         ]}],
         "output_config": {"effort": "low", "format": {"type": "json_schema", "schema": FAX_CLASSIFY_SCHEMA}},
-        "fallbacks": "default",
     }
-    return _post_json(payload, api_key,
-                      extra_headers={"anthropic-beta": "server-side-fallback-2026-07-01"},
-                      read_timeout=120)
+    return _fax_request(payload, api_key, read_timeout=120)

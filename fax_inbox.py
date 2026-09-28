@@ -123,7 +123,7 @@ def status() -> dict:
         "inbox_exists": bool(d and d.is_dir()),
         "archive_dir": str(a) if a else "",
         "ai": llm.fax_ai_enabled(),
-        "model": os.getenv("CLAUDE_MODEL_FAX", llm.FAX_MODEL),
+        "model": llm.fax_model(),
         "max_pages": llm.fax_max_pages(),
         "poll_seconds": poll_seconds(),
         "keep_days": keep_days(),
