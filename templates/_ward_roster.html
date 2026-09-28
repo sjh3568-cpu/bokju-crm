@@ -141,7 +141,7 @@
                         <span class="wd-back-cell">
                             {% if c.away.expected_return_date %}<span class="wd-exp-badge" title="대시보드 입원 처리에서 [완료]하면 입원 완료로 집계">복귀 예정 {{ c.away.expected_return_date|krdate }}</span>{% endif %}
                             <input type="date" class="wd-back-date" value="{{ c.away.expected_return_date or today_str }}"
-                                   min="{{ c.away.event_date or '' }}" title="복귀 예정일">
+                                   data-event-date="{{ c.away.event_date or '' }}" title="복귀 예정일">
                             <input type="text" class="wd-back-room" value="{{ c.away.return_room or c.room_number or '' }}" placeholder="복귀 병실" maxlength="50" size="7" title="복귀 병실">
                             <button type="button" class="btn {% if c.away.expected_return_date %}btn-secondary{% else %}btn-primary{% endif %} btn-xs wd-back" data-aevent="{{ c.away.id }}">{% if c.away.expected_return_date %}예정 변경{% else %}↩ 복귀 예정{% endif %}</button>
                             {% if c.away.expected_return_date %}<button type="button" class="btn btn-primary btn-xs wd-back-done" data-aevent="{{ c.away.id }}" title="오늘 실제 복귀 — 입원 완료로 집계">완료</button><button type="button" class="btn btn-secondary btn-xs wd-back-clear" data-aevent="{{ c.away.id }}" data-name="{{ c.patient_name }}" title="잘못 누른 복귀 예정을 지운다 — 외진 중으로만 남는다">예정 취소</button>{% endif %}

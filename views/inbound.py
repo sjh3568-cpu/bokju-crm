@@ -301,6 +301,34 @@ def _valid_expected_return(value, event_date=None):
             pass
     return rd.isoformat(), None
 
+
+def _pull_back_away_date(ev, new_date, payload):
+    """외진일 앞당기기 판정 → (새 외진일|None, 오류메시지|None).
+
+    외진을 늦게 알고 등록하면 외진일이 등록한 날(오늘)로 남아, 그보다 앞선 실제 복귀일을
+    고를 수 없었다(2026-09-28). 화면이 확인을 받고 move_away_date를 보내면, 고른 날이
+    외진일보다 앞설 때 외진일도 그날로 옮긴다. 입원일보다 앞으로는 옮기지 않는다.
+    """
+    out = (ev.get("event_date") or "")[:10]
+    new_date = (new_date or "")[:10]
+    if not payload.get("move_away_date") or not new_date or not out or new_date >= out:
+        return None, None
+    con = models.get_consultation(ev["consultation_id"]) or {}
+    admitted_on = (con.get("actual_admission_date") or con.get("admission_date") or "")[:10]
+    if admitted_on and new_date < admitted_on:
+        return None, f"입원일({admitted_on})보다 앞선 날짜로는 외진일을 옮길 수 없습니다."
+    return new_date, None
+
+
+def _move_away_date(event_id, ev, new_out):
+    models.move_away_event_date(event_id, new_out)
+    models.log_audit(
+        user_id=g.user["id"], username=g.user["username"],
+        action="update_admission_event", target_type="consultation", target_id=ev["consultation_id"],
+        detail=f"{ev.get('event_type')} 외진일 {(ev.get('event_date') or '')[:10]} → {new_out} (복귀일에 맞춰 앞당김)",
+        ip=request.remote_addr,
+    )
+
 @bp.route("/api/admission-event/<int:event_id>/expected-return", methods=["POST"])
 @login_required
 def api_admission_event_expected_return(event_id):
@@ -312,7 +340,10 @@ def api_admission_event_expected_return(event_id):
     if not ev or ev.get("event_type") not in models.AWAY_EVENT_TYPES:
         return jsonify({"error": "외진·전원 기록이 아닙니다."}), 404
     payload = request.get_json(silent=True) or {}
-    expected, err = _valid_expected_return(payload.get("expected_return_date"), ev.get("event_date"))
+    new_out, err = _pull_back_away_date(ev, payload.get("expected_return_date"), payload)
+    if err:
+        return jsonify({"error": err}), 400
+    expected, err = _valid_expected_return(payload.get("expected_return_date"), new_out or ev.get("event_date"))
     if err:
         return jsonify({"error": err}), 400
     return_room = payload.get("return_room")
@@ -321,6 +352,10 @@ def api_admission_event_expected_return(event_id):
         return jsonify({"error": "복귀 병실은 50자 이내로 입력하세요."}), 400
     if return_note is not None and len(return_note) > 3000:
         return jsonify({"error": "기타 사항은 3000자 이내로 입력하세요."}), 400
+    if ev.get("returned_at"):
+        return jsonify({"error": "이미 복귀 처리된 외진입니다."}), 400
+    if new_out:
+        _move_away_date(event_id, ev, new_out)
     try:
         cid = models.set_away_expected_return(event_id, expected,
                                               return_room=return_room, return_note=return_note)
@@ -423,6 +458,7 @@ def api_admission_event_return(event_id):
         return jsonify({"error": "이미 복귀 처리된 외진입니다."}), 400
     payload = request.get_json(silent=True) or {}
     return_date = (payload.get("return_date") or "").strip() or None
+    new_out = None
     if return_date:
         try:
             rd = datetime.strptime(return_date, "%Y-%m-%d").date()
@@ -430,7 +466,10 @@ def api_admission_event_return(event_id):
             return jsonify({"error": "복귀일 형식 오류 (YYYY-MM-DD)"}), 400
         if rd > date.today():
             return jsonify({"error": "복귀일이 미래입니다."}), 400
-        out = (ev.get("event_date") or "").strip()
+        new_out, err = _pull_back_away_date(ev, return_date, payload)
+        if err:
+            return jsonify({"error": err}), 400
+        out = (new_out or ev.get("event_date") or "").strip()
         if out:
             try:
                 if rd < datetime.strptime(out[:10], "%Y-%m-%d").date():
@@ -456,6 +495,8 @@ def api_admission_event_return(event_id):
         return jsonify({"error": "전원 간 병원을 입력하세요."}), 400
     if len(return_hospital) > 200:
         return jsonify({"error": "전원 병원은 200자 이내로 입력하세요."}), 400
+    if new_out:
+        _move_away_date(event_id, ev, new_out)
     models.mark_admission_event_returned(
         event_id, return_date=return_date,
         returned_by=g.user.get("display_name"),
@@ -510,10 +551,21 @@ def api_admission_event_return_undo(event_id):
 def api_admission_event_return_date(event_id):
     """완료된 복귀의 날짜만 고친다 — 외진 명부 [날짜 수정]."""
     payload = request.get_json(silent=True) or {}
+    ev = models.get_admission_event(event_id) or {}
+    new_out = None
+    if ev.get("event_type") in models.AWAY_EVENT_TYPES and ev.get("returned_at") \
+            and (ev.get("return_outcome") or "복귀") == "복귀":
+        new_out, err = _pull_back_away_date(ev, str(payload.get("return_date") or ""), payload)
+        if err:
+            return jsonify({"error": err}), 400
+    if new_out:
+        _move_away_date(event_id, ev, new_out)
     try:
         cid = models.set_admission_event_return_date(
             event_id, payload.get("return_date"), returned_by=g.user.get("display_name"))
     except ValueError as exc:
+        if new_out:  # 복귀일 저장이 막히면 앞당긴 외진일도 되돌린다
+            models.move_away_event_date(event_id, (ev.get("event_date") or "")[:10])
         return jsonify({"error": str(exc)}), 400
     models.log_audit(
         user_id=g.user["id"], username=g.user["username"],

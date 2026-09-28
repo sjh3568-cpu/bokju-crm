@@ -14,6 +14,14 @@
         const d = new Date(), p = n => String(n).padStart(2, '0');
         return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
     };
+    /* 외진 복귀일을 외진일보다 앞선 날로 골랐을 때 — 외진을 늦게 알아 외진일이 등록한 날로 남은
+       경우다(2026-09-28). 외진일도 그날로 앞당길지 묻는다. 반환: {}(해당 없음) ·
+       {move_away_date:true}(앞당김) · null(취소). 결과는 API 본문에 그대로 펼쳐 넣는다. */
+    window.awayDateBefore = function (value, eventDate) {
+        if (!value || !eventDate || value >= eventDate.slice(0, 10)) return {};
+        return confirm(`고른 날짜(${value})가 기록된 외진일(${eventDate.slice(0, 10)})보다 앞섭니다.\n외진일도 ${value}로 앞당겨 함께 저장할까요?`)
+            ? { move_away_date: true } : null;
+    };
     </script>
     {% block head_extra %}{% endblock %}
 </head>

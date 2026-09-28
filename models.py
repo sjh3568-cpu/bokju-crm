@@ -8536,6 +8536,18 @@ def update_admission_event(event_id, *, event_date=None, event_time=None, hospit
     return row["consultation_id"]
 
 
+def move_away_event_date(event_id, event_date):
+    """외진일만 바꾼다(시각·기관·메모는 그대로) — 복귀일이 외진일보다 앞서 외진일을 앞당길 때.
+    검증은 호출하는 API(views/inbound._pull_back_away_date)가 한다."""
+    conn = get_db()
+    try:
+        with conn:
+            conn.execute("UPDATE admission_events SET event_date = ? WHERE id = ?",
+                         (event_date or None, event_id))
+    finally:
+        conn.close()
+
+
 def delete_admission_event(event_id):
     conn = get_db()
     conn.execute("DELETE FROM admission_events WHERE id = ?", (event_id,))

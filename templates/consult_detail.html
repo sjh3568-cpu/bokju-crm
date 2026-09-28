@@ -444,9 +444,9 @@
                         {% else %}
                         <span class="ae-back-cell">
                             <input type="date" class="ae-exp-return" value="{{ e.expected_return_date or '' }}"
-                                   min="{{ e.event_date or '' }}" data-aevent="{{ e.id }}" title="복귀 예정일 — 바꾸면 바로 저장">
+                                   data-event-date="{{ e.event_date or '' }}" data-aevent="{{ e.id }}" title="복귀 예정일 — 바꾸면 바로 저장">
                             <input type="date" class="ae-back-date" value="{{ today_str }}"
-                                   min="{{ e.event_date or '' }}" max="{{ today_str }}" title="복귀일">
+                                   data-event-date="{{ e.event_date or '' }}" max="{{ today_str }}" title="복귀일">
                             <button type="button" class="btn btn-primary btn-sm ae-back" data-aevent="{{ e.id }}"
                                     title="실제 복귀일로 완료 처리 — 대시보드 입원 완료로 집계">↩ 복귀 완료</button>
                         </span>
@@ -554,12 +554,14 @@ tr.ae-open { background:#fff7ed; }
     });
     document.querySelectorAll('.ae-back').forEach(btn => {
         btn.addEventListener('click', async () => {
+            const input = btn.closest('.ae-back-cell').querySelector('.ae-back-date');
+            const moveAway = input ? awayDateBefore(input.value, input.dataset.eventDate) : {};
+            if (!moveAway) return;
             btn.disabled = true;
             try {
-                const input = btn.closest('.ae-back-cell').querySelector('.ae-back-date');
                 const r = await fetch(`/api/admission-event/${btn.dataset.aevent}/return`,
                                       { method: 'POST', headers: {'content-type': 'application/json'},
-                                        body: JSON.stringify(input && input.value ? { return_date: input.value } : {}) });
+                                        body: JSON.stringify(input && input.value ? { return_date: input.value, ...moveAway } : {}) });
                 const j = await r.json();
                 if (!r.ok) throw new Error(j.error || r.status);
                 location.reload();
@@ -569,12 +571,15 @@ tr.ae-open { background:#fff7ed; }
     document.querySelectorAll('.ae-exp-return').forEach(input => {
         input.addEventListener('change', async () => {
             const prev = input.defaultValue;
+            const moveAway = awayDateBefore(input.value, input.dataset.eventDate);
+            if (!moveAway) { input.value = prev; return; }
             try {
                 const r = await fetch(`/api/admission-event/${input.dataset.aevent}/expected-return`,
                                       { method: 'POST', headers: {'content-type': 'application/json'},
-                                        body: JSON.stringify({ expected_return_date: input.value }) });
+                                        body: JSON.stringify({ expected_return_date: input.value, ...moveAway }) });
                 const j = await r.json();
                 if (!r.ok) throw new Error(j.error || r.status);
+                if (moveAway.move_away_date) { location.reload(); return; }
                 input.defaultValue = input.value;
             } catch (e) { input.value = prev; alert('복귀 예정일 저장 실패: ' + e.message); }
         });

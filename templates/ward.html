@@ -1151,10 +1151,13 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
             const note = cell ? cell.querySelector('.wd-back-note') : null;
             const outcome = cell ? cell.querySelector('.wd-back-outcome') : null;
             const hospital = cell ? cell.querySelector('.wd-back-hospital') : null;
+            // 외진일보다 앞선 날을 골랐으면 외진일도 앞당길지 묻는다(외진을 늦게 알고 등록한 경우)
+            const moveAway = input ? awayDateBefore(input.value, input.dataset.eventDate) : {};
+            if (!moveAway) return;
             btn.disabled = true;
             try {
                 if (outcome && outcome.value === '전원') {
-                    const body = input && input.value ? { return_date: input.value } : {};
+                    const body = input && input.value ? { return_date: input.value, ...moveAway } : {};
                     body.return_outcome = '전원';
                     if (!hospital || !hospital.value.trim()) { alert('전원 간 병원을 입력하세요.'); btn.disabled = false; return; }
                     body.return_hospital = hospital.value.trim();
@@ -1165,14 +1168,14 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
                     // 지난 날짜는 '예정'이 아니라 그날 돌아온 것 — 복귀 완료로 기록한다(2026-09-17: 9/16 복귀를
                     // 9/17 예정으로 잘못 남긴 건을 화면에서 바로 고칠 수 있게). 서버가 외진일 이전·미래는 막는다.
                     if (!confirm(`${input.value}에 실제 복귀한 것으로 처리할까요? (그날 입원 완료로 집계)`)) { btn.disabled = false; return; }
-                    const body = { return_date: input.value };
+                    const body = { return_date: input.value, ...moveAway };
                     if (room && room.value.trim()) body.return_room = room.value.trim();
                     if (note && note.value.trim()) body.return_note = note.value.trim();
                     const r = await api.post(`/api/admission-event/${btn.dataset.aevent}/return`, body);
                     toast(`✓ 복귀 완료 (${r.return_date})`, 'success');
                 } else {
                     if (!input || !input.value) { alert('복귀 예정일을 입력하세요.'); btn.disabled = false; return; }
-                    const body = { expected_return_date: input.value };
+                    const body = { expected_return_date: input.value, ...moveAway };
                     if (room) body.return_room = room.value.trim();
                     if (note) body.return_note = note.value.trim();
                     await api.post(`/api/admission-event/${btn.dataset.aevent}/expected-return`, body);
@@ -1202,8 +1205,10 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
             const body = {};
             if (input && input.value && input.value < todayISO()) {
                 // 날짜칸을 지난 날짜로 바꿔 두고 [완료]를 누르면 오늘이 아니라 그날 복귀로 기록
-                if (!confirm(`${input.value}에 복귀한 것으로 처리할까요? (오늘이 아니라 그날 입원 완료로 집계)`)) return;
-                body.return_date = input.value;
+                const moveAway = awayDateBefore(input.value, input.dataset.eventDate);
+                if (!moveAway) return;
+                if (!moveAway.move_away_date && !confirm(`${input.value}에 복귀한 것으로 처리할까요? (오늘이 아니라 그날 입원 완료로 집계)`)) return;
+                Object.assign(body, moveAway, { return_date: input.value });
             }
             btn.disabled = true;
             try {
@@ -1331,14 +1336,16 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
             const aevent = bed.dataset.aevent, hasPlan = !!bed.dataset.returnDate;
             const dateIn = form.querySelector('.wd-back-date'), roomIn = form.querySelector('.wd-back-room');
             if (bed.dataset.returnDate) dateIn.value = bed.dataset.returnDate;
-            if (bed.dataset.eventDate) dateIn.min = bed.dataset.eventDate;
+            if (bed.dataset.eventDate) dateIn.dataset.eventDate = bed.dataset.eventDate;
             roomIn.value = bed.dataset.returnRoom || '';
             const btn = form.querySelector('.wd-back'); btn.textContent = hasPlan ? '예정 변경' : '복귀 예정';
             btn.addEventListener('click', async () => {
                 if (!dateIn.value) { alert('복귀 예정일을 입력하세요.'); return; }
+                const moveAway = awayDateBefore(dateIn.value, dateIn.dataset.eventDate);
+                if (!moveAway) return;
                 btn.disabled = true;
                 try {
-                    await api.post(`/api/admission-event/${aevent}/expected-return`, { expected_return_date: dateIn.value, return_room: roomIn.value.trim() });
+                    await api.post(`/api/admission-event/${aevent}/expected-return`, { expected_return_date: dateIn.value, return_room: roomIn.value.trim(), ...moveAway });
                     toast(`복귀 예정 ${dateIn.value} 저장 — 실제 복귀는 대시보드 입원 처리에서 [완료]`, 'success');
                     setTimeout(() => location.reload(), 400);
                 } catch (e) { btn.disabled = false; alert('복귀 처리 실패: ' + e.message); }

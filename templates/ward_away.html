@@ -133,7 +133,7 @@
        ward.html의 .wd-back / .wd-back-done / .wd-back-outcome 핸들러가 그대로 동작한다. #}
     {% macro away_return_form(c) %}{% if can_edit and not c.returned_at %}<div class="wd-back-cell away-return-form away-return-line" hidden>
             <select class="wd-back-outcome" aria-label="{{ c.patient_name }} 처리 결과"><option value="복귀">복귀 예정</option><option value="전원">타 병원 전원</option></select>
-            <input type="date" class="wd-back-date" value="{{ c.expected_return_date or today_str }}" min="{{ c.event_date or '' }}" aria-label="{{ c.patient_name }} 복귀 예정일·전원일">
+            <input type="date" class="wd-back-date" value="{{ c.expected_return_date or today_str }}" data-event-date="{{ c.event_date or '' }}" aria-label="{{ c.patient_name }} 복귀 예정일·전원일">
             <input class="wd-back-room" maxlength="50" value="{{ c.return_room or c.room_number or '' }}" placeholder="복귀 병실" aria-label="{{ c.patient_name }} 복귀 병실">
             <input class="wd-back-hospital" maxlength="200" placeholder="전원 병원" aria-label="{{ c.patient_name }} 전원 병원" hidden>
             <input class="wd-back-note" maxlength="3000" value="{{ c.return_note or '' }}" placeholder="기타 사항" aria-label="{{ c.patient_name }} 기타 사항">
@@ -395,14 +395,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // [날짜 수정] — 완료된 복귀의 날짜만 고친다(오경자 님 2026-09-17: 어제 돌아왔는데 [완료]가 오늘로 찍힘)
     document.querySelectorAll('.away-fix-return').forEach(btn => btn.addEventListener('click', async () => {
-        const hint = btn.dataset.min ? ` · 외진일 ${btn.dataset.min} 이후, 오늘까지` : ' · 오늘까지';
+        const hint = btn.dataset.min ? ` · 외진일 ${btn.dataset.min}, 오늘까지 — 외진일보다 앞서면 외진일도 앞당길 수 있습니다` : ' · 오늘까지';
         const v = prompt('실제 복귀일을 입력하세요 (YYYY-MM-DD)' + hint, btn.dataset.current || todayISO());
         if (v === null) return;
         if (!/^\d{4}-\d{2}-\d{2}$/.test(v.trim())) { alert('날짜는 YYYY-MM-DD 형식으로 입력하세요.'); return; }
+        const moveAway = awayDateBefore(v.trim(), btn.dataset.min);
+        if (!moveAway) return;
         btn.disabled = true;
         try {
             const r = await fetch(`/api/admission-event/${btn.dataset.aevent}/return-date`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ return_date: v.trim() }) });
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ return_date: v.trim(), ...moveAway }) });
             const j = await r.json().catch(() => ({}));
             if (!r.ok) throw new Error(j.error || r.status);
             location.reload();
