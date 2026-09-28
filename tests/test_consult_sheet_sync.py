@@ -169,6 +169,39 @@ class ConsultSheetSyncTests(unittest.TestCase):
         self.assertEqual([c["name"] for c in self._consults()], ["김새롬"])
         self.assertIn("이름이 숫자인 빈 행 2", sync.render_report(rep))
 
+    def test_recent_tabs_and_scoped_run(self):
+        """빠른 동기화 — 월 이름이 가장 최근인 두 탭만 고르고, names로 돌리면 그 탭만 처리한다(다른 탭 연결은 안 건드림)."""
+        from datetime import datetime, timedelta
+        tabs = ["23년8월 상담", "23.11월상담", "24.01월", "26.8월", "26.9월", "입원환자 대기 명단", "메모"]
+        self.assertEqual(sync.recent_sheet_names(tabs), ["26.8월", "26.9월"])
+        self.assertEqual(sync.recent_sheet_names(["메모"]), [])
+        two = sync.SheetBook([{"name": "26.8월", "rows": [[""] * len(HEADERS), HEADERS, row("팔월", "2026-08-05")]},
+                              {"name": "26.9월", "rows": [[""] * len(HEADERS), HEADERS, row("구월", "2026-09-05")]}])
+        sync.run(apply=True, book=two)                                   # 전체 → 두 탭 다 연결
+        self.assertEqual(sync.status()["last_full"]["totals"]["new"], 2)
+        # 26.9월만 다시 — 26.8월 행이 book에 없어도 '사라짐'으로 잡히지 않는다
+        only9 = sync.SheetBook([{"name": "26.9월", "rows": [[""] * len(HEADERS), HEADERS, row("구월", "2026-09-05"),
+                                                              row("새사람", "2026-09-06")]}])
+        rep = sync.run(apply=True, book=only9, names=["26.9월"])
+        self.assertEqual((rep["totals"]["new"], rep["totals"]["missing"], rep["scope"]), (1, 0, ["26.9월"]))
+        self.assertEqual(sync.status()["last"]["scope"], ["26.9월"])
+        self.assertEqual(sync.status()["last_full"]["totals"]["new"], 2)   # 전체 기록은 그대로
+        self.assertIn("범위: 26.9월", sync.render_report(rep))
+        # 옛 스크립트가 names를 무시하고 전체를 보내도 요청한 탭만 처리한다
+        rep = sync.run(apply=False, book=two, names=["26.9월"])
+        self.assertEqual([s["sheet"] for s in rep["sheets"]], ["26.9월"])
+        # 스케줄 틱: 전체 주기가 지나면 full, 아니면 fast(최근 탭이 있을 때만)
+        now = datetime(2026, 9, 28, 12, 0)
+        with patch.dict(os.environ, {"CONSULT_SHEET_MINUTES": "10", "CONSULT_SHEET_FAST_MINUTES": "1"}):
+            self.assertEqual(sync._tick(now, None), "full")
+            sync._write_status(sheet_names=[])
+            self.assertIsNone(sync._tick(now, now - timedelta(minutes=3)))
+            sync._write_status(sheet_names=tabs)
+            self.assertEqual(sync._tick(now, now - timedelta(minutes=3)), "fast")
+            self.assertEqual(sync._tick(now, now - timedelta(minutes=10)), "full")
+        with patch.dict(os.environ, {"CONSULT_SHEET_MINUTES": "10", "CONSULT_SHEET_FAST_MINUTES": "0"}):
+            self.assertIsNone(sync._tick(now, now - timedelta(minutes=3)))
+
     def test_status_file_and_auto_toggle(self):
         self.assertFalse(sync.auto_enabled())
         sync.set_auto(True)

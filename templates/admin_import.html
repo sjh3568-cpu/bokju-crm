@@ -20,7 +20,7 @@
 {# 구글 시트 자동 반영(과도기, 2026-09-28) — 상담사가 아직 시트에 적는 동안 새 행·고친 행이 CRM에 들어온다.
    실제 반영은 이 카드에서 켠다(.env만으로는 켜지지 않음). 아래 엑셀 적재는 그대로 남겨 둔다. #}
 <div class="card" id="sheet-sync">
-    <h3>구글 시트 자동 반영 <small class="muted">— "상담내역 종합" 시트에 적은 상담을 {{ sheet_sync.minutes }}분마다 CRM에 반영 (과도기)</small></h3>
+    <h3>구글 시트 자동 반영 <small class="muted">— "상담내역 종합" 시트에 적은 상담을 CRM에 반영 (과도기){% if sheet_sync.fast_minutes %} · 최근 달 탭은 {{ sheet_sync.fast_minutes }}분마다, 전체는 {{ sheet_sync.minutes }}분마다{% else %} · {{ sheet_sync.minutes }}분마다{% endif %}</small></h3>
     {% if not sheet_sync.configured %}
     <p class="hint">아직 연결되지 않았습니다. 관리자가 <code>docs/CONSULT-SHEET.md</code>대로 시트에 스크립트를 붙이고 .env에 <code>CONSULT_SHEET_URL</code>·<code>CONSULT_SHEET_TOKEN</code>을 넣은 뒤 서버를 다시 시작하면 여기서 미리보기부터 할 수 있습니다.</p>
     {% else %}
@@ -33,7 +33,7 @@
         <button class="btn btn-secondary btn-sm" name="action" value="preview">미리보기 (DB 변경 없음)</button>
         <button class="btn btn-primary btn-sm" name="action" value="apply" onclick="return confirm('시트 내용을 지금 CRM에 반영합니다. 계속할까요?')">지금 반영</button>
         {% if sheet_sync.auto %}
-        <span class="badge" style="background:#16a34a;color:#fff">자동 반영 켜짐 · {{ sheet_sync.minutes }}분마다</span>
+        <span class="badge" style="background:#16a34a;color:#fff" title="{% if sheet_sync.recent %}빠른 동기화 대상 탭: {{ sheet_sync.recent|join(', ') }}{% else %}전체 동기화가 한 번 돌면 최근 달 탭이 정해집니다{% endif %}">자동 반영 켜짐{% if sheet_sync.fast_minutes and sheet_sync.recent %} · {{ sheet_sync.recent|join('·') }} {{ sheet_sync.fast_minutes }}분마다{% endif %} · 전체 {{ sheet_sync.minutes }}분마다</span>
         <button class="btn btn-secondary btn-sm" name="action" value="auto_off">자동 반영 끄기</button>
         {% else %}
         <span class="badge" style="background:#94a3b8;color:#fff">자동 반영 꺼짐</span>

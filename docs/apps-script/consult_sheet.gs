@@ -21,7 +21,7 @@ function doPost(e) {
     if (body.token !== TOKEN) throw new Error('BAD_TOKEN');
     var ss = SpreadsheetApp.openById(SHEET_ID);
     if (body.action === 'ping') out = ping(ss);
-    else if (body.action === 'dump') out = dump(ss);
+    else if (body.action === 'dump') out = dump(ss, body.names);
     else throw new Error('UNKNOWN_ACTION');
   } catch (err) {
     out = { ok: false, error: String(err.message || err) };
@@ -46,10 +46,13 @@ function ping(ss) {
   return out;
 }
 
-/** 모든 탭의 값 — [{name, rows:[[셀,...],...]}, ...]. 빈 탭은 rows가 []. */
-function dump(ss) {
+/** 탭의 값 — [{name, rows:[[셀,...],...]}, ...]. 빈 탭은 rows가 [].
+ *  names(탭 이름 배열)를 주면 그 탭만 보낸다 — CRM의 1분 빠른 동기화가 최근 두 달 탭만 받을 때 쓴다(2026-09-28). */
+function dump(ss, names) {
   var tz = ss.getSpreadsheetTimeZone();
-  var sheets = ss.getSheets().map(function (sh) {
+  var want = null;
+  if (names && names.length) { want = {}; names.forEach(function (n) { want[String(n).trim()] = true; }); }
+  var sheets = ss.getSheets().filter(function (sh) { return !want || want[sh.getName().trim()]; }).map(function (sh) {
     var range = sh.getDataRange();
     var values = range.getValues();
     var shown = range.getDisplayValues();

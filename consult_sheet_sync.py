@@ -17,7 +17,8 @@
 .env
   CONSULT_SHEET_URL      Apps Script 웹앱 URL (없으면 연동 꺼짐)
   CONSULT_SHEET_TOKEN    스크립트와 맞춘 비밀 토큰
-  CONSULT_SHEET_MINUTES  자동 동기화 주기(분, 기본 10, 최소 5)
+  CONSULT_SHEET_MINUTES  전체 동기화 주기(분, 기본 10, 최소 5) — 39탭 전부
+  CONSULT_SHEET_FAST_MINUTES  빠른 동기화 주기(분, 기본 1, 0이면 끔) — 최근 두 달 탭만 받아 1분 안에 반영(2026-09-28 B안)
 자동 반영 켜기/끄기는 관리 → 엑셀 적재 화면의 버튼(상태 파일 auto)으로 — 재시작 없이 바뀐다.
 """
 from __future__ import annotations
@@ -27,6 +28,7 @@ import importlib.util
 import json
 import logging
 import os
+import re
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -113,7 +115,8 @@ def panel_info() -> dict:
     """관리 → 엑셀 적재 화면의 '구글 시트 자동 반영' 카드용."""
     st = status()
     return {"configured": configured(), "auto": st.get("auto") is True, "minutes": sync_minutes(),
-            "last": st.get("last"), "last_report_text": st.get("last_report_text"),
+            "fast_minutes": fast_minutes(), "recent": recent_sheet_names(st.get("sheet_names") or []),
+            "last": st.get("last"), "last_full": st.get("last_full"), "last_report_text": st.get("last_report_text"),
             "link": (os.getenv("CONSULT_SHEET_LINK") or "").strip() or st.get("sheet_link") or ""}
 
 
@@ -193,9 +196,16 @@ class SheetBook:
         return self._sheets[name]
 
 
-def fetch_sheets() -> list[dict]:
-    """Apps Script 웹앱에서 시트 전체를 받는다 → [{name, rows:[[셀,...],...]}, ...]. 302를 따라가야 본문이 온다."""
-    body = json.dumps({"token": sheet_token(), "action": "dump"}).encode("utf-8")
+def fetch_sheets(names=None) -> list[dict]:
+    """Apps Script 웹앱에서 시트를 받는다 → [{name, rows:[[셀,...],...]}, ...]. 302를 따라가야 본문이 온다.
+
+    names를 주면 그 탭만 받는다(빠른 동기화용 — 전체 39탭 1만4천 행은 30초쯤 걸려 1분마다 돌릴 수 없다).
+    스크립트가 names를 모르는 옛 버전이면 전체가 오는데, 그래도 동작은 같다(느릴 뿐).
+    """
+    payload = {"token": sheet_token(), "action": "dump"}
+    if names:
+        payload["names"] = list(names)
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = Request(sheet_url(), data=body, headers={"Content-Type": "application/json"}, method="POST")
     try:
         with urlopen(req, timeout=120) as resp:
@@ -210,9 +220,29 @@ def fetch_sheets() -> list[dict]:
         raise SyncError("응답이 JSON이 아님 — 웹앱 배포 '액세스: 모든 사용자' 확인") from None
     if not isinstance(res, dict) or not res.get("ok"):
         raise SyncError(str((res or {}).get("error") if isinstance(res, dict) else res) or "알 수 없는 오류")
-    if res.get("url"):
-        _write_status(sheet_link=res["url"])
-    return res.get("sheets") or []
+    sheets = res.get("sheets") or []
+    extra = {"sheet_link": res["url"]} if res.get("url") else {}
+    if not names:
+        # 전체를 받았을 때만 탭 목록을 기억한다 — 빠른 동기화가 '최근 달 탭'을 여기서 고른다
+        extra["sheet_names"] = [s["name"] for s in sheets]
+    if extra:
+        _write_status(**extra)
+    return sheets
+
+
+_MONTH_TAB = re.compile(r"^(\d{2})\s*[년.]\s*(\d{1,2})\s*월")     # '26.9월' '24.01월' '23년9월 상담' '23.11월상담'
+
+
+def _tab_month(name):
+    m = _MONTH_TAB.match((name or "").strip())
+    return (2000 + int(m.group(1)), int(m.group(2))) if m else None
+
+
+def recent_sheet_names(names=None, count=2):
+    """월별 탭 중 가장 최근 count개 — 빠른 동기화 대상. 대기 명단·메모 같은 탭은 월이 없어 빠진다."""
+    names = names if names is not None else (status().get("sheet_names") or [])
+    dated = [(ym, n) for n in names if (ym := _tab_month(n))]
+    return [n for _, n in sorted(dated)[-count:]]
 
 
 # ── 값 비교 ─────────────────────────────────────────────────────────────
@@ -263,22 +293,27 @@ def _row_key(parsed: dict) -> str:
 _run_lock = threading.Lock()
 
 
-def run(apply: bool = False, trigger: str = "manual", book=None) -> dict:
-    """시트 전체를 읽어 CRM과 맞춘다. apply=False면 무엇을 할지만 세고 DB는 그대로(트랜잭션 롤백).
+def run(apply: bool = False, trigger: str = "manual", book=None, names=None) -> dict:
+    """시트를 읽어 CRM과 맞춘다. apply=False면 무엇을 할지만 세고 DB는 그대로(트랜잭션 롤백).
 
-    book을 주면(테스트) 시트를 받지 않고 그것을 쓴다. 보고서(dict)를 돌려주고 상태 파일에도 남긴다.
+    names를 주면 그 탭만(빠른 동기화) — 다른 탭의 연결은 건드리지 않는다. book을 주면(테스트) 시트를 받지
+    않고 그것을 쓴다. 보고서(dict)를 돌려주고 상태 파일에도 남긴다(전체 실행은 last_full에도).
     """
     if not _run_lock.acquire(blocking=False):
         return {"ok": False, "error": "이미 동기화가 진행 중입니다"}
     try:
         started = datetime.now()
         report = {"ok": True, "apply": apply, "trigger": trigger, "started": started.isoformat(timespec="seconds"),
+                  "scope": list(names) if names else None,
                   "sheets": [], "totals": {"rows": 0, "new": 0, "updated": 0, "adopted": 0, "unchanged": 0,
                                            "conflicts": 0, "missing": 0, "duplicates": 0, "skipped": 0},
                   "new_rows": [], "updates": [], "conflicts": [], "missing": [], "errors": []}
         try:
             if book is None:
-                book = SheetBook(fetch_sheets())
+                book = SheetBook(fetch_sheets(names))
+            if names:
+                # 옛 스크립트가 names를 무시하고 전체를 보냈어도 요청한 탭만 처리한다
+                book.sheetnames = [n for n in book.sheetnames if n in set(names)]
             _sync_book(book, apply, report)
         except SyncError as e:
             report.update(ok=False, error=str(e))
@@ -288,9 +323,12 @@ def run(apply: bool = False, trigger: str = "manual", book=None) -> dict:
         report["finished"] = datetime.now().isoformat(timespec="seconds")
         report["seconds"] = round((datetime.now() - started).total_seconds(), 1)
         text = render_report(report)
-        _write_status(last={k: report[k] for k in ("ok", "apply", "trigger", "started", "finished", "seconds", "totals")
-                            } | ({"error": report["error"]} if not report["ok"] else {}),
-                      last_report_text=text[:30000])
+        summary = {k: report[k] for k in ("ok", "apply", "trigger", "started", "finished", "seconds", "totals", "scope")
+                   } | ({"error": report["error"]} if not report["ok"] else {})
+        fields = {"last": summary, "last_report_text": text[:30000]}
+        if not names:
+            fields["last_full"] = summary
+        _write_status(**fields)
         if apply and report["ok"] and (report["totals"]["new"] or report["totals"]["updated"]):
             try:
                 models.log_audit(user_id=None, username=f"sheet-sync:{trigger}", action="sheet_sync",
@@ -557,7 +595,8 @@ def _show(v):
 def render_report(report: dict) -> str:
     t = report.get("totals") or {}
     head = "반영" if report.get("apply") else "미리보기(DB 변경 없음)"
-    lines = [f"[{head}] {report.get('started', '')} · {report.get('seconds', '?')}초 · 실행: {report.get('trigger', '')}"]
+    scope = f" · 범위: {', '.join(report['scope'])}" if report.get("scope") else " · 범위: 전체"
+    lines = [f"[{head}] {report.get('started', '')} · {report.get('seconds', '?')}초 · 실행: {report.get('trigger', '')}{scope}"]
     if not report.get("ok"):
         lines.append(f"실패: {report.get('error')}")
     lines.append(f"행 {t.get('rows', 0)} — 새 상담 {t.get('new', 0)} · 고친 행 반영 {t.get('updated', 0)} · "
@@ -595,16 +634,43 @@ def render_report(report: dict) -> str:
 
 # ── 스케줄러 ───────────────────────────────────────────────────────────
 
+def fast_minutes() -> int:
+    """빠른 동기화 주기(분) — 최근 두 달 탭만. 0이면 끈다. 전체 주기(sync_minutes)보다 길면 의미가 없어 그때도 끈다."""
+    try:
+        v = max(0, int(os.getenv("CONSULT_SHEET_FAST_MINUTES") or 1))
+    except ValueError:
+        v = 1
+    return v if v < sync_minutes() else 0
+
+
+def _tick(now, last_full):
+    """이번 틱에 무엇을 돌릴지 — 'full' | 'fast' | None. 전체 주기가 지났으면 전체, 아니면 빠른 동기화(최근 탭이 있을 때)."""
+    if last_full is None or (now - last_full).total_seconds() >= sync_minutes() * 60 - 5:
+        return "full"
+    if fast_minutes() and recent_sheet_names():
+        return "fast"
+    return None
+
+
 def _loop():
+    last_full = None
     while True:
-        threading.Event().wait(sync_minutes() * 60)
+        threading.Event().wait((fast_minutes() or sync_minutes()) * 60)
         if not configured() or not auto_enabled():
             continue
+        what = _tick(datetime.now(), last_full)
+        if not what:
+            continue
         try:
-            rep = run(apply=True, trigger="scheduler")
+            names = None if what == "full" else recent_sheet_names()
+            rep = run(apply=True, trigger="scheduler" if what == "full" else "scheduler-fast", names=names)
+            if what == "full" and rep.get("ok"):
+                last_full = datetime.now()
             t = rep.get("totals") or {}
-            logger.info("상담 시트 동기화: ok=%s 새 %s 수정 %s 충돌 %s", rep.get("ok"), t.get("new"), t.get("updated"),
-                        t.get("conflicts"))
+            if rep.get("ok") and not (t.get("new") or t.get("updated") or t.get("conflicts")) and what == "fast":
+                continue                            # 1분마다 '변화 없음'을 로그에 남기지 않는다
+            logger.info("상담 시트 동기화(%s): ok=%s 새 %s 수정 %s 충돌 %s%s", what, rep.get("ok"), t.get("new"),
+                        t.get("updated"), t.get("conflicts"), "" if rep.get("ok") else f" — {rep.get('error')}")
         except Exception:
             logger.exception("상담 시트 동기화 루프 오류")
 
@@ -614,5 +680,5 @@ def start_scheduler():
         logger.info("상담 시트 연동 꺼짐 (CONSULT_SHEET_URL/TOKEN 없음)")
         return
     threading.Thread(target=_loop, name="consult-sheet-sync", daemon=True).start()
-    logger.info("상담 시트 동기화 준비 — %s분마다(자동 반영은 관리 화면에서 켠다: %s)", sync_minutes(),
-                "켜짐" if auto_enabled() else "꺼짐")
+    logger.info("상담 시트 동기화 준비 — 전체 %s분마다, 최근 탭 %s (자동 반영은 관리 화면에서 켠다: %s)", sync_minutes(),
+                f"{fast_minutes()}분마다" if fast_minutes() else "끔", "켜짐" if auto_enabled() else "꺼짐")
