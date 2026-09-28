@@ -266,12 +266,10 @@
                 msgEl.className = 'sms-msg err';
                 msgEl.textContent = '발송 실패: ' + (res.error || '') + ' (이력은 기록됨)';
             } else {
-                // manual — 발송사 미설정. 휴대폰 문자앱을 내용 채운 채로 연다.
+                // phone — 상담사가 휴대폰으로 보냈다고 확인한 것만 이력에 '휴대폰'으로 남는다
                 msgEl.className = 'sms-msg ok';
-                msgEl.textContent = '발송 이력 기록됨 — 휴대폰 문자앱을 엽니다.';
-                const digits = phone.replace(/[^0-9]/g, '');
-                window.location.href = 'sms:' + digits + '?body=' + encodeURIComponent(body);
-                setTimeout(() => location.reload(), 2500);
+                msgEl.textContent = '휴대폰 발송으로 기록했습니다.';
+                setTimeout(() => location.reload(), 900);
             }
         } catch (e) {
             msgEl.className = 'sms-msg err'; msgEl.textContent = '실패: ' + e.message;
@@ -283,7 +281,36 @@
     }
     document.getElementById('sms-send').addEventListener('click', openConfirm);
     document.getElementById('sms-confirm-cancel').addEventListener('click', () => dlg.close());
-    goBtn.addEventListener('click', () => doSend());
+    // 발송사 미설정(manual) — 1단계: QR·번호·복사로 상담사 휴대폰에 넘긴다, 2단계: '보냈어요'로 기록.
+    // 아이폰은 아직 확인 전이라 QR이 안 되면 '본문 복사'로 보낸다(갤럭시 QR 확인, 2026-09-28).
+    async function showHandoff() {
+        const handoff = dlg.querySelector('.sms-confirm-handoff');
+        const phone = phoneEl.value.trim(), body = bodyEl.value.trim();
+        const r = await fetch('/api/sms/qr', {method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({to_phone: phone, body: body})});
+        if (!r.ok) {
+            const block = dlg.querySelector('.sms-confirm-block');
+            block.hidden = false; block.textContent = (await r.json().catch(() => ({}))).error || 'QR을 만들지 못했습니다.';
+            return;
+        }
+        const qr = document.createElement('div'); qr.innerHTML = await r.text();   // 서버가 만든 SVG
+        const num = document.createElement('p'); num.className = 'sms-handoff-phone'; num.textContent = phone;
+        const copy = document.createElement('button'); copy.type = 'button'; copy.className = 'btn btn-secondary btn-sm'; copy.textContent = '본문 복사';
+        copy.addEventListener('click', async () => {
+            try { await navigator.clipboard.writeText(body); toast('본문을 복사했습니다.', 'info'); }
+            catch { toast('복사 실패 — 본문을 직접 선택해 복사하세요.', 'error'); }
+        });
+        const tip = document.createElement('p'); tip.className = 'sms-handoff-tip muted';
+        tip.textContent = '휴대폰 카메라로 QR을 찍으면 문자앱이 번호·본문이 채워진 채 열립니다. 안 열리면 번호를 보고 본문을 복사해 보내세요. 보낸 뒤 “보냈어요”를 눌러 주세요.';
+        handoff.replaceChildren(qr, num, copy, tip);
+        handoff.hidden = false;
+        goBtn.textContent = '보냈어요';
+    }
+    goBtn.addEventListener('click', () => {
+        if (device.dataset.mode !== 'manual') return doSend();
+        if (dlg.querySelector('.sms-confirm-handoff').hidden) return showHandoff();
+        return doSend('phone');
+    });
 
     if (window.SMS_REMINDER) window.SMS_SELECT_TIMING(window.SMS_REMINDER.timing);
     filterTemplates();

@@ -311,5 +311,46 @@ class ConsultDetailSmsTests(Base):
         self.assertIn("안 보냄 — 전화로 안내함", html)
 
 
+
+class HandoffTests(Base):
+    def test_qr_svg(self):
+        r = self.client.post("/api/sms/qr", json={"to_phone": "010-1111-2222", "body": "안녕하세요"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.mimetype, "image/svg+xml")
+        self.assertIn(b"<svg", r.data)
+        self.assertIn("no-store", r.headers.get("Cache-Control", ""))
+
+    def test_qr_encodes_smsto(self):
+        import segno
+        with patch.object(segno, "make", wraps=segno.make) as make:
+            self.client.post("/api/sms/qr", json={"to_phone": "010-1111-2222", "body": "첫줄\n둘째줄"})
+        self.assertEqual(make.call_args.args[0], "SMSTO:01011112222:첫줄\n둘째줄")
+
+    def test_qr_refuses_unresolved_and_bad_phone(self):
+        self.assertEqual(self.client.post("/api/sms/qr", json={"to_phone": "01011112222", "body": "{환자명}"}).status_code, 400)
+        self.assertEqual(self.client.post("/api/sms/qr", json={"to_phone": "0545501700", "body": "안내"}).status_code, 400)
+
+    def test_phone_confirm_logged_as_phone(self):
+        with patch.dict(os.environ, {}, clear=True):
+            r = self.client.post("/api/sms/send", json={"to_phone": "01011112222", "body": "안내", "mode": "phone"})
+        self.assertEqual(r.get_json()["status"], "phone")
+        self.assertEqual(models.list_sms_log(1)[0]["status"], "phone")
+
+    def test_phone_mode_ignored_when_gateway_ready(self):
+        env = {"SMS_PROVIDER": "aligo", "SMS_API_KEY": "k", "SMS_SENDER": "0545501700"}
+        fake = {"ok": True, "status": "sent", "msg_type": "SMS", "error": None, "provider_msg_id": "1", "sent_to": "01011112222"}
+        with patch.dict(os.environ, env, clear=True), patch.object(sms, "send_sms", return_value=fake) as send:
+            r = self.client.post("/api/sms/send", json={"to_phone": "01011112222", "body": "안내", "mode": "phone"})
+        send.assert_called_once()
+        self.assertEqual(r.get_json()["status"], "sent")
+
+    def test_history_labels(self):
+        models.log_sms(to_phone="01011112222", body="a", status="phone")
+        models.log_sms(to_phone="01011112222", body="b", status="manual")
+        html = self.client.get("/sms").get_data(as_text=True)
+        self.assertIn(">휴대폰<", html)
+        self.assertIn(">수동(확인 안 됨)<", html)
+
+
 if __name__ == "__main__":
     unittest.main()

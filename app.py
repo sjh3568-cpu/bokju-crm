@@ -264,6 +264,7 @@ _PERM_EXEMPT_PREFIXES = (
 _CREATE_PATHS = (
     "/api/consult",          # 새 상담 저장 (정확히 이 경로일 때만, 아래에서 검사)
     "/api/sms/send",         # 문자 발송
+    "/api/sms/qr",           # 문자 QR (휴대폰으로 넘기기 — 발송과 같은 권한)
     "/api/sms/template",     # 문자 템플릿 추가/저장
     "/api/sms/reminder",     # 안내 문자 알림 '안 보냄' (발송과 같은 권한)
     "/api/communication",    # 커뮤니케이션(인바운드) 기록

@@ -136,6 +136,26 @@ def api_sms_reminder_close():
             detail=f"{key} — {reason[:80]}", ip=request.remote_addr)
     return jsonify({"ok": True, "already": not first})
 
+@bp.route("/api/sms/qr", methods=["POST"])
+@login_required
+def api_sms_qr():
+    """확인 창의 QR — 상담사 휴대폰 카메라로 찍으면 문자앱이 번호·본문이 채워진 채 열린다(SMSTO).
+    발송사가 없을 때 PC에서 쓴 문자를 개인 휴대폰으로 넘기는 길. 갤럭시 확인(2026-09-28)."""
+    import io
+    import segno
+    payload = request.get_json(silent=True) or {}
+    to_phone = (payload.get("to_phone") or "").strip()
+    body = (payload.get("body") or "").strip()
+    left = sms_gateway.unresolved_tokens(body)
+    if not body or left or not sms_gateway.valid_mobile(to_phone):
+        return jsonify({"error": "번호·본문을 확인하세요." + (" 토큰: " + " ".join(left) if left else "")}), 400
+    buf = io.BytesIO()
+    segno.make(f"SMSTO:{sms_gateway.normalize_phone(to_phone)}:{body}", error="m").save(
+        buf, kind="svg", border=2, xmldecl=False, omitsize=True)   # viewBox만 — 화면 칸(200px)에 맞춰 커진다
+    resp = app.response_class(buf.getvalue(), mimetype="image/svg+xml")
+    resp.headers["Cache-Control"] = "no-store, private"
+    return resp
+
 @bp.route("/api/sms/recipient")
 @login_required
 def api_sms_recipient():
@@ -225,6 +245,8 @@ def api_sms_send():
                                  f"{sms_gateway.LMS_MAX_BYTES}바이트를 넘습니다."}), 400
 
     status, error, provider, provider_msg_id, sent_to = "manual", None, None, None, None
+    if payload.get("mode") == "phone" and not sms_gateway.gateway_configured():
+        status = "phone"   # 상담사가 확인 창에서 '보냈어요'를 누름 — 휴대폰에서 실제로 보냈다는 확인(2026-09-28)
     if sms_gateway.gateway_configured():
         result = sms_gateway.send_sms(to_phone, body)
         status, error = result["status"], result.get("error")

@@ -146,7 +146,8 @@
                         {% if s.status == 'sent' %}<span class="badge" style="background:#dcfce7;color:#166534">발송</span>
                         {% elif s.status == 'test' %}<span class="badge" style="background:#fef3c7;color:#92400e" title="실제 수신: {{ s.sent_to }}">테스트</span>
                         {% elif s.status == 'failed' %}<span class="badge" style="background:#fee2e2;color:#991b1b" title="{{ s.error or '' }}">실패</span>
-                        {% else %}<span class="badge" style="background:#f1f5f9;color:#475569">수동</span>{% endif %}
+                        {% elif s.status == 'phone' %}<span class="badge" style="background:#e0f2fe;color:#075985" title="상담사가 휴대폰으로 보냈다고 확인">휴대폰</span>
+                        {% else %}<span class="badge" style="background:#f1f5f9;color:#475569" title="예전 방식 — 실제로 보냈는지 확인되지 않음">수동(확인 안 됨)</span>{% endif %}
                         {% if s.status == 'failed' and s.error %}<div class="sms-log-err">{{ s.error }}</div>{% endif %}
                     </td>
                     <td class="nowrap">{{ s.sent_by or '' }}</td>
@@ -236,14 +237,23 @@
 .sms-device-note .warn { color:#b45309; font-weight:600; }
 @media (max-width:760px) { .sms-compose { flex-direction:column; } .sms-device { align-self:center; } }
 /* 확인 창 */
-.sms-confirm { border:0; border-radius:12px; padding:18px 20px; max-width:640px; width:calc(100% - 32px); }
+.sms-confirm { border:0; border-radius:12px; padding:18px 20px; max-width:640px; width:calc(100% - 32px);
+    margin:auto; max-height:calc(100vh - 32px); overflow:auto; box-sizing:border-box; }
 .sms-confirm::backdrop { background:rgba(15,23,42,.45); }
 .sms-confirm h3 { margin:0 0 12px; }
 .sms-confirm-grid { display:flex; gap:16px; align-items:flex-start; }
 .sms-confirm-info { flex:1; min-width:0; }
+/* 확인 창 안의 휴대폰 — 본 화면 미리보기를 복제해 쓴다. 폭을 묶지 않으면 옆 칸을 눌러 버린다(1440 실측) */
+#sms-confirm-preview { flex:0 0 230px; }
+#sms-confirm-preview .sms-device { width:230px; }
+#sms-confirm-preview .sms-device-screen { height:380px; }
 .sms-confirm-to { font-size:1.05em; font-weight:700; margin:0 0 4px; }
 .sms-confirm-kind { margin:0 0 8px; font-size:.86em; }
 .sms-confirm-block { color:var(--danger); font-weight:600; margin:0 0 8px; }
+.sms-confirm-handoff { border:1px dashed var(--border); border-radius:10px; padding:10px 12px; background:#f8fafc; }
+.sms-confirm-handoff svg { width:200px; height:200px; display:block; margin:0 auto 6px; }
+.sms-handoff-phone { font-size:1.35em; font-weight:800; letter-spacing:.02em; text-align:center; margin:4px 0; }
+.sms-handoff-tip { font-size:.8em; margin:4px 0 0; line-height:1.5; }
 .sms-confirm-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:14px; }
 .sms-confirm-actions .btn { white-space:nowrap; }
 @media (max-width:640px) { .sms-confirm-grid { flex-direction:column; } }
