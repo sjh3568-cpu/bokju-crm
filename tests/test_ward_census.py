@@ -134,47 +134,67 @@ class WardCensusTests(unittest.TestCase):
         series = json.loads(re.search(r"<svg class=\"wd-ratio-chart\"(?: data-forecast=\"1\")? data-series='(\[.*?\])'", html).group(1))
         today = series[-1]
         self.assertEqual(today["total"], 2)      # 지금 재원 2명
-        # 상담이 안 붙은 회차는 비율 분모에서 빠진다 — 회복기 판정을 못 하기 때문
+        # 상담이 안 붙은 회차도 분모에 들어간다 — 판정은 못 해도 재원이다(2026-09-28)
         self.assertEqual(today["known"], 1)
+        self.assertEqual(today["ratio"], 0)
 
     def test_ratio_trend_period_is_selectable(self):
-        """통계 페이지와 같은 preset/from/to로 고른 기간을 일별 그래프가 그린다."""
+        """기간은 월 단위 — 프리셋은 이번 달까지 N개월, 직접지정은 시작 월~종료 월(2026-09-28)."""
         import json, re
+        from datetime import date
         def series_of(url):
             html = self.client.get(url).get_data(as_text=True)
             return [json.loads(m) for m in re.findall(r"<svg class=\"wd-ratio-chart\"(?: data-forecast=\"1\")? data-series='(\[.*?\])'", html)], html
+        today = date.today()
         (daily, monthly, _f), html = series_of("/ward?tab=trend")
-        self.assertEqual(len(daily), 30)          # 기본은 최근 30일
-        self.assertEqual(len(monthly), 12)
-        (daily, monthly, _f), html = series_of("/ward?tab=trend&preset=90")
-        self.assertEqual(len(daily), 90)
-        self.assertIn('<label class="preset-chip on"><input type="radio" name="preset" value="90" checked>', html)
-        (daily, monthly, _f), _ = series_of("/ward?tab=trend&preset=custom&from=2025-01-05&to=2025-01-14")
-        self.assertEqual([d["date"] for d in daily][::9], ["2025-01-05", "2025-01-14"])
-        self.assertEqual(len(daily), 10)
+        # 기본은 최근 3개월 — 두 달 전 1일부터 오늘까지
+        self.assertEqual(daily[0]["date"], main._add_months(today.replace(day=1), -2).isoformat())
+        self.assertEqual(daily[-1]["date"], today.isoformat())
+        self.assertIn('value="3" checked', html)
         self.assertEqual(len(monthly), 12)        # 월별은 최소 12개월
-        self.assertEqual(monthly[-1]["label"], "25.01")
+        self.assertEqual(monthly[-1]["label"], today.strftime("%y.%m"))
+        (daily, monthly, _f), html = series_of("/ward?tab=trend&preset=12")
+        self.assertEqual(daily[0]["date"], main._add_months(today.replace(day=1), -11).isoformat())
+        self.assertIn('<label class="preset-chip on"><input type="radio" name="preset" value="12" checked>', html)
+        # 직접지정 — 한 달을 고르면 그달 1일~말일
+        (daily, monthly, _f), html = series_of("/ward?tab=trend&preset=custom&from=2025-01&to=2025-01")
+        self.assertEqual((daily[0]["date"], daily[-1]["date"], len(daily)), ("2025-01-01", "2025-01-31", 31))
+        self.assertEqual(len(monthly), 12)
+        self.assertEqual((monthly[-1]["label"], monthly[-1]["days"]), ("25.01", 31))
+        self.assertIn('value="2025-01"', html)
         # 기간이 1년 넘게 걸치면 월별도 그만큼 늘어난다
-        (daily, monthly, _f), _ = series_of("/ward?tab=trend&preset=custom&from=2024-01-01&to=2025-03-31")
+        (daily, monthly, _f), _ = series_of("/ward?tab=trend&preset=custom&from=2024-01&to=2025-03")
         self.assertEqual(len(monthly), 15)
-        # 종료일이 시작일보다 앞서면 서로 바꿔 쓴다
-        (daily, _m, _f), _ = series_of("/ward?tab=trend&preset=custom&from=2025-01-14&to=2025-01-05")
-        self.assertEqual(len(daily), 10)
+        # 종료 월이 시작 월보다 앞서면 서로 바꿔 쓴다
+        (daily, _m, _f), _ = series_of("/ward?tab=trend&preset=custom&from=2025-03&to=2025-01")
+        self.assertEqual((daily[0]["date"], daily[-1]["date"]), ("2025-01-01", "2025-03-31"))
+        # 최대 24개월 — 넘치면 종료 월에서 24개월로 자른다
+        (daily, monthly, _f), _ = series_of("/ward?tab=trend&preset=custom&from=2022-01&to=2025-03")
+        self.assertEqual((daily[0]["date"], len(monthly)), ("2023-04-01", 24))
+        # 종료 월은 이번 달을 넘지 못한다
+        future = main._add_months(today.replace(day=1), 3).strftime("%Y-%m")
+        (daily, _m, _f), _ = series_of(f"/ward?tab=trend&preset=custom&from={future}&to={future}")
+        self.assertEqual(daily[-1]["date"], today.isoformat())
 
     def test_ratio_trend_dates_apply_without_custom_radio(self):
-        """날짜만 바꾸고 라디오가 프리셋에 남아 있어도 입력한 기간을 쓴다."""
+        """월만 바꾸고 라디오가 프리셋에 남아 있어도 입력한 기간을 쓴다."""
         import json, re
-        html = self.client.get("/ward?tab=trend&preset=30&from=2025-01-05&to=2025-01-14").get_data(as_text=True)
-        daily = json.loads(re.findall(r"<svg class=\"wd-ratio-chart\"(?: data-forecast=\"1\")? data-series='(\[.*?\])'", html)[0])
-        self.assertEqual(len(daily), 10)
+        daily_of = lambda html: json.loads(re.findall(r"<svg class=\"wd-ratio-chart\"(?: data-forecast=\"1\")? data-series='(\[.*?\])'", html)[0])
+        html = self.client.get("/ward?tab=trend&preset=3&from=2025-01&to=2025-02").get_data(as_text=True)
+        self.assertEqual(len(daily_of(html)), 59)
         self.assertIn('value="custom" checked', html)
-        # 종료일만 과거로 바꿔도 직접지정
-        html = self.client.get("/ward?tab=trend&preset=30&to=2025-01-14").get_data(as_text=True)
-        self.assertIn("2024-12-16 ~ 2025-01-14", html)
-        # 프리셋 칩은 날짜칸을 비우고 넘어온다 — 빈 날짜는 프리셋을 흔들지 않는다
-        html = self.client.get("/ward?tab=trend&preset=90&from=&to=").get_data(as_text=True)
-        self.assertEqual(len(json.loads(re.findall(r"<svg class=\"wd-ratio-chart\"(?: data-forecast=\"1\")? data-series='(\[.*?\])'", html)[0])), 90)
-        self.assertIn('value="90" checked', html)
+        # 종료 월만 과거로 바꿔도 직접지정 — 시작 월이 비면 종료 월 한 달
+        html = self.client.get("/ward?tab=trend&preset=3&to=2025-01").get_data(as_text=True)
+        self.assertIn("2025-01-01 ~ 2025-01-31", html)
+        # 옛 일 단위 링크(YYYY-MM-DD)도 그 날짜가 속한 달로 받는다
+        html = self.client.get("/ward?tab=trend&preset=30&from=2025-01-05&to=2025-01-14").get_data(as_text=True)
+        self.assertIn("2025-01-01 ~ 2025-01-31", html)
+        # 프리셋 칩은 월 칸을 비우고 넘어온다 — 빈 월은 프리셋을 흔들지 않는다
+        html = self.client.get("/ward?tab=trend&preset=6&from=&to=").get_data(as_text=True)
+        self.assertIn('value="6" checked', html)
+        # 모르는(옛 일 단위) 프리셋만 오면 기본 3개월
+        html = self.client.get("/ward?tab=trend&preset=90").get_data(as_text=True)
+        self.assertIn('value="3" checked', html)
 
     def test_ratio_insight_margins(self):
         """40% 기준선까지의 여유·필요 인원 산식 — 분모는 재원 전체(total). KPI·추이와 같은 기준(2026-09-28)."""
@@ -229,18 +249,21 @@ class WardCensusTests(unittest.TestCase):
         self.assertEqual((by[1]["in_rec"], by[1]["in_non"], by[2]["in_unknown"]), (1, 1, 1))
         self.assertEqual((by[2]["out_rec"], by[3]["rec_end"], by[4]["rec_end"], by[6]["out_non"], by[5]["out_unknown"]),
                          (1, 0, 1, 1, 1))
-        # D+1: 회복기 11 / 판정 22 → 50.00, D+2: 미판정 입원은 분모 제외, 회복기 퇴원 → 10/21
-        self.assertEqual((by[1]["recovery"], by[1]["known"], by[1]["ratio"]), (11, 22, 50.0))
-        self.assertEqual((by[2]["recovery"], by[2]["known"], by[2]["total"], by[2]["ratio"]), (10, 21, 24, 47.62))
-        # D+4 전환: 9/21, D+5 명부만 퇴원: 인원만 -1, D+6 비회복기 퇴원: 9/20
-        self.assertEqual((by[4]["recovery"], by[4]["known"]), (9, 21))
-        self.assertEqual((by[5]["known"], by[5]["total"]), (21, 23))
-        self.assertEqual((by[6]["recovery"], by[6]["known"], by[6]["ratio"]), (9, 20, 45.0))
+        # 분모는 재원 전체(2026-09-28) — 미판정 입·퇴원도 분모를 움직인다.
+        # D+1: 회복기·비회복기 1명씩 입원 → 11/24, D+2: 미판정 입원 +1·회복기 퇴원 → 10/24
+        self.assertEqual((by[1]["recovery"], by[1]["total"], by[1]["ratio"]), (11, 24, 45.83))
+        self.assertEqual((by[2]["recovery"], by[2]["total"], by[2]["ratio"]), (10, 24, 41.67))
+        self.assertNotIn("known", by[2])
+        # D+4 전환: 9/24(40% 아래), D+5 명부만 퇴원: 9/23, D+6 비회복기 퇴원: 9/22
+        self.assertEqual((by[4]["recovery"], by[4]["total"], by[4]["ratio"]), (9, 24, 37.5))
+        self.assertEqual((by[5]["total"], by[5]["ratio"]), (23, 39.13))
+        self.assertEqual((by[6]["recovery"], by[6]["total"], by[6]["ratio"]), (9, 22, 40.91))
         self.assertEqual(flow["sum"]["in_total"], 3)
         self.assertEqual((flow["sum"]["out_rec"], flow["sum"]["out_non"], flow["sum"]["out_unknown"], flow["sum"]["rec_end"]),
                          (1, 1, 1, 1))
         self.assertEqual(len(flow["active"]), 5)
-        self.assertTrue(flow["ok"]); self.assertIsNone(flow["cross"])
+        # 30일 끝은 40% 이상이지만 D+4에 한 번 기준선 아래로 내려간다
+        self.assertTrue(flow["ok"]); self.assertEqual(flow["cross"]["dday"], 4)
         self.assertIsNone(main._trend_flow(None, admitted, today))
 
     def test_trend_page_renders_flow_section(self):
@@ -260,21 +283,57 @@ class WardCensusTests(unittest.TestCase):
             {"date": "2026-09-02", "label": "09.02", "known": 10, "recovery": 1, "ratio": 10.0, "total": 10},
             {"date": "2026-09-03", "label": "09.03", "known": 0, "recovery": 0, "ratio": 0, "total": 0},
         ]
-        monthly = [{"date": "2026-09-30", "label": "26.09", "known": 50, "recovery": 20, "ratio": 40.0, "total": 50}]
-        ts = main._trend_summary(daily, monthly)
+        ts = main._trend_summary(daily)
         self.assertEqual(ts["avg"], 41.82)           # 46/110
         self.assertEqual(ts["avg_simple"], 27.5)     # (45+10)/2 — known 0인 날은 제외
         self.assertEqual((ts["days"], ts["below_days"], ts["below_first"]["label"]), (2, 1, "09.02"))
         self.assertEqual((ts["low"]["label"], ts["high"]["label"]), ("09.02", "09.01"))
-        self.assertEqual(ts["month_avg"], 40.0)
+        self.assertNotIn("month_avg", ts)           # 월말 평균 카드는 뺐다(2026-09-28)
         self.assertEqual([(r["start"]["label"], r["end"]["label"], r["days"]) for r in ts["below_runs"]], [("09.02", "09.02", 1)])
         # 떨어진 날이 이어지면 한 구간, 사이에 40% 이상인 날이 끼면 두 구간
         run_days = [dict(daily[1], date="2026-09-%02d" % d, label="09.%02d" % d, ratio=r, recovery=r) for d, r in ((5, 39.0), (6, 35.0), (7, 41.0), (8, 38.0))]
-        runs = main._trend_summary(run_days, [])["below_runs"]
+        runs = main._trend_summary(run_days)["below_runs"]
         self.assertEqual([(r["start"]["label"], r["end"]["label"], r["days"], r["low"]["label"]) for r in runs],
                          [("09.05", "09.06", 2, "09.06"), ("09.08", "09.08", 1, "09.08")])
         self.assertTrue(ts["ok"])
-        self.assertIsNone(main._trend_summary([daily[2]], []))
+        self.assertIsNone(main._trend_summary([daily[2]]))
+
+    def test_monthly_point_is_person_day_weighted(self):
+        """월별 점은 말일 하루가 아니라 그달 연인원 평균이다."""
+        per_day = [
+            {"date": "2026-08-31", "label": "08-31", "known": 10, "recovery": 9, "ratio": 90.0, "total": 10},
+            {"date": "2026-09-01", "label": "09-01", "known": 100, "recovery": 45, "ratio": 45.0, "total": 100},
+            {"date": "2026-09-02", "label": "09-02", "known": 8, "recovery": 1, "ratio": 10.0, "total": 10},
+        ]
+        aug, sep = ward_views._monthly_ratio_points(per_day)
+        self.assertEqual((aug["label"], aug["ratio"], aug["days"]), ("26.08", 90.0, 1))
+        # 9월: 회복기 46 / 재원 110 연인원 = 41.82% (말일 하루만 보면 10%였다)
+        self.assertEqual((sep["label"], sep["ratio"], sep["days"], sep["date"]), ("26.09", 41.82, 2, "2026-09-02"))
+        self.assertEqual((sep["recovery"], sep["total"], sep["known"]), (23.0, 55.0, 54.0))   # 하루 평균 인원
+
+    def test_trend_page_layout(self):
+        """최저·최고는 한 카드, 월말 평균 카드는 없음, 40% 인사이트는 기간 선택보다 위(2026-09-28)."""
+        html = self.client.get("/ward?tab=trend").get_data(as_text=True)
+        self.assertIn("기간 최저 · 최고", html)
+        self.assertNotIn("기간 최고 <small>", html)
+        self.assertNotIn("월말 평균", html)
+        self.assertLess(html.index('<div class="wd-insight '), html.index('id="period-form"'))
+        self.assertNotIn('class="wd-insight-ratio"', html)  # 오늘 비율은 요약 카드에만
+        self.assertIn('data-total="', html)                  # 가정 계산기 분모 = 재원 전체
+        self.assertNotIn('data-known="', html)
+        self.assertIn("미판정(분모 포함)", html)
+        # 판정이 안 된 재원 환자 — 상담 있는 환자는 채울 항목, 명부만 있는 환자는 상담 연결
+        self.assertIn("회복기 판정 필요 2명", html)
+        self.assertIn("발병일·진단군", html)
+        self.assertIn("상담기록 연결", html)
+
+    def test_unjudged_excludes_general_rehab_and_care(self):
+        """입원목적이 일반재활·요양이면 원래 회복기 대상이 아니라 '판정 필요'에서 뺀다."""
+        rows = [{"id": 1, "patient_name": "가", "care_phase": "미판정", "admission_purpose": "요양"},
+                {"id": 2, "patient_name": "나", "care_phase": "미판정", "admission_purpose": "일반재활"},
+                {"id": 3, "patient_name": "다", "care_phase": "회복기"},
+                {"id": 4, "patient_name": "라", "care_phase": "미판정"}]
+        self.assertEqual([c["patient_name"] for c in ward_views._unjudged_admitted(rows)], ["라"])
 
     def test_trend_page_renders_insight(self):
         html = self.client.get("/ward?tab=trend").get_data(as_text=True)

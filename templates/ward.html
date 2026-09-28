@@ -63,7 +63,48 @@
 </section>
 {% elif subtab == 'trend' %}
 <section class="card wd-overview wd-trend-page">
-    <div class="wd-sec-head"><h3>📈 회복기 환자 비율 추이</h3><span class="muted-sm">재원 환자 기준 · 유지 기준선 40%</span></div>
+    <div class="wd-sec-head"><h3>📈 회복기 환자 비율 추이</h3><span class="muted-sm">재원 환자 전체 기준 · 유지 기준선 40%</span></div>
+{# 40% 인사이트 — 오늘 기준으로 '받을지·내보낼지'를 판단하는 칸이라 기간 선택과 무관하다.
+   그래서 기간 선택·과거 요약보다 위에 둔다(2026-09-28). 분모는 그날 재원 전체 — 판정이 안 된
+   환자도 분모에 들어가 비회복기처럼 계산된다. 오늘 비율 숫자는 아래 요약 카드에 있어 여기선 뺐다. #}
+{% if trend_insight %}{% set ti = trend_insight %}
+    <div class="wd-insight {% if ti.ok %}ok{% else %}warn{% endif %}">
+        <div class="wd-insight-head">
+            <span class="wd-insight-state">{% if ti.ok %}✓ 40% 이상 유지 중{% else %}⚠ 40% 미만{% endif %}</span>
+            <span class="muted-sm">오늘 기준 · 회복기 {{ ti.recovery }}명 / 재원 {{ ti.total }}명</span>
+        </div>
+        <ul class="wd-insight-list">
+        {% if ti.ok %}
+            <li>회복기 환자 <b>{{ ti.rec_out }}명</b>까지 퇴원(또는 비회복기 전환)해도 40%가 유지됩니다. <b>{{ ti.rec_out + 1 }}명째</b>가 나가면 {{ ti.rec_out_ratio|pct1 }}%로 기준선 아래로 떨어집니다.</li>
+            <li>비회복기 환자는 <b>{{ ti.non_in }}명</b>까지 더 받아도 40%가 유지됩니다. {{ ti.non_in + 1 }}명째부터 {{ ti.non_in_ratio|pct1 }}%가 됩니다.</li>
+        {% else %}
+            <li>회복기 환자 <b>{{ ti.rec_in }}명</b>이 더 입원하면 {{ ti.rec_in_ratio|pct1 }}%로 40%에 도달합니다.</li>
+            <li>또는 비회복기 환자 <b>{{ ti.non_out }}명</b>이 퇴원하면 {{ ti.non_out_ratio|pct1 }}%로 40%에 도달합니다. (둘을 섞어도 됩니다 — 아래 '입·퇴원 D-30 반영 추이'의 계산기)</li>
+        {% endif %}
+            <li>앞으로 {{ ti.horizon }}일 안에 회복기 종료 예정 <b>{{ ti.ending|length }}명</b>(30일 내 {{ ti.ending_30 }}명).
+                <span class="muted-sm">가정: 입·퇴원이 전혀 없으면 {{ ti.forecast[-1].label }}에 {{ ti.end_ratio|pct1 }}%{% if ti.cross %}, {{ ti.cross.label }}에 처음 40% 아래{% endif %}. 실제 입·퇴원 예정을 넣은 예상은 아래 '입·퇴원 D-30 반영 추이'를 보세요.</span></li>
+        {% if trend_unjudged %}
+            <li>회복기 판정이 안 된 재원 환자 <b>{{ trend_unjudged|length }}명</b>은 분모에만 들어가 비회복기처럼 계산됩니다. 발병일·진단군을 채우면 비율이 오를 수 있습니다.</li>
+        {% endif %}
+        </ul>
+        {% if ti.ending %}
+        <details class="wd-insight-ending"><summary>회복기 종료 예정 {{ ti.ending|length }}명 보기</summary>
+            <table class="wd-insight-table"><thead><tr><th>종료</th><th>환자</th><th>병실</th><th>주진단</th></tr></thead><tbody>
+            {% for c in ti.ending %}<tr><td class="nowrap">D-{{ c.phase_dday }}</td><td><a href="/consult/{{ c.id }}">{{ c.patient_name }}</a></td><td>{{ c.room_number|room_no or '-' }}</td><td>{{ c.primary_diagnosis or '-' }}</td></tr>{% endfor %}
+            </tbody></table>
+        </details>
+        {% endif %}
+        {% if trend_unjudged %}
+        <details class="wd-insight-ending"><summary>회복기 판정 필요 {{ trend_unjudged|length }}명 보기</summary>
+            <table class="wd-insight-table"><thead><tr><th>환자</th><th>입원일</th><th>병실</th><th>주진단</th><th>채울 항목</th></tr></thead><tbody>
+            {% for c in trend_unjudged %}<tr><td>{% if c.id %}<a href="/consult/{{ c.id }}">{{ c.patient_name }}</a>{% else %}{{ c.patient_name }} <small class="muted">(상담기록 없음)</small>{% endif %}</td><td class="nowrap">{{ c.admitted_on or '-' }}</td><td>{{ c.room_number|room_no or '-' }}</td><td>{{ c.primary_diagnosis or '-' }}</td><td>{{ c.unjudged_reason }}</td></tr>{% endfor %}
+            </tbody></table>
+        </details>
+        {% endif %}
+    </div>
+{% else %}
+    <p class="muted-sm">오늘 재원 환자가 없어 40% 기준선 인사이트를 낼 수 없습니다. 원무 입퇴원 명부를 올리면 표시됩니다.</p>
+{% endif %}
     <form id="period-form" class="period-bar card wd-period-bar" method="get" action="/ward">
         <input type="hidden" name="tab" value="trend">
         <div class="preset-row">
@@ -73,56 +114,28 @@
             <label class="preset-chip {% if trend_preset == 'custom' %}on{% endif %}"><input type="radio" name="preset" value="custom" {% if trend_preset == 'custom' %}checked{% endif %}><span>직접지정</span></label>
         </div>
         <div class="custom-row">
-            <label>시작 <input type="date" name="from" value="{{ trend_from }}"></label>
-            <label>종료 <input type="date" name="to" value="{{ trend_to }}"></label>
+            <label>시작 월 <input type="month" name="from" value="{{ trend_from_month }}" max="{{ trend_max_month }}"></label>
+            <label>종료 월 <input type="month" name="to" value="{{ trend_to_month }}" max="{{ trend_max_month }}"></label>
             <button type="submit" class="btn btn-secondary btn-sm">조회</button>
         </div>
-        <div class="period-meta"><span class="muted">대상 기간:</span> <strong id="period-label">{{ trend_from }} ~ {{ trend_to }}</strong> <span class="muted-sm">· {{ daily_ratio_trend|length }}일 · 최대 2년</span></div>
+        <div class="period-meta"><span class="muted">대상 기간:</span> <strong id="period-label">{{ trend_from }} ~ {{ trend_to }}</strong> <span class="muted-sm">· {{ trend_month_span }}개월({{ daily_ratio_trend|length }}일) · 최대 {{ trend_max_months }}개월</span></div>
     </form>
 {% if trend_summary %}{% set ts = trend_summary %}
     <div class="wd-kpi wd-trend-kpi">
-        <div class="wd-k {% if trend_insight and trend_insight.ok %}ok{% endif %}"><span class="wd-k-n">{{ (trend_insight.ratio if trend_insight else ts.last.ratio)|pct1 }}<small>%</small></span><span class="wd-k-l">오늘 회복기 비율 <small>{{ trend_insight.recovery if trend_insight else ts.last.recovery }}/{{ trend_insight.known if trend_insight else ts.last.known }}명</small></span></div>
+        <div class="wd-k {% if trend_insight and trend_insight.ok %}ok{% endif %}"><span class="wd-k-n">{{ (trend_insight.ratio if trend_insight else ts.last.ratio)|pct1 }}<small>%</small></span><span class="wd-k-l">오늘 회복기 비율 <small>{{ trend_insight.recovery if trend_insight else ts.last.recovery }}/{{ trend_insight.total if trend_insight else ts.last.total }}명</small></span></div>
         <div class="wd-k {% if ts.ok %}ok{% else %}warn{% endif %}"><span class="wd-k-n">{{ ts.avg|pct1 }}<small>%</small></span><span class="wd-k-l" title="연인원 기준(재원일수 가중) 평균 · 날짜별 단순평균 {{ ts.avg_simple|pct1 }}%">기간 평균 <small>단순평균 {{ ts.avg_simple|pct1 }}%</small></span></div>
-        <div class="wd-k"><span class="wd-k-n">{{ ts.low.ratio|pct1 }}<small>%</small></span><span class="wd-k-l">기간 최저 <small>{{ ts.low.label }} · {{ ts.low.recovery }}/{{ ts.low.known }}명</small></span></div>
-        <div class="wd-k"><span class="wd-k-n">{{ ts.high.ratio|pct1 }}<small>%</small></span><span class="wd-k-l">기간 최고 <small>{{ ts.high.label }} · {{ ts.high.recovery }}/{{ ts.high.known }}명</small></span></div>
+        <div class="wd-k"><span class="wd-k-n">{{ ts.low.ratio|pct1 }}<small>%</small><small class="wd-k-range"> ~ </small>{{ ts.high.ratio|pct1 }}<small>%</small></span><span class="wd-k-l" title="최저 {{ ts.low.date }} 회복기 {{ ts.low.recovery }}/{{ ts.low.total }}명 · 최고 {{ ts.high.date }} 회복기 {{ ts.high.recovery }}/{{ ts.high.total }}명">기간 최저 · 최고 <small>최저 {{ ts.low.label }} {{ ts.low.recovery }}/{{ ts.low.total }}명 · 최고 {{ ts.high.label }} {{ ts.high.recovery }}/{{ ts.high.total }}명</small></span></div>
         <div class="wd-k {% if ts.below_days %}warn{% else %}ok{% endif %}"><span class="wd-k-n">{{ ts.below_days }}<small>일 / {{ ts.days }}일</small></span><span class="wd-k-l">40% 미만 일수 <small>{% if ts.below_first %}첫 날 {{ ts.below_first.label }}{% else %}없음{% endif %}</small></span></div>
-        <div class="wd-k"><span class="wd-k-n">{% if ts.month_avg is not none %}{{ ts.month_avg|pct1 }}<small>%</small>{% else %}-{% endif %}</span><span class="wd-k-l" title="달마다 월말 하루 값의 평균 · 조회 기간과 무관">최근 {{ ts.month_count }}개월 월말 평균</span></div>
     </div>
     {% if ts.below_runs %}
     <details class="wd-below-runs"><summary>40% 미만 구간 {{ ts.below_runs|length }}회 · 총 {{ ts.below_days }}일 보기</summary>
         <table class="wd-insight-table"><thead><tr><th>시작</th><th>종료</th><th>일수</th><th>최저</th></tr></thead><tbody>
-        {% for r in ts.below_runs %}<tr><td class="nowrap">{{ r.start.date }}</td><td class="nowrap">{{ r.end.date }}</td><td>{{ r.days }}일</td><td class="nowrap"><b>{{ r.low.ratio|pct1 }}%</b> <small class="muted">{{ r.low.label }} · {{ r.low.recovery }}/{{ r.low.known }}명</small></td></tr>{% endfor %}
+        {% for r in ts.below_runs %}<tr><td class="nowrap">{{ r.start.date }}</td><td class="nowrap">{{ r.end.date }}</td><td>{{ r.days }}일</td><td class="nowrap"><b>{{ r.low.ratio|pct1 }}%</b> <small class="muted">{{ r.low.label }} · {{ r.low.recovery }}/{{ r.low.total }}명</small></td></tr>{% endfor %}
         </tbody></table>
     </details>
     {% endif %}
 {% endif %}
-{% if trend_insight %}{% set ti = trend_insight %}
-    <div class="wd-insight {% if ti.ok %}ok{% else %}warn{% endif %}">
-        <div class="wd-insight-head">
-            <span class="wd-insight-ratio">{{ ti.ratio|pct1 }}%</span>
-            <span class="wd-insight-state">{% if ti.ok %}✓ 40% 이상 유지 중{% else %}⚠ 40% 미만{% endif %}</span>
-            <span class="muted-sm">오늘 기준 · 회복기 {{ ti.recovery }}명 / 판정 가능 {{ ti.known }}명 (총 재원 {{ ti.total }}명)</span>
-        </div>
-        <ul class="wd-insight-list">
-        {% if ti.ok %}
-            <li>회복기 환자 <b>{{ ti.rec_out }}명</b>까지 퇴원(또는 비회복기 전환)해도 40%가 유지됩니다. <b>{{ ti.rec_out + 1 }}명째</b>가 나가면 {{ ti.rec_out_ratio|pct1 }}%로 기준선 아래로 떨어집니다.</li>
-            <li>비회복기 환자는 <b>{{ ti.non_in }}명</b>까지 더 받아도 40%가 유지됩니다. {{ ti.non_in + 1 }}명째부터 {{ ti.non_in_ratio|pct1 }}%가 됩니다.</li>
-        {% else %}
-            <li>회복기 환자 <b>{{ ti.rec_in }}명</b>이 더 입원하면 {{ ti.rec_in_ratio|pct1 }}%로 40%에 도달합니다.</li>
-            <li>또는 비회복기 환자 <b>{{ ti.non_out }}명</b>이 퇴원하면 {{ ti.non_out_ratio|pct1 }}%로 40%에 도달합니다. (둘을 섞어도 됩니다 — 아래 계산기)</li>
-        {% endif %}
-            <li>앞으로 {{ ti.horizon }}일 안에 회복기 종료 예정 <b>{{ ti.ending|length }}명</b>(30일 내 {{ ti.ending_30 }}명). 입·퇴원이 없다고 가정하면 {{ ti.forecast[-1].label }}에 <b>{{ ti.end_ratio|pct1 }}%</b>가 됩니다.
-            {% if ti.cross %}<span class="wd-insight-cross">→ <b>{{ ti.cross.label }}</b>에 {{ ti.cross.ratio|pct1 }}%로 처음 40% 아래로 내려갑니다.</span>{% elif ti.ok %}<span class="muted-sm">이 기간 안에는 40% 아래로 내려가지 않습니다.</span>{% endif %}</li>
-        </ul>
-        {% if ti.ending %}
-        <details class="wd-insight-ending"><summary>회복기 종료 예정 {{ ti.ending|length }}명 보기</summary>
-            <table class="wd-insight-table"><thead><tr><th>종료</th><th>환자</th><th>병실</th><th>주진단</th></tr></thead><tbody>
-            {% for c in ti.ending %}<tr><td class="nowrap">D-{{ c.phase_dday }}</td><td><a href="/consult/{{ c.id }}">{{ c.patient_name }}</a></td><td>{{ c.room_number|room_no or '-' }}</td><td>{{ c.primary_diagnosis or '-' }}</td></tr>{% endfor %}
-            </tbody></table>
-        </details>
-        {% endif %}
-    </div>
-{% if trend_flow %}{% set tf = trend_flow %}
+{% if trend_insight and trend_flow %}{% set ti = trend_insight %}{% set tf = trend_flow %}
     <details class="wd-flow {% if tf.ok %}ok{% else %}warn{% endif %}" id="wd-flow-details">
         <summary class="wd-flow-summary">
             <span class="wd-flow-title">📅 입·퇴원 D-30 반영 추이</span>
@@ -134,7 +147,7 @@
             <div class="wd-k"><span class="wd-k-n">{{ tf.sum.in_total }}<small>명</small></span><span class="wd-k-l">입원예정 <small>회복기 {{ tf.sum.in_rec }} · 비회복기 {{ tf.sum.in_non }}{% if tf.sum.in_unknown %} · 미판정 {{ tf.sum.in_unknown }}{% endif %}</small></span></div>
             <div class="wd-k"><span class="wd-k-n">{{ tf.sum.out_total }}<small>명</small></span><span class="wd-k-l">퇴원 예정 D-30 <small>회복기 {{ tf.sum.out_rec }} · 비회복기 {{ tf.sum.out_non }}{% if tf.sum.out_unknown %} · 미판정 {{ tf.sum.out_unknown }}{% endif %}</small></span></div>
             <div class="wd-k"><span class="wd-k-n">{{ tf.sum.rec_end }}<small>명</small></span><span class="wd-k-l">회복기 종료(전환) <small>S005 수가 만료 · 퇴원 전 종료만</small></span></div>
-            <div class="wd-k {% if tf.ok %}ok{% else %}warn{% endif %}"><span class="wd-k-n">{{ tf.end.ratio|pct1 }}<small>%</small></span><span class="wd-k-l">{{ tf.horizon }}일 후 예상 <small>지금 {{ tf.start_ratio|pct1 }}% → {{ tf.end.recovery }}/{{ tf.end.known }}명{% if tf.cross %} · <b class="wd-insight-cross">{{ tf.cross.label }} 40% 아래</b>{% endif %}</small></span></div>
+            <div class="wd-k {% if tf.ok %}ok{% else %}warn{% endif %}"><span class="wd-k-n">{{ tf.end.ratio|pct1 }}<small>%</small></span><span class="wd-k-l">{{ tf.horizon }}일 후 예상 <small>지금 {{ tf.start_ratio|pct1 }}% → {{ tf.end.recovery }}/{{ tf.end.total }}명{% if tf.cross %} · <b class="wd-insight-cross">{{ tf.cross.label }} 40% 아래</b>{% endif %}</small></span></div>
         </div>
         <div class="wd-trend-grid wd-flow-grid">
             <div>
@@ -143,14 +156,14 @@
                 <div class="wd-chart-legend"><span><i style="background:#34d399"></i>입원예정</span><span><i style="background:#fb923c"></i>퇴원 예정</span><span><i style="background:#fbbf24"></i>회복기 종료</span><span><i class="line" style="background:#0ea5e9"></i>예상 비율(왼쪽 축 %)</span><span class="muted">막대는 오른쪽 축(명)</span></div>
             </div>
             <div class="wd-flow-side">
-                <div class="wd-whatif" data-recovery="{{ ti.recovery }}" data-known="{{ ti.known }}"
-                     data-preset='{{ {"rec_in": tf.sum.in_rec, "rec_out": tf.sum.out_rec, "non_in": tf.sum.in_non, "non_out": tf.sum.out_non, "rec_end": tf.sum.rec_end}|tojson }}'>
-                    <strong>가정 계산기</strong> <span class="muted-sm">D-30 예정값이 채워져 있습니다 — 숫자를 바꿔 보세요</span>
+                <div class="wd-whatif" data-recovery="{{ ti.recovery }}" data-total="{{ ti.total }}"
+                     data-preset='{{ {"rec_in": tf.sum.in_rec, "rec_out": tf.sum.out_rec, "non_in": tf.sum.in_non + tf.sum.in_unknown, "non_out": tf.sum.out_non + tf.sum.out_unknown, "rec_end": tf.sum.rec_end}|tojson }}'>
+                    <strong>가정 계산기</strong> <span class="muted-sm">D-30 예정값이 채워져 있습니다 — 숫자를 바꿔 보세요 (미판정은 비회복기 칸에 포함)</span>
                     <div class="wd-whatif-row">
                         <label>회복기 입원 <input type="number" min="0" value="{{ tf.sum.in_rec }}" data-k="rec_in"></label>
                         <label>회복기 퇴원 <input type="number" min="0" value="{{ tf.sum.out_rec }}" data-k="rec_out"></label>
-                        <label>비회복기 입원 <input type="number" min="0" value="{{ tf.sum.in_non }}" data-k="non_in"></label>
-                        <label>비회복기 퇴원 <input type="number" min="0" value="{{ tf.sum.out_non }}" data-k="non_out"></label>
+                        <label>비회복기 입원 <input type="number" min="0" value="{{ tf.sum.in_non + tf.sum.in_unknown }}" data-k="non_in"></label>
+                        <label>비회복기 퇴원 <input type="number" min="0" value="{{ tf.sum.out_non + tf.sum.out_unknown }}" data-k="non_out"></label>
                         <label>회복기 종료 <input type="number" min="0" value="{{ tf.sum.rec_end }}" data-k="rec_end"></label>
                     </div>
                     <div class="wd-whatif-row">
@@ -167,10 +180,10 @@
                         <td>{% for p in d.in_names %}<span class="wd-flow-name {% if p.phase == '회복기' %}rec{% elif p.phase == '비회복기' %}non{% else %}unk{% endif %}" title="{{ p.phase }}">{% if p.id %}<a href="/consult/{{ p.id }}">{{ p.name }}</a>{% else %}{{ p.name }}{% endif %}</span>{% endfor %}</td>
                         <td>{% for p in d.out_names %}<span class="wd-flow-name {% if p.phase == '회복기' %}rec{% elif p.phase == '비회복기' %}non{% else %}unk{% endif %}" title="{{ p.phase }}">{% if p.id %}<a href="/consult/{{ p.id }}">{{ p.name }}</a>{% else %}{{ p.name }}{% endif %}</span>{% endfor %}</td>
                         <td>{% for p in d.end_names %}<span class="wd-flow-name end">{% if p.id %}<a href="/consult/{{ p.id }}">{{ p.name }}</a>{% else %}{{ p.name }}{% endif %}</span>{% endfor %}</td>
-                        <td class="nowrap"><b{% if d.ratio < 40 %} class="wd-insight-cross"{% endif %}>{{ d.ratio|pct1 }}%</b> <small class="muted">{{ d.recovery }}/{{ d.known }}명</small></td>
+                        <td class="nowrap"><b{% if d.ratio < 40 %} class="wd-insight-cross"{% endif %}>{{ d.ratio|pct1 }}%</b> <small class="muted">{{ d.recovery }}/{{ d.total }}명</small></td>
                     </tr>{% endfor %}
                     </tbody></table></div>
-                    <p class="muted-sm wd-flow-note">초록 회복기 · 회색 비회복기 · 점선 미판정(인원에만 반영). 입원 예정은 상담의 입원예정일, 퇴원 예정은 재원 카드의 '퇴원 예정 D-30'과 같은 기준입니다.</p>
+                    <p class="muted-sm wd-flow-note">초록 회복기 · 회색 비회복기 · 점선 미판정(분모에 들어가 비회복기처럼 계산). 입원 예정은 상담의 입원예정일, 퇴원 예정은 재원 카드의 '퇴원 예정 D-30'과 같은 기준입니다.</p>
                 </details>
                 {% else %}
                 <p class="muted-sm">앞으로 {{ tf.horizon }}일 안에 입원예정·퇴원 예정·회복기 종료가 없습니다. 계산기에 직접 숫자를 넣어 보세요.</p>
@@ -179,13 +192,10 @@
         </div>
     </details>
 {% endif %}
-{% else %}
-    <p class="muted-sm">오늘 기준 회복기 판정이 가능한 재원 환자가 없어 40% 기준선 인사이트를 낼 수 없습니다. 원무 입퇴원 명부를 올리면 표시됩니다.</p>
-{% endif %}
-{% macro ratio_legend(forecast=false) %}<div class="wd-chart-legend"><span><i style="background:#86efac"></i>회복기</span><span><i style="background:#cbd5e1"></i>비회복기</span><span><i style="background:#e2e8f0;border:1px dashed #94a3b8"></i>미판정(비율 제외)</span><span><i class="line" style="background:{{ '#0ea5e9' if forecast else '#16a34a' }}"></i>{{ '예상 ' if forecast }}비율(왼쪽 축 %)</span><span class="muted">막대는 오른쪽 축(명)</span></div>{% endmacro %}
+{% macro ratio_legend(forecast=false) %}<div class="wd-chart-legend"><span><i style="background:#86efac"></i>회복기</span><span><i style="background:#cbd5e1"></i>비회복기</span><span><i style="background:#e2e8f0;border:1px dashed #94a3b8"></i>미판정(분모 포함)</span><span><i class="line" style="background:{{ '#0ea5e9' if forecast else '#16a34a' }}"></i>{{ '예상 ' if forecast }}비율(왼쪽 축 %)</span><span class="muted">막대는 오른쪽 축(명)</span></div>{% endmacro %}
     <div class="wd-trend-grid">
         <div><strong>{% if trend_preset in trend_ranges %}{{ trend_ranges[trend_preset] }}{% else %}선택 기간{% endif %} · 일별</strong><svg class="wd-ratio-chart" data-series='{{ daily_ratio_trend|tojson }}' viewBox="0 0 1000 260" role="img" aria-label="일별 회복기 환자 비율"></svg>{{ ratio_legend() }}</div>
-        <div><strong>최근 {{ trend_month_count }}개월 · 월별</strong><svg class="wd-ratio-chart" data-series='{{ monthly_ratio_trend|tojson }}' viewBox="0 0 1000 260" role="img" aria-label="월별 회복기 환자 비율"></svg>{{ ratio_legend() }}</div>
+        <div><strong>{{ trend_month_count }}개월 · 월별 <small class="muted">(그달 재원일수 가중 평균)</small></strong><svg class="wd-ratio-chart" data-series='{{ monthly_ratio_trend|tojson }}' viewBox="0 0 1000 260" role="img" aria-label="월별 회복기 환자 비율"></svg>{{ ratio_legend() }}</div>
         {% if trend_insight %}<div><strong>향후 {{ trend_insight.horizon }}일 · 예상 <small class="muted">(입·퇴원 없이 회복기 종료만 반영)</small></strong><svg class="wd-ratio-chart" data-forecast="1" data-series='{{ trend_insight.forecast|tojson }}' viewBox="0 0 1000 260" role="img" aria-label="향후 회복기 환자 비율 예상"></svg>{{ ratio_legend(true) }}</div>{% endif %}
     </div>
 </section>
@@ -641,6 +651,10 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
 .wd-period-bar .custom-row.hide { display:none; }
 .wd-period-bar .period-meta { margin-left:auto; font-size:0.85em; }
 .wd-trend-kpi { margin:0 0 8px; }
+.wd-trend-kpi:not(.wd-flow-kpi) { grid-template-columns:repeat(4, minmax(0,1fr)); }
+@media(max-width:560px){ .wd-trend-kpi:not(.wd-flow-kpi){ grid-template-columns:repeat(2, 1fr); } }
+.wd-trend-kpi .wd-k-l { white-space:normal; overflow:visible; }   /* 날짜·인원이 잘리지 않게(말줄임 금지) */
+.wd-k-n .wd-k-range { font-weight:600; color:#94a3b8; }
 .wd-below-runs { margin:0 0 12px; font-size:.85em; }
 .wd-below-runs summary { cursor:pointer; color:#b45309; font-weight:600; }
 .wd-trend-kpi .wd-k:hover { border-color:var(--border); background:#fff; }
@@ -649,8 +663,6 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
 .wd-insight { border:1px solid #e2e8f0; border-left:4px solid #16a34a; border-radius:8px; background:#f0fdf4; padding:10px 14px; margin:0 0 12px; }
 .wd-insight.warn { border-left-color:#f59e0b; background:#fffbeb; }
 .wd-insight-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 12px; }
-.wd-insight-ratio { font-size:1.6em; font-weight:800; color:#166534; }
-.wd-insight.warn .wd-insight-ratio { color:#b45309; }
 .wd-insight-state { font-weight:700; color:#166534; }
 .wd-insight.warn .wd-insight-state { color:#b45309; }
 .wd-insight-list { margin:8px 0 0; padding-left:18px; font-size:.9em; line-height:1.6; color:#1e293b; }
@@ -905,12 +917,12 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
             const isCustom = el.value === 'custom';
             document.querySelector('#period-form .custom-row').classList.toggle('hide', !isCustom);
             if (isCustom) return;
-            // 프리셋은 오늘까지 N일이다 — 남아 있던 날짜칸을 비워서 함께 넘어가지 않게 한다.
-            document.querySelectorAll('#period-form .custom-row input[type="date"]').forEach(d => d.value = '');
+            // 프리셋은 이번 달까지 N개월이다 — 남아 있던 월 칸을 비워서 함께 넘어가지 않게 한다.
+            document.querySelectorAll('#period-form .custom-row input[type="month"]').forEach(d => d.value = '');
             document.getElementById('period-form').submit();
         });
     });
-    document.querySelectorAll('#period-form .custom-row input[type="date"]').forEach(el => {
+    document.querySelectorAll('#period-form .custom-row input[type="month"]').forEach(el => {
         el.addEventListener('change', () => {
             const custom = document.querySelector('#period-form input[name="preset"][value="custom"]');
             if (!custom) return;
@@ -985,8 +997,10 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
             const title=document.createElementNS(NS,'title');
             const pct=(+d.ratio).toFixed(2);
             title.textContent = flow
-                ? `${d.date}: 예상 ${pct}% (회복기 ${d.recovery}/${d.known}명) · 입원 ${d.in_total} · 퇴원 ${d.out_total} · 회복기 종료 ${d.rec_end}`
-                : `${d.date}: ${pct}% (회복기 ${d.recovery}/${d.known}명 · 재원 ${d.total}명)`;
+                ? `${d.date}: 예상 ${pct}% (회복기 ${d.recovery}/${d.total}명) · 입원 ${d.in_total} · 퇴원 ${d.out_total} · 회복기 종료 ${d.rec_end}`
+                : d.days
+                ? `${d.label} 월 평균: ${pct}% (하루 평균 회복기 ${d.recovery}명 / 재원 ${d.total}명 · ${d.days}일)`
+                : `${d.date}: ${pct}% (회복기 ${d.recovery}/${d.total}명)`;
             dot.appendChild(title);
             if (showLabel(i)) {
                 const full = !dense || i===0 || d.date.slice(8,10)==='01';
@@ -1010,7 +1024,7 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
     // 가정 계산기 — 회복기/비회복기 입·퇴원 인원을 넣으면 비율을 바로 보여준다
     const whatif = document.querySelector('.wd-whatif');
     if (whatif) {
-        const R0 = +whatif.dataset.recovery, K0 = +whatif.dataset.known;
+        const R0 = +whatif.dataset.recovery, K0 = +whatif.dataset.total;   // 분모 = 재원 전체
         const out = whatif.querySelector('.wd-whatif-out');
         const calc = () => {
             const v = {}; whatif.querySelectorAll('input').forEach(i => v[i.dataset.k] = Math.max(0, +i.value || 0));

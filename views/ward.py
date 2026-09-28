@@ -326,8 +326,8 @@ def _away_insights(rows, top=6):
                 "label": b["label"], "events": b["events"], "patients": len(b["patients"]),
                 "returned": b["returned"], "transferred": b["transferred"],
                 "open": b["events"] - closed,
-                "return_rate": round(b["returned"] * 100 / b["events"], 1) if b["events"] else 0,
-                "avg_days": round(sum(b["days"]) / len(b["days"]), 1) if b["days"] else None,
+                "return_rate": round(b["returned"] * 100 / b["events"], 2) if b["events"] else 0,
+                "avg_days": round(sum(b["days"]) / len(b["days"]), 2) if b["days"] else None,
             })
         out.sort(key=lambda b: (-b["events"], b["label"]))
         return out
@@ -363,13 +363,13 @@ def _away_insights(rows, top=6):
 
     return {
         "events": len(rows), "patients": len(per_patient),
-        "avg_days": round(sum(all_days) / len(all_days), 1) if all_days else None,
+        "avg_days": round(sum(all_days) / len(all_days), 2) if all_days else None,
         "median_days": all_days[len(all_days) // 2] if all_days else None,
         "max_days": all_days[-1] if all_days else None,
         "returned_n": len(all_days),
         "distribution": distribution,
         "open_n": len(open_rows), "open_long": sum(1 for d in open_days if d >= 7),
-        "open_avg_days": round(sum(open_days) / len(open_days), 1) if open_days else None,
+        "open_avg_days": round(sum(open_days) / len(open_days), 2) if open_days else None,
         "by_type": group(rows, lambda r: r.get("event_type")),
         "by_reason": group(rows, reason_of)[:top],
         "by_dx": group(rows, lambda r: (r.get("dx_primary") or [None])[0])[:top],
@@ -648,7 +648,7 @@ def ward_view():
         "male": sum(1 for c in bed_waiting if c.get("gender") == "M"),
         "female": sum(1 for c in bed_waiting if c.get("gender") == "F"),
         "planned": sum(1 for c in bed_waiting if (c.get("planned_admission_date") or "").strip()),
-        "avg_days": (round(sum((c.get("wait_days") or 0) for c in bed_waiting) / len(bed_waiting), 1)
+        "avg_days": (round(sum((c.get("wait_days") or 0) for c in bed_waiting) / len(bed_waiting), 2)
                      if bed_waiting else 0),
     }
     # 입원 예정 환자 — 대기에서 [입원 예정]으로 넘긴 환자(상담일지에서 바로 입원예정으로 둔 환자 포함).
@@ -803,7 +803,7 @@ def ward_view():
         "recovery_ratio_ok": recovery_ratio >= 40,
         "nonrecovery_ratio": round(nonrecovery_n / total_n * 100, 2) if total_n else 0,
         "bed_capacity": bed_capacity,
-        "bed_occupancy": round(total_n / bed_capacity * 100, 1),
+        "bed_occupancy": round(total_n / bed_capacity * 100, 2),
         "reserved": reserved_total,   # 병상 예약(사용 예정자) — 재원 아님, 가용에서만 뺀다
         "away": len(away),
         "away_overdue": sum(1 for c in away if c["away"].get("overdue")),
@@ -886,56 +886,30 @@ def ward_view():
         return {"total": total, "known": known, "recovery": recovery_count,
                 "ratio": round(recovery_count * 100 / total, 2) if total else 0}
 
-    # 추이 기간 — 통계 페이지와 같은 preset/from/to 방식. 프리셋(30/90/180/365일)
-    # 또는 custom(직접지정). 일별은 선택 기간 그대로, 월별은 기간을 덮는 달을 최소
-    # 12개월까지 넓혀 보여준다. 종료일은 오늘을 넘지 못하고, 일별 계산 비용 때문에
-    # 최대 2년으로 묶는다.
+    # 추이 기간 — 월 단위(2026-09-28). 프리셋은 '이번 달까지 N개월'(이번 달은 오늘까지),
+    # 직접지정은 시작 월~종료 월. 일별 그래프·요약 카드는 고른 기간 그대로, 월별 그래프는
+    # 같은 종료 월에서 최소 12개월을 보여준다 — 몇 달만 고르면 흐름이 안 보여서.
     today_d = date.today()
-    trend_preset = (request.args.get("preset") or "").strip()
-    trend_to = date.fromisoformat(_valid_date(request.args.get("to"), today_d.isoformat()))
-    trend_to = min(trend_to, today_d)
-    trend_from = _valid_date(request.args.get("from"))
-    raw_to = _valid_date(request.args.get("to"))
-    if trend_preset not in _WARD_TREND_RANGES:
-        # custom이거나 preset이 빠졌어도 날짜가 왔으면 그 날짜를 쓴다. 날짜만 바꾸고
-        # 라디오가 안 바뀐 채 조회해도 입력한 기간이 무시되지 않게.
-        trend_preset = "custom" if (trend_from or raw_to) else "30"
-    if trend_preset == "custom":
-        trend_from = date.fromisoformat(trend_from) if trend_from else trend_to - timedelta(days=29)
-    else:
-        # 프리셋 '최근 N일'은 오늘까지 N일. 프리셋 칩은 날짜칸을 비우고 넘어오므로
-        # 날짜가 함께 온 경우는 사용자가 날짜를 고친 것 — 그때만 직접지정으로 본다.
-        trend_to = today_d
-        preset_from = trend_to - timedelta(days=int(trend_preset) - 1)
-        if raw_to and date.fromisoformat(raw_to) < today_d:
-            trend_preset, trend_to = "custom", date.fromisoformat(raw_to)
-            trend_from = date.fromisoformat(trend_from) if trend_from else trend_to - timedelta(days=29)
-        elif trend_from and date.fromisoformat(trend_from) != preset_from:
-            trend_preset, trend_from = "custom", date.fromisoformat(trend_from)
-        else:
-            trend_from = preset_from
-    if trend_from > trend_to:
-        trend_from, trend_to = trend_to, trend_from
-    if (trend_to - trend_from).days > 730:
-        trend_from = trend_to - timedelta(days=730)
+    trend_preset, from_m, to_m = _trend_period_args(request.args, today_d)
+    trend_from = from_m
+    trend_to = min(date(to_m.year, to_m.month, calendar.monthrange(to_m.year, to_m.month)[1]), today_d)
+    trend_month_span = (to_m.year - from_m.year) * 12 + to_m.month - from_m.month + 1
     daily_ratio_trend, monthly_ratio_trend, trend_insight, trend_summary, trend_flow = [], [], None, None, None
+    trend_unjudged = []
     if subtab == "trend":
-        snapshot = trend_from
+        # 월별 그래프가 덮는 날짜를 한 번만 계산하고, 일별 그래프는 그 안에서 잘라 쓴다.
+        chart_from = _add_months(to_m, -(max(12, trend_month_span) - 1))
+        per_day, snapshot = [], chart_from
         while snapshot <= trend_to:
-            daily_ratio_trend.append({"label": snapshot.strftime("%m-%d"),
-                                      "date": snapshot.isoformat(), **_ratio_at(snapshot)})
+            per_day.append({"label": snapshot.strftime("%m-%d"),
+                            "date": snapshot.isoformat(), **_ratio_at(snapshot)})
             snapshot += timedelta(days=1)
-        end_index = trend_to.year * 12 + trend_to.month - 1
-        start_index = trend_from.year * 12 + trend_from.month - 1
-        month_count = max(12, end_index - start_index + 1)
-        for offset in range(month_count - 1, -1, -1):
-            year, month0 = divmod(end_index - offset, 12)
-            month = month0 + 1
-            snapshot = min(date(year, month, calendar.monthrange(year, month)[1]), trend_to)
-            monthly_ratio_trend.append({"label": f"{str(year)[2:]}.{month:02d}",
-                                        "date": snapshot.isoformat(), **_ratio_at(snapshot)})
+        from_iso = trend_from.isoformat()
+        daily_ratio_trend = [d for d in per_day if d["date"] >= from_iso]
+        monthly_ratio_trend = _monthly_ratio_points(per_day)
         trend_insight = _ratio_insight(_ratio_at(today_d), admitted, _ratio_at, today_d)
-        trend_summary = _trend_summary(daily_ratio_trend, monthly_ratio_trend)
+        trend_summary = _trend_summary(daily_ratio_trend)
+        trend_unjudged = _unjudged_admitted(admitted)
         trend_flow = _trend_flow(trend_insight, admitted, today_d)
 
     doctor_options = sorted({c.get("attending_doctor") for c in rows
@@ -1010,6 +984,9 @@ def ward_view():
         daily_ratio_trend=daily_ratio_trend, monthly_ratio_trend=monthly_ratio_trend,
         trend_preset=trend_preset, trend_ranges=_WARD_TREND_RANGES,
         trend_from=trend_from.isoformat(), trend_to=trend_to.isoformat(),
+        trend_from_month=from_m.strftime("%Y-%m"), trend_to_month=to_m.strftime("%Y-%m"),
+        trend_max_month=today_d.strftime("%Y-%m"), trend_max_months=_WARD_TREND_MAX_MONTHS,
+        trend_month_span=trend_month_span, trend_unjudged=trend_unjudged,
         trend_month_count=len(monthly_ratio_trend), trend_insight=trend_insight,
         trend_flow=trend_flow,
         trend_summary=trend_summary,
@@ -1521,7 +1498,7 @@ def _trend_span(span, con):
         return admitted_iso, discharged_iso, True, _day_of(admitted_on, period["billing"])
     return admitted_iso, discharged_iso, True, date.max
 
-def _trend_summary(daily, monthly, threshold=40):
+def _trend_summary(daily, threshold=40):
     """선택 기간의 요약 — 상단 카드용.
 
     기간 평균은 '회복기 연인원 ÷ 재원 연인원'(재원일수 가중)으로 낸다. 일별
@@ -1553,9 +1530,6 @@ def _trend_summary(daily, monthly, threshold=40):
                 runs.append(run)
         else:
             run = None
-    months = [m for m in monthly if m["total"]]
-    month_avg = (round(sum(m["recovery"] for m in months) * 100 / sum(m["total"] for m in months), 2)
-                 if months else None)
     return {
         "avg": round(rec_sum * 100 / known_sum, 2),
         "avg_simple": round(sum(d["ratio"] for d in days) / len(days), 2),
@@ -1564,7 +1538,6 @@ def _trend_summary(daily, monthly, threshold=40):
         "below_runs": runs,
         "low": low, "high": high,
         "first": days[0], "last": days[-1],
-        "month_avg": month_avg, "month_count": len(months),
         "ok": rec_sum * 100 >= threshold * known_sum,
     }
 
@@ -1628,8 +1601,9 @@ def _trend_flow(insight, admitted, today, horizon=DASHBOARD_DUE_WINDOW_DAYS):
     _ratio_insight의 예상은 회복기 종료(전환)만 본다. 여기엔 입원예정 상담
     (planned_admission_date)과 퇴원 예정(discharge_due, 재원 카드의 '퇴원 예정 D-30'과
     같은 값)을 날짜별로 더해 그날그날의 비율이 어디로 가는지 본다.
-    - 입원 예정자의 회복기 여부는 상담 판정(_recovery_status). 판정 불가는 인원(total)에만
-      들어가고 비율 분모(known)엔 안 들어간다 — 추이 그래프와 같은 규칙.
+    - 입원 예정자의 회복기 여부는 상담 판정(_recovery_status). 판정 불가도 인원(total)에
+      들어가 비율 분모가 된다 — 추이 그래프·KPI와 같은 규칙(2026-09-28). 가정 계산기는
+      이들을 비회복기 칸에 합쳐 채운다.
     - 회복기 환자가 종료일과 퇴원일을 둘 다 가지면 먼저 오는 쪽만 회복기로 센다:
       퇴원이 먼저면 회복기로 나가고(전환 없음), 종료가 먼저면 전환 뒤 비회복기로 나간다.
     가정 계산기의 기본값(rec_in/rec_out/non_in/non_out/rec_end)도 여기서 나온다.
@@ -1677,18 +1651,17 @@ def _trend_flow(insight, admitted, today, horizon=DASHBOARD_DUE_WINDOW_DAYS):
             key = ("out_rec" if phase == "회복기" else "out_non" if known else "out_unknown")
             row[key] += 1
             row["out_names"].append(_who(c, phase if known else "미판정"))
-    r, k, t = insight["recovery"], insight["known"], insight["total"]
+    r, t = insight["recovery"], insight["total"]
     series, cross = [], None
     for row in sorted(days.values(), key=lambda x: x["dday"]):
         row["in_total"] = row["in_rec"] + row["in_non"] + row["in_unknown"]
         row["out_total"] = row["out_rec"] + row["out_non"] + row["out_unknown"]
         r += row["in_rec"] - row["out_rec"] - row["rec_end"]
-        k += row["in_rec"] + row["in_non"] - row["out_rec"] - row["out_non"]
         t += row["in_total"] - row["out_total"]
-        r, k, t = max(0, r), max(0, k), max(0, t)
-        row.update(recovery=r, known=k, total=t,
-                   ratio=round(r * 100 / k, 2) if k else 0)
-        if cross is None and k and r * 100 < insight["threshold"] * k:
+        r, t = max(0, r), max(0, t)
+        row.update(recovery=r, total=t,
+                   ratio=round(r * 100 / t, 2) if t else 0)
+        if cross is None and t and r * 100 < insight["threshold"] * t:
             cross = row
         series.append(row)
     total = {key: sum(d[key] for d in series)
@@ -1699,7 +1672,104 @@ def _trend_flow(insight, admitted, today, horizon=DASHBOARD_DUE_WINDOW_DAYS):
             "start_ratio": insight["ratio"], "end": series[-1], "cross": cross,
             "ok": series[-1]["total"] > 0 and series[-1]["recovery"] * 100 >= insight["threshold"] * series[-1]["total"]}
 
-_WARD_TREND_RANGES = {"30": "최근 30일", "90": "최근 90일", "180": "최근 6개월", "365": "최근 1년"}
+# 회복기 비율 추이 기간 — 월 단위 프리셋(이번 달까지 N개월). 일별 계산 비용 때문에 최대 24개월.
+_WARD_TREND_RANGES = {"1": "이번 달", "3": "최근 3개월", "6": "최근 6개월", "12": "최근 12개월", "24": "최근 24개월"}
+_WARD_TREND_DEFAULT = "3"
+_WARD_TREND_MAX_MONTHS = 24
+
+
+def _trend_month_arg(raw):
+    """'YYYY-MM' → 그달 1일. 옛 링크의 'YYYY-MM-DD'도 앞 7자로 받는다. 틀리면 None."""
+    raw = (raw or "").strip()[:7]
+    if len(raw) != 7 or raw[4] != "-":
+        return None
+    try:
+        y, m = int(raw[:4]), int(raw[5:])
+        return date(y, m, 1) if 2000 <= y <= 2100 and 1 <= m <= 12 else None
+    except ValueError:
+        return None
+
+
+def _trend_period_args(args, today):
+    """추이 기간 쿼리(preset/from/to) → (preset, 시작 월 1일, 종료 월 1일).
+
+    프리셋 칩은 월 칸을 비우고 넘어오므로 월이 함께 왔으면 사용자가 월을 고친 것 —
+    라디오가 프리셋에 남아 있어도 직접지정으로 본다. 옛 일 단위 프리셋(30/90/180/365)이
+    북마크로 들어오면 모르는 값이라 기본 기간을 쓴다. 종료 월은 이번 달을 넘지 못하고,
+    시작·종료가 뒤집히면 바꿔 쓰며, 최대 _WARD_TREND_MAX_MONTHS개월로 자른다.
+    """
+    this_month = today.replace(day=1)
+    preset = (args.get("preset") or "").strip()
+    from_m, to_m = _trend_month_arg(args.get("from")), _trend_month_arg(args.get("to"))
+    if from_m or to_m:
+        preset = "custom"
+    elif preset not in _WARD_TREND_RANGES:
+        preset = _WARD_TREND_DEFAULT
+    if preset == "custom":
+        to_m = min(to_m or this_month, this_month)
+        from_m = min(from_m or to_m, this_month)
+        if from_m > to_m:
+            from_m, to_m = to_m, from_m
+    else:
+        to_m = this_month
+        from_m = _add_months(this_month, -(int(preset) - 1))
+    span = (to_m.year - from_m.year) * 12 + to_m.month - from_m.month + 1
+    if span > _WARD_TREND_MAX_MONTHS:
+        from_m = _add_months(to_m, -(_WARD_TREND_MAX_MONTHS - 1))
+    return preset, from_m, to_m
+
+
+def _monthly_ratio_points(per_day):
+    """일별 점 → 월별 점. 월말 하루가 아니라 그달 재원일수 가중(연인원) 평균이다.
+
+    전에는 달마다 말일 하루 값을 찍어 달 중간의 입·퇴원을 못 봤다(2026-09-28). 막대 인원은
+    그달 하루 평균(명)이라 소수 둘째 자리까지 둔다(CRM 소수 표기 규칙). 이번 달은 오늘까지만 센다.
+    """
+    months = {}
+    for d in per_day:
+        m = months.setdefault(d["date"][:7], {"recovery": 0, "known": 0, "total": 0, "days": 0, "date": d["date"]})
+        m["recovery"] += d["recovery"]
+        m["known"] += d["known"]
+        m["total"] += d["total"]
+        m["days"] += 1
+        m["date"] = d["date"]
+    out = []
+    for key in sorted(months):
+        m = months[key]
+        n = m["days"]
+        out.append({"label": f"{key[2:4]}.{key[5:7]}", "date": m["date"], "days": n,
+                    "recovery": round(m["recovery"] / n, 2), "known": round(m["known"] / n, 2),
+                    "total": round(m["total"] / n, 2),
+                    "ratio": round(m["recovery"] * 100 / m["total"], 2) if m["total"] else 0})
+    return out
+
+
+def _unjudged_admitted(admitted):
+    """회복기 판정이 안 된 재원 환자 — 분모에만 들어가 비회복기처럼 계산된다.
+
+    입원목적이 일반재활·요양인 환자는 원래 회복기 대상이 아니라 뺀다. 나머지는 발병일·진단군·
+    입원목적 중 무엇이 비어서 판정을 못 했는지 함께 적어, 채우면 비율이 오를 수 있음을 보인다.
+    """
+    out = []
+    for c in admitted:
+        if c.get("care_phase") != "미판정":
+            continue
+        label = (_recovery_status(c) or {}).get("label")
+        if label in ("일반재활", "요양"):
+            continue
+        if not c.get("id"):
+            reason = "상담기록 연결"
+        else:
+            missing = []
+            if not (c.get("disease_onset") or "").strip():
+                missing.append("발병일")
+            if not phase_diseases(c):
+                missing.append("진단군")
+            if label == "기타":
+                missing.append("입원목적")
+            reason = "·".join(missing) or "판정 기준 확인"
+        out.append(dict(c, unjudged_reason=reason))
+    return sorted(out, key=lambda c: (c.get("admitted_on") or "", c.get("patient_name") or ""))
 
 _WARD_STAY_PERIODS = {"6": "6개월", "12": "1년", "18": "1년 6개월", "24": "2년"}
 
