@@ -505,7 +505,9 @@
             {% if mx.ratio and mx.ratio.spark %}<svg data-spark="{{ mx.ratio.spark|join(',') }}" aria-hidden="true"><title>최근 7일 회복기 비율(%)</title></svg>{% endif %}
             <span class="l">회복기 비율</span>
             <span class="v"><b class="num">{% if ws.recovery_ratio is not none %}{{ ws.recovery_ratio|pct1 }}{% else %}–{% endif %}</b><small>%</small>{% if ws.recovery_ratio is not none %}{% if ws.recovery_ratio_ok %}<span class="d ok">✓ 기준 40%</span>{% else %}<span class="d dn">⚠ 40% 미만</span>{% endif %}{% endif %}</span>
-            <span class="s" title="회복기 인원 / 재원 · 7일 후 예상 비율 · 40% 기준 여유 인원">{% if ws.recovery is not none %}<b>{{ ws.recovery }}/{{ ws.admitted }}</b>{% if rp %} · 7일 후 <b>{{ rp.ratio|pct1 }}%</b>{% if rp.margin >= 0 %} · 여유 <b>{{ rp.margin }}명</b>{% endif %}{% endif %}{% else %}명부 필요 — 원무 입퇴원 명부를 올리면 표시됩니다{% endif %}</span>
+            <span class="s" title="회복기 인원 / 재원 전체">{% if ws.recovery is not none %}회복기 <b>{{ ws.recovery }}/{{ ws.admitted }}</b>명{% else %}명부 필요 — 원무 입퇴원 명부를 올리면 표시됩니다{% endif %}</span>
+            {# 7일 후·여유는 재원관리 '입·퇴원 D-30 반영 추이'와 같은 계산(2026-09-28). 한 줄에 몰면 말줄임으로 잘려 둘째 줄로. #}
+            {% if ws.recovery is not none and rp %}<span class="s" title="7일 후 예상 — 입원 예정·퇴원 예정·회복기 종료 반영(재원관리 추이와 같은 계산) · 전환 여유 — 회복기 환자가 비회복기로 전환돼도 40%가 유지되는 인원">7일 후 <b>{{ rp.ratio|pct1 }}%</b>{% if rp.margin >= 0 %} · 전환 여유 <b>{{ rp.margin }}명</b>{% endif %}</span>{% endif %}
         </a>
     </div>
 </section>

@@ -92,7 +92,8 @@ from app import (  # noqa: E402 — app.py 공용 헬퍼·상수 (app.py 맨 아
     _valid_date,
     app,
 )
-from views.ward import _recovery_ratio_spark, _roster_care_phase, _ward_row_from_episode, apply_episode_to_row
+from views.ward import (_ratio_insight, _recovery_ratio_spark, _roster_care_phase, _trend_flow,
+                        _ward_admitted_roster, _ward_row_from_episode, apply_episode_to_row, trend_ratio_at)
 
 logger = logging.getLogger(__name__)
 bp = Blueprint("main", __name__)
@@ -324,25 +325,38 @@ def report_weekly():
         is_future=(ws > this_monday),
     )
 
-def _recovery_projection(strip, recovery_due, discharge_due, horizon=7):
-    """회복기 비율 7일 전망 — 만료 예정·퇴원 예정만 반영한 보수적 추정.
+_PROJECTION_CACHE = {"key": None, "value": None}
 
-    입원 예정 환자의 회복기 여부는 입원 전엔 확정이 아니라 넣지 않는다. 그래서 실제는
-    이 값보다 좋아지면 좋아졌지 나빠지진 않는다. margin은 지금 비율이 40% 아래로
-    떨어지기까지 회복기 환자가 몇 명 빠져도 되는지(전환·퇴원 합계).
+def _recovery_projection(strip, horizon=7):
+    """회복기 비율 7일 전망 — 재원관리 '입·퇴원 D-30 반영 추이'의 7일째 값을 그대로 쓴다.
+
+    전에는 대시보드만 따로 (진단군으로 추정한 수가 종료일 + 퇴원 예정만) 계산해, 명부 실제 재활종료일과
+    입원 예정을 보는 추이 화면과 근거가 달랐다(2026-09-28). 이제 같은 함수(trend_ratio_at·_ratio_insight·
+    _trend_flow)를 거친다. margin은 회복기 환자가 비회복기로 '전환'될 때 40%가 버티는 인원 — 전환은
+    병상에 남아 분모가 그대로라 퇴원보다 여유가 적고, 실제로 더 흔하다. 40% 미만이면 -1(표시 안 함).
+    회차 전체를 읽는 계산이라 스파크라인처럼 10분 단위로 캐시한다(대시보드는 30초마다 새로고침).
     """
     if not strip.get("has_roster") or not strip.get("admitted"):
         return None
-    rec, tot = strip["recovery"] or 0, strip["admitted"]
-    expiring = [x for x in recovery_due if 0 <= (x["watch"].get("billing_left") or 0) <= horizon]
-    leaving = [x for x in discharge_due if 0 <= (x["watch"].get("days_left") or 0) <= horizon]
-    leaving_rec = sum(1 for x in leaving if _care_phase(x["con"]).get("care_phase") == "회복기")
-    rec2 = max(0, rec - len(expiring) - leaving_rec)
-    tot2 = max(1, tot - len(leaving))
-    ratio = round(rec2 / tot2 * 100, 2)
-    margin = rec - (-(-40 * tot // 100))   # ceil(0.4 * tot)
-    return {"ratio": ratio, "ok": ratio >= 40, "horizon": horizon,
-            "expiring": len(expiring), "leaving": len(leaving), "margin": margin}
+    key = (horizon, datetime.now().strftime("%Y%m%d%H%M")[:-1])
+    if _PROJECTION_CACHE["key"] == key:
+        return _PROJECTION_CACHE["value"]
+    today = date.today()
+    try:
+        ratio_at = trend_ratio_at()
+        admitted = _ward_admitted_roster("", "")
+        insight = _ratio_insight(ratio_at(today), admitted, ratio_at, today)
+        flow = _trend_flow(insight, admitted, today) if insight else None
+    except Exception:
+        logger.exception("회복기 비율 7일 전망 계산 실패")
+        return None
+    if not flow:
+        return None
+    day = flow["days"][min(horizon, len(flow["days"]) - 1)]
+    value = {"ratio": day["ratio"], "ok": day["ratio"] >= 40, "horizon": horizon,
+             "margin": insight.get("rec_conv", -1) if insight["ok"] else -1}
+    _PROJECTION_CACHE.update(key=key, value=value)
+    return value
 
 def _dashboard_residents():
     """지금 재원 중인 상담(입원완료) 목록 — 원무 명부 census 기준. (census, residents)를 돌려준다.
@@ -544,8 +558,7 @@ def dashboard():
     data["ward_occupancy"] = dashboard_metrics.ward_occupancy()
     data["unassigned_planned"] = dashboard_metrics.unassigned_planned(2, today_d)
     data["consult_heat"] = dashboard_metrics.consult_weekday_matrix(8, today_d)
-    data["recovery_projection"] = _recovery_projection(
-        data["ward_strip"], recovery_transition_due, discharge_due)
+    data["recovery_projection"] = _recovery_projection(data["ward_strip"])
     # 인바운드 경과 — 1시간 넘긴 문의는 화면에서 따로 강조한다.
     now_dt = datetime.now()
     for m in open_comms:

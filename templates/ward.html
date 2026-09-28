@@ -75,7 +75,7 @@
         </div>
         <ul class="wd-insight-list">
         {% if ti.ok %}
-            <li>회복기 환자 <b>{{ ti.rec_out }}명</b>까지 퇴원(또는 비회복기 전환)해도 40%가 유지됩니다. <b>{{ ti.rec_out + 1 }}명째</b>가 나가면 {{ ti.rec_out_ratio|pct1 }}%로 기준선 아래로 떨어집니다.</li>
+            <li>회복기 환자가 <b>비회복기로 전환되면 {{ ti.rec_conv }}명</b>, <b>퇴원하면 {{ ti.rec_out }}명</b>까지 빠져도 40%가 유지됩니다. 전환이 {{ ti.rec_conv + 1 }}명째면 {{ ti.rec_conv_ratio|pct1 }}%, 퇴원이 {{ ti.rec_out + 1 }}명째면 {{ ti.rec_out_ratio|pct1 }}%로 기준선 아래로 떨어집니다. <span class="muted-sm">전환된 환자는 병상에 남아 분모가 그대로라 여유가 더 적습니다.</span></li>
             <li>비회복기 환자는 <b>{{ ti.non_in }}명</b>까지 더 받아도 40%가 유지됩니다. {{ ti.non_in + 1 }}명째부터 {{ ti.non_in_ratio|pct1 }}%가 됩니다.</li>
         {% else %}
             <li>회복기 환자 <b>{{ ti.rec_in }}명</b>이 더 입원하면 {{ ti.rec_in_ratio|pct1 }}%로 40%에 도달합니다.</li>

@@ -204,6 +204,8 @@ class WardCensusTests(unittest.TestCase):
         ins = main._ratio_insight({"total": 10, "known": 10, "recovery": 5, "ratio": 50.0}, [], ratio_at, date(2026, 9, 11))
         self.assertTrue(ins["ok"])
         self.assertEqual((ins["rec_out"], ins["rec_out_ratio"]), (1, 37.5))
+        # 전환은 분모가 그대로 — 1명 전환 4/10=40% 유지, 2명째 3/10=30%(2026-09-28)
+        self.assertEqual((ins["rec_conv"], ins["rec_conv_ratio"]), (1, 30.0))
         # 비회복기는 2명까지 (5/12=41.7%), 3명째 5/13=38.5%
         self.assertEqual((ins["non_in"], ins["non_in_ratio"]), (2, 38.46))
         # 회복기 3 / 판정 10 = 30% → 회복기 2명 들어오면 5/12=41.7%, 비회복기 3명 나가면 3/7=42.9%
@@ -213,6 +215,26 @@ class WardCensusTests(unittest.TestCase):
         self.assertEqual((ins["non_out"], ins["non_out_ratio"]), (3, 42.86))
         self.assertEqual(len(ins["forecast"]), 61)
         self.assertIsNone(main._ratio_insight({"total": 0, "known": 0, "recovery": 0, "ratio": 0}, [], ratio_at, date(2026, 9, 11)))
+
+    def test_dashboard_card_uses_trend_calculation(self):
+        """대시보드 카드의 스파크라인·'7일 후'·여유는 추이 화면과 같은 계산이다(2026-09-28).
+        전에는 '7일 후'를 대시보드만 따로(추정 수가 종료일·퇴원 예정만) 세어 추이와 근거가 달랐다."""
+        import views.main as dash
+        from datetime import date
+        today = date.today()
+        dash._PROJECTION_CACHE.update(key=None, value=None)
+        ward_views._RATIO_SPARK_CACHE.update(key=None, value=None)
+        with main.app.test_request_context("/"):
+            strip = dash._ward_status_strip()
+            rp = dash._recovery_projection(strip)
+            spark = ward_views._recovery_ratio_spark([today.isoformat()])
+            ratio_at = ward_views.trend_ratio_at()
+            admitted = ward_views._ward_admitted_roster("", "")
+            ins = ward_views._ratio_insight(ratio_at(today), admitted, ratio_at, today)
+            flow = ward_views._trend_flow(ins, admitted, today)
+        self.assertEqual(spark, [ratio_at(today)["ratio"]])
+        self.assertEqual(rp["ratio"], flow["days"][7]["ratio"])
+        self.assertEqual(rp["margin"], ins["rec_conv"] if ins["ok"] else -1)
 
     def test_trend_flow_applies_admissions_discharges_and_conversions(self):
         """입·퇴원 D-30 반영 추이 — 날짜별 입원예정·퇴원 예정·회복기 종료가 비율에 순서대로 얹힌다."""

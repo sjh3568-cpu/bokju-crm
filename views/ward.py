@@ -827,49 +827,7 @@ def ward_view():
     # 각 날짜의 재원 명부를 복원해 회복기 환자 비율을 계산한다.
     # 여기도 기준은 원무 명부다 — 상담의 입·퇴원일로 복원하면 퇴원일이 비어 있어
     # census가 날이 갈수록 불어나기만 한다. 회차는 어느 시점을 끊어도 실제와 맞는다.
-    spans = models.admission_spans()
-    trend_rows = {c["id"]: c for c in models.list_consultations(
-        ids=[sp["consultation_id"] for sp in spans if sp.get("consultation_id")], limit=100000)}
-    # 상담이 안 붙은 '열린 회차'는 환자의 다른 상담에서 진단을 빌려 온다 — 옛 회차가 그 상담을
-    # 가져가 버려 지금 회차가 빈손인 경우가 있다(2026-09-28). 그냥 두면 추이에서만 판정 불가가 되어
-    # 같은 카드의 KPI와 숫자가 어긋난다. 과거 회차까지 넓히면 비용이 커서 열린 회차만 본다.
-    _hint = models.patient_diagnosis_hint(
-        [sp["patient_id"] for sp in spans if not sp.get("discharged_at")])
-    # 지금 열린 회차는 재원 명단(census)이 고른 상담을 그대로 쓴다 — admission_spans 는 과거 회차까지
-    # 한 상담을 놓고 겨뤄 현재 회차가 다른 상담을 잡거나 빈손이 된다. 근거가 다르면 같은 환자를
-    # 카드는 회복기, 추이는 아님으로 세게 된다(이필기·장광진·한영도 님, 2026-09-28).
-    _open_con = {ep["id"]: cid for cid, ep in census["by_consultation"].items()}
-    _extra = [cid for cid in _open_con.values() if cid not in trend_rows]
-    if _extra:
-        trend_rows.update({c["id"]: c for c in models.list_consultations(ids=_extra, limit=10000)})
-
-    def _con_for(sp):
-        cid = _open_con.get(sp["episode_id"]) or sp.get("consultation_id")
-        return (trend_rows.get(cid) if cid else None) or _hint.get(sp["patient_id"])
-
-    # 상담이 안 붙은 회차는 진단·발병일을 몰라 회복기 판정을 못 한다. 과거로
-    # 갈수록 연결률이 떨어져(전체 73%) 이들을 '비회복기'로 세면 비율이 실제보다
-    # 낮게 나온다 — 40% 기준선을 보는 지표라 그 왜곡이 위험하다. 그래서 비율은
-    # 판정 가능한 인원만으로 내고, 인원(total)은 실제 재원 수 그대로 보여준다.
-    #
-    # 회차마다 회복기 구간의 끝을 한 번만 계산해 둔다(rec_end: None=회복기 아님,
-    # date.max=끝없음). 날짜별 계산은 비교만 하므로 1년치 일별도 바로 나온다.
-    trend_spans = [_trend_span(span, _con_for(span)) for span in spans]
-    def _ratio_at(snapshot):
-        snapshot_iso = snapshot.isoformat()
-        total = known = recovery_count = 0
-        for admitted_iso, discharged_iso, is_known, rec_end in trend_spans:
-            if admitted_iso > snapshot_iso or (discharged_iso and discharged_iso <= snapshot_iso):
-                continue
-            total += 1
-            if is_known:
-                known += 1
-                if rec_end is not None and snapshot <= rec_end:
-                    recovery_count += 1
-        # 분모는 그날 재원 전체다. 전에는 '판정 가능(known)'만 나눠, 같은 카드 안에서
-        # 위 KPI(전체 분모)와 9%p씩 어긋났다(2026-09-28 원장 지적).
-        return {"total": total, "known": known, "recovery": recovery_count,
-                "ratio": round(recovery_count * 100 / total, 2) if total else 0}
+    _ratio_at = trend_ratio_at(census)
 
     # 추이 기간 — 월 단위(2026-09-28). 프리셋은 '이번 달까지 N개월'(이번 달은 오늘까지),
     # 직접지정은 시작 월~종료 월. 일별 그래프·요약 카드는 고른 기간 그대로, 월별 그래프는
@@ -1408,6 +1366,57 @@ def _ward_matches_diagnosis(c, diagnosis):
     return any(alias in "".join(str(value).split())
                for value in values for alias in aliases)
 
+def trend_ratio_at(census=None):
+    """날짜 → 그날 재원·회복기 인원·비율({total, known, recovery, ratio})을 내는 함수를 돌려준다.
+
+    재원관리 '회복기 비율 추이'(일별·월별·예상), 대시보드 카드의 스파크라인과 '7일 후'가 모두
+    이 함수 하나로 계산한다 — 화면마다 따로 세면 근거가 갈려 숫자가 어긋났다(2026-09-28).
+    census를 넘기면 그것을 쓰고, 없으면 새로 읽는다.
+    """
+    if census is None:
+        census = models.current_admission_census()
+    spans = models.admission_spans()
+    trend_rows = {c["id"]: c for c in models.list_consultations(
+        ids=[sp["consultation_id"] for sp in spans if sp.get("consultation_id")], limit=100000)}
+    # 상담이 안 붙은 '열린 회차'는 환자의 다른 상담에서 진단을 빌려 온다 — 옛 회차가 그 상담을
+    # 가져가 버려 지금 회차가 빈손인 경우가 있다(2026-09-28). 그냥 두면 추이에서만 판정 불가가 되어
+    # 같은 카드의 KPI와 숫자가 어긋난다. 과거 회차까지 넓히면 비용이 커서 열린 회차만 본다.
+    hint = models.patient_diagnosis_hint(
+        [sp["patient_id"] for sp in spans if not sp.get("discharged_at")])
+    # 지금 열린 회차는 재원 명단(census)이 고른 상담을 그대로 쓴다 — admission_spans 는 과거 회차까지
+    # 한 상담을 놓고 겨뤄 현재 회차가 다른 상담을 잡거나 빈손이 된다. 근거가 다르면 같은 환자를
+    # 카드는 회복기, 추이는 아님으로 세게 된다(이필기·장광진·한영도 님, 2026-09-28).
+    open_con = {ep["id"]: cid for cid, ep in census["by_consultation"].items()}
+    extra = [cid for cid in open_con.values() if cid not in trend_rows]
+    if extra:
+        trend_rows.update({c["id"]: c for c in models.list_consultations(ids=extra, limit=10000)})
+
+    def _con_for(sp):
+        cid = open_con.get(sp["episode_id"]) or sp.get("consultation_id")
+        return (trend_rows.get(cid) if cid else None) or hint.get(sp["patient_id"])
+
+    # 회차마다 회복기 구간의 끝을 한 번만 계산해 둔다(rec_end: None=회복기 아님,
+    # date.max=끝없음). 날짜별 계산은 비교만 하므로 1년치 일별도 바로 나온다.
+    trend_spans = [_trend_span(span, _con_for(span)) for span in spans]
+
+    def ratio_at(snapshot):
+        snapshot_iso = snapshot.isoformat()
+        total = known = recovery_count = 0
+        for admitted_iso, discharged_iso, is_known, rec_end in trend_spans:
+            if admitted_iso > snapshot_iso or (discharged_iso and discharged_iso <= snapshot_iso):
+                continue
+            total += 1
+            if is_known:
+                known += 1
+                if rec_end is not None and snapshot <= rec_end:
+                    recovery_count += 1
+        # 분모는 그날 재원 전체다. 판정이 안 된 환자도 재원이라 분모에 들어가 비회복기처럼 계산된다.
+        # 전에는 '판정 가능(known)'만 나눠 KPI(전체 분모)와 9%p씩 어긋났다(2026-09-28 원장 지적).
+        return {"total": total, "known": known, "recovery": recovery_count,
+                "ratio": round(recovery_count * 100 / total, 2) if total else 0}
+    return ratio_at
+
+
 _RATIO_SPARK_CACHE = {"key": None, "value": None}
 
 def _recovery_ratio_spark(dates):
@@ -1418,35 +1427,11 @@ def _recovery_ratio_spark(dates):
     if _RATIO_SPARK_CACHE["key"] == key:
         return _RATIO_SPARK_CACHE["value"]
     try:
-        raw_spans = models.admission_spans()
-        trend_rows = {c["id"]: c for c in models.list_consultations(
-            ids=[sp["consultation_id"] for sp in raw_spans if sp.get("consultation_id")], limit=100000)}
-        # 상담이 안 붙은 열린 회차는 환자의 다른 상담에서 진단을 빌려 온다(위 _ratio_at 과 같은 규칙)
-        hint = models.patient_diagnosis_hint(
-            [sp["patient_id"] for sp in raw_spans if not sp.get("discharged_at")])
-        # 열린 회차는 재원 명단이 고른 상담을 쓴다 — 위 _ratio_at 과 같은 규칙
-        open_con = {ep["id"]: cid for cid, ep in models.current_admission_census()["by_consultation"].items()}
-        extra = [cid for cid in open_con.values() if cid not in trend_rows]
-        if extra:
-            trend_rows.update({c["id"]: c for c in models.list_consultations(ids=extra, limit=10000)})
-        def _con(sp):
-            cid = open_con.get(sp["episode_id"]) or sp.get("consultation_id")
-            return (trend_rows.get(cid) if cid else None) or hint.get(sp["patient_id"])
-        spans = [_trend_span(sp, _con(sp)) for sp in raw_spans]
+        ratio_at = trend_ratio_at()          # 추이 화면과 같은 함수 — 두 화면 숫자가 구조적으로 같다
+        out = [ratio_at(date.fromisoformat(iso))["ratio"] for iso in dates]
     except Exception:
         logger.exception("회복기 비율 스파크 계산 실패")
         return []
-    out = []
-    for iso in dates:
-        d = date.fromisoformat(iso)
-        total = rec = 0
-        for admitted_iso, discharged_iso, is_known, rec_end in spans:
-            if admitted_iso > iso or (discharged_iso and discharged_iso <= iso):
-                continue
-            total += 1      # 분모는 그날 재원 전체 — KPI·추이와 같은 기준(2026-09-28)
-            if is_known and rec_end is not None and d <= rec_end:
-                rec += 1
-        out.append(round(rec * 100 / total, 2) if total else 0)
     _RATIO_SPARK_CACHE.update(key=key, value=out)
     return out
 
@@ -1551,6 +1536,7 @@ def _ratio_insight(now, admitted, ratio_at, today, threshold=40, horizon=60):
 
     비율은 추이 그래프·KPI와 같은 분모(그날 재원 전체)로 낸다.
     정수 산식(비율 = R/K, 기준 t = threshold/100):
+      · 회복기 k명이 비회복기로 전환돼도 유지 → (R-k) ≥ tK → k ≤ R - tK   (병상에 남아 분모 그대로)
       · 회복기 k명 퇴원해도 유지 → (R-k) ≥ t(K-k)  → k ≤ (R - tK)/(1-t)
       · 비회복기 m명 입원해도 유지 → R ≥ t(K+m)      → m ≤ R/t - K
       · 회복기 n명 입원하면 도달 → (R+n) ≥ t(K+n)   → n ≥ (tK - R)/(1-t)
@@ -1570,6 +1556,11 @@ def _ratio_insight(now, admitted, ratio_at, today, threshold=40, horizon=60):
     insight = {"ratio": now["ratio"], "recovery": R, "known": K, "total": now["total"],
                "ok": ok, "threshold": threshold}
     if ok:
+        # 회복기→비회복기 전환 여유: k ≤ (100R - tK) / 100 — 전환은 분모가 그대로라 퇴원보다 여유가 적다.
+        # 회복기 기간이 끝나 넘어가는 전환이 퇴원보다 흔해, 대시보드 '여유'는 이 값을 쓴다(2026-09-28).
+        rec_conv = max(0, (t_den * R - t_num * K) // t_den)
+        insight.update(rec_conv=rec_conv,
+                       rec_conv_ratio=ratio_after(d_rec=-(rec_conv + 1), d_non=rec_conv + 1))
         # 회복기 퇴원 여유: k ≤ (100R - tK) / (100 - t)
         rec_out = max(0, (t_den * R - t_num * K) // (t_den - t_num))
         # 비회복기 입원 여유: m ≤ (100R - tK) / t
