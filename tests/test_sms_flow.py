@@ -291,5 +291,25 @@ class DashboardReminderTests(Base):
         self.assertIn("안내 문자", [g["label"] for g in q["groups"]])
 
 
+
+class ConsultDetailSmsTests(Base):
+    def test_pending_then_sent(self):
+        pid = self.patient(); cid = self.consult(pid)
+        html = self.client.get(f"/consult/{cid}").get_data(as_text=True)
+        self.assertIn("보호자 안내 문자", html)
+        self.assertIn(f'href="/sms?reminder=상담 직후:c{cid}&amp;cid={cid}"', html)
+        models.log_sms(patient_id=pid, consultation_id=cid, to_phone="01011112222", body="x",
+                       status="phone", reminder_key=f"상담 직후:c{cid}")
+        html = self.client.get(f"/consult/{cid}").get_data(as_text=True)
+        self.assertIn("보낸 문자 1건", html)
+        self.assertNotIn(f'href="/sms?reminder=상담 직후:c{cid}', html)
+
+    def test_closed_reason_shown(self):
+        pid = self.patient(); cid = self.consult(pid)
+        models.close_sms_reminder(key=f"상담 직후:c{cid}", reason="전화로 안내함", closed_by="점검", consultation_id=cid)
+        html = self.client.get(f"/consult/{cid}").get_data(as_text=True)
+        self.assertIn("안 보냄 — 전화로 안내함", html)
+
+
 if __name__ == "__main__":
     unittest.main()

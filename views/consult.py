@@ -547,6 +547,7 @@ def consult_detail(cid):
     patient_todos = _annotate_todos(
         models.list_todos_for_patient(g.user["id"], c["patient_id"]), date.today())
     return render_template("consult_detail.html", c=c, history=history,
+                           sms_status=models.reminder_status(cid),
                            admission_events=models.list_admission_events(cid),
                            admission_episodes=models.patient_admission_history(c["patient_id"]),
                            isolation={"detected": models.detected_organisms(c),

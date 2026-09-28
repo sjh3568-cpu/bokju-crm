@@ -132,6 +132,17 @@
         <span class="status-msg muted"></span>
     </div>
 </div>
+{# 보호자 안내 문자 — 대시보드 '안내 문자'와 같은 판정(models.sms_reminders). 보내거나 '안 보냄'으로 닫으면 버튼이 사라진다 (2026-09-28) #}
+<div class="card sms-status-line">
+    <strong>보호자 안내 문자</strong>
+    {% for r in sms_status.pending %}
+    <a class="btn btn-primary btn-sm" href="/sms?reminder={{ r.key }}&amp;cid={{ c.id }}">{{ r.timing }} 문자 보내기</a>
+    {% endfor %}
+    {% if sms_status.sent %}<span class="muted">보낸 문자 {{ sms_status.sent|length }}건 · 마지막 {{ sms_status.sent[0].created_at[5:10]|replace('-', '/') }}</span>{% endif %}
+    {% for x in sms_status.closed %}<span class="muted">안 보냄 — {{ x.reason }}</span>{% endfor %}
+    {% if not sms_status.pending and not sms_status.sent and not sms_status.closed %}<span class="muted">보낼 안내 없음</span>{% endif %}
+</div>
+<style>.sms-status-line { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:10px 14px; }</style>
 
 <style>
 .bl-banner { background:#1f2937; color:#fecaca; border-color:#1f2937; padding:10px 14px; }
