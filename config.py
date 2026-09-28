@@ -366,6 +366,12 @@ COMM_INBOUND_CHANNELS = ["문자", "카카오", "웹문의", "팩스", "부재�
 # ─── 문자 발송 (5번 요청) ───
 # 환자군별 템플릿 분류 — 병명 4그룹 + 공통.
 SMS_TEMPLATE_GROUPS = ["공통", "중추신경계", "근골격계", "비사용증후군", "기저질환"]
+# 문자 템플릿 발송 시점 (2026-09-28) — 대상 질환(SMS_TEMPLATE_GROUPS)과 함께 두 축으로 분류.
+# 시점에 '사용 중' 템플릿이 하나라도 있어야 대시보드 '안내 문자' 알림이 켜진다(models.sms_reminders).
+SMS_TIMINGS = ["상담 직후", "입원 전날", "입원 당일", "퇴원 당일", "퇴원 후", "수시"]
+SMS_TIMING_DEFAULT = "수시"
+SMS_CONSULT_FOLLOWUP_DAYS = 7   # 상담 직후 알림 유지 기간(상담일 포함)
+SMS_AFTER_DISCHARGE_DAYS = 3    # 퇴원 후 알림: 퇴원일 + N일
 # 템플릿 본문 치환 토큰 — 발송 시 실제 값으로 자동 치환.
 SMS_PLACEHOLDERS = {
     "{환자명}": "환자 이름",

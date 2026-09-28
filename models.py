@@ -848,6 +848,20 @@ def init_db():
         "sent_to": "TEXT",           # 실제 나간 번호 (SMS_TEST_TO 전환 시 to_phone과 다름)
         "error": "TEXT",
     })
+    # 문자 시점·알림 (2026-09-28) — 템플릿 발송 시점, 이력↔알림 연결, '안 보냄' 닫힘.
+    _ensure_columns(conn, "sms_templates", {"timing": "TEXT DEFAULT '수시'"})
+    _ensure_columns(conn, "sms_log", {"reminder_key": "TEXT"})
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_sms_log_reminder ON sms_log(reminder_key)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS sms_reminder_closures (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reminder_key TEXT UNIQUE NOT NULL,
+            patient_id INTEGER,
+            consultation_id INTEGER,
+            reason TEXT,
+            closed_by TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )""")
     # 요양원(노인의료복지시설) 별도 마스터 — 보건복지부·국민건강보험공단 데이터.
     # 자동완성·정식명 강제는 병원과 동일 룰을 공유하지만 마스터는 분리.
     conn.execute("""
@@ -1031,6 +1045,13 @@ def init_db():
                 "INSERT INTO sms_templates (name, template_group, body) VALUES (?, ?, ?)",
                 (name, grp, body),
             )
+    # 기존 템플릿의 시점 — 시드 이름만 옮기고 나머지는 '수시'로 둔다(추측 금지, 2026-09-28).
+    if not _migration_done(conn, "sms_template_timing_v1"):
+        for name, timing in _SMS_TEMPLATE_SEED_TIMING.items():
+            conn.execute("UPDATE sms_templates SET timing=? WHERE name=? AND (timing IS NULL OR timing='수시')",
+                         (timing, name))
+        conn.execute("UPDATE sms_templates SET timing='수시' WHERE timing IS NULL OR timing=''")
+        _mark_migration_done(conn, "sms_template_timing_v1")
 
     if conn.execute("SELECT COUNT(*) FROM quick_filters").fetchone()[0] == 0:
         for idx, item in enumerate(_QUICK_FILTER_SEED, start=1):
@@ -1061,6 +1082,12 @@ _SMS_TEMPLATE_SEED = [
      "[복주회복병원] {환자명} 환자분 재활 입원 상담 안내드립니다. "
      "입원 예정 {입원예정일}. 준비 서류 문의는 상담실로 연락 주세요."),
 ]
+
+
+_SMS_TEMPLATE_SEED_TIMING = {
+    "상담 감사 안내": "상담 직후", "입원 예정 안내": "입원 전날",
+    "회복기 재활 입원 안내": "상담 직후", "골절 재활 입원 안내": "상담 직후",
+}
 
 
 _QUICK_FILTER_SEED = [
@@ -2353,6 +2380,19 @@ def _deserialize_consultation(d: dict) -> dict:
             else:
                 d[k] = []
     return d
+
+
+def consult_disease_groups(consult) -> list[str]:
+    """상담의 병명 체크 → 질환군(DISEASES_GROUPS 키). 목록 필터(_disease_group_clause)와 같은 기준."""
+    from config import DISEASES_GROUPS
+    raw = (consult or {}).get("diseases") or []
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            raw = []
+    values = set(raw)
+    return [g for g, members in DISEASES_GROUPS.items() if g in values or values & set(members)]
 
 
 def _disease_group_clause(column: str, disease_group: str):
@@ -7078,16 +7118,19 @@ def lifecycle_board_side(board_rows, *, hospital_top=8, recent_event_days=7):
 
 # ─── 문자 발송 (5번 요청) ───
 
-def list_sms_templates(*, group=None, active_only=True):
+def list_sms_templates(*, group=None, timing=None, active_only=True):
     conn = get_db()
     where, vals = [], []
     if active_only:
         where.append("active = 1")
     if group:
         where.append("template_group = ?"); vals.append(group)
+    if timing:
+        where.append("COALESCE(timing, '수시') = ?"); vals.append(timing)
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
     rows = conn.execute(
-        f"SELECT * FROM sms_templates {where_sql} ORDER BY template_group, name",
+        f"SELECT *, COALESCE(timing, '수시') AS timing FROM sms_templates {where_sql} "
+        "ORDER BY template_group, name",
         vals,
     ).fetchall()
     conn.close()
@@ -7101,11 +7144,11 @@ def get_sms_template(tid: int):
     return dict(row) if row else None
 
 
-def create_sms_template(*, name, body, template_group="공통") -> int:
+def create_sms_template(*, name, body, template_group="공통", timing="수시") -> int:
     conn = get_db()
     cur = conn.execute(
-        "INSERT INTO sms_templates (name, template_group, body) VALUES (?, ?, ?)",
-        (name, template_group, body),
+        "INSERT INTO sms_templates (name, template_group, body, timing) VALUES (?, ?, ?, ?)",
+        (name, template_group, body, timing),
     )
     tid = cur.lastrowid
     conn.commit()
@@ -7115,7 +7158,7 @@ def create_sms_template(*, name, body, template_group="공통") -> int:
 
 def update_sms_template(tid: int, **fields):
     valid = {k: v for k, v in fields.items()
-             if k in ("name", "template_group", "body", "active")}
+             if k in ("name", "template_group", "body", "active", "timing")}
     if not valid:
         return
     sets = [f"{k} = ?" for k in valid] + ["updated_at = CURRENT_TIMESTAMP"]
@@ -7136,17 +7179,19 @@ def delete_sms_template(tid: int):
 def log_sms(*, consultation_id=None, patient_id=None, template_id=None,
             to_name=None, to_phone=None, body=None, status="manual",
             sent_by=None, msg_type=None, provider=None, provider_msg_id=None,
-            sent_to=None, error=None) -> int:
+            sent_to=None, error=None, reminder_key=None) -> int:
     """문자 발송 이력 1건 기록.
-    status='manual'(휴대폰 문자앱)|'sent'(게이트웨이)|'test'(SMS_TEST_TO로 전환 발송)|'failed'."""
+    status='manual'(옛 휴대폰 문자앱 — 실제 발송 확인 안 됨)|'phone'(상담사가 휴대폰으로 보냈다고 확인)
+    |'sent'(게이트웨이)|'test'(SMS_TEST_TO로 전환 발송)|'failed'.
+    reminder_key — 대시보드 '안내 문자' 알림과 잇는 키(models.sms_reminders)."""
     conn = get_db()
     cur = conn.execute(
         """INSERT INTO sms_log
            (consultation_id, patient_id, template_id, to_name, to_phone, body, status, sent_by,
-            msg_type, provider, provider_msg_id, sent_to, error)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            msg_type, provider, provider_msg_id, sent_to, error, reminder_key)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (consultation_id, patient_id, template_id, to_name, to_phone, body, status, sent_by,
-         msg_type, provider, provider_msg_id, sent_to, error),
+         msg_type, provider, provider_msg_id, sent_to, error, reminder_key),
     )
     sid = cur.lastrowid
     conn.commit()
