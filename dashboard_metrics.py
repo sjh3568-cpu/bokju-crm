@@ -386,7 +386,7 @@ def ward_occupancy():
     for ward, v in wards.items():
         cap = WARD_BED_CAPACITIES.get(ward)
         n = v["count"]
-        pct = round(n / cap * 100, 1) if cap else None
+        pct = round(n / cap * 100, 2) if cap else None
         if pct is None:
             level, bar = "none", round(n / peak * 100)
         else:
@@ -471,7 +471,7 @@ def month_performance(today=None):
                    FROM consultations WHERE consult_date BETWEEN ? AND ?""", (lo, hi)).fetchone()
             total, done = r["total"] or 0, r["done"] or 0
             return {"total": total, "done": done, "planned": r["planned"] or 0, "hold": r["hold"] or 0,
-                    "rate": round(done / total * 100, 1) if total else 0.0}
+                    "rate": round(done / total * 100, 2) if total else 0.0}
         cur = agg(*_month_span(first, today))
         prev = agg(*_month_span(prev_first, prev_until))
         daily = conn.execute(
@@ -491,7 +491,7 @@ def month_performance(today=None):
         "prev": prev,
         "delta_total": cur["total"] - prev["total"],
         "delta_done": cur["done"] - prev["done"],
-        "delta_rate": round(cur["rate"] - prev["rate"], 1),
+        "delta_rate": round(cur["rate"] - prev["rate"], 2),
         "spark_total": [by[d]["n"] if d in by else 0 for d in days],
         "spark_done": [by[d]["done"] if d in by else 0 for d in days],
     }

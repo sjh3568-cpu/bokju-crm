@@ -332,7 +332,7 @@ def _run_locked(reason: str) -> dict:
         # 기본 목록이 갱신된 뒤에 상세를 받아야 새로 생긴 기관도 대상에 든다.
         detail = sync_details(key)
         result["details"] = detail
-        took = round(time.time() - started, 1)
+        took = round(time.time() - started, 2)
         logger.info("심평원 갱신 완료(%s) — 명부 %d, 마스터 %d, 상세 %d/%d곳, %.1f초",
                     reason, result["directory"], result["master"], detail["updated"], detail["targets"], took)
         return _write_status(ok=True, reason=reason, seconds=took, master_total=_master_total(), **result)

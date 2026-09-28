@@ -183,7 +183,7 @@ def prune_now() -> dict:
     _prune()
     files = _backup_files() + _backup_files("manual_배포전_")
     return {"file_count": len(files),
-            "total_mb": round(sum(f.stat().st_size for f in files) / 1024 / 1024, 1)}
+            "total_mb": round(sum(f.stat().st_size for f in files) / 1024 / 1024, 2)}
 
 
 def _seconds_until_next_run() -> float:

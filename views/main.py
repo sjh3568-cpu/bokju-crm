@@ -275,7 +275,7 @@ def _ward_status_strip(census=None):
         admitted=total_n,
         roster_n=census.get("roster_count"), crm_n=census.get("crm_count"),
         roster_asof=census.get("roster_asof"),
-        bed_occupancy=round(total_n / WARD_BED_CAPACITY * 100, 1) if WARD_BED_CAPACITY else None,
+        bed_occupancy=round(total_n / WARD_BED_CAPACITY * 100, 2) if WARD_BED_CAPACITY else None,
         recovery=recovery_n,
         recovery_judged=total_n,
         recovery_ratio=ratio,

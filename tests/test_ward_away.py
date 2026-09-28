@@ -58,7 +58,7 @@ class AwayManagementTests(unittest.TestCase):
         self.assertEqual((stats['patients'], stats['returned_patients'], stats['events']), (2, 1, 3))
         self.assertEqual(stats['open_patients'], 2)
         self.assertEqual(stats['patient_rate'], 50)
-        self.assertEqual(stats['event_rate'], 33.3)
+        self.assertEqual(stats['event_rate'], 33.33)
         self.assertEqual(len(models.list_away_records(date_from='2026-02-01', date_to='2026-02-28')), 2)
         self.assertEqual(models.away_record_stats([])['patient_rate'], 0)
 

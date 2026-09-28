@@ -472,7 +472,7 @@
             <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 7l-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/></svg></span><svg data-spark="{{ mk.spark_total|join(',') }}" aria-hidden="true"></svg>
             <span class="l">이번달 상담 유입</span>
             <span class="v"><b class="num">{{ mk.total }}</b><small>건</small>{{ delta_chip(mk.delta_total) }}</span>
-            <span class="s" title="지난달 같은 기간">지난달 <b>{{ mk.prev.total }}건</b> · 일평균 <b>{{ (mk.total / (mk.spark_total|length or 1))|round(1) }}건</b></span>
+            <span class="s" title="지난달 같은 기간">지난달 <b>{{ mk.prev.total }}건</b> · 일평균 <b>{{ (mk.total / (mk.spark_total|length or 1))|round(2) }}건</b></span>
         </a>
         <a class="kc" href="/stats">
             <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg></span><svg data-spark="{{ mk.spark_done|join(',') }}" aria-hidden="true"></svg>
@@ -491,7 +491,7 @@
         <a class="kc" href="/ward">
             <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14l3.5-3.5"/><path d="M3.3 19a10 10 0 1 1 17.4 0"/></svg></span><svg data-spark="{{ mx.census.spark|join(',') }}" aria-hidden="true"></svg>
             <span class="l">병상 가동률</span>
-            <span class="v"><b class="num">{% if ws.bed_occupancy is not none %}{{ ws.bed_occupancy }}{% else %}–{% endif %}</b><small>%</small>{% if ws.admitted is not none and ws.bed_capacity %}{% set occ_delta = ((mx.census.delta / ws.bed_capacity * 100)|round(1)) %}{% if occ_delta > 0 %}<span class="d up">▲ +{{ occ_delta }}%p</span>{% elif occ_delta < 0 %}<span class="d dn">▼ {{ occ_delta }}%p</span>{% else %}<span class="d n">= 지난주</span>{% endif %}{% endif %}</span>
+            <span class="v"><b class="num">{% if ws.bed_occupancy is not none %}{{ ws.bed_occupancy }}{% else %}–{% endif %}</b><small>%</small>{% if ws.admitted is not none and ws.bed_capacity %}{% set occ_delta = ((mx.census.delta / ws.bed_capacity * 100)|round(2)) %}{% if occ_delta > 0 %}<span class="d up">▲ +{{ occ_delta }}%p</span>{% elif occ_delta < 0 %}<span class="d dn">▼ {{ occ_delta }}%p</span>{% else %}<span class="d n">= 지난주</span>{% endif %}{% endif %}</span>
             <span class="s" title="빈 병상 / 허가 병상 · 포화(95% 이상) 병동">{% if ws.admitted is not none %}빈 병상 <b>{{ ws.bed_capacity - ws.admitted }}</b>/{{ ws.bed_capacity }}{% set full_wards = ward_occupancy|selectattr('level', 'equalto', 'full')|map(attribute='ward')|list %}{% if full_wards %} · 포화 <b class="warn-text">{{ full_wards|join('·') }}</b>{% endif %}{% else %}명부 필요 — 원무 입퇴원 명부를 올리면 표시됩니다{% endif %}</span>
         </a>
         <a class="kc" href="/ward?tab=away">

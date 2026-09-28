@@ -351,7 +351,7 @@ def _run_locked(reason: str) -> dict:
         if not entries:
             raise RuntimeError("공단 응답에 요양원이 한 곳도 없음 — 활용신청·시도코드 확인")
         result = apply(entries)
-        took = round(time.time() - started, 1)
+        took = round(time.time() - started, 2)
         logger.info("공단 요양원 명부 갱신 완료(%s) — 받은 %d곳, 마스터 %d곳, %.1f초",
                     reason, result["fetched"], result["master"], took)
         return _write_status(ok=True, reason=reason, seconds=took, master_total=_master_total(), **result)

@@ -4250,7 +4250,7 @@ def weekly_report(week_start=None):
             slot = real_in_by_date.get(item["date"], {})
             item["admitted"] = slot.get("all", 0)
             item["admitted_return"] = slot.get("return", 0)
-            item["conversion_rate"] = round(100.0 * item["conversion"] / item["total"], 1) if item["total"] else 0.0
+            item["conversion_rate"] = round(100.0 * item["conversion"] / item["total"], 2) if item["total"] else 0.0
         totals = _empty_report_day(start_d)
         totals["label"], totals["weekday"] = "소계", ""
         for item in days:
@@ -4267,7 +4267,7 @@ def weekly_report(week_start=None):
             for key in report_source_keys:
                 totals["sources"][key] += item["sources"][key]
                 totals["resistant"][key] += item["resistant"][key]
-        totals["conversion_rate"] = round(100.0 * totals["conversion"] / totals["total"], 1) if totals["total"] else 0.0
+        totals["conversion_rate"] = round(100.0 * totals["conversion"] / totals["total"], 2) if totals["total"] else 0.0
         return {"days": days, "totals": totals}
 
     weekly_report = {key: _report_period(*dates) for key, dates in report_ranges.items()}
@@ -4281,8 +4281,8 @@ def weekly_report(week_start=None):
         for period_key, prefix in (("previous", "previous"), ("year_ago", "year")):
             base = weekly_report[period_key]["totals"][key]
             row[prefix] = base
-            row[prefix + "_diff"] = round(current_value - base, 1)
-            row[prefix + "_rate"] = (round(100.0 * (current_value - base) / base, 1) if base else None)
+            row[prefix + "_diff"] = round(current_value - base, 2)
+            row[prefix + "_rate"] = (round(100.0 * (current_value - base) / base, 2) if base else None)
         weekly_report["comparisons"].append(row)
 
     weekly_report["week_start"] = report_week_start_d.isoformat()
@@ -4302,8 +4302,8 @@ def _weekly_headline(report):
 
     def signed(v, unit):
         # 건수는 정수, %p는 카드와 같이 소수 한 자리(+13.2%p, +50.0%p)
-        v = round(v, 1)
-        text = f"{v:.1f}" if unit == "%p" else f"{int(v)}"
+        v = round(v, 2)
+        text = f"{v:.2f}" if unit == "%p" else f"{int(v)}"
         return f"{'+' if v > 0 else ''}{text}{unit}"
 
     admitted_txt = f"입원 {tot['admitted']}명({signed(cmp['admitted']['previous_diff'], '명')}"
@@ -4552,7 +4552,7 @@ def dashboard_summary(admission_lookup_from: str | None = None,
     summary = dict(row) if row else {}
     total = summary.get("total") or 0
     planned = summary.get("planned") or 0
-    summary["plan_rate"] = round(100.0 * planned / total, 1) if total else 0.0
+    summary["plan_rate"] = round(100.0 * planned / total, 2) if total else 0.0
     week_flow_by_date = {r["d"]: dict(r) for r in week_flow_rows}
     week_trend = []
     for offset in range(6, -1, -1):
@@ -4571,7 +4571,7 @@ def dashboard_summary(admission_lookup_from: str | None = None,
         }
         item.update({k: (v or 0) for k, v in week_flow_by_date.get(key, {}).items() if k != "d"})
         item["active"] = item["planned"] + item["admitted"]
-        item["conversion_rate"] = round(100.0 * item["active"] / item["n"], 1) if item["n"] else 0.0
+        item["conversion_rate"] = round(100.0 * item["active"] / item["n"], 2) if item["n"] else 0.0
         week_trend.append(item)
     week_flow_summary = {
         "total": sum(item["n"] for item in week_trend),
@@ -4583,7 +4583,7 @@ def dashboard_summary(admission_lookup_from: str | None = None,
     }
     week_flow_summary["active"] = week_flow_summary["planned"] + week_flow_summary["admitted"]
     week_flow_summary["conversion_rate"] = (
-        round(100.0 * week_flow_summary["active"] / week_flow_summary["total"], 1)
+        round(100.0 * week_flow_summary["active"] / week_flow_summary["total"], 2)
         if week_flow_summary["total"]
         else 0.0
     )
@@ -5218,7 +5218,7 @@ def _daily_trend(rows):
         "date": d,
         "count": item["count"],
         "admissions": item["admissions"],
-        "rate": round(100.0 * item["admissions"] / item["count"], 1) if item["count"] else 0.0,
+        "rate": round(100.0 * item["admissions"] / item["count"], 2) if item["count"] else 0.0,
     } for d, item in sorted(by_day.items())]
 
 
@@ -5254,7 +5254,7 @@ def _consult_admission_trend(rows, period="month", limit=None):
     result = []
     for key in keys:
         item = buckets.get(key, {"label": key, "consults": 0, "admissions": 0})
-        item["rate"] = round(100.0 * item["admissions"] / item["consults"], 1) if item["consults"] else 0.0
+        item["rate"] = round(100.0 * item["admissions"] / item["consults"], 2) if item["consults"] else 0.0
         result.append(item)
     return result
 
@@ -5312,7 +5312,7 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
     cancelled = status_counts["입원취소"]
     # 진행중 = 미정 + 입원보류 (입원/취소로 미확정)
     pending = status_counts[undecided_status] + status_counts["입원보류"]
-    conversion_rate = round(100.0 * completed / total, 1) if total else 0.0
+    conversion_rate = round(100.0 * completed / total, 2) if total else 0.0
     active_days = len({(r["consult_date"] or "")[:10] for r in rows
                        if (r["consult_date"] or "")[:10]})
 
@@ -5438,7 +5438,7 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
                 completes[label] = completes.get(label, 0) + 1
         result = [{"label": label, "total": count,
                    "completed": completes.get(label, 0),
-                   "rate": round(100.0 * completes.get(label, 0) / count, 1)}
+                   "rate": round(100.0 * completes.get(label, 0) / count, 2)}
                   for label, count in totals.items()]
         return sorted(result, key=lambda x: (-x["total"], -x["rate"], x["label"]))[:limit]
 
@@ -5459,7 +5459,7 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
                 "label": sigungu,
                 "total": counts["total"],
                 "completed": counts["completed"],
-                "rate": round(100.0 * counts["completed"] / counts["total"], 1),
+                "rate": round(100.0 * counts["completed"] / counts["total"], 2),
             } for sigungu, counts in items.items()]
             result[sido] = sorted(values, key=lambda x: (-x["total"], -x["rate"], x["label"]))
         return result
@@ -5511,7 +5511,7 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
                 "label": label,
                 "total": counts["total"],
                 "completed": counts["completed"],
-                "rate": round(100.0 * counts["completed"] / counts["total"], 1),
+                "rate": round(100.0 * counts["completed"] / counts["total"], 2),
             } for label, counts in children.items()]
             result[parent] = sorted(items, key=lambda x: (-x["total"], -x["rate"], x["label"]))
         return result
@@ -5536,7 +5536,7 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
                 if is_completed:
                     completes[group] += 1
         result = [{"label": group, "total": totals[group], "completed": completes[group],
-                   "rate": round(100.0 * completes[group] / totals[group], 1)}
+                   "rate": round(100.0 * completes[group] / totals[group], 2)}
                   for group in DISEASES_GROUPS if totals[group]]
         return sorted(result, key=lambda x: (-x["total"], -x["rate"], x["label"]))
 
@@ -5575,20 +5575,20 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
     no_admit_with_referral = sum(
         1 for r in no_admit_rows
         if (r["external_referral"] or "").strip() not in ("", "[]"))
-    referral_capture_rate = (round(100.0 * no_admit_with_referral / no_admit_total, 1)
+    referral_capture_rate = (round(100.0 * no_admit_with_referral / no_admit_total, 2)
                              if no_admit_total else 0.0)
 
     return {
         "summary": {
             "total": total,
             "planned": planned,
-            "plan_rate": round(100.0 * planned / total, 1) if total else 0.0,
+            "plan_rate": round(100.0 * planned / total, 2) if total else 0.0,
             "completed": completed,
             "cancelled": cancelled,
             "pending": pending,
             "conversion_rate": conversion_rate,
             "active_days": active_days,
-            "active_day_avg": round(total / active_days, 1) if active_days else 0.0,
+            "active_day_avg": round(total / active_days, 2) if active_days else 0.0,
             "disuse_screening": disuse_screening,
             "from": date_from,
             "to": date_to,
@@ -5611,7 +5611,7 @@ def aggregate_stats(date_from: str | None, date_to: str | None) -> dict:
         "by_admission_lead": [{"label": label, "count": count}
                               for label, count in lead_buckets.items()],
         "by_missing_field": [{"label": label, "count": count,
-                              "rate": round(100.0 * count / total, 1) if total else 0.0}
+                              "rate": round(100.0 * count / total, 2) if total else 0.0}
                              for label, count in missing_fields.items()],
         "by_external_referral": by_external_referral,
         "referral_capture": {
@@ -5798,8 +5798,8 @@ def _group_hospital_consultations(rows, display_map=None):
                 "direct_admissions": g["admissions"] - g["linked_admissions"],
                 "variants": [{"name": n, "referrals": c} for n, c in variants],
                 "variant_count": len(variants)}
-        item["conversion"] = round(100 * item["admissions"] / item["referrals"], 1) if item["referrals"] else 0
-        item["linked_conversion"] = (round(100 * item["linked_admissions"] / item["linked_referrals"], 1)
+        item["conversion"] = round(100 * item["admissions"] / item["referrals"], 2) if item["referrals"] else 0
+        item["linked_conversion"] = (round(100 * item["linked_admissions"] / item["linked_referrals"], 2)
                                      if item["linked_referrals"] else 0)
         # 종별 — 확정(명부 규칙) → 유사(거의 같은 이름) → 추정(다수결·이름 힌트). 빈 칸은 없다.
         # 대표 표기로 확정 못 하면 변형 표기('계명대 동산병원' 등)로도 확정을 먼저 노린다.
@@ -5897,7 +5897,7 @@ def staff_referrer_display_map():
 
 
 def _with_conversion(a):
-    a["conversion"] = round(100 * a["admissions"] / a["referrals"], 1) if a["referrals"] else 0
+    a["conversion"] = round(100 * a["admissions"] / a["referrals"], 2) if a["referrals"] else 0
     return a
 
 
@@ -6012,7 +6012,7 @@ def staff_referral_overview(date_from=None, date_to=None, q=None, internal_only=
                 "patients": len(g["patient_ids"]), "latest_consult": g["latest_consult"],
                 "variants": [{"name": n, "referrals": c} for n, c in variants],
                 "variant_count": len(variants), "rows": rows}
-        item["conversion"] = round(100 * item["admissions"] / item["referrals"], 1) if item["referrals"] else 0
+        item["conversion"] = round(100 * item["admissions"] / item["referrals"], 2) if item["referrals"] else 0
         items.append(item)
     items.sort(key=lambda d: (-d["admissions"], -d["referrals"], d["name"]))
 
@@ -6079,12 +6079,12 @@ def staff_referral_overview(date_from=None, date_to=None, q=None, internal_only=
                    key=lambda d: (-d["admissions"], -d["referrals"], d["org"]))
     months = [{"month": m, **v} for m, v in sorted(monthly.items())]
     nm = len(months) or 1   # 월 평균 소개·입원 인원
-    avg_ref = round(sum(m["referrals"] for m in months) / nm, 1)
-    avg_adm = round(sum(m["admissions"] for m in months) / nm, 1)
+    avg_ref = round(sum(m["referrals"] for m in months) / nm, 2)
+    avg_adm = round(sum(m["admissions"] for m in months) / nm, 2)
     return {"referrers": items, "referrer_count": len(items), "total_count": total_count,
             "max_referrals": max_referrals, "q": (q or "").strip(),
             "unnamed": unnamed, "referrals": referrals, "admissions": admissions,
-            "conversion": round(100 * admissions / referrals, 1) if referrals else 0,
+            "conversion": round(100 * admissions / referrals, 2) if referrals else 0,
             "orgs": orgs, "depts": depts, "monthly": months, "quality": quality,
             "avg_monthly_referrals": avg_ref, "avg_monthly_admissions": avg_adm,
             "internal_only": internal_only, "org_filter": org_filter,
@@ -6442,7 +6442,7 @@ def hospital_referral_overview(date_from=None, date_to=None, q=None):
             'direct_referrals':sum(x['direct_referrals'] for x in items),
             'direct_admissions':sum(x['direct_admissions'] for x in items),
             'referrals':sum(x['referrals'] for x in items),'admissions':sum(x['admissions'] for x in items),
-            'conversion':round(100*sum(x['admissions'] for x in items)/sum(x['referrals'] for x in items),1) if sum(x['referrals'] for x in items) else 0}
+            'conversion':round(100*sum(x['admissions'] for x in items)/sum(x['referrals'] for x in items),2) if sum(x['referrals'] for x in items) else 0}
 
 
 # ─── 임원 월간 보고서 (Phase 3.5) ───
@@ -6463,7 +6463,7 @@ def _delta_pct(curr: float, prev: float) -> float | None:
     """전월 대비 변화율(%). 전월이 0이면 None (신규 등장)."""
     if prev == 0:
         return None
-    return round(100.0 * (curr - prev) / prev, 1)
+    return round(100.0 * (curr - prev) / prev, 2)
 
 
 def _channel_conversion_table(rows):
@@ -6503,7 +6503,7 @@ def _channel_conversion_table(rows):
                 "label": label,
                 "total": total,
                 "completed": done,
-                "rate": round(100.0 * done / total, 1) if total else 0.0,
+                "rate": round(100.0 * done / total, 2) if total else 0.0,
             })
         out.sort(key=lambda x: (-x["total"], x["label"]))
         return out
@@ -6618,9 +6618,9 @@ def aggregate_monthly(year: int, month: int) -> dict:
         # 일평균 = total / 월 일수
         {
             "label": "일평균",
-            "value": round(s_this["total"] / 30, 1),
-            "prev": round(s_prev["total"] / 30, 1),
-            "yoy": round(s_yoy["total"] / 30, 1),
+            "value": round(s_this["total"] / 30, 2),
+            "prev": round(s_prev["total"] / 30, 2),
+            "yoy": round(s_yoy["total"] / 30, 2),
             "delta_pct": _delta_pct(s_this["total"] / 30, s_prev["total"] / 30),
             "yoy_delta_pct": _delta_pct(s_this["total"] / 30, s_yoy["total"] / 30),
             "suffix": "건/일",
@@ -6704,7 +6704,7 @@ def aggregate_monthly(year: int, month: int) -> dict:
     }.items() if _has_signal(v)}
 
     # 데이터 성숙도 — 진행중 비율이 높으면 이번 달 전환율은 아직 확정이 아니다
-    _pending_rate = (round(100.0 * s_this["pending"] / s_this["total"], 1)
+    _pending_rate = (round(100.0 * s_this["pending"] / s_this["total"], 2)
                      if s_this["total"] else 0.0)
     _reason_logged = sum(r["count"] for r in this_data["by_rejection_reason"])
     quality = {
@@ -6981,7 +6981,7 @@ def lifecycle_board_kpis(board_rows):
         if sd is not None:
             stage_days_acc.setdefault(stg, []).append(sd)
     avg_by_stage = {
-        s: round(sum(v) / len(v), 1) if v else None
+        s: round(sum(v) / len(v), 2) if v else None
         for s, v in stage_days_acc.items()
     }
     return {
@@ -7333,7 +7333,7 @@ def inquiry_summary(rows: list[dict]) -> dict:
             "admission_pending": sum(1 for r in items if r.get("admission_pending")),
             "admit_rate": round(admitted * 100 / n) if n else 0,            # 문의 대비 — 채널의 최종 성과
             "admit_rate_consult": round(admitted * 100 / conv) if conv else 0,   # 상담 대비 — 상담 품질
-            "avg_hours": round(sum(hours) / len(hours), 1) if hours else None,
+            "avg_hours": round(sum(hours) / len(hours), 2) if hours else None,
         }
     by_channel = {}
     for r in rows:
@@ -8355,7 +8355,7 @@ def stay_report(year: int, month: int) -> dict:
                 total[k] += r[k]
         for r in list(rows.values()) + [total]:
             r["avg_days"] = round(r["days"] / r["n"]) if r["n"] else None
-            r["over_pct"] = round(r["over_1y"] / r["n"] * 100, 1) if r["n"] else None
+            r["over_pct"] = round(r["over_1y"] / r["n"] * 100, 2) if r["n"] else None
         ordered = [rows[k] for k in ORDER if k in rows]
         return ordered, total
 
@@ -8373,7 +8373,7 @@ def stay_report(year: int, month: int) -> dict:
         r["dis_n"] = d["n"] if d else 0
         r["dis_avg_days"] = d["avg_days"] if d else None
     delta = (None if res_total["over_pct"] is None or prev_total["over_pct"] is None
-             else round(res_total["over_pct"] - prev_total["over_pct"], 1))
+             else round(res_total["over_pct"] - prev_total["over_pct"], 2))
     return {
         "ref_date": ref.isoformat(), "ref_is_today": ref == today,
         "residents": res_rows, "total": res_total,
@@ -8447,8 +8447,8 @@ def away_record_stats(rows):
         'transferred_events': len(transferred),
         'events': len(rows), 'returned_events': len(returned),
         'open_events': len([r for r in rows if not r.get('returned_at')]),
-        'patient_rate': round(100 * len(returned_patients) / len(patients), 1) if patients else 0,
-        'event_rate': round(100 * len(returned) / len(rows), 1) if rows else 0,
+        'patient_rate': round(100 * len(returned_patients) / len(patients), 2) if patients else 0,
+        'event_rate': round(100 * len(returned) / len(rows), 2) if rows else 0,
     }
 
 

@@ -149,7 +149,7 @@ def report(args) -> dict:
         care_in[r["care"] or "구분 없음"] = care_in.get(r["care"] or "구분 없음", 0) + 1
     summary = {
         "admissions": len(ins), "discharges": len(outs), "net": len(ins) - len(outs),
-        "avg_stay": round(sum(stays) / len(stays), 1) if stays else None,
+        "avg_stay": round(sum(stays) / len(stays), 2) if stays else None,
         "long_stay": sum(1 for s in stays if s >= 365),
         "care_in": sorted(care_in.items(), key=lambda kv: -kv[1]),
         "care_cells": _care_cells(care_in, len(ins)),

@@ -95,7 +95,7 @@ def status() -> dict:
         "poll_seconds": poll_seconds(),
         "keep_days": keep_days(),
         "files": store["files"],
-        "mb": round(store["bytes"] / (1024 * 1024), 1),
+        "mb": round(store["bytes"] / (1024 * 1024), 2),
     }
 
 

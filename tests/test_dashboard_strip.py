@@ -76,7 +76,7 @@ class DashboardStripTests(unittest.TestCase):
         self.assertEqual(strip["recovery_ratio"], 50)   # 1/2
         self.assertTrue(strip["recovery_ratio_ok"])     # 40% 이상
         self.assertEqual(strip["bed_occupancy"],
-                         round(2 / main.WARD_BED_CAPACITY * 100, 1))
+                         round(2 / main.WARD_BED_CAPACITY * 100, 2))
 
     def test_strip_flow_counts_this_week_and_month(self):
         with main.app.test_request_context():
@@ -93,7 +93,7 @@ class DashboardStripTests(unittest.TestCase):
         with main.app.test_request_context():
             ratio = main._ward_status_strip()["recovery_ratio"]
         html = self.client.get("/ward").get_data(as_text=True)
-        self.assertIn('<span class="wd-k-n">%.1f<small>%%</small></span>' % ratio, html)   # 퍼센트 1자리(2026-09-21 표기 결정)
+        self.assertIn('<span class="wd-k-n">%.2f<small>%%</small></span>' % ratio, html)   # 소수 둘째자리(2026-09-28 사용자 결정 — 9/21의 1자리 결정을 뒤집음)
 
     def test_strip_renders_on_dashboard(self):
         html = self.client.get("/").get_data(as_text=True)

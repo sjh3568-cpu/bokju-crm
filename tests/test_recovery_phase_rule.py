@@ -154,8 +154,8 @@ class CardAndTrendAgreeTests(unittest.TestCase):
     def test_ward_page_and_trend_tab_show_the_same_ratio(self):
         ward = self.client.get("/ward").get_data(as_text=True)
         trend = self.client.get("/ward?tab=trend&preset=30").get_data(as_text=True)
-        self.assertIn("66.7", ward)     # 4/6
-        self.assertIn("66.7", trend)
+        self.assertIn("66.67", ward)    # 4/6 — 소수 둘째 자리 표기(2026-09-28)
+        self.assertIn("66.67", trend)
 
 
 if __name__ == "__main__":

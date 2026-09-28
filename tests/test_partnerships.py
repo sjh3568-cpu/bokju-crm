@@ -487,7 +487,7 @@ class CooperationTests(unittest.TestCase):
         merged=by['김미화팀장']
         self.assertEqual((merged['referrals'],merged['admissions']),(3,2))   # 지인추천 건은 빠진다
         self.assertEqual(merged['variant_count'],3)
-        self.assertEqual(merged['conversion'],66.7)
+        self.assertEqual(merged['conversion'],66.67)
         self.assertEqual(data['unnamed']['referrals'],1)                     # 이름 미기재도 총계에는 포함
         self.assertEqual(data['referrals'],5)
         self.assertEqual(models.staff_referrer_key('박세연 지인의 소개'),'박세연')

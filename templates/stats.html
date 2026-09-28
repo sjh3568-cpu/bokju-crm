@@ -366,7 +366,7 @@
         textAlign: 'center',
         formatter: (v, ctx) => {
             const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
-            const pct = total ? (100 * v / total).toFixed(1) : '0.0';
+            const pct = total ? (100 * v / total).toFixed(2) : '0.00';
             return `${v}\n(${pct}%)`;
         },
     };
@@ -498,7 +498,7 @@
                     tooltip: { displayColors: false, callbacks: { label: ctx => formatPctLabel(ctx) } },
                     datalabels: {
                         ...barDatalabels,
-                        formatter: v => total ? `${v} (${(100 * v / total).toFixed(1)}%)` : `${v}`,
+                        formatter: v => total ? `${v} (${(100 * v / total).toFixed(2)}%)` : `${v}`,
                     },
                 },
                 scales: {
@@ -533,7 +533,7 @@
                     tooltip: { displayColors: false, callbacks: { label: ctx => formatPctLabel(ctx) } },
                     datalabels: {
                         ...barDatalabels,
-                        formatter: v => total ? `${v}\n(${(100 * v / total).toFixed(1)}%)` : `${v}`,
+                        formatter: v => total ? `${v}\n(${(100 * v / total).toFixed(2)}%)` : `${v}`,
                     },
                 },
                 scales: {
@@ -774,7 +774,7 @@
     function formatPctLabel(ctx) {
         const v = typeof ctx.parsed === 'object' ? (ctx.parsed.x ?? ctx.parsed.y ?? 0) : ctx.parsed;
         const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
-        const pct = total ? (100 * v / total).toFixed(1) : '0.0';
+        const pct = total ? (100 * v / total).toFixed(2) : '0.00';
         return `${ctx.label}: ${v}건 (${pct}%)`;
     }
 
@@ -807,7 +807,7 @@
         setKpi('conv-rate', `${(s.conversion_rate || 0)}%`);
         setKpi('pending', `${s.pending || 0}`);
         const cancelled = s.cancelled || 0;
-        const cancelRate = total ? (100 * cancelled / total).toFixed(1) : '0.0';
+        const cancelRate = total ? (100 * cancelled / total).toFixed(2) : '0.00';
         setKpi('cancelled', `${cancelled}`, `${cancelRate}%`);
         setKpi('active-day-avg', `${s.active_day_avg || 0}`);
         setKpi('active-days', `실제 상담 ${s.active_days || 0}일 기준`);
@@ -824,9 +824,9 @@
         const changeRate=previous ? difference/previous*100 : null;
         const cls=difference>0?'up':difference<0?'down':'';
         const arrow=difference>0?'▲':difference<0?'▼':'–';
-        const relative=changeRate==null?'신규':`${changeRate>=0?'+':''}${changeRate.toFixed(1)}%`;
+        const relative=changeRate==null?'신규':`${changeRate>=0?'+':''}${changeRate.toFixed(2)}%`;
         if(isRate){
-            return `<span class="delta ${cls}">${label} ${arrow}${Math.abs(difference).toFixed(1)}%p (${relative})</span>`;
+            return `<span class="delta ${cls}">${label} ${arrow}${Math.abs(difference).toFixed(2)}%p (${relative})</span>`;
         }
         return `<span class="delta ${cls}">${label} ${arrow}${Math.abs(difference)}건 (${relative})</span>`;
     }
