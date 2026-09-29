@@ -316,10 +316,12 @@ def _ensure_comm(doc_id: int):
             ai = json.loads(doc["ai_json"])
         except ValueError:
             ai = None
-    try:
-        occurred = datetime.fromtimestamp(Path(doc.get("stored_path") or "").stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
-    except OSError:
-        occurred = doc.get("created_at") or None
+    occurred = doc.get("received_at")
+    if not occurred:
+        try:
+            occurred = datetime.fromtimestamp(Path(doc.get("stored_path") or "").stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+        except OSError:
+            occurred = doc.get("created_at") or None
     comm_id = models.create_communication(
         channel=CHANNEL, direction="in",
         summary=_comm_summary(ai, doc) if doc.get("analyzed_at") else f"팩스 · {doc.get('original_name') or doc.get('filename')}",
@@ -360,6 +362,7 @@ def register_file(path: Path, *, created_by: str = "팩스 자동", analyze: boo
         filename=stored.name, stored_path=str(stored), mime=MIME.get(ext), source=SOURCE,
         status="pending", created_by=created_by)
     models.update_document(doc_id, sha256=sha, original_name=path.name, doc_date=received.date().isoformat(),
+                           received_at=received.strftime("%Y-%m-%d %H:%M:%S"),
                            size_bytes=stored.stat().st_size, source_path=source_path)
     # 분류 모드면 카드는 '상담 관련' 판정 뒤에 만든다(원무·거래처 팩스는 카드 없이 '상담 외'로)
     if not (analyze and classify_enabled() and llm.fax_ai_enabled() and ext in AI_EXT):

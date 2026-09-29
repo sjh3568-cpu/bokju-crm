@@ -382,6 +382,7 @@ class FaxCopyModeTests(unittest.TestCase):
         self.assertEqual(d["triage"], "consult")
         self.assertEqual(d["source_path"], str(src))
         self.assertEqual(d["original_name"], "mfp1_202609281015.pdf")
+        self.assertEqual(d["received_at"], "2026-09-28 10:15:00", "수신 시각(시분)까지 저장 — 목록 날짜 열에 표시")
         self.assertEqual(Path(d["stored_path"]), self.archive / "2026-09-16_홍길동_뇌경색.pdf")
         self.assertTrue(Path(d["stored_path"]).is_file())
         comm = models.get_communication(d["comm_id"])

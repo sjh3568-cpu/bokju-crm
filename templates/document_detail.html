@@ -3,7 +3,7 @@
 {% block content %}
 {% set ai = doc.ai %}
 <div class="page-header"><div><a href="/documents" class="btn-back">← 자료함</a><h1>{{ doc.patient_name_ai or '미확인' }}{% if ai.sex or ai.age %} <small class="muted">{{ ai.sex }}{% if ai.age %} {{ ai.age }}세{% endif %}{% if ai.birth_date %} · {{ ai.birth_date }}{% endif %}</small>{% endif %}</h1>
- <p class="doc-file"><span class="badge doc-badge-{{ doc.status }}">{{ doc.status_label }}</span> <code>{{ doc.filename }}</code>{% if doc.original_name and doc.original_name != doc.filename %} <small class="muted">(원본명 {{ doc.original_name }})</small>{% endif %}</p></div>
+ <p class="doc-file"><span class="badge doc-badge-{{ doc.status }}">{{ doc.status_label }}</span> <code>{{ doc.filename }}</code>{% if doc.original_name and doc.original_name != doc.filename %} <small class="muted">(원본명 {{ doc.original_name }})</small>{% endif %}{% if doc.received_at %} <small class="muted">· 수신 {{ doc.received_at[:16] }}</small>{% endif %}</p></div>
  <div class="doc-head-actions">
   {% if file_exists %}<a class="btn btn-secondary" href="/documents/{{ doc.id }}/file" target="_blank" rel="noopener">새 창에서 원본</a>
   <a class="btn btn-secondary" href="/documents/{{ doc.id }}/file?download=1">내려받기</a>{% endif %}

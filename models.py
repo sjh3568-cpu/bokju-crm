@@ -599,7 +599,17 @@ def init_db():
         "source_path": "TEXT",         # 가져온 원본 경로 — EasyFax가 회전 저장해 내용이 바뀌어도 다시 안 가져온다
         "triage": "TEXT",              # AI 분류: consult(상담 관련) / other(상담 외) / NULL(미분류)
         "triage_reason": "TEXT",       # 분류 이유(종류·보낸 곳·사유)
+        "received_at": "DATETIME",     # 수신 시각(날짜+시분) — 목록 '날짜' 열에 시간까지 보이게 (2026-09-29)
     })
+    # 기존 건 채우기 — EasyFax 원본명(mfp1_YYYYMMDDHHMM.pdf)에서, 없으면 등록 시각(UTC→로컬)으로
+    import re as _re
+    _recv = _re.compile(r"(20\d{2})(\d{2})(\d{2})(\d{2})(\d{2})")
+    for r in conn.execute("SELECT id, original_name, filename, datetime(created_at, 'localtime') AS c "
+                          "FROM patient_documents WHERE received_at IS NULL").fetchall():
+        m = _recv.search(r["original_name"] or "") or _recv.search(r["filename"] or "")
+        val = f"{m[1]}-{m[2]}-{m[3]} {m[4]}:{m[5]}:00" if m else r["c"]
+        if val:
+            conn.execute("UPDATE patient_documents SET received_at = ? WHERE id = ?", (val, r["id"]))
     conn.execute("CREATE INDEX IF NOT EXISTS idx_doc_sha ON patient_documents(sha256)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_doc_source_path ON patient_documents(source_path)")
     _ensure_columns(conn, "patients", {
@@ -9287,7 +9297,8 @@ def list_documents(limit: int = 200, *, status=None, q=None, source=None):
            "LEFT JOIN patients p ON p.id = d.patient_id ")
     if where:
         sql += "WHERE " + " AND ".join(where) + " "
-    sql += "ORDER BY COALESCE(d.doc_date, substr(d.created_at,1,10)) DESC, d.id DESC LIMIT ?"
+    sql += ("ORDER BY COALESCE(d.doc_date, substr(d.created_at,1,10)) DESC, "
+            "COALESCE(d.received_at, d.created_at) DESC, d.id DESC LIMIT ?")
     conn = get_db()
     rows = conn.execute(sql, vals + [limit]).fetchall()
     conn.close()
@@ -9363,7 +9374,7 @@ def update_document(doc_id, **fields):
                       "sha256", "original_name", "doc_date", "patient_name_ai",
                       "diagnosis_ai", "sender_ai", "ai_json", "ai_attempts",
                       "ai_error", "analyzed_at", "comm_id", "size_bytes", "pages", "file_deleted_at",
-                      "source_path", "triage", "triage_reason")}
+                      "source_path", "triage", "triage_reason", "received_at")}
     if not valid:
         return
     sets = [f"{k} = ?" for k in valid]

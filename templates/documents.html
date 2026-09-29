@@ -26,7 +26,7 @@
   <tbody>
   {% for d in rows %}
   <tr id="doc-{{ d.id }}" class="st-{{ d.status }}">
-   <td class="nowrap">{{ d.doc_date or (d.created_at or '')[:10] }}</td>
+   <td class="nowrap">{{ d.doc_date or (d.received_at or d.created_at or '')[:10] }}{% if d.received_at %} <small class="muted" title="수신 {{ d.received_at }}">{{ d.received_at[11:16] }}</small>{% endif %}</td>
    <td class="nowrap"><a href="/documents/{{ d.id }}"><b>{{ d.patient_name_ai or '미확인' }}</b></a>{% if d.ai.age or d.ai.sex %}<small>{{ d.ai.sex }}{% if d.ai.age %} {{ d.ai.age }}세{% endif %}</small>{% endif %}</td>
    <td>{{ d.diagnosis_ai or '-' }}</td>
    <td>{{ d.sender_ai or '-' }}</td>

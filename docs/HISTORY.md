@@ -172,3 +172,9 @@
 - 미치환 토큰·번호 형식은 화면과 `/api/sms/send` 양쪽에서 막는다(회수 불가).
 - 템플릿은 대상 질환 × 시점. 시점 알림(`models.sms_reminders`)은 그 시점에 사용 중 템플릿이 있어야 켜지고, 입·퇴원은 `admission_flow_events`만 쓴다. 대시보드 '오늘 처리 필요'와 상담 상세가 같은 함수.
 - 여러 명 동시 발송·수신 결과 추적·예약 발송은 발송사 계약 후. 설계: `docs/work/2026-09-28-문자-안전발송-알림.md`.
+
+### 팩스 자료함 — 날짜 열에 수신 시각 (2026-09-29)
+- 목록 '날짜' 열이 날짜만 보여 같은 날 여러 장이 오면 순서를 알 수 없었다(사용자 요청). `patient_documents.received_at`(DATETIME)을 두고
+  등록 때 채운다 — copy 모드는 EasyFax 원본명(`mfp1_YYYYMMDDHHMM`)의 시각, 아니면 파일 수정 시각. 인박스 카드 `occurred_at`도 같은 값.
+- 기존 건은 마이그레이션에서 원본명 → 없으면 `created_at`(UTC→localtime)으로 채운다. 목록은 날짜 옆에 HH:MM(작게), 상세는 파일명 줄에 '수신 YYYY-MM-DD HH:MM'.
+- `doc_date`는 직원이 고칠 수 있는 '문서 날짜'라 그대로 두고, 시각은 수신 기준 별도 컬럼으로. 정렬은 doc_date → received_at → id.
