@@ -142,8 +142,12 @@ class AwayManagementTests(unittest.TestCase):
         ev = models.get_admission_event(2)
         self.assertEqual((ev['returned_at'], ev['return_outcome'], ev['return_hospital'], ev['return_room']),
                          ('2026-03-05', '전원', '안동병원', None))
-        pid = models.get_consultation(ev['consultation_id'])['patient_id']
+        con = models.get_consultation(ev['consultation_id'])
+        pid = con['patient_id']
         self.assertEqual(models.get_patient(pid)['lifecycle_stage'], '퇴원')
+        # 상담도 퇴원완료 — 재원에서만 빠지고 상담일지·상담목록엔 입원 중으로 남던 문제(2026-09-29)
+        self.assertEqual((con['admission_status'], con['discharge_date'], con['discharge_destination'],
+                          con['discharge_reason']), ('퇴원완료', '2026-03-05', '안동병원', '타 병원 전원'))
         stats = models.away_record_stats(models.list_away_records(event_type='응급전원'))
         self.assertEqual((stats['returned_events'], stats['transferred_events'], stats['open_events']), (1, 1, 1))
         with main.app.test_request_context('/ward?tab=away&away_status=transferred'):

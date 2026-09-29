@@ -89,8 +89,10 @@ from app import (  # noqa: E402 — app.py 공용 헬퍼·상수 (app.py 맨 아
     app,
     compute_admission_period,
     is_cns_diseases,
+    is_parkinson_disuse,
     is_recovery_noncns_diseases,
     phase_diseases,
+    PARKINSON_RECOVERY_DAYS,
 )
 
 logger = logging.getLogger(__name__)
@@ -1469,6 +1471,13 @@ def _trend_span(span, con):
         dz = phase_diseases({"disease_detail": span["diagnosis_name"]})
     # 중추신경계가 섞여 있으면 중추 규칙이 먼저다 — 카드(_care_phase)가 그렇게 판정한다.
     # 안 그러면 '뇌출혈+비사용증후군' 환자를 추이만 회복기로 세어 어긋난다(오일록 님, 2026-09-28).
+    if not roster_phase and not is_cns_diseases(dz) and is_parkinson_disuse(dz):
+        # 비사용증후군 파킨슨 — 회복기 60일 뒤 비회복기(2026-09-29). 추이도 카드(_care_phase)와 같은 날 전환한다.
+        try:
+            return admitted_iso, discharged_iso, True, _day_of(
+                date.fromisoformat(str(admitted_iso)[:10]), PARKINSON_RECOVERY_DAYS)
+        except (TypeError, ValueError):
+            return admitted_iso, discharged_iso, True, date.max
     if not roster_phase and not is_cns_diseases(dz) and is_recovery_noncns_diseases(dz):
         return admitted_iso, discharged_iso, True, date.max
     if roster_phase:

@@ -700,6 +700,7 @@ def init_db():
         # 입원시 확인
         "documents_checklist": "TEXT",  # JSON
         "admission_period": "TEXT",  # 입원가능기간
+        "stay_days": "INTEGER",  # 입원 기간 선택(일) — 근골격계 30·60. 비어 있으면 질환군 규칙(2026-09-29)
         "transport_method": "TEXT",  # JSON
         "cost_guidance": "TEXT",  # JSON
         "info_provided": "TEXT",  # JSON
@@ -2348,7 +2349,7 @@ CONSULT_FIELDS = (
     "swallow_test", "swallow_test_dates",
     "therapy",
     # 입원시 확인
-    "documents_checklist", "admission_period",
+    "documents_checklist", "admission_period", "stay_days",
     "transport_method", "cost_guidance", "info_provided",
     # 상담 결과 2단계 — ① 상담 진행 (consult_result) ② 입원 진행 (admission_status)
     "consult_result", "consult_result_reason",

@@ -265,6 +265,15 @@ uploads/           마이그레이션·녹음 임시 (gitignore)
 - **외진 중(미복귀)은 재원이 아니다**(2026-09-25 사용자 결정 — 황재명 님 9/21 응급전원이 입·퇴원 집계에선 퇴원 1건인데 재원 명부엔 그대로 있어 숫자가 어긋났다). 퇴원으로 센 사람이 재원에 남으면 안 된다. `models.away_departure_sql`(이 입원 중 나가서 안 돌아온 외진의 출발일)이 `crm_discharge_sql`의 세 번째 퇴원일로 들어가 재원 명단·가동률·만실·추이·30일 census·월간보고서가 같이 뺀다. 복귀(`returned_at`)하면 그 자리에서 다시 재원. 옛 입원에 붙은 미복귀 외진은 그 뒤 새 회차를 숨기지 않는다(출발일 ≥ 입원일). `/ward`의 '입원일 미확정' 큐도 외진 중은 뺀다(상담에 입원일이 없는 환자가 큐로 떨어지지 않게).
 - **외진 나간 날도 그날의 퇴원으로 센다**(2026-09-18 사용자 요청 "외진 나갔으면 이것도 퇴원으로 잡혀야 한다" — 복귀=입원과 대칭, `models._AWAY_DEPARTURE_FOR_LIST`). 명부가 같은 날 퇴원을 적었으면 한 줄, 며칠 어긋나면 `AWAY_DISCHARGE_MERGE_DAYS`(3일) 안에서 외진 날짜로 합친다(2026-09-19). 타 병원 전원(`return_outcome='전원'`)은 종결 처리가 회차를 따로 닫으므로 제외. (9/15의 "나간 날을 퇴원으로 만들지 않는다"는 이 결정으로 뒤집혔다 — 문장이 9/21까지 남아 있었음.)
 - **명부 회차(`roster_key`)의 입·퇴원일·병실·status는 상담값으로 덮지 않는다.** `sync_admission_episode`와 기동마다 도는 `_migrate_admission_episodes`의 `ON CONFLICT(consultation_id) DO UPDATE`가 상담 입원일로 덮어써서, 외진 복귀로 새로 열린 회차(박성락 9/11)의 입원일이 첫 입원일(8/10)로 되돌아가 지난주 입원에서 빠졌다. 두 곳 다 `CASE WHEN roster_key IS NOT NULL THEN 기존값` 으로 지키고, `_repair_roster_admitted_at`(기동마다, 멱등)이 `roster_key`의 입원일과 `admitted_at`이 어긋난 회차를 명부 값으로 되돌린다 — NAS는 재배포(재기동) 때 자동 복구된다.
+- **어느 화면에서 퇴원하든 상담은 '퇴원완료'다**(2026-09-29 사용자 요청 — 권해옥 님이 퇴원했는데 상단 '퇴원'에 안 잡혔다).
+  재원 현황의 [퇴원]은 `/api/consult/<id>/discharge`(상담+회차), 외진 복귀의 '타 병원 전원'(`views/inbound.py`)도 회차만 닫지 않고
+  `update_consultation_meta(admission_status='퇴원완료', discharge_date, destination, reason='타 병원 전원')`까지 적는다.
+  상단 바 '퇴원 N'(`app.py` 컨텍스트 프로세서)은 상담 퇴원일 COUNT가 아니라 `admission_flow_events(오늘, 오늘)`의 OUT 환자 수 — 대시보드 KPI와 같은 근거.
+- **비사용증후군 파킨슨은 회복기 60일 → 비회복기 전환, 총 1년**(2026-09-29 사용자 정의). `app.is_parkinson_disuse`(중추 아님 + '파킨슨' 토큰 +
+  근골격계 규칙에 안 걸림)이면 `compute_admission_period`가 `{total 365, billing 60, conversion True}`를 준다. `_care_phase`·`_effective_roster_care_phase`·
+  `ward._recovery_span`(추이)이 60일 뒤 비회복기로 넘기고, `_admission_expiry`는 명부 재활종료일을 전환일로만 쓴다(퇴원일 아님). 근골격계 입원에 기저 파킨슨이 붙으면 근골격계 규칙.
+- **근골격계 30·60일은 상담일지 `consultations.stay_days`로 고른다**(2026-09-29). 비면 병명 규칙(`noncns_stay_days`). `compute_admission_period(dz, label, stay_days)` 세 번째 인자.
+  위저드 '폼에 채우기'가 근골격계 단일(30)/다발(60)을 select에 넣는다. 파킨슨·중추엔 영향 없음.
 
 ## 운영 메모
 

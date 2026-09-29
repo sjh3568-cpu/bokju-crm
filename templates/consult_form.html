@@ -603,6 +603,12 @@
             // '해당 없음' 선택 시 — 이전 위저드 매핑은 위에서 이미 해제됨
             filled.push('병명(해제)');
         }
+        // ③-1 근골격계 입원 기간(단일 30일·다발 60일) → '입원 기간 선택'
+        const stayEl = form.querySelector('select[name="consultation.stay_days"]');
+        if (stayEl && dx && dx.group.startsWith('근골격계') && dx.stay) {
+            const n = parseInt(dx.stay, 10);
+            if (n === 30 || n === 60) { stayEl.value = String(n); filled.push('입원 기간 ' + n + '일'); }
+        }
 
         // ④ 연계 체크박스 → 본 폼의 consultation.external_referral[] 동기화 (멱등)
         const refChecks = document.querySelectorAll('input[name="elig-ref"]:checked');
@@ -1489,6 +1495,17 @@ input.room-invalid { border-color:#ef4444 !important; box-shadow:0 0 0 2px rgba(
             <label>입원가능기간</label>
             <input type="text" name="consultation.admission_period"
                    value="{{ consultation.admission_period if is_edit and consultation.admission_period else '' }}">
+        </div>
+        <div class="field">
+            {# 근골격계는 30일 입원과 60일 입원이 있다 — 고른 값이 퇴원 예정일·'퇴원지연' 판정에 쓰인다(2026-09-29).
+               비워 두면 병명 규칙(고관절·대퇴·골반 30일, 내고정·치환술·다발 60일)으로 자동 계산. #}
+            <label>입원 기간 선택 <span class="muted" style="font-size:0.85em">— 근골격계 30일·60일</span></label>
+            {% set _stay = (consultation.stay_days|string) if is_edit and consultation.stay_days else '' %}
+            <select name="consultation.stay_days" id="stay-days">
+                <option value="">자동(병명 기준)</option>
+                <option value="30" {% if _stay == '30' %}selected{% endif %}>30일</option>
+                <option value="60" {% if _stay == '60' %}selected{% endif %}>60일</option>
+            </select>
         </div>
         <div class="field">
             <label>이송수단</label>

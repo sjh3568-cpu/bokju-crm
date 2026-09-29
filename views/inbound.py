@@ -513,6 +513,13 @@ def api_admission_event_return(event_id):
         if ep:
             models.close_roster_episode(ep["id"], discharged_at=return_date or date.today().isoformat(),
                                         destination=return_hospital, reason="타 병원 전원")
+        # 상담도 퇴원완료로 — 전에는 명부 회차만 닫혀 재원에서만 빠지고 상담일지·상담목록·상단 '퇴원'
+        # 숫자에는 입원 중으로 남았다(권해옥 님 9/29). 어느 화면에서 퇴원하든 상담 상태는 하나로 맞춘다.
+        if con and (con.get("admission_status") or "").strip() != "퇴원완료":
+            models.update_consultation_meta(
+                ev["consultation_id"], admission_status="퇴원완료",
+                discharge_date=return_date or date.today().isoformat(),
+                discharge_destination=return_hospital[:120], discharge_reason="타 병원 전원")
     models.log_audit(
         user_id=g.user["id"], username=g.user["username"],
         action="return_admission_event", target_type="consultation",

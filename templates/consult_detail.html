@@ -768,6 +768,7 @@ document.querySelectorAll('.iso-btn').forEach(btn => btn.addEventListener('click
     <dl class="kv">
         <dt>준비 서류</dt><dd>{{ (c.documents_checklist or [])|join(', ') or '-' }}</dd>
         <dt>입원가능기간</dt><dd>{{ c.admission_period or '-' }}</dd>
+        <dt>입원 기간 선택</dt><dd>{% if c.stay_days %}{{ c.stay_days }}일{% else %}자동(병명 기준){% endif %}</dd>
         <dt>이송수단</dt><dd>{{ (c.transport_method or [])|join(', ') or '-' }}</dd>
         <dt>진료비 안내</dt><dd>{{ (c.cost_guidance or [])|join(', ') or '-' }}</dd>
         <dt>안내사항</dt><dd>{{ (c.info_provided or [])|join(', ') or '-' }}</dd>

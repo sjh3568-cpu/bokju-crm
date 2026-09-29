@@ -526,7 +526,10 @@ def _inject_globals():
                     UNION SELECT c.patient_id FROM admission_events ae JOIN consultations c ON c.id=ae.consultation_id
                      WHERE ae.event_type IN ('응급전원','모병원 외래치료') AND ae.returned_at=?
                        AND COALESCE(ae.return_outcome,'복귀')='복귀')""",(_today,_today)).fetchone()[0]
-                command_metrics["discharge"]=_db.execute("SELECT COUNT(DISTINCT patient_id) FROM consultations WHERE discharge_date=?",(_today,)).fetchone()[0]
+            # 오늘 퇴원 — 상담 퇴원일만 세면 명부 회차로만 닫혔거나 외진(타 병원 전원)으로 나간 분이 빠진다
+            # (권해옥 님 9/29). 대시보드 KPI·입퇴원 이력과 같은 단일 근거(admission_flow_events)로 센다.
+            command_metrics["discharge"]=len({e["patient_id"] for e in models.admission_flow_events(_today,_today)
+                                              if e.get("kind")==models.ADMISSION_EVENT_OUT})
             command_metrics["pending"]=inbound_badge
         except Exception:
             pass
@@ -1028,16 +1031,20 @@ def _recovery_status(consultation):
 #               비사용증후군군·골유합 지연·하지 부위 절단 60일
 RECOVERY_STAY_DAYS = 180   # 중추신경계 S005 산정 일수
 TOTAL_STAY_DAYS = 365      # 중추신경계 총 재원 = 입원일 + 1년
+# 비사용증후군으로 입원한 파킨슨 — 입원 60일은 회복기, 그 뒤는 비회복기로 전환해 1년까지 재원
+# (2026-09-29 사용자 정의). 60일이 지났다고 '퇴원지연'에 오르면 안 된다.
+PARKINSON_RECOVERY_DAYS = 60
 
 _CNS_KW = ("뇌출혈", "뇌경색", "뇌손상", "척수손상", "뇌성마비",
            "마비", "편마비", "사지마비", "중추신경계")
 # 비중추신경계 재원 일수 — 여러 개 매칭되면 가장 긴 값 적용
+_DISUSE_STAY_KW = ("호흡질환", "폐질환", "심장질환", "신생물", "폐렴", "폐수종",
+                   "패혈증", "농양", "다제내성", "CRE", "VRE", "신부전",
+                   "동정맥루", "복부대동맥류", "급성복막염", "장폐색",
+                   "파킨슨(신규)", "길랑바레증후군", "비사용증후군")
 _NONCNS_STAY_RULES = [
     (("내고정술", "치환술", "다발"), 60),
-    (("호흡질환", "폐질환", "심장질환", "신생물", "폐렴", "폐수종",
-      "패혈증", "농양", "다제내성", "CRE", "VRE", "신부전",
-      "동정맥루", "복부대동맥류", "급성복막염", "장폐색",
-      "파킨슨(신규)", "길랑바레증후군", "비사용증후군"), 60),
+    (_DISUSE_STAY_KW, 60),
     (("골유합 지연", "골유합지연"), 60),
     (("하지 부위 절단", "절단"), 60),
     (("고관절", "대퇴", "골반", "근골격계", "슬관절"), 30),
@@ -1063,6 +1070,34 @@ def is_recovery_noncns_diseases(diseases):
     return any(any(kw in str(d) for kw in _RECOVERY_NONCNS_KW) for d in (diseases or []) if d)
 
 
+def _has_msk_stay_rule(diseases):
+    """근골격계 쪽 재원 규칙(내고정·치환술·다발, 골유합 지연, 절단, 고관절·대퇴·골반 30일)에 걸리는 병명이 있는지.
+    비사용증후군 60일 규칙은 제외 — 파킨슨 판정에서 '입원 사유가 근골격계인가'만 본다."""
+    for d in (diseases or []):
+        if not d:
+            continue
+        for kws, _n in _NONCNS_STAY_RULES:
+            if kws is _DISUSE_STAY_KW:
+                continue
+            if any(kw in str(d) for kw in kws):
+                return True
+    return False
+
+
+def is_parkinson_disuse(diseases):
+    """비사용증후군으로 입원한 파킨슨인지 — 회복기 60일 뒤 비회복기로 전환해 1년까지 재원(2026-09-29 사용자 정의).
+
+    중추신경계가 섞여 있으면 중추 규칙이 먼저다. 기저질환 칸의 '파킨슨'만 있고 입원 사유가 근골격계
+    (고관절·대퇴·골반 골절, 치환술, 절단…)면 그쪽 30·60일 규칙을 따른다 — 동반 질환 때문에 1년이 되면 안 된다.
+    """
+    toks = [str(d) for d in (diseases or []) if d]
+    if not toks or is_cns_diseases(toks):
+        return False
+    if not any("파킨슨" in t for t in toks):
+        return False
+    return not _has_msk_stay_rule([t for t in toks if "파킨슨" not in t])
+
+
 def phase_diseases(consultation):
     """수가 구간 판정에 쓸 진단군 — 비어 있으면 상담일지의 병명 상세에서 읽는다.
 
@@ -1079,7 +1114,7 @@ def phase_diseases(consultation):
         return diseases
     # 상세는 사람이 적은 글이라 띄어쓰기가 제각각이다('비사용 증후군' vs '비사용증후군') — 공백을 지우고 본다
     flat = "".join(detail.split())
-    found = [kw for kw in _CNS_KW + _RECOVERY_NONCNS_KW if "".join(kw.split()) in flat]
+    found = [kw for kw in _CNS_KW + _RECOVERY_NONCNS_KW + ("파킨슨",) if "".join(kw.split()) in flat]
     return found or diseases
 
 
@@ -1096,12 +1131,14 @@ def noncns_stay_days(diseases):
     return days
 
 
-def compute_admission_period(diseases, recovery_label):
+def compute_admission_period(diseases, recovery_label, stay_days=None):
     """질환군 + 회복기/비회복기 → 입원 기간(입원 후 재원 가능 일수).
-    Returns: dict(total, billing, mandatory) 또는 None(산정 불가).
-      total     = 전체 입원 가능 일수
-      billing   = 회복기 수가(S005) 인정 기간 — 중추신경계 회복기만 180, 그 외 None
-      mandatory = 이 기간 안에 반드시 퇴원해야 하는지 (비중추신경계는 True)
+    Returns: dict(total, billing, mandatory[, conversion]) 또는 None(산정 불가).
+      total      = 전체 입원 가능 일수
+      billing    = 회복기 수가(S005) 인정 기간 — 중추신경계 회복기 180, 비사용증후군 파킨슨 60, 그 외 None
+      mandatory  = 이 기간 안에 반드시 퇴원해야 하는지 (비중추신경계는 True)
+      conversion = 비중추인데 회복기→비회복기 전환이 있는 경우(비사용증후군 파킨슨)
+      stay_days  = 상담일지 '입원 기간 선택'(근골격계 30·60일). 비중추만 쓰고, 비어 있으면 질환군 규칙.
     """
     if is_cns_diseases(diseases):
         if recovery_label == "회복기":
@@ -1111,7 +1148,16 @@ def compute_admission_period(diseases, recovery_label):
             return {"total": TOTAL_STAY_DAYS, "billing": None, "mandatory": False}
         # 회복기/비회복기 미상이면 중추신경계 입원 기간 산정 불가
         return None
-    days = noncns_stay_days(diseases)
+    if is_parkinson_disuse(diseases):
+        # 비사용증후군 파킨슨 — 회복기 60일 뒤 비회복기로 전환, 총 1년(2026-09-29 사용자 정의).
+        return {"total": TOTAL_STAY_DAYS, "billing": PARKINSON_RECOVERY_DAYS,
+                "mandatory": False, "conversion": True}
+    try:
+        days = int(stay_days) if stay_days not in (None, "") else 0
+    except (TypeError, ValueError):
+        days = 0
+    if days <= 0:
+        days = noncns_stay_days(diseases)
     if not days:
         return None
     # 비중추신경계는 전원 S005. 수가 구간 = 재원 기간 전체라 '전환' 개념이 없어
@@ -1144,9 +1190,14 @@ def _admission_expiry(consultation):
     dx = str(consultation.get("roster_diagnosis") or consultation.get("primary_diagnosis") or "")
     if dx and not is_cns_diseases(diseases) and any(kw in dx for kw in _CNS_KW):
         diseases = list(diseases or []) + ["중추신경계"]
+    # 주상병으로 적힌 파킨슨은 비사용증후군으로 본다(2026-09-20) — 진단군 칸에 없으면 여기서 보완.
+    if dx and "파킨슨" in dx and not is_cns_diseases(diseases) \
+            and not any("파킨슨" in str(d) for d in (diseases or [])):
+        diseases = list(diseases or []) + ["파킨슨"]
     period = compute_admission_period(
         diseases,
         consultation.get("roster_care_phase") or rec.get("label"),
+        consultation.get("stay_days"),
     )
     if not period:
         return None
@@ -1162,6 +1213,7 @@ def _admission_expiry(consultation):
         return None
     today = datetime.now().date()
     cns = is_cns_diseases(diseases)
+    conversion = bool(period.get("conversion"))   # 비사용증후군 파킨슨 — 회복기 60일 뒤 전환
     onset = _parse_date(consultation.get("onset_date"))
     rehab_end = (_parse_date(consultation.get("rehab_end_date"))
                  if consultation.get("rehab_end_imported") else None)
@@ -1175,6 +1227,9 @@ def _admission_expiry(consultation):
             cap = _day_of(onset, PERIOD_CALC_CAP_YEARS * 365)
             if cap < total_d:
                 total_d = cap
+    elif conversion:
+        # 비사용증후군 파킨슨 — 입원일 + 1년. 명부 재활종료일은 회복기 종료(전환)일이지 퇴원일이 아니다.
+        total_d = _day_of(ad, period["total"])
     elif rehab_end:
         # 비중추 — 회복기 기간이 곧 입원 기간(무조건 종료). 명부 재활종료일을 만료로 쓴다.
         total_d = rehab_end
@@ -1183,7 +1238,7 @@ def _admission_expiry(consultation):
 
     # ── 회복기 수가(S005) 종료일 — 중추만 '전환'이 있다. 명부 실제 재활종료일 우선,
     #    없으면 입원일+180 추정. 비중추는 전환 개념이 없어 billing 없음(퇴원=회복기 종료). ──
-    if cns and rehab_end:
+    if (cns or conversion) and rehab_end:
         billing_d = rehab_end
     elif period["billing"]:
         billing_d = _day_of(ad, period["billing"])
@@ -1302,7 +1357,12 @@ def _care_phase(consultation):
         # 그래도 회복기 재활 대상 진단군(대퇴·고관절·골반 골절, 비사용증후군, 슬관절치환술,
         # 하지 절단)은 입원해 있는 동안 회복기다(원장 확인 2026-09-28). 그 밖의 비중추
         # (암·폐질환 등)만 전환 개념이 없는 '단일구간'으로 남긴다.
-        phase = "회복기" if is_recovery_noncns_diseases(dz) else "단일구간"
+        # 예외 — 비사용증후군 파킨슨은 회복기 60일이 지나면 비회복기로 전환한다(2026-09-29).
+        if is_parkinson_disuse(dz):
+            left = ax.get("billing_left")
+            phase = "비회복기" if left is not None and left < 0 else "회복기"
+        else:
+            phase = "회복기" if is_recovery_noncns_diseases(dz) else "단일구간"
     elif label == "비회복기":
         phase = "비회복기"
     elif label == "회복기":
@@ -1906,6 +1966,9 @@ def _effective_roster_care_phase(phase, diseases, admitted_at, snapshot,
         return phase
     if snapshot <= end:
         return phase
+    # 비사용증후군 파킨슨은 회복기 60일 뒤 비회복기로 전환한다(2026-09-29).
+    if period.get("conversion"):
+        return "비회복기"
     # 비중추 회복기 대상(대퇴·고관절·골반 골절, 비사용증후군, 슬관절치환술, 하지 절단)은
     # 입원 중이면 기간이 지나도 회복기다(원장 확인 2026-09-28).
     if is_recovery_noncns_diseases(diseases):
@@ -2044,7 +2107,7 @@ def _consult_fields_from_payload(c: dict) -> dict:
         if key not in c:
             continue
         v = c[key]
-        if key == "patient_age":
+        if key in ("patient_age", "stay_days"):
             out[key] = _int(v)
         elif isinstance(v, str):
             out[key] = v.strip() or None
