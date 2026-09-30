@@ -1336,13 +1336,14 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
             });
         } else if (kind === 'plan') {
             form.dataset.cid = cid;
-            if (bed.dataset.due) form.querySelector('.wd-plan-date').value = bed.dataset.due;
+            // 날짜는 오늘 고정(2026-09-30 요청) — 예전 예정일이 남아 있어도 오늘부터 잡는다. 기존 예정은 title로만 보여 준다.
+            if (bed.dataset.due) form.querySelector('.wd-plan-date').title = `퇴원 예정일 — 기본은 오늘 (현재 예정 ${bed.dataset.due})`;
             form.querySelector('.wd-plan-destination').value = bed.dataset.dest || '';
             form.querySelector('.wd-plan-reason').value = bed.dataset.dreason || '';
             form.querySelector('.wd-plan-cancel').addEventListener('click',()=>{form.hidden=true;});
             form.querySelector('.wd-plan-save').addEventListener('click',()=>savePlan(form,name));
         } else if (kind === 'discharge') {
-            if (bed.dataset.due) form.querySelector('.wd-dis-date').value = bed.dataset.due;
+            if (bed.dataset.due) form.querySelector('.wd-dis-date').title = `퇴원일 — 기본은 오늘 (예정일 ${bed.dataset.due})`;
             form.querySelector('.wd-dis-destination').value = bed.dataset.dest || '';
             form.querySelector('.wd-dis-reason').value = bed.dataset.dreason || '';
             form.querySelector('.wd-dis-cancel').addEventListener('click',()=>{form.hidden=true;});
