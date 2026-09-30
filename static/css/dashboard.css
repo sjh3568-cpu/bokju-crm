@@ -491,40 +491,49 @@
 .page-dashboard .aq-meta.warn { color: var(--dwarn); font-weight: 700; }
 /* 표는 고정 레이아웃 — 카드 폭(1440에서 ≈534px) 안에 6열이 다 보이고 모든 행 높이가 같다(2026-09-21). 남는 폭은 '내용'이 갖는다 */
 .page-dashboard .aq-table { table-layout: fixed; width: 100%; }
-/* 열 폭(2026-09-28 재배분) — 1440에서 표 폭 ≈514px. 칸 좌우 여백 6px 기준으로 각 칸의 가장 긴 값 + 6px 여유:
-   구분 배지 4자 ≈50(카카오채널 5자 ≈60은 칸 여백으로 4px 넘침, 낱자로 안 쪼갬) · 환자 이름 4자 ≈60(미연결 문의의 연락처는 하이픈에서 꺾임)
-   · 주상병 6자(비사용증후군) ≈77, 넓은 대체 글꼴(자간 +.08em)에서도 한 줄 · 경과 '3일 초과' ≈45 · 액션 버튼 2개 ≈92.
-   남는 폭은 '내용'이 갖는다(설명성 칸 — 3-2 규칙). */
-.page-dashboard .aq-table col.c-kind { width: 68px; }
-.page-dashboard .aq-table col.c-who { width: 88px; }
-.page-dashboard .aq-table col.c-dx { width: 98px; }
-.page-dashboard .aq-table col.c-meta { width: 64px; }
+/* 열 폭(2026-09-30 재배분, 5열) — 1440에서 표 폭 ≈514px. 6열일 때는 고정 폭 합이 424px라 '내용'에 90px밖에 안 남았고,
+   환자 이름·연락처가 두 줄로 꺾여 행 높이가 제각각이었다(사용자: "이름 열이 길어지니 칸이 너무 커진다").
+   주상병 열을 없애고 환자 칸 아랫줄(작은 글자)로 내렸다 — 모든 행이 정확히 2줄(이름 줄 + 주상병 줄)이고,
+   내용은 그 2줄 높이 안에서만 흐른다. 고정 폭 합 350px → 내용 ≈164px.
+   환자 132px: '김차임 여/72세'(≈100) · 미연결 문의 연락처 '010-1234-5678'(≈92)이 한 줄. 모자라면 꺾지 않고 …(툴팁에 전문). */
+.page-dashboard .aq-table col.c-kind { width: 62px; }
+.page-dashboard .aq-table col.c-who { width: 132px; }
+.page-dashboard .aq-table col.c-meta { width: 58px; }
 /* 고정 레이아웃이라 이 표는 넘치지 않는다 — 마지막 행의 '…' 더보기 메뉴가 .tbl-wrap(overflow:auto)에 잘리지 않게 */
 .page-dashboard .tbl-wrap:has(> .aq-table) { overflow: visible; }
-/* 액션 — 가장 넓은 조합 '상담 등록 + …'(≈92px)이 버튼 여백 2px 6px 기준으로 칸(내용 98px) 안에 든다 */
-.page-dashboard .aq-table col.c-act { width: 106px; }
+/* 액션 — 가장 넓은 조합 '상담 등록 + …'·'문자 + ✓ 완료'(≈96px)이 버튼 여백 2px 6px 기준으로 한 줄에 든다. 이 폭은 화면이 좁아져도 지킨다 */
+.page-dashboard .aq-table col.c-act { width: 100px; }
 /* 말줄임 금지 — 입·퇴원 현황과 같은 규칙(2026-09-23 요청). 모자라면 숨기지 말고 둘째 줄로.
    ⚠ 셀렉터에 #action-queue 를 넣는다 — 위 '글자 한 단계 키움' 규칙(#action-queue .dash-table td, 명시도 1-2-1)이
    id 로 이겨서 여기 적은 여백 6px·버튼 크기·경과 글자 크기가 전부 무시되고 있었다(2026-09-28 발견).
    줄높이도 칸마다 1.25/1.4 로 달랐던 것을 1.3 하나로. */
-.page-dashboard #action-queue .aq-table th, .page-dashboard #action-queue .aq-table td { white-space: normal; word-break: keep-all; overflow-wrap: break-word; padding-left: 6px; padding-right: 6px; line-height: 1.3; }
+.page-dashboard #action-queue .aq-table th, .page-dashboard #action-queue .aq-table td { white-space: normal; word-break: keep-all; overflow-wrap: break-word; padding: 5px 6px; line-height: 1.3; vertical-align: middle; }
 .page-dashboard #action-queue .aq-table td.dash-action-cell { overflow: visible; white-space: nowrap; padding-left: 4px; padding-right: 4px; }
 .page-dashboard #action-queue .aq-table .dash-action-cell .btn-xs { padding: 2px 6px; margin: 1px; }
 .page-dashboard #action-queue .aq-table .dash-action-cell .aq-more { margin: 1px; }
 /* 배지는 칸보다 넓으면 낱자로 쪼개지 말고(카카오채널) 여백으로 조금 넘친다 */
 .page-dashboard #action-queue .aq-table .aq-kind { padding: 1px 5px; white-space: nowrap; }
-/* 환자·주상병이 잘리던 것(2026-09-22 요청) — '김차임…'에 성별/나이는 아예 안 보이고 '근골…'로 끊겼다.
-   폭은 '내용'에서 덜어 왔다(어차피 대부분 …으로 잘려 정보가 없고 툴팁에 전문이 있다).
-   환자는 이름 한 줄 + 성별/나이 아랫줄로 쪼개고, 주상병은 두 줄까지 흐르게 둔다. */
-.page-dashboard .aq-table td.aq-who { white-space: normal; }
-.page-dashboard .aq-table td.aq-who > a { display: block; white-space: normal; word-break: keep-all; }
-/* margin-left:0 — 대시보드 인라인 .dash-who{margin-left:4px}(이름 옆에 붙일 때 쓰는 간격)가 아랫줄에도 남아 성별/나이가 4px 들여쓰기돼 있었다 */
-.page-dashboard .aq-table td.aq-who .dash-who { display: block; margin-left: 0; font-size: .82em; color: var(--dmuted); }
-/* overflow·text-overflow — 대시보드 인라인 .dash-dx 의 말줄임(overflow:hidden; ellipsis)이 이 표에서도 살아 있었다 */
-.page-dashboard .aq-table .dash-dx { max-width: none; white-space: normal; word-break: keep-all; overflow: visible; text-overflow: clip; }
+/* 환자 칸(2026-09-30 요청: "이름이나 연락처는 가로로 다 보이게") — 윗줄 '이름 성별/나이'는 절대 꺾지 않는다(nowrap).
+   아랫줄 주상병은 작은 글자 한 줄. 두 줄 다 넘치면 …으로 자르고 툴팁(td title·span title)에 전문을 둔다.
+   2026-09-22엔 성별/나이를 아랫줄로 내려 두 줄이었는데, 그 자리에 주상병이 들어오면서 다시 이름 옆으로. */
+.page-dashboard #action-queue .aq-table td.aq-who { white-space: nowrap; overflow: hidden; }
+.page-dashboard .aq-table td.aq-who .aq-name { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.page-dashboard .aq-table td.aq-who .aq-name > a { white-space: nowrap; }
+.page-dashboard .aq-table td.aq-who .dash-who { display: inline; margin-left: 4px; font-size: .78em; color: var(--dmuted); }
+/* 주상병 줄 — 색 구분(.dash-dx.dxg-*)은 그대로 살리려고 여기서 color 를 정하지 않는다 */
+.page-dashboard .aq-table td.aq-who .dash-dx { display: block; max-width: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .78rem; line-height: 1.25; margin-top: 1px; }
 /* 내용은 설명성 칸 — 이름·주상병보다 한 단계 작게(같은 카드의 보조 글자 .82rem 과 같은 크기) */
 .page-dashboard #action-queue .aq-table td.aq-detail { font-size: .82rem; }
 .page-dashboard .aq-detail { white-space: normal; word-break: keep-all; color: var(--dmuted); }
+/* 내용은 두 줄까지만(2026-09-30 요청: "내용 간격을 줄여 달라") — 환자 칸의 2줄 높이에 맞춘다. 셋째 줄부터는 …, 전문은 툴팁 */
+.page-dashboard .aq-table td.aq-detail .aq-clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.25; }
+/* 좁은 화면(1500 이하, 카드 ≈460px) — 환자·액션·구분을 한 단계 줄이되 액션 두 버튼은 여전히 한 줄 */
+@media (max-width: 1500px) {
+    .page-dashboard .aq-table col.c-kind { width: 58px; }
+    .page-dashboard .aq-table col.c-who { width: 118px; }
+    .page-dashboard .aq-table col.c-act { width: 94px; }
+    .page-dashboard #action-queue .aq-table .dash-action-cell .btn-xs { padding: 2px 5px; }
+}
 .page-dashboard #action-queue .aq-table td.aq-meta { font-size: .8rem; }
 .page-dashboard .aq-meta { font-size: .78rem; color: var(--dmuted); }
 .page-dashboard .aq-meta.danger { color: var(--dcrit); font-weight: 800; }

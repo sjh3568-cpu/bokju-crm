@@ -339,9 +339,9 @@
 <tr class="aq-row {{ item.tone }}{% if stale %} stale{% endif %}">
     {% set kslug = {'퇴원지연':'discharge','퇴원예정':'discharge','재연락':'callback','문의':'inquiry','입원준비':'prep','담당자':'staff','운행':'transport','입원예정일':'planned','안내 문자':'sms'}.get(item.group, 'hold-adm' if item.kind == '입원보류' else 'hold') %}
     <td class="nowrap"><span class="aq-kind k-{{ kslug }}">{{ item.kind }}</span></td>
-    <td class="aq-who" title="{{ item.title }}{% if item.who %} · {{ item.who }}{% endif %}"><a href="{{ item.href or '#' }}">{{ item.title }}</a>{% if item.who %}<span class="dash-who">{{ item.who }}</span>{% endif %}</td>
-    <td class="dash-dx{% if item.dx|dx_group %} dxg-{{ item.dx|dx_group }}{% endif %}" title="{{ item.dx }}">{{ item.dx or '-' }}</td>
-    <td class="aq-detail" title="{{ item.detail }}">{{ item.detail or '-' }}</td>
+    {#- 환자 칸 = 이름(연락처)·성별/나이 한 줄 + 주상병 아랫줄 — 6열을 5열로 줄여 이름이 꺾이지 않고 행 높이가 2줄로 고른다(2026-09-30 요청) -#}
+    <td class="aq-who" title="{{ item.title }}{% if item.who %} · {{ item.who }}{% endif %}"><span class="aq-name"><a href="{{ item.href or '#' }}">{{ item.title }}</a>{% if item.who %}<span class="dash-who">{{ item.who }}</span>{% endif %}</span><span class="dash-dx{% if item.dx|dx_group %} dxg-{{ item.dx|dx_group }}{% endif %}" title="{{ item.dx }}">{{ item.dx or '-' }}</span></td>
+    <td class="aq-detail" title="{{ item.detail }}"><span class="aq-clamp">{{ item.detail or '-' }}</span></td>
     <td class="nowrap aq-meta age-{{ item.age_tier }}" title="경과 {{ item.age_days }}일 — 오늘=초록 · 1~2일=주황 · 3~7일=빨강 · 8일 이상=방치">{% if stale %}{{ item.age_days }}일 방치{% if item.meta %} <span class="muted-sm">· {{ item.meta }}</span>{% endif %}{% else %}{{ item.meta }}{% endif %}</td>
     <td class="nowrap dash-action-cell">
         {% if item.action and item.action.type == 'comm' %}
@@ -380,9 +380,9 @@
 {% macro action_table(rows, stale=False, limit=5) %}
 <div class="tbl-wrap">
     <table class="tbl dash-table aq-table"{% if limit %} data-limit="{{ limit }}"{% endif %}>
-        {#- 고정 열 폭 — 카드(≈534px)를 넘지 않게. 남는 폭은 '내용' 열이 갖고 ellipsis (2026-09-21) -#}
-        <colgroup><col class="c-kind"><col class="c-who"><col class="c-dx"><col class="c-detail"><col class="c-meta"><col class="c-act"></colgroup>
-        <thead><tr><th>구분</th><th>환자</th><th>주상병</th><th>내용</th><th>경과</th><th>액션</th></tr></thead>
+        {#- 고정 열 폭 — 카드(≈534px)를 넘지 않게. 남는 폭은 '내용' 열이 갖는다. 주상병은 환자 칸 아랫줄(2026-09-30) -#}
+        <colgroup><col class="c-kind"><col class="c-who"><col class="c-detail"><col class="c-meta"><col class="c-act"></colgroup>
+        <thead><tr><th>구분</th><th>환자 · 주상병</th><th>내용</th><th>경과</th><th>액션</th></tr></thead>
         <tbody>{% for item in rows %}{{ action_tr(item, stale) }}{% endfor %}</tbody>
     </table>
 </div>

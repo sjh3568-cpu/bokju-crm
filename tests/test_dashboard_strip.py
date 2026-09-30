@@ -189,7 +189,7 @@ class DashboardDueQueueTests(DashboardStripTests):
         self.assertIn("퇴원 예정일 5일 지남", html)   # 지난 지 1주일 안 — 큐에 남는다(2026-09-18)
 
     def test_queue_and_due_rows_show_who_and_primary_dx(self):
-        """오늘 처리 필요·기한 임박의 환자 이름 옆에 성별/나이, 별도 열에 주상병이 붙는다."""
+        """오늘 처리 필요는 환자 칸 아랫줄에, 기한 임박은 별도 열에 주상병이 붙는다. 이름 옆엔 성별/나이."""
         base = (self.today - timedelta(days=100)).isoformat()
         with models.get_db() as conn:
             for pid, name, gender in ((6, "최근초과", "F"), (7, "곧만료", "M"), (8, "재연락대기", "M")):
@@ -214,9 +214,10 @@ class DashboardDueQueueTests(DashboardStripTests):
         self._add_admitted_consult(6, 6, base, (self.today - timedelta(days=5)).isoformat())   # 오늘 처리 필요(초과)
         self._add_admitted_consult(7, 7, base, (self.today + timedelta(days=30)).isoformat())  # 기한 임박(D-30)
         html = self.client.get("/").get_data(as_text=True)
-        self.assertGreaterEqual(html.count("<th>주상병</th>"), 3)     # 처리 큐 · 회복기 전환 · 퇴원 예정
-        # 오늘 처리 필요는 칸이 좁아 성별/나이를 이름 아랫줄로 내렸다(2026-09-22) — 사이 공백 없음.
-        # 기한 임박은 폭이 넉넉해 이름 옆에 그대로 붙는다.
+        self.assertGreaterEqual(html.count("<th>주상병</th>"), 2)     # 회복기 전환 · 퇴원 예정
+        self.assertIn("<th>환자 · 주상병</th>", html)              # 처리 큐는 환자 칸 아랫줄(2026-09-30)
+        # 오늘 처리 필요는 성별/나이를 이름 바로 뒤에 붙인다(사이 공백 없음, CSS 가 간격을 준다) — 이름 줄은 한 줄 고정.
+        # 기한 임박은 폭이 넉넉해 이름 옆에 공백 하나로 붙는다.
         self.assertIn('최근초과</a><span class="dash-who">여/70세</span>', html)
         self.assertIn('재연락대기</a><span class="dash-who">남/65세</span>', html)
         self.assertIn('곧만료</a> <span class="dash-who">남/70세</span>', html)
@@ -225,9 +226,10 @@ class DashboardDueQueueTests(DashboardStripTests):
         # 뇌졸중은 출혈(dxg-stroke-hem)·경색(dxg-stroke-inf)·그 밖(dxg-stroke)으로 갈린다.
         # 툴팁은 병명 그대로 두고 색 뜻은 표 머리의 범례로. 주상병으로 적힌 파킨슨병은
         # 비사용증후군으로 본다(2026-09-20 사용자 결정 — 기저질환의 파킨슨과 구분).
-        self.assertIn('<td class="dash-dx dxg-stroke-inf" title="상세불명의 뇌경색증">상세불명의 뇌경색증</td>', html)
-        self.assertIn('<td class="dash-dx dxg-stroke" title="척수손상">척수손상</td>', html)
-        self.assertIn('<td class="dash-dx dxg-disuse" title="파킨슨병">파킨슨병</td>', html)
+        self.assertIn('<td class="dash-dx dxg-stroke-inf" title="상세불명의 뇌경색증">상세불명의 뇌경색증</td>', html)   # 기한 임박(별도 열)
+        # 오늘 처리 필요는 환자 칸 아랫줄의 span(2026-09-30)
+        self.assertIn('<span class="dash-dx dxg-stroke" title="척수손상">척수손상</span>', html)
+        self.assertIn('<span class="dash-dx dxg-disuse" title="파킨슨병">파킨슨병</span>', html)
         self.assertNotIn('title="[&#34;', html)
         # 경과·D-day 색상 단계: 오늘 상담요청=fresh, 5일 초과=old, D-30=far
         self.assertIn('aq-meta age-fresh', html)
