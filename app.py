@@ -549,6 +549,7 @@ def _inject_globals():
         "command_metrics": command_metrics,
         "account_preferences": account_preferences,
         "today_str": date.today().isoformat(),   # 날짜 입력 기본값(외진 기록 등)
+        "tomorrow_str": (date.today() + timedelta(days=1)).isoformat(),   # 퇴원예정·퇴원 폼 기본값(2026-09-30 요청)
         "today_header": date.today().strftime('%Y-%m-%d') + f"({'월화수목금토일'[date.today().weekday()]})",   # 화면 날짜 표기 규칙 2026-09-21(월)
         "INSURANCE_TYPES": INSURANCE_TYPES,
         "CONSULT_CHANNELS": CONSULT_CHANNELS,

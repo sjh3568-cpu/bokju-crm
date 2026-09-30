@@ -77,9 +77,10 @@ class DischargeTwoStepTests(unittest.TestCase):
         self.client.post("/api/consult/1/discharge", json={"action": "extend", "discharge_due_date": d(3)})
         html = self._roster_html()
         self.assertIn(">퇴원예정</button>", html)          # 잡혀 있든 아니든 같은 문구
-        # 퇴원·퇴원예정 폼 날짜는 오늘 고정(2026-09-30 요청) — 잡혀 있던 예정일은 title 안내로만
-        self.assertIn(f'class="wd-dis-date" value="{d(0)}"', html)
-        self.assertIn(f'class="wd-plan-date" value="{d(0)}"', html)
+        # 퇴원·퇴원예정 폼 날짜는 내일 고정(2026-09-30 요청: 외진은 오늘, 퇴원 쪽은 내일) — 잡혀 있던 예정일은 title 안내로만
+        self.assertIn(f'class="wd-dis-date" value="{d(1)}"', html)
+        self.assertIn(f'class="wd-plan-date" value="{d(1)}"', html)
+        self.assertIn(f'class="wd-af-date" value="{d(0)}"', html)
         self.assertNotIn(f'class="wd-dis-date" value="{d(3)}"', html)
         self.assertIn(f"(예정일 {d(3)})", html)
 

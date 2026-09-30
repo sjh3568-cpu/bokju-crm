@@ -307,14 +307,14 @@
         <button type="button" class="btn btn-secondary btn-xs wd-af-cancel">취소</button>
     </div>
     <div class="rm-inline rm-inline-plan">
-        <input type="date" class="wd-plan-date" value="{{ today_str }}" title="퇴원 예정일">
+        <input type="date" class="wd-plan-date" value="{{ tomorrow_str }}" title="퇴원 예정일 — 기본은 내일">
         <input type="text" class="wd-plan-destination" placeholder="퇴원 기관·장소 (선택)">
         <input type="text" class="wd-plan-reason" placeholder="퇴원 사유 (선택)">
         <button type="button" class="btn btn-primary btn-xs wd-plan-save">예정 저장</button>
         <button type="button" class="btn btn-secondary btn-xs wd-plan-cancel">취소</button>
     </div>
     <div class="rm-inline rm-inline-discharge">
-        <input type="date" class="wd-dis-date" value="{{ today_str }}">
+        <input type="date" class="wd-dis-date" value="{{ tomorrow_str }}" title="퇴원일 — 기본은 내일">
         <input type="text" class="wd-dis-destination" placeholder="퇴원 기관·장소">
         <input type="text" class="wd-dis-reason" placeholder="퇴원 사유">
         <button type="button" class="btn btn-primary btn-xs wd-dis-save">퇴원 처리</button>
@@ -1336,14 +1336,14 @@ tr.wd-saved td { background:#f0fdf4 !important; transition:background .3s; }
             });
         } else if (kind === 'plan') {
             form.dataset.cid = cid;
-            // 날짜는 오늘 고정(2026-09-30 요청) — 예전 예정일이 남아 있어도 오늘부터 잡는다. 기존 예정은 title로만 보여 준다.
-            if (bed.dataset.due) form.querySelector('.wd-plan-date').title = `퇴원 예정일 — 기본은 오늘 (현재 예정 ${bed.dataset.due})`;
+            // 날짜는 내일 고정(2026-09-30 요청: 외진은 오늘, 퇴원예정·퇴원은 내일) — 기존 예정은 title로만 보여 준다.
+            if (bed.dataset.due) form.querySelector('.wd-plan-date').title = `퇴원 예정일 — 기본은 내일 (현재 예정 ${bed.dataset.due})`;
             form.querySelector('.wd-plan-destination').value = bed.dataset.dest || '';
             form.querySelector('.wd-plan-reason').value = bed.dataset.dreason || '';
             form.querySelector('.wd-plan-cancel').addEventListener('click',()=>{form.hidden=true;});
             form.querySelector('.wd-plan-save').addEventListener('click',()=>savePlan(form,name));
         } else if (kind === 'discharge') {
-            if (bed.dataset.due) form.querySelector('.wd-dis-date').title = `퇴원일 — 기본은 오늘 (예정일 ${bed.dataset.due})`;
+            if (bed.dataset.due) form.querySelector('.wd-dis-date').title = `퇴원일 — 기본은 내일 (예정일 ${bed.dataset.due})`;
             form.querySelector('.wd-dis-destination').value = bed.dataset.dest || '';
             form.querySelector('.wd-dis-reason').value = bed.dataset.dreason || '';
             form.querySelector('.wd-dis-cancel').addEventListener('click',()=>{form.hidden=true;});
