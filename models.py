@@ -22,6 +22,10 @@ from werkzeug.security import generate_password_hash
 
 from config import (DIAGNOSIS_SEED, HOSPITAL_ALIASES, MENU_KEYS,
                     SOURCE_HOSPITAL_SEED, STAGE_STALE_DAYS, role_preset)
+# 통합 검색 규칙(띄어쓰기·별칭·접미사·오타) — SQL에서는 get_db()가 등록하는 같은 이름의 함수로 쓴다.
+from search_match import (HOSPITAL_KIND_SUFFIXES as _HOSPITAL_KIND_SUFFIXES,
+                          register_sql_functions as _register_search_functions,
+                          search_key, search_match, search_match_fuzzy)
 
 # DB 위치 — 기본은 코드 폴더 옆. 컨테이너 배포 시 BOKJU_DB_PATH로 마운트 볼륨을 가리킨다
 # (예: /data/bokju.db). SQLite WAL은 SMB/NFS에서 동작하지 않으므로 반드시 로컬 파일시스템.
@@ -72,6 +76,8 @@ def get_db():
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute(f"PRAGMA busy_timeout={int(BUSY_TIMEOUT * 1000)}")
     conn.execute("PRAGMA foreign_keys=ON")
+    # 검색 SQL이 LIKE 대신 쓰는 search_match(q, 컬럼…)/search_match_fuzzy — 연결마다 등록해야 보인다.
+    _register_search_functions(conn)
     return conn
 
 
@@ -1730,10 +1736,9 @@ def _build_audit_where(*, date_from=None, date_to=None, username=None,
         where.append("a.target_type = ?")
         vals.append(target_type)
     if q:
-        like = f"%{q.strip()}%"
-        where.append("(a.detail LIKE ? OR a.username LIKE ? OR a.ip LIKE ? "
-                     "OR a.action LIKE ? OR CAST(a.target_id AS TEXT) = ?)")
-        vals.extend([like, like, like, like, q.strip()])
+        where.append("(search_match(?, a.detail, a.username, a.ip, a.action) "
+                     "OR CAST(a.target_id AS TEXT) = ?)")
+        vals.extend([q.strip(), q.strip()])
     return ("WHERE " + " AND ".join(where) if where else ""), vals
 
 
@@ -3232,34 +3237,28 @@ def _build_consult_where(*, date_from=None, date_to=None, insurance=None, q=None
         # 기본(상담목록)은 환자명·모병원 — 목록 화면에서 이 입력칸은 환자명 컬럼
         # 헤더에 붙어 있어 의미를 넓히면 컬럼 필터가 어긋난다.
         # 재원 관리(q_scope='ward')만 검색창 안내대로 호실·연락처까지 넓힌다.
-        like = f"%{q}%"
+        # 비교는 search_match(띄어쓰기·문장부호 무시, 별칭·접미사 변형)로 하고,
+        # 모병원 칸만 search_match_fuzzy(기관명 한 글자 오타 허용) — search_match.py 참고.
+        # 연락처는 search_match가 '-'를 지우므로 01012345678 ↔ 010-1234-5678 이 그대로 맞는다.
         if q_scope == "ward":
-            digits = re.sub(r"\D", "", q)
             # 재원관리 통합검색: 표에 보이는 환자·호실뿐 아니라 진단/주치의/
-            # 보호자/모병원/보험/수가구분/균·관리태그까지 한 검색어로 찾는다.
+            # 보호자/보험/수가구분/균·관리태그까지 한 검색어로 찾는다.
             search_cols = (
                 "p.name", "c.room_number", "c.attending_doctor", "c.diseases",
                 "c.primary_diagnosis", "c.secondary_diagnosis", "c.special_care",
-                "c.source_hospital", "c.admission_purpose", "c.admission_purpose_category",
+                "c.admission_purpose", "c.admission_purpose_category",
                 "c.admission_status", "p.guardian_name", "p.guardian_relation",
                 "p.guardian_phone", "p.address_full", "p.residence_sido",
                 "p.residence_sigungu", "p.insurance_type", "p.mgmt_tags",
+                "(CASE p.gender WHEN 'M' THEN '남' WHEN 'F' THEN '여' ELSE '미상' END)",
+                "CAST(COALESCE(c.patient_age, '') AS TEXT)",
             )
-            cols = [f"COALESCE({col}, '') LIKE ?" for col in search_cols]
-            qvals = [like] * len(search_cols)
-            cols.append("(CASE p.gender WHEN 'M' THEN '남' WHEN 'F' THEN '여' ELSE '미상' END) LIKE ?")
-            qvals.append(like)
-            cols.append("CAST(COALESCE(c.patient_age, '') AS TEXT) LIKE ?")
-            qvals.append(like)
-            if digits:
-                # 하이픈 없이 친 번호도 잡는다 (01012345678 → 010-1234-5678)
-                cols.append("REPLACE(REPLACE(p.guardian_phone, '-', ''), ' ', '') LIKE ?")
-                qvals.append(f"%{digits}%")
-            where.append("(" + " OR ".join(cols) + ")")
-            vals.extend(qvals)
+            where.append(f"(search_match(?, {', '.join(search_cols)}) "
+                         "OR search_match_fuzzy(?, c.source_hospital))")
+            vals.extend([q, q])
         else:
-            where.append("(p.name LIKE ? OR c.source_hospital LIKE ?)")
-            vals.extend([like, like])
+            where.append("(search_match(?, p.name) OR search_match_fuzzy(?, c.source_hospital))")
+            vals.extend([q, q])
     # 컬럼별 필터 — 성별·나이 범위·보호자·모병원
     if gender:
         where.append("p.gender = ?"); vals.append(gender)
@@ -3268,11 +3267,10 @@ def _build_consult_where(*, date_from=None, date_to=None, insurance=None, q=None
     if age_max is not None:
         where.append("c.patient_age <= ?"); vals.append(int(age_max))
     if guardian:
-        where.append("(p.guardian_name LIKE ? OR p.guardian_phone LIKE ?)")
-        like = f"%{guardian}%"
-        vals.extend([like, like])
+        where.append("search_match(?, p.guardian_name, p.guardian_phone)")
+        vals.append(guardian)
     if hospital:
-        where.append("c.source_hospital LIKE ?"); vals.append(f"%{hospital}%")
+        where.append("search_match_fuzzy(?, c.source_hospital)"); vals.append(hospital)
     if stay_period == "extended_6m":
         cns_clause = " OR ".join("c.diseases LIKE ?" for _ in _CNS_DISEASE_FILTER_TERMS)
         where.append(
@@ -3760,11 +3758,9 @@ def canonical_hospital_name(value: str | None) -> str | None:
 
 def _hospital_substring_key(value: str | None) -> str:
     """원본 부분 매칭용 — 공백·문장부호만 제거. 접미사는 보존하여
-    '경북대'(입력)가 '경북대학교병원'·'칠곡경북대학교병원'에 부분 문자열로 잡히도록 한다."""
-    value = (value or "").strip().lower()
-    for ch in (" ", "\t", "\n", "-", "_", ".", "·", "(", ")", "[", "]"):
-        value = value.replace(ch, "")
-    return value
+    '경북대'(입력)가 '경북대학교병원'·'칠곡경북대학교병원'에 부분 문자열로 잡히도록 한다.
+    구현은 search_match.search_key와 같다(통합 검색과 기준을 하나로)."""
+    return search_key(value)
 
 
 def _hospital_match_score(query: str, row: dict) -> int | None:
@@ -4088,8 +4084,8 @@ def top_source_hospitals(limit: int = 5):
 def autocomplete_diagnoses(q: str, limit: int = 10):
     conn = get_db()
     rows = conn.execute(
-        "SELECT name, icd10, category FROM diagnoses WHERE name LIKE ? ORDER BY name LIMIT ?",
-        (f"%{q}%", limit),
+        "SELECT name, icd10, category FROM diagnoses WHERE search_match(?, name) ORDER BY name LIMIT ?",
+        (q, limit),
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
@@ -4102,9 +4098,9 @@ def autocomplete_patients(q: str, limit: int = 10):
         SELECT id, name, gender, guardian_phone, guardian_name, guardian_relation,
                address_full, insurance_type, family_info,
                blacklist, blacklist_reason
-        FROM patients WHERE name LIKE ? ORDER BY updated_at DESC LIMIT ?
+        FROM patients WHERE search_match(?, name) ORDER BY updated_at DESC LIMIT ?
         """,
-        (f"%{q}%", limit),
+        (q, limit),
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
@@ -5738,8 +5734,8 @@ def hospital_admission_analysis(date_from=None, date_to=None, hospital=None, q=N
     if hospital:
         where.append("c.source_hospital = ?"); vals.append(hospital)
     if q:
-        where.append("(p.name LIKE ? OR c.source_hospital LIKE ?)")
-        vals.extend([f"%{q}%", f"%{q}%"])
+        where.append("(search_match(?, p.name) OR search_match_fuzzy(?, c.source_hospital))")
+        vals.extend([q, q])
     conn = get_db()
     rows = conn.execute(f"""
         SELECT c.id AS consultation_id, p.id AS patient_id, p.name AS patient_name,
@@ -5781,8 +5777,7 @@ def hospital_admission_analysis(date_from=None, date_to=None, hospital=None, q=N
 
 # 기관 종류 접미사 — 약칭('대구굿모닝')을 정식 표기('대구굿모닝병원')로 접을 때만 쓴다.
 # 긴 것부터 두어 '대학교병원'이 '병원'보다 먼저 걸리게 한다.
-_HOSPITAL_KIND_SUFFIXES = ("상급종합병원", "종합병원", "대학교병원", "대학병원",
-                           "한방병원", "요양병원", "재활병원", "의료원", "병원", "의원")
+# _HOSPITAL_KIND_SUFFIXES 는 search_match.HOSPITAL_KIND_SUFFIXES (모듈 상단 import) — 검색과 집계가 같은 목록을 쓴다.
 
 
 # 모병원 칸에 들어와 있지만 의료기관이 아닌 값. 과거 엑셀 적재분에 자택 거주를
@@ -6518,9 +6513,9 @@ def hospital_referral_overview(date_from=None, date_to=None, q=None):
           for r in raw if is_institution_source(r['name'])]
     items=_group_hospital_consultations(rows,display_map=hospital_display_map())
     total_count=len(items);max_referrals=items[0]['referrals'] if items else 0
-    key=_hospital_substring_key(q)
-    if key: items=[d for d in items if any(key in _hospital_substring_key(v['name']) for v in d['variants'])
-                   or (d.get('official_name') and key in _hospital_substring_key(d['official_name']))]
+    # 검색은 통합 검색 규칙(search_match.py) — 띄어쓰기·별칭·접미사 변형·기관명 오타까지 같은 기준.
+    if (q or '').strip():
+        items=[d for d in items if search_match_fuzzy(q,*(v['name'] for v in d['variants']),d.get('official_name'))]
     return {'hospitals':items,'hospital_count':len(items),'total_count':total_count,
             'max_referrals':max_referrals,'q':(q or '').strip(),
             'linked_referrals':sum(x['linked_referrals'] for x in items),
@@ -6926,8 +6921,8 @@ def lifecycle_board(*, q=None, period_days=None, stages=None, disease_group=None
     where = ["p.lifecycle_stage IS NOT NULL", "p.lifecycle_stage != ''"]
     vals = []
     if q:
-        where.append("(p.name LIKE ? OR p.guardian_phone LIKE ?)")
-        vals += [f"%{q}%", f"%{q}%"]
+        where.append("search_match(?, p.name, p.guardian_phone)")
+        vals.append(q)
     if stages:
         placeholders = ",".join("?" * len(stages))
         where.append(f"p.lifecycle_stage IN ({placeholders})")
@@ -7433,8 +7428,8 @@ def inbox_communications(*, status="active", channel="", assignee="", q="", limi
     if assignee == "unassigned": where.append("m.assigned_user_id IS NULL")
     elif assignee.isdigit(): where.append("m.assigned_user_id=?"); vals.append(int(assignee))
     if q:
-        where.append("(COALESCE(p.name,'') LIKE ? OR COALESCE(m.contact,'') LIKE ? OR COALESCE(m.summary,'') LIKE ? OR COALESCE(m.body,'') LIKE ?)")
-        vals.extend([f"%{q}%"]*4)
+        where.append("search_match(?, p.name, m.contact, m.summary, m.body)")
+        vals.append(q)
     rows=conn.execute(f"""SELECT m.*,p.name patient_name,p.blacklist,p.blacklist_reason,
         u.display_name assignee_name,
         CAST((julianday('now','localtime')-julianday(COALESCE(m.occurred_at,m.created_at)))*24*60 AS INTEGER) elapsed_minutes
@@ -7489,9 +7484,8 @@ def inquiry_rows(*, date_from=None, date_to=None, channel="", stage="", q="", li
     if channel:
         where.append("m.channel = ?"); vals.append(channel)
     if q:
-        like = f"%{q.strip()}%"
-        where.append("(m.summary LIKE ? OR m.body LIKE ? OR m.contact LIKE ? OR p.name LIKE ?)")
-        vals += [like, like, like, like]
+        where.append("search_match(?, m.summary, m.body, m.contact, p.name)")
+        vals.append(q.strip())
     conn = get_db()
     rows = conn.execute(
         f"""SELECT m.*, datetime(m.created_at,'localtime') AS created_local,
@@ -9290,10 +9284,10 @@ def list_documents(limit: int = 200, *, status=None, q=None, source=None):
     if source:
         where.append("d.source = ?"); vals.append(source)
     if q:
-        like = f"%{q.strip()}%"
-        where.append("(d.patient_name_ai LIKE ? OR d.diagnosis_ai LIKE ? OR d.sender_ai LIKE ? "
-                     "OR d.filename LIKE ? OR p.name LIKE ? OR d.ai_summary LIKE ?)")
-        vals += [like] * 6
+        # 발신 기관(sender_ai)만 기관명 오타 허용
+        where.append("(search_match(?, d.patient_name_ai, d.diagnosis_ai, d.filename, p.name, d.ai_summary) "
+                     "OR search_match_fuzzy(?, d.sender_ai))")
+        vals += [q.strip(), q.strip()]
     sql = ("SELECT d.*, p.name AS patient_name FROM patient_documents d "
            "LEFT JOIN patients p ON p.id = d.patient_id ")
     if where:

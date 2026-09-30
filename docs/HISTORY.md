@@ -178,3 +178,19 @@
   등록 때 채운다 — copy 모드는 EasyFax 원본명(`mfp1_YYYYMMDDHHMM`)의 시각, 아니면 파일 수정 시각. 인박스 카드 `occurred_at`도 같은 값.
 - 기존 건은 마이그레이션에서 원본명 → 없으면 `created_at`(UTC→localtime)으로 채운다. 목록은 날짜 옆에 HH:MM(작게), 상세는 파일명 줄에 '수신 YYYY-MM-DD HH:MM'.
 - `doc_date`는 직원이 고칠 수 있는 '문서 날짜'라 그대로 두고, 시각은 수신 기준 별도 컬럼으로. 정렬은 doc_date → received_at → id.
+
+### 통합 검색 — 띄어쓰기·별칭·접미사·오타를 넘어 어디서든 같은 결과 (2026-09-30, v1.12.0)
+- 사용자 요청: '대구굿모닝병원'과 '대구 굿모닝병원'이 같이 검색돼야 하고, 비슷한 표기도 잡혀야 하며, **검색은 어디든 다** 포함.
+  실제 DB에 같은 기관이 '대구굿모닝병원'·'대구 굿모닝병원'·'대구굿모닝'·'대구 굿모닝'으로, 경북대병원이 '경북대병원'·'경북대학병원'·
+  '칠곡경북대학교병원'·'칠골경북대병원'으로 흩어져 있었다. 모병원 분석·자동완성만 공백을 지워 비교했고 나머지 화면은 전부 SQL `LIKE`였다.
+- 규칙을 `search_match.py` 한 곳에 두고, `models.get_db()`가 `search_match(q, 컬럼…)`·`search_match_fuzzy(q, 컬럼…)`를 SQLite 사용자 함수로
+  등록한다. 검색 SQL은 `LIKE` 대신 이 함수를 쓴다(가변 인자 — 컬럼을 나열). 파이썬 쪽 필터(모병원 분석 `hospital_referral_overview`,
+  재원관리 명부-only 환자 `_orphan_matches`)도 같은 함수.
+- 규칙: ① 공백·문장부호·대소문자 무시 ② `HOSPITAL_ALIASES` 별칭 ③ 대학교병원=대학병원=대병원 ④ 검색어 끝 종별 접미사를 뗀 몸통(3자 이상)도 검색
+  ⑤ `fuzzy`만 기관명 몸통(4자 이상) 한 글자 오타 허용, **접미사 부분은 정확히** — 안동병원≠안동의원≠안동의료원. 몸통 2자('대구병원'→'대구')는 넓히지 않는다.
+- 바꾼 곳: 상담목록 q·hospital·guardian(`list_consultations`), 재원관리 ward 스코프(연락처 하이픈 제거 절은 제거 — 규칙 ①이 대신함), 전역 검색 협력기관,
+  모병원 입원 분석 `hospital_admission_analysis`, 생애주기 보드, 채널 문의(`inbox_communications`·문의 내역), 팩스 자료함(발신 기관만 fuzzy),
+  이력 관리, 환자·병명 자동완성, 기관협력 목록·`/partners/search`·명부 자동연결 후보(`_match_directory`·`_directory_candidates`).
+- 손대지 않은 것: 통계 집계 기준(`hospital_group_key`·`hospital_display_map`)과 재원관리의 모병원 링크 필터(`hospital_name_variants`) — 이건 순위표 건수와
+  목록을 맞추는 집계 쪽 규칙이라 그대로. 병원 자동완성(`_facility_match_score`)도 자체 점수 규칙이 이미 공백을 무시해 그대로.
+- 성능: 파이썬 UDF라 행마다 호출되지만 `str.translate` 기반이라 상담 8천 건 전체 스캔이 수십 ms 수준. 테스트 `tests/test_search_match.py`.

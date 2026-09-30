@@ -380,7 +380,7 @@ def index():
           (SELECT COUNT(*) FROM cooperation_contacts c WHERE c.partner_id=p.id AND c.status='재직') contact_count
           FROM cooperation_partners p JOIN source_hospitals h ON h.id=p.hospital_id
           LEFT JOIN cooperation_facility_directory d ON d.id=p.directory_id
-          WHERE (h.name LIKE ? OR p.specialties LIKE ? OR p.strengths LIKE ?) ORDER BY p.important DESC,h.name''', tuple('%'+q+'%' for _ in range(3))).fetchall()
+          WHERE (search_match_fuzzy(?,h.name,p.official_name) OR search_match(?,p.specialties,p.strengths)) ORDER BY p.important DESC,h.name''', (q,q)).fetchall()
         partners=[dict(r) for r in rows]
         directory_count=db.execute('SELECT COUNT(*) FROM cooperation_facility_directory WHERE active=1').fetchone()[0]
         master_table='cooperation_facility_directory' if directory_count else 'source_hospitals'
@@ -494,10 +494,10 @@ def search():
     terms=q.split()[:5]
     conditions=["h.active=1"]
     args=[]
+    # 단어마다 이름(기관명 오타 허용)·주소·지역 중 하나에 맞아야 한다. 띄어쓰기·별칭·접미사 변형은 search_match.py.
     for term in terms:
-        conditions.append("(h.name LIKE ? ESCAPE '\\' OR h.address LIKE ? ESCAPE '\\' OR h.region LIKE ? ESCAPE '\\')")
-        term=term.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
-        args.extend(['%'+term+'%']*3)
+        conditions.append("(search_match_fuzzy(?,h.name) OR search_match(?,h.address,h.region))")
+        args.extend([term,term])
     for key in ('kind','region'):
         value=request.args.get(key,'').strip()
         if value: conditions.append('h.'+key+'=?');args.append(value)
@@ -637,9 +637,8 @@ def _match_directory(db, name):
     row=db.execute("SELECT * FROM cooperation_facility_directory WHERE active=1 AND name=?",(name,)).fetchone()
     if row:
         return row
-    like=name.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
     cands=db.execute("SELECT * FROM cooperation_facility_directory WHERE active=1 "
-                     "AND name LIKE ? ESCAPE '\\' ORDER BY name LIMIT 3",('%'+like+'%',)).fetchall()
+                     "AND search_match_fuzzy(?,name) ORDER BY name LIMIT 3",(name,)).fetchall()
     return cands[0] if len(cands)==1 else None
 
 
@@ -648,9 +647,8 @@ def _directory_candidates(db, name, limit=6):
     name=(name or '').strip()
     if not name:
         return []
-    like=name.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
     rows=db.execute("SELECT id,name,kind,region,address,bed_count FROM cooperation_facility_directory "
-                    "WHERE active=1 AND name LIKE ? ESCAPE '\\' ORDER BY name LIMIT ?",('%'+like+'%',limit)).fetchall()
+                    "WHERE active=1 AND search_match_fuzzy(?,name) ORDER BY name LIMIT ?",(name,limit)).fetchall()
     return [dict(r) for r in rows]
 
 

@@ -1276,11 +1276,10 @@ def _orphan_matches(ep, q):
     q = (q or "").strip()
     if not q:
         return True
-    needle = q.replace(" ", "").casefold()
-    hay = "".join(str(ep.get(k) or "") for k in
-                  ("patient_name", "room_number", "ward", "attending_doctor",
-                   "diagnosis_name", "diagnosis_code", "chart_no", "care_type")).replace(" ", "").casefold()
-    return needle in hay
+    # 상담 검색(search_match SQL 함수)과 같은 규칙 — 띄어쓰기·문장부호 무시, 별칭·접미사 변형.
+    return models.search_match(q, *(ep.get(k) for k in
+                                    ("patient_name", "room_number", "ward", "attending_doctor",
+                                     "diagnosis_name", "diagnosis_code", "chart_no", "care_type")))
 
 def _ward_row_from_episode(ep):
     """상담 없이 입원한 환자의 재원 행 — 원무 명부 값만으로 만든다.

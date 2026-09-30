@@ -647,7 +647,7 @@ def global_search():
                 COALESCE(d.kind,h.kind) kind,COALESCE(d.address,h.address) address
                 FROM cooperation_partners p JOIN source_hospitals h ON h.id=p.hospital_id
                 LEFT JOIN cooperation_facility_directory d ON d.id=p.directory_id
-                WHERE COALESCE(p.official_name,h.name) LIKE ? ORDER BY p.important DESC,name LIMIT 5''',('%'+q+'%',)).fetchall()
+                WHERE search_match_fuzzy(?,p.official_name,h.name) ORDER BY p.important DESC,name LIMIT 5''',(q,)).fetchall()
         items.extend({'kind':'협력기관','title':r['name'],'meta':' · '.join(filter(None,[r['kind'],r['address']])),
                       'url':url_for('partners.detail',pid=r['id'])} for r in rows)
     return jsonify(items=items[:12])
