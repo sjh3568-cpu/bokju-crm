@@ -300,15 +300,13 @@
     #rec-fab:hover .rec-fab-text,#krpg-fab:hover .krpg-fab-text,#todo-fab:hover .todo-fab-text,#calc-fab:hover .calc-fab-text,
     #rec-fab:focus-visible .rec-fab-text,#krpg-fab:focus-visible .krpg-fab-text,#todo-fab:focus-visible .todo-fab-text,#calc-fab:focus-visible .calc-fab-text { max-width:105px; opacity:1; transition-delay:.04s; }
     .todo-fab-badge { position:absolute; right:-2px; top:-5px; }
-    /* 좌측 제일 하단 도구 3줄 — 화면에 고정(fixed)이라 본문을 아무리 내려도 늘 보인다. 사이드바 폭(--sbw)을 따라간다. */
-    #sidebar-tools { position:fixed; left:0; bottom:0; z-index:125; width:var(--sbw, 244px); box-sizing:border-box;
-        display:grid; gap:4px; padding:8px 12px 12px; background:#fff; border-top:1px solid var(--border); border-right:1px solid var(--border); }
+    /* 좌측 제일 하단 도구 4줄 — 사이드바 발치(.sidebar-foot)의 정상 흐름에 둔다. 메뉴(.main-nav)만 스크롤되고
+       발치(도구·계정)는 늘 아래에 보이므로, 맨 아래 '시스템' 하위 메뉴를 펼쳐도 도구가 그 위를 덮지 않는다
+       (2026-10-02 요청 — 전에는 position:fixed 로 화면 하단에 띄워 하위 메뉴 '엑셀 적재' 등이 가려졌다). */
+    #sidebar-tools { position:static; width:auto; box-sizing:border-box; display:grid; gap:4px; padding:0 0 8px; background:transparent; border:0; }
     @media (max-width:1023px) { #sidebar-tools { display:none; } }
     /* 도구 4개(계산기·To-DO·분류체계 <button> + 통화 녹음 <a>)는 사이드바 메뉴와 같은 크기 */
     .calendar-tool-badge { margin-left:auto; min-width:18px; height:18px; line-height:18px; padding:0 6px; border-radius:9px; background:#0f8a7a; color:#fff; font-size:.68rem; font-weight:800; text-align:center; }
-    /* 도구 칸 실제 높이(패딩 20 + 버튼 4×~42 + 간격 12 ≈ 200px)보다 넉넉히 비워 계정 메뉴가 도구 칸에 붙거나 가려지지 않게 */
-    @media (min-width:1024px) { body.has-sidebar .sidebar { padding-bottom:222px; } }
-    .sidebar-collapsed #sidebar-tools { padding:8px 8px 10px; }
     #sidebar-tools > button, #sidebar-tools > a { position:relative; right:auto; bottom:auto; width:100%; height:auto; min-height:40px; padding:8px 12px;
         justify-content:flex-start; gap:10px; border:1px solid var(--border); border-radius:10px; background:#f4f7f5; color:var(--text);
         font-family:inherit; font-size:.92rem; font-weight:650; letter-spacing:-.01em; line-height:1.2; opacity:1; transform:none; box-shadow:none; backdrop-filter:none; -webkit-backdrop-filter:none; transition:background .12s; filter:none; }
@@ -671,9 +669,22 @@
         side.addEventListener('click',e=>{if(e.target.closest('a[href]')&&body.classList.contains('sidebar-drawer-open'))setDrawer(false);});
     })();
     const navGroups=document.querySelectorAll('.nav-menu-group');
+    function revealNavMenu(group){
+        // 사이드바에서는 메뉴 영역(.main-nav)만 스크롤된다 — 맨 아래 '시스템'처럼 펼친 하위 메뉴가 영역 밖으로
+        // 밀리면 보이지 않으므로, 펼친 직후 그룹 전체가 보이게 최소한으로만 스크롤한다(2026-10-02).
+        // scrollIntoView는 가로로도 밀어(메뉴 글자가 왼쪽으로 잘림) 세로만 직접 계산한다.
+        const nav=group.closest('.main-nav');
+        if(!nav||!document.body.classList.contains('has-sidebar'))return;
+        requestAnimationFrame(()=>{
+            const nr=nav.getBoundingClientRect(), gr=group.getBoundingClientRect();
+            if(gr.bottom>nr.bottom)nav.scrollTop+=Math.min(gr.bottom-nr.bottom, Math.max(0,gr.top-nr.top));
+            nav.scrollLeft=0;
+        });
+    }
     function setNavMenuOpen(group, opening){
         group.classList.toggle('open',opening);
         group.querySelectorAll(':scope > .nav-menu-toggle').forEach(trigger=>trigger.setAttribute('aria-expanded',String(opening)));
+        if(opening)revealNavMenu(group);
     }
     function closeNavMenus(except){navGroups.forEach(group=>{if(group!==except)setNavMenuOpen(group,false);});}
     navGroups.forEach((group,index)=>{
@@ -684,7 +695,7 @@
         // 벗어나면 잠시 뒤(180ms) 닫힌다 — ▾로 고정해 둔 그룹(.open)은 건드리지 않는다.
         if(group.classList.contains('active'))setNavMenuOpen(group,true);
         let hoverT;
-        group.addEventListener('mouseenter',()=>{clearTimeout(hoverT);hoverT=setTimeout(()=>group.classList.add('hover'),120);});
+        group.addEventListener('mouseenter',()=>{clearTimeout(hoverT);hoverT=setTimeout(()=>{group.classList.add('hover');if(!group.classList.contains('open'))revealNavMenu(group);},120);});
         group.addEventListener('mouseleave',()=>{clearTimeout(hoverT);hoverT=setTimeout(()=>group.classList.remove('hover'),180);});
         group.querySelectorAll(':scope > a, :scope > .nav-menu-toggle').forEach(trigger=>{
             // 메뉴 이름(<a>)은 그대로 이동한다. 하위 메뉴를 펼치는 것은 ▾ 버튼과 마우스 올리기.

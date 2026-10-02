@@ -199,3 +199,11 @@
 - [퇴원예정]·[퇴원] 인라인 폼(목록 행 `_ward_roster.html`, 병실 침상 카드 `ward.html` ensureEditor)이 `discharge_due or today_str`로
   채워져, 예정일이 잡힌 환자는 오늘 퇴원 처리 때마다 날짜를 고쳐야 했다(사용자 요청). 외진은 `today_str`, 퇴원예정·퇴원은 `tomorrow_str`(app.py 컨텍스트 프로세서) 고정, 기존 예정일은 title 안내로만.
 - 외진 폼은 원래 오늘 고정(max=오늘)이라 그대로. 대시보드의 퇴원예정 변경 prompt는 기존 예정일 기본을 유지(변경 용도).
+
+### 사이드바 — 도구 4개를 발치 정상 흐름에, 메뉴만 스크롤 (2026-10-02, v1.12.5)
+- `#sidebar-tools`(기간 계산기·To-DO·분류체계·통화 녹음)가 `position:fixed`로 화면 하단에 떠 있어, 맨 아래 '시스템' 하위 메뉴
+  (사용자 관리·이력 관리·엑셀 적재·데이터·백업 점검)를 펼치면 그 위를 덮었다(사용자 요청). 사이드바 하단 여백(222px)으로는 부족.
+- `.sidebar`는 `overflow:hidden`, `.main-nav`만 `flex:1; min-height:0; overflow-y:auto; flex-wrap:nowrap`(상단바 공통 `.main-nav`의
+  `flex-wrap:wrap`이 높이가 생기자 세로로 2열 분할됨), `.sidebar-foot`(도구·계정)은 `flex:0 0 auto`로 늘 아래. 도구는 static.
+- 하위 메뉴를 펼치면(▾·마우스 올림) `revealNavMenu`가 `.main-nav`를 세로로만 필요한 만큼 내린다 — `scrollIntoView`는 가로로도 밀어
+  메뉴 글자가 잘렸다. 검증: playwright 1440×900·1366×700 캡처(스크래치패드 shot_sidebar.py).
