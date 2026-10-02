@@ -262,6 +262,10 @@ class DashboardDischargeTests(unittest.TestCase):
         self.assertEqual(row["ward"], "13병동")
         self.assertIsNone(row.get("id"))                       # 상담이 없으니 링크도 없다
         self.assertEqual(data["summary"]["admission_today_completed"], 2)   # 오늘입원(3번) + 명부만입원
+        # KPI 카드 큰 숫자는 통합 입퇴원 사건(명부·CRM·외진 복귀)으로 센다 — 표의 '완료' 수와 같아야 한다(2026-10-02, 검토 6번).
+        import dashboard_metrics
+        mx = dashboard_metrics.kpi_metrics(date.today())
+        self.assertEqual(mx["roster_admission"]["today"], data["summary"]["admission_today_completed"])
         html = self.client.get("/").get_data(as_text=True)
         self.assertIn("명부만입원", html)
 

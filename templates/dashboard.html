@@ -451,10 +451,10 @@
 </div>
 
 {# ── KPI 4장 × 2줄 — 오늘·이번달 / 재원 ── #}
-{% macro delta_chip(delta, unit='', suffix='') -%}
+{% macro delta_chip(delta, unit='', suffix='', base='지난주') -%}
 {%- if delta > 0 %}<span class="d up">▲ +{{ delta }}{{ unit }}{{ suffix }}</span>
 {%- elif delta < 0 %}<span class="d dn">▼ {{ delta }}{{ unit }}{{ suffix }}</span>
-{%- else %}<span class="d n">= 지난주</span>{% endif -%}
+{%- else %}<span class="d n">= {{ base }}</span>{% endif -%}
 {%- endmacro %}
 {% set mk = month_kpi %}
 <section class="dash-kpi">
@@ -470,20 +470,20 @@
             <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg></span><svg data-spark="{{ mx.roster_admission.spark|join(',') }}" data-spark2="{{ mx.discharge.spark|join(',') }}" aria-hidden="true"><title>최근 7일 — 청록: 입원 완료, 주황: 퇴원 완료</title></svg>
             <span class="l">오늘 입원 · 퇴원</span>
             {% set discharge_today_due = discharge_due|selectattr('watch.days_left', 'equalto', 0)|list|length %}
-            <span class="v"><b class="num">{{ summary.admission_today_completed or 0 }}</b><small>입원</small>{{ delta_chip(mx.roster_admission.delta) }}<b class="num pair">{{ summary.discharge_today or 0 }}<small class="c2">퇴원</small></b>{{ delta_chip(mx.discharge.delta) }}</span>
-            <span class="s" title="큰 숫자 = 오늘 입원 완료(입원완료 처리·명부 입원·외진 복귀 처리) · 입원예정 = 오늘 입원 예정(외진 복귀 예정 포함)인데 아직 미완료 — 완료되면 큰 숫자로 옮겨 갑니다 · 지난주 같은 요일의 입원 완료 수(▲▼ 배지와 스파크라인 — 원무 명부·CRM·외진 복귀를 한 사건으로 묶은 입원 기준)">입원예정 <b>{{ summary.admission_today_planned or 0 }}</b> 미완료 · 지난주 {{ today_weekday }} <b>{{ mx.roster_admission.last_week }}</b>{% if unassigned_planned %} · <em class="warn-text">병실 미배정 {{ unassigned_planned|length }}</em>{% endif %}</span>
+            <span class="v"><b class="num">{{ mx.roster_admission.today }}</b><small>입원</small>{{ delta_chip(mx.roster_admission.delta) }}<b class="num pair">{{ summary.discharge_today or 0 }}<small class="c2">퇴원</small></b>{{ delta_chip(mx.discharge.delta) }}</span>
+            <span class="s" title="큰 숫자 = 오늘 입원 완료 — 원무 명부·CRM 입원완료·외진 복귀를 한 사건으로 묶은 수(배지·스파크라인·아래 입퇴원 표와 같은 근거) · 입원예정 = 오늘 입원 예정(외진 복귀 예정 포함)인데 아직 미완료 — 완료되면 큰 숫자로 옮겨 갑니다 · 지난주 같은 요일의 입원 완료 수(▲▼ 배지와 스파크라인 — 원무 명부·CRM·외진 복귀를 한 사건으로 묶은 입원 기준)">입원예정 <b>{{ summary.admission_today_planned or 0 }}</b> 미완료 · 지난주 {{ today_weekday }} <b>{{ mx.roster_admission.last_week }}</b>{% if unassigned_planned %} · <em class="warn-text">병실 미배정 {{ unassigned_planned|length }}</em>{% endif %}</span>
             <span class="s" title="퇴원 예정=퇴원 예정일이 오늘인 재원 · 완료=오늘 퇴원 처리(원무 명부 회차 + CRM 퇴원 처리를 한 사람으로 묶어 센다) · 지난주 같은 요일의 퇴원 수(▲▼ 배지의 비교 기준 — 이 배지만 명부 기준)">퇴원예정 <b>{{ discharge_today_due }}</b> · 완료 <b>{{ summary.discharge_today or 0 }}</b> · 지난주 {{ today_weekday }} <b>{{ mx.discharge.last_week }}</b></span>
         </a>
         <a class="kc" href="/consultations?from={{ mk.from }}&to={{ mk.to }}">
             <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 7l-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/></svg></span><svg data-spark="{{ mk.spark_total|join(',') }}" aria-hidden="true"></svg>
             <span class="l">이번달 상담 유입</span>
-            <span class="v"><b class="num">{{ mk.total }}</b><small>건</small>{{ delta_chip(mk.delta_total) }}</span>
+            <span class="v"><b class="num">{{ mk.total }}</b><small>건</small>{{ delta_chip(mk.delta_total, base='지난달') }}</span>
             <span class="s" title="지난달 같은 기간(1일~{{ mk.prev_to[-2:]|int }}일) 상담 {{ mk.prev.total }}건 · 상담일 평균 = 상담 {{ mk.total }}건 ÷ 실제 상담이 있던 {{ mk.active_days }}일 — 통계·월간 보고서의 ‘상담일 평균’과 같은 정의(지난달 같은 기간 {{ mk.prev.active_day_avg }}건)">지난달 <b>{{ mk.prev.total }}건</b> · 상담일 평균 <b>{{ mk.active_day_avg }}건</b></span>
         </a>
         <a class="kc" href="/stats" title="입원 = 입원일 기준(이번달 실제 입원, 상담이 지난달이어도 포함 · 원무 명부+CRM 통합, 외진 복귀 제외) / 전환율 = 상담일 기준(이번달 상담 중 입원완료 비율, /stats와 같은 정의)">
             <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg></span><svg data-spark="{{ mk.spark_admitted|join(',') }}" aria-hidden="true"><title>이번달 일별 입원(입원일 기준)</title></svg>
             <span class="l">이번달 입원 · 전환율<em>입원일 · 상담일 기준</em></span>
-            <span class="v"><b class="num">{{ mk.admitted }}</b><small>건</small>{{ delta_chip(mk.delta_admitted) }}<b class="num rate">{{ mk.rate }}<small>%</small></b>{% if mk.delta_rate > 0 %}<span class="d up">▲ +{{ mk.delta_rate }}%p</span>{% elif mk.delta_rate < 0 %}<span class="d dn">▼ {{ mk.delta_rate }}%p</span>{% else %}<span class="d n">= 지난달</span>{% endif %}</span>
+            <span class="v"><b class="num">{{ mk.admitted }}</b><small>건</small>{{ delta_chip(mk.delta_admitted, base='지난달') }}<b class="num rate">{{ mk.rate }}<small>%</small></b>{% if mk.delta_rate > 0 %}<span class="d up">▲ +{{ mk.delta_rate }}%p</span>{% elif mk.delta_rate < 0 %}<span class="d dn">▼ {{ mk.delta_rate }}%p</span>{% else %}<span class="d n">= 지난달</span>{% endif %}</span>
             <span class="s" title="입원일 기준 — 지난달 같은 기간(1일~{{ mk.prev_to[-2:]|int }}일)의 입원 · 지난달에 상담하고 이번달에 입원한 환자(이번달 전환율 분자에는 들어가지 않음){% if mk.admitted_return %} · 외진 복귀 {{ mk.admitted_return }}건은 입원에서 제외{% endif %}">지난달 입원 <b>{{ mk.prev_admitted }}건</b> · 전월상담→입원 <b>{{ mk.carry }}건</b></span>
             <span class="s" title="상담일 기준 — 이번달 상담 {{ mk.total }}건 중 입원완료 {{ mk.done }}건(지난달 같은 기간 {{ mk.prev.rate }}%). 미확정 = 아직 입원·취소로 결정되지 않은 상담(예정 {{ mk.planned }} · 보류 {{ mk.hold }} 포함) — 확정되면 이번달 전환율이 바뀝니다 · {{ mk.prev_cohort.label }} 상담 확정 = 지난달 상담 {{ mk.prev_cohort.total }}건의 현재 전환율">미확정 <b>{{ mk.open }}건</b> · {{ mk.prev_cohort.label }} 상담 확정 <b>{{ mk.prev_cohort.rate }}%</b></span>
         </a>
@@ -499,7 +499,7 @@
             <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14l3.5-3.5"/><path d="M3.3 19a10 10 0 1 1 17.4 0"/></svg></span><svg data-spark="{{ mx.census.spark|join(',') }}" aria-hidden="true"></svg>
             <span class="l">병상 가동률</span>
             <span class="v"><b class="num">{% if ws.bed_occupancy is not none %}{{ ws.bed_occupancy }}{% else %}–{% endif %}</b><small>%</small>{% if ws.admitted is not none and ws.bed_capacity %}{% set occ_delta = ((mx.census.delta / ws.bed_capacity * 100)|round(2)) %}{% if occ_delta > 0 %}<span class="d up">▲ +{{ occ_delta }}%p</span>{% elif occ_delta < 0 %}<span class="d dn">▼ {{ occ_delta }}%p</span>{% else %}<span class="d n">= 지난주</span>{% endif %}{% endif %}</span>
-            <span class="s" title="빈 병상 / 허가 병상 · 포화(95% 이상) 병동">{% if ws.admitted is not none %}빈 병상 <b>{{ ws.bed_capacity - ws.admitted }}</b>/{{ ws.bed_capacity }}{% set full_wards = ward_occupancy|selectattr('level', 'equalto', 'full')|map(attribute='ward')|list %}{% if full_wards %} · 포화 <b class="warn-text">{{ full_wards|join('·') }}</b>{% endif %}{% else %}명부 필요 — 원무 입퇴원 명부를 올리면 표시됩니다{% endif %}</span>
+            <span class="s" title="빈 병상 = 허가 병상 − 재원 · 외진(응급전원·외래) 미복귀 환자는 재원에서 빠져 그 침상이 빈 병상에 들어 있으므로, 복귀 대기 인원만큼은 새 입원에 쓸 수 없다고 보세요 · 포화 = 95% 이상 병동">{% if ws.admitted is not none %}빈 병상 <b>{{ ws.bed_capacity - ws.admitted }}</b>/{{ ws.bed_capacity }}{% if ws.away %} · 외진 복귀 대기 <b>{{ ws.away }}</b>{% endif %}{% set full_wards = ward_occupancy|selectattr('level', 'equalto', 'full')|map(attribute='ward')|list %}{% if full_wards %} · 포화 <b class="warn-text">{{ full_wards|join('·') }}</b>{% endif %}{% else %}명부 필요 — 원무 입퇴원 명부를 올리면 표시됩니다{% endif %}</span>
         </a>
         <a class="kc" href="/ward?tab=away">
             <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3L4 7l4 4"/><path d="M4 7h16"/><path d="M16 21l4-4-4-4"/><path d="M20 17H4"/></svg></span><svg data-spark="{{ mx.away.spark|join(',') }}" aria-hidden="true"></svg>

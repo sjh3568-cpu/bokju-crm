@@ -264,3 +264,9 @@
   월간 보고서 KPI는 `summary.active_day_avg`를 `kpi()`로. 라벨은 세 화면 모두 ‘상담일 평균’.
 - 6번(오늘 입원 큰 숫자를 통합 사건으로) 검토: `admission_date`는 입원완료 처리 때만 `actual_admission_date`와 함께 적히고 재입원 예정 시 비워지므로
   `admission_flow_events`의 상담 IN 사건 = 완료 입원. 통합 사건으로 바꿔도 예정이 섞일 위험은 없다 — 반영은 사용자 결정 대기.
+
+### KPI 기준 검토 1·6·7번 — 배지 문구, ‘오늘 입원’ 근거 통일, 빈 병상 옆 외진 복귀 대기 (2026-10-02, v1.12.11)
+- 1번: `delta_chip` 매크로에 `base` 인자(기본 '지난주'). 월 비교 카드 두 장은 `base='지난달'`.
+- 6번: ‘오늘 입원’ 큰 숫자 `summary.admission_today_completed` → `mx.roster_admission.today`(통합 입퇴원 사건 IN). 상담의 `admission_date`는 입원완료
+  처리 때만 적히므로 예정이 섞이지 않는다. tests/test_dashboard_discharge.py에 두 값이 같아야 한다는 단언 추가.
+- 7번: 병상 가동률 보조 줄에 `ws.away`가 있으면 ‘외진 복귀 대기 N’. 외진 환자는 재원에서 빠져(test_away_not_in_census) 침상이 빈 병상에 들어 있다는 점을 툴팁에.
