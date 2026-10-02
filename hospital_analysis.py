@@ -79,6 +79,28 @@ def partner_index() -> dict[str, int]:
     return idx
 
 
+def partner_overview(name: str, date_from: str | None, date_to: str | None,
+                     official_code: str | None = None) -> dict | None:
+    """협력기관 한 곳에 해당하는 모병원 분석 행(hospital_referral_overview 항목).
+
+    협력기관 세부 화면의 실적은 따로 세지 않고 이 행을 그대로 쓴다 — 모병원 분석 표와
+    세부 화면의 상담·입원·전환율이 다르면 어느 쪽이 맞는지 담당자가 판단할 수 없다.
+    짝 맞추기는 enrich()의 partner_id 판정과 같다: 요양기호 → 대표 표기 → 정식명 → 변형 표기.
+    """
+    data = models.hospital_referral_overview(date_from or None, date_to or None)
+    kind_idx = models._hospital_kind_index()
+    display = models.hospital_display_map()
+    keys = {models._hospital_substring_key(name), models._hospital_substring_key(display.get(name, name))}
+    for h in data["hospitals"]:
+        code = models.hospital_official_code(h["name"], kind_idx)
+        if official_code and code == official_code:
+            return h
+        names = [h["name"], h.get("official_name")] + [v["name"] for v in h["variants"]]
+        if any(models._hospital_substring_key(n) in keys for n in names if n):
+            return h
+    return None
+
+
 def enrich(date_from: str, date_to: str, q: str | None = None) -> dict:
     """overview에 전기 대비·질환군·협력기관 여부·지역을 붙인 결과."""
     cur = models.hospital_referral_overview(date_from, date_to, q=q or None)

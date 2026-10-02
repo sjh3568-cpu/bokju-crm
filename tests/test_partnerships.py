@@ -123,7 +123,8 @@ class CooperationTests(unittest.TestCase):
         db.commit()
         consults,admissions=coop.patient_report(db,'대구굿모닝병원','referral','2026-02-01','2026-02-28')
         self.assertEqual(len(consults),4)
-        self.assertEqual(len(admissions),2)
+        # 모병원 분석과 같은 정의 — 기간 안 상담 중 입원완료·퇴원완료 상태(입원일 유무 무관, 입원취소 제외)
+        self.assertEqual(len(admissions),3)
         self.assertEqual(len(coop.undated_admissions(db,'대구굿모닝병원','referral')),1)
         self.assertEqual(len(coop.patient_report(db,'대구굿모닝병원','source','2026-02-01','2026-02-28')[1]),1)
         db.close()
@@ -133,9 +134,43 @@ class CooperationTests(unittest.TestCase):
         self.assertIn('뇌경색',page.get_data(as_text=True))
         export=self.client.get(f'/partners/{self.pid}/export?{query}')
         self.assertEqual(export.status_code,200)
-        self.assertEqual(len(export.get_data(as_text=True).splitlines()),3)
+        self.assertEqual(len(export.get_data(as_text=True).splitlines()),4)
         self.assertIn("'=테스트",export.get_data(as_text=True))
         self.assertEqual(self.client.get(f'/partners/{self.pid}/export?period=custom&start=bad').status_code,400)
+
+    def test_detail_matches_hospital_analysis(self):
+        """세부 화면 실적은 모병원 분석 표의 그 기관 행을 그대로 쓴다.
+        기본 기준은 이전 병원이고, '대구 굿모닝병원'·'대구굿모닝' 같은 표기 변형도 분석 표와 같이 한 기관으로 센다."""
+        db=models.get_db()
+        patient=db.execute("INSERT INTO patients(name) VALUES ('표기환자')").lastrowid
+        other=db.execute("INSERT INTO patients(name) VALUES ('두번째환자')").lastrowid
+        year=date.today().year
+        rows=[(patient,f'{year}-01-10','입원완료','대구굿모닝병원','["기관연계"]'),
+              (patient,f'{year}-01-11','입원완료','대구 굿모닝병원','[]'),
+              (other,f'{year}-01-12','상담중','대구굿모닝','[]'),
+              (other,f'{year}-01-13','입원취소','대구굿모닝병원','[]'),
+              (other,f'{year-1}-12-30','입원완료','대구굿모닝병원','[]'),  # 작년 — 올해 집계 밖
+              (other,f'{year}-01-15','입원완료','안동병원','[]')]
+        for pid,day,status,spelling,detail in rows:
+            db.execute('''INSERT INTO consultations(patient_id,consult_date,admission_status,source_hospital,referral_source_detail,primary_diagnosis)
+                VALUES (?,?,?,?,?,?)''',(pid,day,status,spelling,detail,'뇌경색'))
+        db.commit()
+        self.assertEqual(coop._name_variants(db,'대구굿모닝병원'),['대구 굿모닝병원','대구굿모닝','대구굿모닝병원'])
+        start,end=f'{year}-01-01',date.today().isoformat()
+        expected=next(h for h in models.hospital_referral_overview(start,end)['hospitals'] if h['name']=='대구굿모닝병원')
+        self.assertEqual((expected['referrals'],expected['admissions'],expected['patients'],expected['linked_referrals']),(4,2,2,1))
+        consults,admissions=coop.patient_report(db,'대구굿모닝병원','source',start,end)
+        summary=coop.report_summary(consults,admissions)
+        for key in ('referrals','admissions','conversion','patients','linked_referrals','linked_admissions','direct_referrals','direct_admissions'):
+            self.assertEqual(summary[key],expected[key],key)
+        self.assertEqual(coop.patient_report(db,'대구굿모닝병원','referral',start,end),([],[]))
+        db.close()
+        page=self.client.get(f'/partners/{self.pid}?period=year').get_data(as_text=True)
+        self.assertIn('<option value="source" selected>',page)
+        self.assertIn('<b>4</b><span>상담',page)
+        self.assertIn('<b>2</b><span>입원완료',page)
+        self.assertIn('모병원 분석에서 보기',page)
+        self.assertIn('대구 굿모닝병원',page)
 
     def test_legacy_diagnosis_and_session_permission_refresh(self):
         db=models.get_db()

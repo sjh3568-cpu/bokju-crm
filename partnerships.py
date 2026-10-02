@@ -204,7 +204,7 @@ def _partner(db, pid):
     row = db.execute('''SELECT p.*,COALESCE(p.official_name,h.name) name,
                         COALESCE(d.kind,h.kind) kind,COALESCE(d.region,h.region) region,
                         COALESCE(d.address,h.address) address,COALESCE(d.phone,h.phone) phone,d.departments,d.bed_count,
-                        d.integrated_nursing,d.detail_updated_at
+                        d.integrated_nursing,d.detail_updated_at,d.official_code
                         FROM cooperation_partners p JOIN source_hospitals h ON h.id=p.hospital_id
                         LEFT JOIN cooperation_facility_directory d ON d.id=p.directory_id
                         WHERE p.id=?''', (pid,)).fetchone()
@@ -321,14 +321,59 @@ def recent_performance():
     return models.hospital_display_map(), {h['name']: h for h in data['hospitals']}
 
 
-def patient_report(db, name, basis, start, end):
+def _basis(value):
+    """연결 기준 — 기본은 이전 병원(모병원).
+
+    협력기관 목록의 최근 3개월 실적·후보 추천·방치 판단은 전부 `source_hospital`로 세는데
+    세부 화면만 '추천 기관'(`referrer_institution`, 입원경로가 소개일 때만 적는 칸)을 기본으로
+    보여 주면, 실적 때문에 등록한 기관을 열자마자 0건으로 보인다. 추천 기관은 명시 선택.
+    """
+    return 'referral' if value == 'referral' else 'source'
+
+
+def _name_variants(db, name):
+    """협력기관 이름과 같은 기관으로 통합되는 상담일지 표기 전부.
+
+    '대구굿모닝병원'으로 등록해 두고 상담에는 '대구 굿모닝병원'·'대구굿모닝'으로 적혀 있으면
+    이름을 그대로 비교하는 집계는 0건이 된다. 목록 화면(hospital_referral_overview)과 같은
+    통합 키(hospital_group_key + 약칭 접기)로 묶어 세부 화면의 숫자가 목록과 어긋나지 않게 한다.
+    """
+    name = (name or '').strip()
+    spellings = {r[0] for r in db.execute('''SELECT DISTINCT TRIM(source_hospital) FROM consultations
+        WHERE source_hospital IS NOT NULL AND TRIM(source_hospital)!=''
+        UNION SELECT DISTINCT TRIM(referrer_institution) FROM consultations
+        WHERE referrer_institution IS NOT NULL AND TRIM(referrer_institution)!='' ''')}
+    spellings = {s for s in spellings if models.is_institution_source(s)}
+    keys = {s: models.hospital_group_key(s) for s in spellings}
+    target = models.hospital_group_key(name)
+    fold = models._fold_hospital_abbreviations(set(keys.values()) | {target})
+    target = fold.get(target, target)
+    variants = {s for s, k in keys.items() if fold.get(k, k) == target}
+    variants.add(name)
+    return sorted(variants)
+
+
+def _name_clause(db, name, field, names=None):
+    variants = list(names) if names else _name_variants(db, name)
+    return f"TRIM(c.{field}) IN ({','.join('?' * len(variants))})", variants
+
+
+def patient_report(db, name, basis, start, end, names=None):
+    """기간 안 상담(상담일 기준)과 그중 입원완료·퇴원완료 건.
+
+    집계 정의는 모병원 분석(models.hospital_referral_overview)과 같다 — 상담의뢰는 상담일이
+    기간 안인 건수, 입원완료는 그 코호트 중 입원완료·퇴원완료 상태인 건수. 예전처럼 입원을
+    실제 입원일로 따로 세면 같은 기관의 숫자가 모병원 분석 표와 달라져 어느 쪽이 맞는지 알 수 없다.
+    names를 주면(모병원 분석 행의 표기 변형) 그 표기들로만 찾아 두 화면의 집합이 같아진다.
+    """
     # 실제 추천기관과 이전 병원은 서로 대체하지 않는다.
     field = 'source_hospital' if basis == 'source' else 'referrer_institution'
-    rows = db.execute(f'''SELECT c.id,c.patient_id,c.consult_date,c.admission_status,
+    clause, params = _name_clause(db, name, field, names)
+    rows = db.execute(f'''SELECT c.id,c.patient_id,c.consult_date,c.admission_status,c.referral_source_detail,
         c.primary_diagnosis,c.diseases,c.attending_doctor,c.discharge_date,
         COALESCE(NULLIF(TRIM(c.actual_admission_date),''),NULLIF(TRIM(c.admission_date),'')) admitted_on,
         p.name patient_name FROM consultations c JOIN patients p ON p.id=c.patient_id
-        WHERE TRIM(c.{field})=? ORDER BY c.consult_date DESC,c.id DESC''', (name,)).fetchall()
+        WHERE {clause} ORDER BY c.consult_date DESC,c.id DESC''', params).fetchall()
     rows=[dict(r) for r in rows]
     for r in rows:
         try:
@@ -339,25 +384,45 @@ def patient_report(db, name, basis, start, end):
         if not r['diagnosis_label'] and isinstance(diseases,list):
             labels=[str(v) for v in diseases if str(v).strip()]
             r['diagnosis_label']=('질환: '+', '.join(labels)) if labels else '미기재'
+        r['linked']=models._is_linked_referral(r.get('referral_source_detail'))
+        r['admitted']=r['admission_status'] in ('입원완료','퇴원완료')
     def inside(d):
         return bool(d) and (not start or d>=start) and (not end or d<=end)
-    consultations=[dict(r) for r in rows if inside(r['consult_date'])]
-    # 같은 환자의 같은 입원일은 한 입원으로 집계. 재입원은 다른 입원일로 집계한다.
-    admissions={}
-    for r in rows:
-        if r['admission_status'] not in ('입원완료','퇴원완료') or not inside(r['admitted_on']):
-            continue
-        admissions.setdefault((r['patient_id'],r['admitted_on']),dict(r))
-    return consultations, sorted(admissions.values(),key=lambda r:(r['admitted_on'],r['id']),reverse=True)
+    consultations=[r for r in rows if inside(r['consult_date'])]
+    admissions=[r for r in consultations if r['admitted']]
+    return consultations, admissions
 
 
-def undated_admissions(db, name, basis):
+def report_summary(consultations, admissions):
+    """모병원 분석 표의 한 행과 같은 열 구성(상담·입원·전환율·환자·기관연계·직접 문의)."""
+    linked_r=sum(1 for r in consultations if r['linked']); linked_a=sum(1 for r in admissions if r['linked'])
+    return {'referrals':len(consultations),'admissions':len(admissions),
+            'conversion':round(100*len(admissions)/len(consultations),2) if consultations else 0,
+            'patients':len({r['patient_id'] for r in consultations if r['patient_id'] is not None}),
+            'linked_referrals':linked_r,'linked_admissions':linked_a,
+            'direct_referrals':len(consultations)-linked_r,'direct_admissions':len(admissions)-linked_a}
+
+
+def undated_admissions(db, name, basis, names=None):
+    """입원완료·퇴원완료인데 입원일이 비어 있는 기록 — 집계에서 빼지는 않지만 보정이 필요한 건."""
     field='source_hospital' if basis=='source' else 'referrer_institution'
+    clause,params=_name_clause(db,name,field,names)
     return [dict(r) for r in db.execute(f"""SELECT c.id,p.name patient_name,c.consult_date,
         c.primary_diagnosis,c.admission_status FROM consultations c JOIN patients p ON p.id=c.patient_id
-        WHERE TRIM(c.{field})=? AND c.admission_status IN ('입원완료','퇴원완료')
+        WHERE {clause} AND c.admission_status IN ('입원완료','퇴원완료')
         AND COALESCE(NULLIF(TRIM(c.actual_admission_date),''),NULLIF(TRIM(c.admission_date),'')) IS NULL
-        ORDER BY c.consult_date DESC,c.id DESC""",(name,))]
+        ORDER BY c.consult_date DESC,c.id DESC""",params)]
+
+
+def analysis_row(db, partner, basis, start, end):
+    """모병원 분석에서 이 기관의 행과 그 표기 변형. 추천 기관 기준은 분석 표에 없으므로 None."""
+    if basis!='source':
+        return None,None
+    import hospital_analysis as ha
+    row=ha.partner_overview(partner['name'],start or None,end or None,partner.get('official_code'))
+    if row is None:
+        return None,None
+    return row,[v['name'] for v in row['variants']]
 
 
 @bp.route('/partners')
@@ -802,7 +867,7 @@ def detail(pid):
     except ValueError as e:
         flash(str(e),'error')
         return redirect(url_for('partners.detail',pid=pid,embedded='1' if request.values.get('embedded')=='1' else None))
-    basis='source' if request.args.get('basis')=='source' else 'referral'
+    basis=_basis(request.args.get('basis'))
     with closing(models.get_db()) as db:
         p=_partner(db,pid)
         # 명부 미연결이면 관리자가 고를 후보를 준비 (경고 배너에 노출)
@@ -813,8 +878,10 @@ def detail(pid):
         agreements=[dict(r) for r in db.execute('SELECT * FROM cooperation_agreements WHERE partner_id=? ORDER BY signed_on DESC,id DESC',(pid,))]
         documents=[dict(r) for r in db.execute('SELECT * FROM cooperation_documents WHERE partner_id=? ORDER BY expires_on IS NULL,expires_on,id DESC',(pid,))]
         visit_plans=[dict(r) for r in db.execute('SELECT * FROM cooperation_visit_plans WHERE partner_id=? ORDER BY visit_on DESC,sequence,id',(pid,))]
-        consultations,admissions=patient_report(db,p['name'],basis,start,end)
-        undated=undated_admissions(db,p['name'],basis)
+        analysis,names=analysis_row(db,p,basis,start,end)
+        consultations,admissions=patient_report(db,p['name'],basis,start,end,names)
+        undated=undated_admissions(db,p['name'],basis,names)
+        summary=analysis or report_summary(consultations,admissions)
         last_visit=next((a for a in activities if a['kind']=='방문'),None)
         performance=None
         if last_visit:
@@ -822,8 +889,8 @@ def detail(pid):
             before_start=(visit_day-timedelta(days=30)).isoformat()
             before_end=(visit_day-timedelta(days=1)).isoformat()
             after_end=min(date.today(),visit_day+timedelta(days=30)).isoformat()
-            before_consults,before_admissions=patient_report(db,p['name'],'referral',before_start,before_end)
-            after_consults,after_admissions=patient_report(db,p['name'],'referral',visit_day.isoformat(),after_end)
+            before_consults,before_admissions=patient_report(db,p['name'],basis,before_start,before_end,names)
+            after_consults,after_admissions=patient_report(db,p['name'],basis,visit_day.isoformat(),after_end,names)
             performance={'visit_on':visit_day.isoformat(),'before_start':before_start,'before_end':before_end,
                          'after_start':visit_day.isoformat(),'after_end':after_end,
                          'before_consults':len(before_consults),'before_admissions':len(before_admissions),
@@ -846,6 +913,8 @@ def detail(pid):
     return render_template('partner_detail.html',partner=p,activities=activities,contacts=contacts,tasks=tasks,agreements=agreements,
         documents=documents,visit_plans=visit_plans,quality=quality,
         consultations=consultations,admissions=admissions,undated=undated,start=start,end=end,period=period,basis=basis,
+        summary=summary,analysis=analysis,
+        analysis_url=url_for('stats.hospital_stats_view',preset='custom',q=p['name'],**{'from':start,'to':end}),
         csrf=_csrf(),today=date.today().isoformat(),kinds=KINDS,performance=performance,
         dir_unlinked=not p['directory_id'],dir_candidates=dir_candidates,
         embedded=request.args.get('embedded')=='1',cycle_presets=CYCLE_PRESETS)
@@ -958,10 +1027,11 @@ def export(pid):
         start,end,_=_period()
     except ValueError as e:
         abort(400,description=str(e))
-    basis='source' if request.args.get('basis')=='source' else 'referral'
+    basis=_basis(request.args.get('basis'))
     with closing(models.get_db()) as db:
         p=_partner(db,pid)
-        consultations,admissions=patient_report(db,p['name'],basis,start,end)
+        _,names=analysis_row(db,p,basis,start,end)
+        consultations,admissions=patient_report(db,p['name'],basis,start,end,names)
     kind='consult' if request.args.get('kind')=='consult' else 'admission'
     rows=consultations if kind=='consult' else admissions
     def safe(value):
