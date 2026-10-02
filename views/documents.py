@@ -199,6 +199,30 @@ def api_document_analyze(doc_id):
     return jsonify({"ok": True, "filename": doc.get("filename"), "summary": doc.get("ai_summary")})
 
 
+@bp.route("/api/documents/<int:doc_id>/rotate", methods=["POST"])
+@login_required
+def api_document_rotate(doc_id):
+    """뒤집혀 들어온 팩스를 화면에서 바로 세운다 — 보관 파일을 시계 방향으로 돌려 저장(EasyFax 원본은 그대로)."""
+    _need_edit()
+    doc = _doc_or_404(doc_id)
+    payload = request.get_json(silent=True) or {}
+    try:
+        degrees = int(payload.get("degrees", 180))
+    except (TypeError, ValueError):
+        degrees = 0
+    if degrees not in fax_inbox.ROTATIONS:
+        return jsonify({"error": "회전은 90·180·270도만 가능합니다."}), 400
+    if doc.get("file_deleted_at") or not Path(doc.get("stored_path") or "").is_file():
+        return jsonify({"error": "원본 파일이 없어 돌릴 수 없습니다."}), 404
+    try:
+        total = fax_inbox.rotate_file(doc_id, degrees)
+    except Exception as e:
+        logger.exception("문서 회전 실패 (doc #%s)", doc_id)
+        return jsonify({"error": f"회전 실패: {e}"}), 500
+    _audit("rotate_document", doc_id, f"{degrees}도 (누적 {total}도)")
+    return jsonify({"ok": True, "rotation": total})
+
+
 @bp.route("/api/documents/<int:doc_id>/link", methods=["POST"])
 @login_required
 def api_document_link(doc_id):

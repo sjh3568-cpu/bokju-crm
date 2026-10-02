@@ -6,7 +6,8 @@
  <p class="doc-file"><span class="badge doc-badge-{{ doc.status }}">{{ doc.status_label }}</span> <code>{{ doc.filename }}</code>{% if doc.original_name and doc.original_name != doc.filename %} <small class="muted">(원본명 {{ doc.original_name }})</small>{% endif %}{% if doc.received_at %} <small class="muted">· 수신 {{ doc.received_at[:16] }}</small>{% endif %}</p></div>
  <div class="doc-head-actions">
   {% if file_exists %}<a class="btn btn-secondary" href="/documents/{{ doc.id }}/file" target="_blank" rel="noopener">새 창에서 원본</a>
-  <a class="btn btn-secondary" href="/documents/{{ doc.id }}/file?download=1">내려받기</a>{% endif %}
+  <a class="btn btn-secondary" href="/documents/{{ doc.id }}/file?download=1">내려받기</a>
+  {% if can_edit %}<span class="doc-rotate" title="거꾸로 들어온 팩스를 바로 세웁니다. 보관 파일이 돌아가 저장되며 EasyFax 원본은 그대로입니다."><button type="button" class="btn btn-secondary" data-rotate="180">⟲ 180° 뒤집기</button><button type="button" class="btn btn-secondary btn-sm" data-rotate="90" title="시계 방향 90°">↷ 90°</button><button type="button" class="btn btn-secondary btn-sm" data-rotate="270" title="반시계 방향 90°">↶ 90°</button></span>{% endif %}{% endif %}
   {% if can_edit %}{% if doc.status != 'done' %}<a class="btn btn-primary" href="/consult/new?doc_id={{ doc.id }}">상담 등록</a>{% endif %}{% endif %}
  </div>
 </div>
@@ -74,7 +75,7 @@
 <style>
 .doc-file{margin-top:4px;font-size:.8rem}.doc-file code{background:#f1f5f9;padding:2px 6px;border-radius:5px}.doc-head-actions{display:flex;gap:8px;flex-wrap:wrap}
 .doc-layout{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(360px,.9fr);gap:14px;align-items:start}
-.doc-viewer{padding:0;overflow:hidden;min-height:70vh}.doc-viewer iframe{width:100%;height:calc(100vh - 190px);min-height:600px;border:0}.doc-viewer img{max-width:100%;display:block}
+.doc-rotate{display:inline-flex;gap:4px;align-items:center}.doc-viewer{padding:0;overflow:hidden;min-height:70vh}.doc-viewer iframe{width:100%;height:calc(100vh - 190px);min-height:600px;border:0}.doc-viewer img{max-width:100%;display:block}
 .doc-side{display:grid;gap:12px}.doc-side h2{font-size:.95rem;margin:0 0 8px}
 .doc-ai-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.doc-ai-head small{color:#64748b;flex:1}.doc-ai-head h2{margin:0}
 .doc-facts{display:grid;grid-template-columns:auto 1fr;gap:5px 10px;margin:10px 0;font-size:.82rem}.doc-facts dt{color:#64748b;font-weight:800;white-space:nowrap}.doc-facts dd{margin:0}
@@ -102,6 +103,7 @@
   var an=document.getElementById('doc-analyze');
   if(an) an.onclick=function(){an.disabled=true;an.textContent='판독 중… (수십 초)';post('/api/documents/'+id+'/analyze').then(function(){location.reload();}).catch(function(e){fail(e);an.disabled=false;an.textContent='다시 판독';});};
   document.querySelectorAll('.doc-link-btn').forEach(function(b){b.onclick=function(){post('/api/documents/'+id+'/link',{patient_id:b.dataset.pid}).then(function(){location.reload();}).catch(fail);};});
+  document.querySelectorAll('[data-rotate]').forEach(function(b){b.onclick=function(){b.disabled=true;post('/api/documents/'+id+'/rotate',{degrees:+b.dataset.rotate}).then(function(){location.reload();}).catch(function(e){fail(e);b.disabled=false;});};});
   var dn=document.getElementById('doc-done'); if(dn) dn.onclick=function(){post('/api/documents/'+id+'/done').then(function(){location.reload();}).catch(fail);};
   var ro=document.getElementById('doc-reopen'); if(ro) ro.onclick=function(){post('/api/documents/'+id+'/reopen').then(function(){location.reload();}).catch(fail);};
   var dl=document.getElementById('doc-del'); if(dl) dl.onclick=function(){if(!confirm('자료함에서 지울까요? NAS의 파일은 남습니다.')) return; post('/api/documents/'+id,null,'DELETE').then(function(){location.href='/documents';}).catch(fail);};

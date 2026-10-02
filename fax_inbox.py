@@ -400,15 +400,19 @@ def analyze_document(doc_id: int, *, force: bool = False) -> bool:
     if not force and (doc.get("ai_attempts") or 0) >= MAX_AI_ATTEMPTS:
         return False
     models.update_document(doc_id, ai_attempts=(doc.get("ai_attempts") or 0) + 1)
+    rotated = False
     try:
         # 대표 팩스: 앞 2쪽으로 상담 관련인지 먼저 본다. 직원이 [판독]을 누른 경우(force)는 건너뛴다.
         if classify_enabled() and not force and not doc.get("triage"):
             t = classify_file(str(path))
+            rotated = _auto_rotate(doc_id, t)          # 뒤집혀 왔으면 먼저 바로 세운다(상담 외 팩스도 포함)
             if not t.get("consult_related"):
                 _mark_other(doc_id, t)
                 return True
             models.update_document(doc_id, triage="consult", triage_reason=_triage_text(t))
         ai = analyze_file(str(path), hint=doc.get("original_name") or "")
+        if not rotated:                                # 분류 단계에서 이미 돌렸으면 판독 결과로 또 돌리지 않는다
+            _auto_rotate(doc_id, ai)
     except Exception as e:
         logger.warning("팩스 AI 판독 실패 (doc #%s, %s): %s", doc_id, path.name, e)
         models.update_document(doc_id, ai_error=str(e)[:300])
@@ -420,6 +424,78 @@ def analyze_document(doc_id: int, *, force: bool = False) -> bool:
         models.update_document(doc_id, triage="consult")
     _apply_analysis(doc_id, ai)
     return True
+
+
+# ───────────────────── 방향 바로잡기 ─────────────────────
+# 팩스기에 거꾸로 넣으면 PDF 전체가 180도 뒤집혀 들어온다. EasyFax 화면에서 돌려도 CRM 사본은 그대로라
+# 자료함에서 매번 고개를 꺾어 봐야 했다. AI 분류·판독이 첫 쪽 글자 방향을 함께 알려 주면 보관 파일을
+# 한 번 돌려 저장한다(원본 EasyFax 파일은 건드리지 않는다). AI가 못 잡으면 화면의 회전 버튼으로 같은 함수를 부른다.
+ROTATIONS = (90, 180, 270)
+
+
+def _rotate_pdf(path: Path, degrees: int):
+    import io
+    from pypdf import PdfReader, PdfWriter
+    reader = PdfReader(io.BytesIO(path.read_bytes()))   # 파일 핸들을 쥔 채 os.replace하면 Windows에서 막힌다
+    writer = PdfWriter()
+    for page in reader.pages:
+        writer.add_page(page)
+    for page in writer.pages:
+        page.rotate(degrees)
+    tmp = path.with_name(path.name + ".rotating")
+    with open(tmp, "wb") as f:
+        writer.write(f)
+    os.replace(tmp, path)
+
+
+def _rotate_image(path: Path, degrees: int):
+    from PIL import Image
+    with Image.open(path) as img:
+        fmt = img.format
+        rotated = img.rotate(-degrees, expand=True)      # PIL은 반시계 기준이라 부호를 뒤집는다
+        tmp = path.with_name(path.name + ".rotating")
+        rotated.save(tmp, format=fmt)
+    os.replace(tmp, path)
+
+
+def rotate_file(doc_id: int, degrees: int) -> int:
+    """보관 파일을 시계 방향으로 degrees(90·180·270) 돌려 제자리에 저장. 반환: 누적 회전 각도.
+    sha256은 원본 기준으로 두어 같은 팩스가 다시 떨어져도 중복 등록되지 않는다."""
+    degrees = int(degrees)
+    if degrees not in ROTATIONS:
+        raise ValueError("회전 각도는 90·180·270만 가능합니다.")
+    doc = models.get_document(doc_id)
+    if not doc or doc.get("file_deleted_at"):
+        raise RuntimeError("원본 파일이 없습니다.")
+    path = Path(doc.get("stored_path") or "")
+    if not path.is_file():
+        raise RuntimeError("원본 파일이 없습니다.")
+    stat = path.stat()
+    if path.suffix.lower() == ".pdf":
+        _rotate_pdf(path, degrees)
+    else:
+        _rotate_image(path, degrees)
+    os.utime(path, (stat.st_atime, stat.st_mtime))       # 수신 시각(mtime)은 그대로
+    total = ((doc.get("rotation") or 0) + degrees) % 360
+    models.update_document(doc_id, rotation=total, size_bytes=path.stat().st_size)
+    logger.info("팩스 #%s 방향 보정: %d도 (누적 %d도)", doc_id, degrees, total)
+    return total
+
+
+def _auto_rotate(doc_id: int, result: dict) -> bool:
+    """AI 분류·판독 결과의 rotation_needed대로 파일을 돌린다. 돌렸으면 True. 실패해도 판독은 계속한다."""
+    try:
+        degrees = int(result.get("rotation_needed") or 0)
+    except (TypeError, ValueError):
+        return False
+    if degrees not in ROTATIONS:
+        return False
+    try:
+        rotate_file(doc_id, degrees)
+        return True
+    except Exception as e:
+        logger.warning("팩스 #%s 방향 보정 실패 (%d도): %s", doc_id, degrees, e)
+        return False
 
 
 def _mark_other(doc_id: int, t: dict):

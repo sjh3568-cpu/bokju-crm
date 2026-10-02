@@ -270,3 +270,16 @@
 - 6번: ‘오늘 입원’ 큰 숫자 `summary.admission_today_completed` → `mx.roster_admission.today`(통합 입퇴원 사건 IN). 상담의 `admission_date`는 입원완료
   처리 때만 적히므로 예정이 섞이지 않는다. tests/test_dashboard_discharge.py에 두 값이 같아야 한다는 단언 추가.
 - 7번: 병상 가동률 보조 줄에 `ws.away`가 있으면 ‘외진 복귀 대기 N’. 외진 환자는 재원에서 빠져(test_away_not_in_census) 침상이 빈 병상에 들어 있다는 점을 툴팁에.
+
+### 팩스 자료함 — 거꾸로 들어온 팩스 바로 세우기 (2026-10-02, v1.12.12)
+
+- 증상: 팩스기에 거꾸로 넣어 보낸 문서가 CRM 자료함에서 180도 뒤집혀 보임. EasyFax 화면에서 돌려도 CRM은 copy 모드 사본이라 그대로.
+- 조치:
+  - `llm.py` 분류(FAX_CLASSIFY_SCHEMA)·판독(FAX_SCHEMA) 스키마에 `rotation_needed`(0/90/180/270, 시계 방향) 추가. 프롬프트에 규칙 명시.
+  - `fax_inbox.rotate_file(doc_id, degrees)` — PDF는 pypdf로 /Rotate(바이트를 메모리로 읽은 뒤 제자리 교체 — 핸들을 쥔 채 os.replace하면 Windows에서 막힘),
+    이미지는 Pillow. mtime·sha256은 원본 기준 유지(중복 등록 방지).
+    `_auto_rotate()`가 분류 결과로 먼저 돌리고, 분류에서 돌렸으면 판독 결과로는 다시 돌리지 않는다(이중 회전 방지).
+  - `POST /api/documents/<id>/rotate {degrees}` + 상세 화면 버튼(180°·↷90°·↶90°) — AI가 못 잡았거나 AI가 꺼진 경우의 수동 보정.
+  - `patient_documents.rotation` 컬럼 — 누적 회전 각도.
+- 검증: tests/test_fax_inbox.py 회전 테스트 4건(판독 결과 회전·정상 문서 무회전·이미지 회전·분류 단계 1회 회전+원본 보존+중복 방지).
+  테스트용 PDF는 `_real_pdf()`(pypdf로 생성) — 기존 MINI_PDF는 xref가 없어 pypdf가 못 읽는다.

@@ -430,7 +430,9 @@ FAX_SYSTEM_PROMPT = """당신은 복주회복병원(입원 전용 재활병원) 
 3. 주병명(main_diagnosis)은 이번 전원·의뢰의 **주된 사유가 되는 진단 하나**를 15자 이내로. 파일명에 들어가므로 특수문자 없이.
 4. summary는 상담사가 30초 안에 읽을 3~6개 항목. 각 항목은 한 문장. "왜 보냈나 → 현재 상태 → 주의할 점" 순서.
 5. 의료법 위반 표현(효과 단정·완치 보장) 금지. 재활 가능성·예후를 문서에 없는데 평가하지 마세요.
-6. 팩스 화질이 낮아 읽기 어려운 부분은 confidence를 낮추고 notes에 무엇을 못 읽었는지 적습니다."""
+6. 팩스 화질이 낮아 읽기 어려운 부분은 confidence를 낮추고 notes에 무엇을 못 읽었는지 적습니다.
+7. rotation_needed: 첫 쪽의 글자가 바로 읽히도록 **시계 방향으로** 몇 도 돌려야 하는지. 바로 보이면 0,
+   거꾸로(위아래가 뒤집혀) 들어온 팩스는 180, 옆으로 누운 것은 90 또는 270. 내용 판독은 방향과 무관하게 끝까지 합니다."""
 
 FAX_SCHEMA = {
     "type": "object",
@@ -455,11 +457,13 @@ FAX_SCHEMA = {
         "summary": {"type": "array", "items": {"type": "string"}, "description": "핵심 요약 3~6항목"},
         "confidence": {"type": "string", "description": "high / medium / low — 판독 신뢰도"},
         "notes": {"type": "string", "description": "못 읽은 부분·판단이 필요한 점. 없으면 빈 문자열"},
+        "rotation_needed": {"type": "integer", "enum": [0, 90, 180, 270],
+                            "description": "첫 쪽 글자가 바로 읽히게 하려면 시계 방향으로 몇 도 돌려야 하는지. 바로 보이면 0, 뒤집혀 들어온 팩스는 180"},
     },
     "required": ["document_type", "patient_name", "birth_date", "age", "sex", "main_diagnosis",
                  "diagnoses", "sender_hospital", "sender_department", "sender_contact", "doc_date",
                  "referral_reason", "current_status", "precautions", "medications", "summary",
-                 "confidence", "notes"],
+                 "confidence", "notes", "rotation_needed"],
     "additionalProperties": False,
 }
 
@@ -574,7 +578,8 @@ FAX_CLASSIFY_PROMPT = """당신은 복주회복병원(입원 전용 재활병원
 - 거래명세서·견적서·청구서·세금계산서, 약품·물품 주문, 공문·협조 요청, 교육·행사 안내, 광고
 - 보험사·공단 서류, 이미 입원 중인 환자의 원무·보험 처리 서류, 직원 인사·급여 서류
 
-애매하면 true(상담실이 한 번 보는 편이 놓치는 것보다 낫다). 앞 몇 쪽만 보고 판정합니다."""
+애매하면 true(상담실이 한 번 보는 편이 놓치는 것보다 낫다). 앞 몇 쪽만 보고 판정합니다.
+rotation_needed에는 첫 쪽 글자가 바로 읽히도록 시계 방향으로 몇 도 돌려야 하는지 적습니다(바로 보이면 0, 뒤집혀 들어왔으면 180)."""
 FAX_CLASSIFY_SCHEMA = {
     "type": "object",
     "properties": {
@@ -582,8 +587,10 @@ FAX_CLASSIFY_SCHEMA = {
         "category": {"type": "string", "description": "문서 종류 한두 단어: 진료의뢰서 / 소견서 / 거래명세서 / 공문 / 광고 / 기타 등"},
         "sender": {"type": "string", "description": "보낸 기관 이름. 없으면 빈 문자열"},
         "reason": {"type": "string", "description": "판정 이유 한 문장"},
+        "rotation_needed": {"type": "integer", "enum": [0, 90, 180, 270],
+                            "description": "첫 쪽 글자가 바로 읽히게 하려면 시계 방향으로 몇 도 돌려야 하는지. 바로 보이면 0, 뒤집혀 들어온 팩스는 180"},
     },
-    "required": ["consult_related", "category", "sender", "reason"],
+    "required": ["consult_related", "category", "sender", "reason", "rotation_needed"],
     "additionalProperties": False,
 }
 

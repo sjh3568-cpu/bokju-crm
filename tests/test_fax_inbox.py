@@ -18,6 +18,17 @@ MINI_PDF = (b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
             b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]>>endobj\n"
             b"trailer<</Root 1 0 R>>\n%%EOF\n")
 
+def _real_pdf(pages=1) -> bytes:
+    """pypdf가 읽을 수 있는(xref 있는) 빈 PDF — 회전처럼 실제로 PDF를 다시 쓰는 테스트용."""
+    import io
+    from pypdf import PdfWriter
+    w = PdfWriter()
+    for _ in range(pages):
+        w.add_blank_page(width=595, height=842)
+    buf = io.BytesIO(); w.write(buf)
+    return buf.getvalue()
+
+
 FAKE_AI = {
     "document_type": "진료의뢰서", "patient_name": "홍길동", "birth_date": "1950-01-02", "age": "76", "sex": "남",
     "main_diagnosis": "뇌경색", "diagnoses": ["뇌경색", "고혈압"], "sender_hospital": "안동병원",
@@ -58,6 +69,48 @@ class FaxInboxTests(unittest.TestCase):
         p = self.inbox / name
         p.write_bytes(data)
         return p
+
+    # ── 뒤집혀 들어온 팩스 — 판독 결과대로 바로 세우기 + 화면 회전 버튼 ──
+
+    def test_upside_down_fax_is_rotated_once_and_manual_rotate_api(self):
+        import io
+        from pypdf import PdfReader
+        self._drop(data=_real_pdf(2))
+        with patch.object(fax_inbox, "analyze_file", return_value=dict(FAKE_AI, rotation_needed=180)):
+            self.assertEqual(fax_inbox.scan_once(), 1)
+        d = models.list_documents()[0]
+        self.assertEqual(d["rotation"], 180)
+        self.assertEqual([pg.rotation for pg in PdfReader(io.BytesIO(Path(d["stored_path"]).read_bytes())).pages], [180, 180], "보관 PDF 모든 쪽이 180도 돌아가 있어야")
+        # 화면 버튼 — 시계 90° 더, 잘못된 각도·없는 각도는 거절
+        r = self.client.post(f"/api/documents/{d['id']}/rotate", json={"degrees": 90})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(r.get_json()["rotation"], 270)
+        self.assertEqual(PdfReader(io.BytesIO(Path(models.get_document(d["id"])["stored_path"]).read_bytes())).pages[0].rotation, 270)
+        self.assertEqual(self.client.post(f"/api/documents/{d['id']}/rotate", json={"degrees": 45}).status_code, 400)
+        page = self.client.get(f"/documents/{d['id']}").get_data(as_text=True)
+        self.assertIn('data-rotate="180"', page)
+
+    def test_normal_fax_is_not_rotated(self):
+        import io
+        from pypdf import PdfReader
+        self._drop(data=_real_pdf())
+        with patch.object(fax_inbox, "analyze_file", return_value=dict(FAKE_AI, rotation_needed=0)):
+            fax_inbox.scan_once()
+        d = models.list_documents()[0]
+        self.assertEqual(d["rotation"] or 0, 0)
+        self.assertEqual(PdfReader(io.BytesIO(Path(d["stored_path"]).read_bytes())).pages[0].rotation, 0)
+
+    def test_upside_down_image_is_rotated(self):
+        import io
+        from PIL import Image
+        img = Image.new("RGB", (2, 1), "white"); img.putpixel((0, 0), (255, 0, 0))
+        buf = io.BytesIO(); img.save(buf, format="PNG")
+        self._drop("scan.png", buf.getvalue())
+        with patch.object(fax_inbox, "analyze_file", return_value=dict(FAKE_AI, rotation_needed=180)):
+            fax_inbox.scan_once()
+        d = models.list_documents()[0]
+        with Image.open(d["stored_path"]) as out:
+            self.assertEqual(out.getpixel((1, 0)), (255, 0, 0), "180도 돌면 빨간 점이 오른쪽으로")
 
     # ── 폴더 감시 → 판독 → 파일명 정리 → 인박스 ──
 
@@ -369,6 +422,20 @@ class FaxCopyModeTests(unittest.TestCase):
              patch.object(fax_inbox, "analyze_file", return_value=dict(ai)) as a:
             n = fax_inbox.scan_once()
         return n, c, a
+
+    def test_classify_rotation_applies_once_and_leaves_source(self):
+        """분류 단계에서 돌렸으면 판독 결과가 또 180을 말해도 두 번 돌리지 않는다. EasyFax 원본은 그대로."""
+        import io
+        from pypdf import PdfReader
+        original = _real_pdf()
+        src = self._drop("mfp1_202610021201.pdf", data=original)
+        n, c, a = self._scan(triage=dict(CONSULT, rotation_needed=180), ai=dict(FAKE_AI, rotation_needed=180))
+        self.assertEqual(n, 1)
+        d = models.list_documents()[0]
+        self.assertEqual(d["rotation"], 180)
+        self.assertEqual(PdfReader(io.BytesIO(Path(d["stored_path"]).read_bytes())).pages[0].rotation, 180)
+        self.assertEqual(src.read_bytes(), original, "EasyFax 원본은 손대지 않는다")
+        self.assertEqual(fax_inbox.scan_once(), 0, "돌려 저장한 뒤에도 같은 원본은 중복 등록되지 않는다")
 
     def test_copy_leaves_source_untouched_and_renames_copy(self):
         src = self._drop("mfp1_202609281015.pdf")

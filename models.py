@@ -606,6 +606,7 @@ def init_db():
         "triage": "TEXT",              # AI 분류: consult(상담 관련) / other(상담 외) / NULL(미분류)
         "triage_reason": "TEXT",       # 분류 이유(종류·보낸 곳·사유)
         "received_at": "DATETIME",     # 수신 시각(날짜+시분) — 목록 '날짜' 열에 시간까지 보이게 (2026-09-29)
+        "rotation": "INTEGER DEFAULT 0",  # 보관 파일을 원본에서 시계 방향으로 돌린 누적 각도 (뒤집혀 온 팩스 바로 세우기, 2026-10-02)
     })
     # 기존 건 채우기 — EasyFax 원본명(mfp1_YYYYMMDDHHMM.pdf)에서, 없으면 등록 시각(UTC→로컬)으로
     import re as _re
@@ -9388,7 +9389,7 @@ def update_document(doc_id, **fields):
                       "sha256", "original_name", "doc_date", "patient_name_ai",
                       "diagnosis_ai", "sender_ai", "ai_json", "ai_attempts",
                       "ai_error", "analyzed_at", "comm_id", "size_bytes", "pages", "file_deleted_at",
-                      "source_path", "triage", "triage_reason", "received_at")}
+                      "source_path", "triage", "triage_reason", "received_at", "rotation")}
     if not valid:
         return
     sets = [f"{k} = ?" for k in valid]
