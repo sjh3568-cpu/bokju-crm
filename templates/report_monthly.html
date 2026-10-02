@@ -72,7 +72,7 @@
 
 <!-- 추이: 15개월 상담·입원·전환율 -->
 <div class="report-card">
-    <h3><span class="kpi-tag">총 상담 · 입원완료 · 전환율</span> 추이
+    <h3><span class="kpi-tag">총 상담 · 입원완료 · 전환율</span> 추이 <span class="muted" style="font-size:0.78em">(상담월 기준)</span>
         <span class="muted" style="font-size:0.78em">(최근 {{ data.trend|length }}개월)</span></h3>
     <div class="trend-wrap"><canvas id="ch-trend"></canvas></div>
     <div class="ai-note" id="ai-trend" hidden></div>
@@ -362,7 +362,7 @@
 {% set q = data.quality %}
 {% set rc = data.referral_capture %}
 <div class="quality-bar {% if q.immature %}warn{% endif %}">
-    {% if q.immature %}<strong>※ 이번 달 전환율은 미확정</strong> — 진행중 {{ q.pending }}건({{ q.pending_rate }}%)이 아직 입원/취소로 확정되지 않았습니다.
+    {% if q.immature %}<strong>※ 이번 달 전환율(상담월 기준)은 미확정</strong> — 진행중 {{ q.pending }}건({{ q.pending_rate }}%)이 아직 입원/취소로 확정되지 않았습니다. 입원 실적은 ‘입원(입원일)’ 카드가 확정치입니다.
     {% else %}진행중 {{ q.pending }}건({{ q.pending_rate }}%){% endif %}
     {% if q.cancel_unlabeled %} · 취소사유 미입력 {{ q.cancel_unlabeled }}건{% endif %}
     {% if rc and rc.no_admit_total %} · 회복기 불가 {{ rc.no_admit_total }}건 중 재단 시설 연계 {{ rc.rate }}%{% endif %}
@@ -376,7 +376,7 @@
     .month-picker { display:flex; gap:6px; align-items:center; }
     .month-picker input, .month-picker select { padding:4px 8px; border:1px solid var(--border); border-radius:6px; font-family:inherit; }
 
-    .kpi-grid { display:grid; grid-template-columns: repeat(8, 1fr); gap:6px; margin:8px 0 10px; }
+    .kpi-grid { display:grid; grid-template-columns: repeat(9, 1fr); gap:6px; margin:8px 0 10px; }
     .kpi-card { background:#fff; border:1px solid var(--border); border-radius:7px; padding:7px 9px; }
     .kpi-label { font-size:0.7em; color:var(--text-light); margin-bottom:2px; line-height:1.2; }
     .kpi-value { font-size:1.25em; font-weight:700; color:var(--primary); line-height:1.1; }
@@ -385,7 +385,7 @@
     .kpi-delta .cmp-tag { color:var(--text-light); margin-right:3px; }
     .kpi-delta .up { color:var(--success); font-weight:600; }
     .kpi-delta .down { color:var(--danger); font-weight:600; }
-    @media (max-width: 1100px) { .kpi-grid { grid-template-columns: repeat(4, 1fr); } }
+    @media (max-width: 1100px) { .kpi-grid { grid-template-columns: repeat(3, 1fr); } }
     @media (max-width: 600px)  { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
 
     .report-grid { display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:8px; }
@@ -481,7 +481,7 @@
     .page-header { margin-bottom:4px; }
     .page-header h1 { font-size:13pt; }
     .period-line { font-size:8pt; }
-    .kpi-grid { grid-template-columns: repeat(8, 1fr) !important; gap:3px; margin:5px 0; }
+    .kpi-grid { grid-template-columns: repeat(9, 1fr) !important; gap:3px; margin:5px 0; }
     .kpi-card { padding:3px 5px; box-shadow:none; border:1px solid #ddd; }
     .kpi-label { font-size:6.5pt; }
     .kpi-value { font-size:10pt; }

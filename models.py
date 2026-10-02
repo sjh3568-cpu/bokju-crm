@@ -6637,6 +6637,11 @@ def aggregate_monthly(year: int, month: int) -> dict:
     # 전년 동월 — 계절성과 실제 성장 구분용
     yf, yt = _month_range(year - 1, month)
     yoy_data = aggregate_stats(yf, yt)
+    # 입원 실적은 입원일 기준 — 그 달에 실제 입원한 사람(상담월 무관, 외진 복귀 제외).
+    # 대시보드 '이번달 입원'과 같은 정의. 상담월 기준 '입원완료'·'전환율'과는 집단이 달라 따로 둔다.
+    adm_this = new_admissions(f, t)["count"]
+    adm_prev = new_admissions(pf, pt)["count"]
+    adm_yoy = new_admissions(yf, yt)["count"]
 
     # 채널 ROI는 이번 달 데이터에서만
     where_sql = "WHERE c.consult_date >= ? AND c.consult_date <= ?"
@@ -6688,8 +6693,10 @@ def aggregate_monthly(year: int, month: int) -> dict:
     # 순서는 보고서 하단 섹션 순서와 맞춘다 — 카드에서 눈이 내려가면 바로 근거가 나오도록.
     kpis = [
         kpi("총 상담", s_this["total"], s_prev["total"], s_yoy["total"], suffix="건"),
-        kpi("입원완료", s_this["completed"], s_prev["completed"], s_yoy["completed"], suffix="건"),
-        kpi("전환율", s_this["conversion_rate"], s_prev["conversion_rate"],
+        # 입원(입원일) = 그 달 실제 입원 실적 / 입원완료·전환율(상담월) = 그 달 상담 코호트의 성사
+        kpi("입원(입원일)", adm_this, adm_prev, adm_yoy, suffix="건"),
+        kpi("입원완료(상담월)", s_this["completed"], s_prev["completed"], s_yoy["completed"], suffix="건"),
+        kpi("전환율(상담월)", s_this["conversion_rate"], s_prev["conversion_rate"],
             s_yoy["conversion_rate"], suffix="%"),
         kpi("활성 채널", active_channels, len(prev_data["by_referral_detail"]),
             len(yoy_data["by_referral_detail"]), suffix="종"),
@@ -7907,6 +7914,26 @@ def admission_flow_counts(week_from, week_to, month_from, month_to):
         "month_out": sum(1 for e in admission_flow_events(month_from, month_to) if e["kind"] == ADMISSION_EVENT_OUT),
     }
 
+
+
+def new_admissions(date_from, date_to):
+    """입원일 기준 입원 사건 — admission_flow_events()의 IN 가운데 외진 복귀(is_return)를 뺀 것.
+
+    상담 유입 성과(대시보드 '이번달 입원', 월간 보고서 '입원(입원일)')는 "그 기간에 새로 들어온
+    환자"만 센다. 상담이 지난달이어도 입원이 이번달이면 이번달 실적이다(2026-10-02 사용자 결정).
+    '현재 재원' 카드의 이번달 입·재원관리 입퇴원 이력은 복귀를 포함하므로 둘의 차이 = returns.
+    Returns {"count", "returns", "by_date": {YYYY-MM-DD: n}}
+    """
+    count, returns, by_date = 0, 0, {}
+    for e in admission_flow_events(date_from, date_to):
+        if e["kind"] != ADMISSION_EVENT_IN:
+            continue
+        if e.get("is_return"):
+            returns += 1
+            continue
+        count += 1
+        by_date[e["date"]] = by_date.get(e["date"], 0) + 1
+    return {"count": count, "returns": returns, "by_date": by_date}
 
 # 외진(응급전원·모병원 외래치료) 복귀는 병동 입장에서 그날의 입원이다(2026-09-15 사용자 요청).
 # 원무 명부는 보통 외진 나간 날 퇴원, 복귀한 날 새 회차로 적히므로 명부가 갱신되면

@@ -450,37 +450,59 @@ def _month_span(first, until):
 
 
 def month_performance(today=None):
-    """이번달 1일~오늘 상담 유입·입원 성사·전환율과, 지난달 같은 기간(1일~같은 날) 비교.
+    """이번달 1일~오늘 상담 유입·입원·전환율과, 지난달 같은 기간(1일~같은 날) 비교.
 
-    정의는 /stats KPI와 같다 — 성사 = 입원완료 + 퇴원완료, 전환율 = 성사 / 상담.
-    한 달을 통째로 비교하면 월초엔 늘 지난달보다 적게 보이므로 같은 일수로 자른다.
+    입원과 전환율은 기준이 다르다 (2026-10-02 사용자 결정 — 입원 '실적'과 전환 '효율'을 분리):
+    · admitted = **입원일 기준** 이번달 실제 입원 — 상담이 지난달이어도 입원이 이번달이면 센다.
+      models.new_admissions(명부·CRM·상담 통합 IN 사건, 외진 복귀 제외). '현재 재원' 카드의
+      '이번달 입'은 복귀를 포함하므로 그 차이가 admitted_return이다.
+    · rate = **상담일 기준 코호트** — 이번달 상담 중 입원완료+퇴원완료 비율(/stats KPI와 같은 정의).
+      분모·분자가 같은 집단이어야 비율이 성립하므로 입원일 기준 입원을 분자에 섞지 않는다
+      (섞으면 100%를 넘을 수 있고, 지난달 상담 품질이 이번달 성과로 잡힌다).
+      당월은 미확정(open: 입원완료·퇴원완료·입원취소가 아닌 건)이 남아 있으므로
+      지난달 상담 코호트의 현재 확정치(prev_cohort)를 함께 준다.
+    · carry = 지난달 상담 → 이번달 입원 건수. 두 기준의 차이를 설명하는 연결 숫자.
+    지난달 비교는 같은 일수로 자른다 — 한 달을 통째로 비교하면 월초엔 늘 지난달보다 적게 보인다.
     """
     today = today or date.today()
     first = today.replace(day=1)
     prev_last = first - timedelta(days=1)
     prev_first = prev_last.replace(day=1)
     prev_until = min(prev_last, prev_first + timedelta(days=today.day - 1))
+    done_sql = "admission_status IN ('입원완료', '퇴원완료')"
     conn = get_db()
     try:
         def agg(lo, hi):
             r = conn.execute(
-                """SELECT COUNT(*) AS total,
-                          SUM(CASE WHEN admission_status IN ('입원완료', '퇴원완료') THEN 1 ELSE 0 END) AS done,
-                          SUM(CASE WHEN admission_status = '입원예정' THEN 1 ELSE 0 END) AS planned,
-                          SUM(CASE WHEN admission_status = '입원보류' OR consult_result = '상담보류' THEN 1 ELSE 0 END) AS hold
-                   FROM consultations WHERE consult_date BETWEEN ? AND ?""", (lo, hi)).fetchone()
+                f"""SELECT COUNT(*) AS total,
+                           SUM(CASE WHEN {done_sql} THEN 1 ELSE 0 END) AS done,
+                           SUM(CASE WHEN admission_status = '입원예정' THEN 1 ELSE 0 END) AS planned,
+                           SUM(CASE WHEN admission_status = '입원보류' OR consult_result = '상담보류' THEN 1 ELSE 0 END) AS hold,
+                           SUM(CASE WHEN COALESCE(admission_status, '') NOT IN ('입원완료', '퇴원완료', '입원취소')
+                                    THEN 1 ELSE 0 END) AS undecided
+                    FROM consultations WHERE consult_date BETWEEN ? AND ?""", (lo, hi)).fetchone()
             total, done = r["total"] or 0, r["done"] or 0
             return {"total": total, "done": done, "planned": r["planned"] or 0, "hold": r["hold"] or 0,
+                    "open": r["undecided"] or 0,
                     "rate": round(done / total * 100, 2) if total else 0.0}
         cur = agg(*_month_span(first, today))
         prev = agg(*_month_span(prev_first, prev_until))
+        prev_cohort = agg(*_month_span(prev_first, prev_last))
         daily = conn.execute(
-            """SELECT consult_date AS d, COUNT(*) AS n,
-                      SUM(CASE WHEN admission_status IN ('입원완료', '퇴원완료') THEN 1 ELSE 0 END) AS done
-               FROM consultations WHERE consult_date BETWEEN ? AND ? GROUP BY consult_date""",
+            f"""SELECT consult_date AS d, COUNT(*) AS n,
+                       SUM(CASE WHEN {done_sql} THEN 1 ELSE 0 END) AS done
+                FROM consultations WHERE consult_date BETWEEN ? AND ? GROUP BY consult_date""",
             _month_span(first, today)).fetchall()
+        carry = conn.execute(
+            f"""SELECT COUNT(*) FROM consultations
+                WHERE consult_date BETWEEN ? AND ? AND {done_sql}
+                  AND date(COALESCE(NULLIF(actual_admission_date, ''), NULLIF(admission_date, '')))
+                      BETWEEN date(?) AND date(?)""",
+            (prev_first.isoformat(), prev_last.isoformat(), first.isoformat(), today.isoformat())).fetchone()[0]
     finally:
         conn.close()
+    adm = models.new_admissions(first, today)
+    adm_prev = models.new_admissions(prev_first, prev_until)
     by = {r["d"]: r for r in daily}
     days = [(first + timedelta(days=i)).isoformat() for i in range((today - first).days + 1)]
     return {
@@ -494,8 +516,15 @@ def month_performance(today=None):
         "delta_rate": round(cur["rate"] - prev["rate"], 2),
         "spark_total": [by[d]["n"] if d in by else 0 for d in days],
         "spark_done": [by[d]["done"] if d in by else 0 for d in days],
+        # 입원일 기준
+        "admitted": adm["count"], "admitted_return": adm["returns"],
+        "prev_admitted": adm_prev["count"],
+        "delta_admitted": adm["count"] - adm_prev["count"],
+        "spark_admitted": [adm["by_date"].get(d, 0) for d in days],
+        # 상담일 기준 보조
+        "prev_cohort": {**prev_cohort, "label": f"{prev_first.month}월"},
+        "carry": carry,
     }
-
 
 # ── KPI 묶음 ──────────────────────────────────────────────────────────
 
