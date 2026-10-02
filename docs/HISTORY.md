@@ -248,3 +248,10 @@
     /stats KPI 라벨에 ‘상담일 기준’ 표기. 상담사 평가는 상담일 기준 전환율로(월말 상담분이 불리해지지 않게).
 - 검증: tests/test_month_performance.py — 지난달 상담·이번달 입원 건이 admitted·carry에는 들고 rate 분모·분자에는 없음,
   명부만 있는 입원도 admitted에 셈, 외진 복귀 제외.
+
+### 대시보드 ‘오늘 입원’ — 큰 숫자를 입원 완료로, 예정은 보조로 (2026-10-02, v1.12.9)
+- KPI 기준 검토(5번 제안, 사용자 승인). 전에는 `summary.admission_today`(CRM 일정 기준 예정+완료)가 큰 숫자여서 저녁에 미완료 예정이
+  "오늘 N명 입원"으로 읽혔고, 배지는 `consult_admissions_by_date`(예정+완료)와 비교했다.
+- 큰 숫자 = `summary.admission_today_completed`(입원완료 처리·명부 입원·외진 복귀 처리, 기존 테스트가 고정한 값). 배지·스파크 = `mx.roster_admission`
+  (`admission_flow_by_date` IN — 퇴원 배지와 같은 통합 입퇴원 사건 기준). 보조 줄은 ‘입원예정 N 미완료 · 지난주 요일 N’.
+- `summary.admission_today`·`mx.admission`은 계산을 남겨 두었다(다른 화면·테스트 참조). 남은 검토 항목(1~4·6·7)은 미반영.
