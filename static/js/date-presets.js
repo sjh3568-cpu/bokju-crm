@@ -40,7 +40,7 @@
         if (form.dataset.datePresets === 'off' || start._datePresetPanel || end._datePresetPanel
             || start.disabled || end.disabled || (!ours && (start.readOnly || end.readOnly))) return;
         const anchor = document.createElement('span'); anchor.className = 'date-preset-anchor';
-        const panel = document.createElement('div'); panel.className = 'date-preset-panel'; panel.id = `date-preset-${index}`; panel.hidden = true;
+        const panel = document.createElement('div'); panel.className = 'date-preset-panel date-preset-panel-range'; panel.id = `date-preset-${index}`; panel.hidden = true;
         const custom = document.createElement('div'); custom.className = 'date-preset-custom';
         const customTitle = document.createElement('b'); customTitle.textContent = '기간 직접 선택';
         const customInputs = document.createElement('div'); customInputs.className = 'date-preset-custom-inputs';
@@ -49,6 +49,49 @@
         const customEnd = document.createElement('input'); customEnd.type = 'date'; customEnd.value = end.value;
         const applyButton = document.createElement('button'); applyButton.type = 'button'; applyButton.textContent = '적용'; applyButton.className = 'date-preset-apply';
         customInputs.append(customStart, customSep, customEnd, applyButton); custom.append(customTitle, customInputs); panel.appendChild(custom);
+        // 달력 두 달 펼쳐 보기 — 시작월·다음 달을 나란히 두고 날짜를 두 번 눌러 기간을 잡는다(2026-10-02 요청).
+        // 빠른 조회 버튼은 그대로 두고, 여기서 고른 날짜는 위 '기간 직접 선택' 칸에 들어가 [적용]으로 반영한다.
+        const cal = document.createElement('div'); cal.className = 'date-preset-cal'; custom.appendChild(cal);
+        const monthStart = v => { const [y, m] = String(v).split('-').map(Number); return new Date(y, m - 1, 1, 12); };
+        let view = new Date(year, month, 1, 12), picking = false;
+        const syncView = () => { view = customStart.value ? monthStart(customStart.value) : new Date(year, month, 1, 12); picking = false; };
+        const paintRange = (a, b) => { if (a > b) [a, b] = [b, a];
+            cal.querySelectorAll('button[data-date]').forEach(btn => { const v = btn.dataset.date;
+                btn.classList.toggle('in-range', v > a && v < b); btn.classList.toggle('is-start', v === a); btn.classList.toggle('is-end', v === b); }); };
+        const pick = v => {
+            if (!picking) { customStart.value = v; customEnd.value = v; picking = true; }
+            else { const a = customStart.value; if (v < a) { customEnd.value = a; customStart.value = v; } else customEnd.value = v; picking = false; }
+            paintRange(customStart.value, customEnd.value);
+        };
+        const render = () => {
+            cal.replaceChildren();
+            [0, 1].forEach(offset => {
+                const m = new Date(view.getFullYear(), view.getMonth() + offset, 1, 12);
+                const box = document.createElement('div'); box.className = 'date-preset-month';
+                const head = document.createElement('div'); head.className = 'date-preset-month-head';
+                const nav = dir => { const btn = document.createElement('button'); btn.type = 'button'; btn.textContent = dir < 0 ? '\u2039' : '\u203a';
+                    btn.title = dir < 0 ? '이전 달' : '다음 달'; btn.addEventListener('click', () => { view = new Date(view.getFullYear(), view.getMonth() + dir, 1, 12); render(); }); return btn; };
+                const title = document.createElement('b'); title.textContent = `${m.getFullYear()}년 ${m.getMonth() + 1}월`;
+                head.append(offset === 0 ? nav(-1) : document.createElement('i'), title, offset === 1 ? nav(1) : document.createElement('i'));
+                const grid = document.createElement('div'); grid.className = 'date-preset-month-grid';
+                '일월화수목금토'.split('').forEach((w, i) => { const s = document.createElement('span'); s.textContent = w; if (i === 0) s.className = 'is-sun'; if (i === 6) s.className = 'is-sat'; grid.appendChild(s); });
+                for (let i = 0; i < m.getDay(); i++) grid.appendChild(document.createElement('i'));
+                const last = new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate(), todayIso = iso(today);
+                for (let d = 1; d <= last; d++) {
+                    const date = new Date(m.getFullYear(), m.getMonth(), d, 12), v = iso(date);
+                    const btn = document.createElement('button'); btn.type = 'button'; btn.textContent = d; btn.dataset.date = v;
+                    if (date.getDay() === 0) btn.classList.add('is-sun'); if (date.getDay() === 6) btn.classList.add('is-sat');
+                    if (v === todayIso) btn.classList.add('is-today');
+                    btn.addEventListener('click', () => pick(v));
+                    btn.addEventListener('mouseenter', () => { if (picking) paintRange(customStart.value, v); });
+                    grid.appendChild(btn);
+                }
+                box.append(head, grid); cal.appendChild(box);
+            });
+            if (customStart.value && customEnd.value) paintRange(customStart.value, customEnd.value);
+        };
+        cal.addEventListener('mouseleave', () => { if (picking) paintRange(customStart.value, customEnd.value); });
+        [customStart, customEnd].forEach(el => el.addEventListener('change', () => { syncView(); render(); }));
         const applyRange = (a, b) => {
             start.value = a; end.value = b;
             [start, end].forEach(el => { el.dispatchEvent(new Event('input', {bubbles:true})); el.dispatchEvent(new Event('change', {bubbles:true})); });
@@ -78,10 +121,10 @@
         const togglePanel = e => {
             e.preventDefault(); e.stopPropagation(); const opening = panel.hidden; closeAll(opening ? panel : null);
             if (opening) {
-                customStart.value = start.value; customEnd.value = end.value; panel.hidden = false;
+                customStart.value = start.value; customEnd.value = end.value; syncView(); render(); panel.hidden = false;
                 if (window.innerWidth > 600) {
                     const rect = (e.currentTarget?.classList?.contains('date-preset-trigger') ? e.currentTarget : end).getBoundingClientRect();
-                    const panelWidth = Math.min(360, window.innerWidth - 28);
+                    const panelWidth = Math.min(520, window.innerWidth - 28);
                     panel.style.left = Math.max(12, Math.min(rect.left, window.innerWidth - panelWidth - 12)) + 'px';
                     panel.style.top = Math.max(12, Math.min(rect.bottom + 7, window.innerHeight - panel.offsetHeight - 12)) + 'px';
                 } else {

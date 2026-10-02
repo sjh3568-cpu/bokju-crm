@@ -688,13 +688,30 @@ select,input,textarea { accent-color:var(--primary-light); }
 .date-preset-custom-inputs input { min-width:0; width:100%; min-height:30px; padding:4px 5px; border:1px solid #cfdad3; border-radius:6px; background:#fff; color:#263c31; font:600 .7rem inherit; }
 .date-preset-custom-inputs span { color:#86948b; font-size:.76rem; }
 .date-preset-apply { min-height:30px; padding:4px 8px; border:1px solid #166534; border-radius:6px; background:#166534; color:#fff; font:750 .7rem inherit; cursor:pointer; }
+/* 기간 패널 — 달력 두 달을 나란히(2026-10-02). 시작·끝은 진초록, 사이는 연초록, 오늘은 테두리 */
+.date-preset-panel-range { width:min(520px,calc(100vw - 28px)); }
+.date-preset-cal { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:7px; }
+.date-preset-month { padding:5px 6px 6px; border:1px solid #dbe5df; border-radius:8px; background:#fff; }
+.date-preset-month-head { display:grid; grid-template-columns:24px 1fr 24px; align-items:center; margin-bottom:3px; }
+.date-preset-month-head b { text-align:center; color:#263c31; font-size:.72rem; }
+.date-preset-month-head button { height:24px; padding:0; border:1px solid #e0e7e2; border-radius:5px; background:#f9fbfa; color:#405248; font:700 .8rem inherit; line-height:1; cursor:pointer; }
+.date-preset-month-head button:hover { border-color:#78ad8a; background:#eaf6ee; color:#14532d; }
+.date-preset-month-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:1px; }
+.date-preset-month-grid span { text-align:center; color:#86948b; font-size:.6rem; font-weight:700; line-height:18px; }
+.date-preset-month-grid button { height:26px; padding:0; border:0; border-radius:5px; background:transparent; color:#263c31; font:600 .68rem inherit; cursor:pointer; }
+.date-preset-month-grid button:hover { background:#eaf6ee; }
+.date-preset-month-grid .is-sun { color:#b91c1c; } .date-preset-month-grid .is-sat { color:#1d4ed8; }
+.date-preset-month-grid button.is-today { box-shadow:inset 0 0 0 1px #166534; }
+.date-preset-month-grid button.in-range { background:#e3f3e8; border-radius:0; }
+.date-preset-month-grid button.is-start, .date-preset-month-grid button.is-end { background:#166534; color:#fff; }
+.date-preset-month-grid button.is-start:not(.is-end) { border-radius:5px 0 0 5px; } .date-preset-month-grid button.is-end:not(.is-start) { border-radius:0 5px 5px 0; }
 .date-preset-panel section + section { margin-top:5px; padding-top:5px; border-top:1px solid #edf1ee; }
 .date-preset-panel section > b { display:block; margin:0 0 3px 2px; color:#6b7d72; font-size:.65rem; }
 .date-preset-choices { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:2px; }
 .date-preset-panel section:last-child .date-preset-choices { grid-template-columns:repeat(6,minmax(0,1fr)); }
 .date-preset-choices button { min-height:27px; padding:3px 2px; border:1px solid #e0e7e2; border-radius:5px; background:#f9fbfa; color:#405248; font:650 .68rem inherit; cursor:pointer; }
 .date-preset-choices button:hover { border-color:#78ad8a; background:#eaf6ee; color:#14532d; }
-@media(max-width:600px){.date-preset-panel{position:fixed;left:12px;right:12px;top:auto;bottom:12px;width:auto}.date-preset-choices{grid-template-columns:repeat(3,minmax(0,1fr))}.date-preset-panel section:last-child .date-preset-choices{grid-template-columns:repeat(4,minmax(0,1fr))}.date-preset-custom-inputs{grid-template-columns:1fr auto 1fr}.date-preset-apply{grid-column:1/-1}}
+@media(max-width:600px){.date-preset-panel{position:fixed;left:12px;right:12px;top:auto;bottom:12px;width:auto}.date-preset-cal{grid-template-columns:1fr}.date-preset-choices{grid-template-columns:repeat(3,minmax(0,1fr))}.date-preset-panel section:last-child .date-preset-choices{grid-template-columns:repeat(4,minmax(0,1fr))}.date-preset-custom-inputs{grid-template-columns:1fr auto 1fr}.date-preset-apply{grid-column:1/-1}}
 .period-inline-filter { display:flex; align-items:flex-end; gap:7px; flex-wrap:wrap; padding:10px 12px; overflow:visible!important; }
 .period-inline-filter > label { display:flex; flex-direction:column; gap:4px; color:var(--text-light); font-size:.76rem; font-weight:700; }
 .period-inline-filter .date-range { display:flex; align-items:center; gap:5px; overflow:visible; }

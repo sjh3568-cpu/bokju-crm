@@ -207,3 +207,10 @@
   `flex-wrap:wrap`이 높이가 생기자 세로로 2열 분할됨), `.sidebar-foot`(도구·계정)은 `flex:0 0 auto`로 늘 아래. 도구는 static.
 - 하위 메뉴를 펼치면(▾·마우스 올림) `revealNavMenu`가 `.main-nav`를 세로로만 필요한 만큼 내린다 — `scrollIntoView`는 가로로도 밀어
   메뉴 글자가 잘렸다. 검증: playwright 1440×900·1366×700 캡처(스크래치패드 shot_sidebar.py).
+
+### 기간 선택 — 달력 두 달 펼쳐 보기 (2026-10-02, v1.12.6)
+- `date-presets.js`의 기간(from/to 쌍) 패널에 시작월·다음 달 달력(`.date-preset-cal`)을 '기간 직접 선택' 칸 아래에 그린다(사용자 요청).
+  날짜 두 번 클릭 = 시작·끝(`picking` 플래그, 역순이면 교환), 호버로 미리보기(`paintRange`), 고른 값은 customStart/customEnd에 들어가
+  기존 [적용] 경로(`applyRange`)로 반영 — 빠른 조회 버튼·직접 입력은 손대지 않음(사용자: 그대로 유지).
+- 패널 폭 360 → 520(`.date-preset-panel-range`), 600px 이하는 달력 세로 배치. 단일 날짜 칸(`mountSingle`)은 그대로.
+- 검증: playwright로 /consultations에서 열기·두 번 클릭·적용·'이번 달' 프리셋까지(스크래치패드 shot_range.py), 콘솔 오류 없음.
