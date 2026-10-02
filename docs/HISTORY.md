@@ -255,3 +255,12 @@
 - 큰 숫자 = `summary.admission_today_completed`(입원완료 처리·명부 입원·외진 복귀 처리, 기존 테스트가 고정한 값). 배지·스파크 = `mx.roster_admission`
   (`admission_flow_by_date` IN — 퇴원 배지와 같은 통합 입퇴원 사건 기준). 보조 줄은 ‘입원예정 N 미완료 · 지난주 요일 N’.
 - `summary.admission_today`·`mx.admission`은 계산을 남겨 두었다(다른 화면·테스트 참조). 남은 검토 항목(1~4·6·7)은 미반영.
+
+### KPI 기준 검토 3·4번 — ‘이번주’ 기간 끝을 오늘로, 일평균을 ‘상담일 평균’으로 통일 (2026-10-02, v1.12.10)
+- 3번: `_ward_status_strip`의 week_to가 일요일이라 미래 날짜가 섞이고 month_to(오늘)와 기간 끝이 달랐다 → 둘 다 오늘까지. 툴팁의 "원무 명부 기준"도
+  실제 근거(명부·CRM 입원완료·외진 복귀 통합 사건)로 고침(검토 2번 일부).
+- 4번: 일평균이 셋이었다 — 대시보드 total/경과일수(주말 포함), 월간 보고서 total/30, /stats total/실제 상담일. **실제 상담일 기준**으로 통일
+  (주말·휴일·월초 길이에 흔들리지 않고 이미 /stats가 쓰던 정의). `month_performance`에 `active_days`·`active_day_avg`(이번달·지난달 같은 기간),
+  월간 보고서 KPI는 `summary.active_day_avg`를 `kpi()`로. 라벨은 세 화면 모두 ‘상담일 평균’.
+- 6번(오늘 입원 큰 숫자를 통합 사건으로) 검토: `admission_date`는 입원완료 처리 때만 `actual_admission_date`와 함께 적히고 재입원 예정 시 비워지므로
+  `admission_flow_events`의 상담 IN 사건 = 완료 입원. 통합 사건으로 바꿔도 예정이 섞일 위험은 없다 — 반영은 사용자 결정 대기.

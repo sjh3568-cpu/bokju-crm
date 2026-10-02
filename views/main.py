@@ -232,9 +232,10 @@ def _ward_status_strip(census=None):
     """
     today = date.today()
     week_from = (today - timedelta(days=today.weekday())).isoformat()   # 월요일
-    week_to = (today - timedelta(days=today.weekday()) + timedelta(days=6)).isoformat()
+    # 이번주·이번달 모두 오늘까지 — 주만 일요일까지 열어 두면 미래 날짜가 섞여 월과 기간 끝이 달랐다(2026-10-02 KPI 기준 검토 3번).
+    week_to = today.isoformat()
     month_from = today.replace(day=1).isoformat()
-    month_to = today.isoformat()   # 이번 달은 오늘까지(미래 예정 입원은 제외)
+    month_to = today.isoformat()
     flow = models.admission_flow_counts(week_from, week_to, month_from, month_to)
     if census is None:
         census = models.current_admission_census()

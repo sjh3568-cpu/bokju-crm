@@ -6703,16 +6703,8 @@ def aggregate_monthly(year: int, month: int) -> dict:
         kpi("입원취소", s_this["cancelled"], s_prev["cancelled"], s_yoy["cancelled"], suffix="건"),
         # pending = 상담완료(입원 미정) + 입원보류 → '입원보류'로 부르면 오해를 준다
         kpi("진행중", s_this["pending"], s_prev["pending"], s_yoy["pending"], suffix="건"),
-        # 일평균 = total / 월 일수
-        {
-            "label": "일평균",
-            "value": round(s_this["total"] / 30, 2),
-            "prev": round(s_prev["total"] / 30, 2),
-            "yoy": round(s_yoy["total"] / 30, 2),
-            "delta_pct": _delta_pct(s_this["total"] / 30, s_prev["total"] / 30),
-            "yoy_delta_pct": _delta_pct(s_this["total"] / 30, s_yoy["total"] / 30),
-            "suffix": "건/일",
-        },
+        # 상담일 평균 = total / 실제 상담이 있던 날 — /stats·대시보드와 같은 정의 (전에는 30으로 나눠 셋이 달랐다. 2026-10-02 통일)
+        kpi("상담일 평균", s_this["active_day_avg"], s_prev["active_day_avg"], s_yoy["active_day_avg"], suffix="건/일"),
         kpi("신규 모병원", new_hospitals, 0, suffix="곳"),  # 전월 비교 의미 약해 prev 0 표기
     ]
 

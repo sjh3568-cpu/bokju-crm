@@ -63,6 +63,10 @@ class MonthPerformanceTests(unittest.TestCase):
         self.assertEqual(mk["done"], 1)
         self.assertEqual(mk["rate"], 33.33)
         self.assertEqual(mk["open"], 1)                   # 3번(입원예정)만 미확정, 취소는 확정
+        # 상담일 평균 = 상담 ÷ 실제 상담이 있던 날 (10/2, 10/4, 10/6 = 3일) — /stats·월간 보고서와 같은 정의
+        self.assertEqual(mk["active_days"], 3)
+        self.assertEqual(mk["active_day_avg"], 1.0)
+        self.assertEqual(mk["prev"]["active_days"], 1)
         # 지난달 같은 기간(9/1~9/15) = 5번 1건 성사 → 100%
         self.assertEqual(mk["prev"]["total"], 1)
         self.assertEqual(mk["prev"]["rate"], 100.0)

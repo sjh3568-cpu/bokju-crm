@@ -482,9 +482,16 @@ def month_performance(today=None):
                                     THEN 1 ELSE 0 END) AS undecided
                     FROM consultations WHERE consult_date BETWEEN ? AND ?""", (lo, hi)).fetchone()
             total, done = r["total"] or 0, r["done"] or 0
+            # 상담일 평균 = 상담 ÷ 실제 상담이 있던 날 — /stats 'active_day_avg'·월간 보고서와 같은 정의
+            # (달력 일수로 나누면 주말·휴일이 끌어내리고, 월간 보고서는 30으로 나눠 셋이 다 달랐다. 2026-10-02 통일)
+            active_days = conn.execute(
+                "SELECT COUNT(DISTINCT consult_date) FROM consultations WHERE consult_date BETWEEN ? AND ?",
+                (lo, hi)).fetchone()[0] or 0
             return {"total": total, "done": done, "planned": r["planned"] or 0, "hold": r["hold"] or 0,
                     "open": r["undecided"] or 0,
-                    "rate": round(done / total * 100, 2) if total else 0.0}
+                    "rate": round(done / total * 100, 2) if total else 0.0,
+                    "active_days": active_days,
+                    "active_day_avg": round(total / active_days, 2) if active_days else 0.0}
         cur = agg(*_month_span(first, today))
         prev = agg(*_month_span(prev_first, prev_until))
         prev_cohort = agg(*_month_span(prev_first, prev_last))

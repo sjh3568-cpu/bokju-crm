@@ -214,7 +214,7 @@
 </style>
 {% endif %}
 
-<!-- KPI 뒷받침: 입원완료·취소·진행중 / 일평균 / 신규 모병원 -->
+<!-- KPI 뒷받침: 입원완료·취소·진행중 / 상담일 평균 / 신규 모병원 -->
 <div class="report-grid grid-3">
     <div class="report-card">
         <h3><span class="kpi-tag">진행중 · 입원취소</span> 상담 결과 단계
@@ -241,7 +241,7 @@
     </div>
 
     <div class="report-card">
-        <h3><span class="kpi-tag">일평균 {{ data.this.summary.active_day_avg }}건</span> 요일별 상담
+        <h3><span class="kpi-tag">상담일 평균 {{ data.this.summary.active_day_avg }}건</span> 요일별 상담
             <span class="muted" style="font-size:0.78em">영업 {{ data.this.summary.active_days }}일</span>
         </h3>
         <div class="wd-wrap"><canvas id="ch-weekday"></canvas></div>
